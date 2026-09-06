@@ -445,6 +445,8 @@ export default function ProjectDetail() {
             <td>
                 <input className="sub-note-input" defaultValue={s.team_note || ''} placeholder="📝 เช่น ย้ายไปสินค้าอื่น"
                     onBlur={e => { const v = e.target.value.trim(); if (v !== (s.team_note || '')) putSubmission(s.id, { team_note: v || null }).then(loadSubs); }} />
+                {/* หมายเหตุที่เอเจนซี่เขียนกลับมา — อ่านอย่างเดียว */}
+                {s.agency_note && <div className="sub-note-from-agency" title={s.agency_note}>💬 {s.agency_note}</div>}
             </td>
             <td className="actions">
                 {s.status === 'confirmed' ? (

@@ -119,7 +119,7 @@ function EditSubmissionModal({ token, sub, products = [], onClose, onSaved, agen
 
 // รายการ submission 1 อัน (ใช้ในลิสต์ของกลุ่ม/ไม่ระบุกลุ่ม)
 // แถวที่บันทึกแล้ว — แสดงในตารางเดิม (ล็อกอ่านอย่างเดียว) ไม่เด้งไปลิสต์ด้านล่าง
-function SavedGridRow({ s, n, onEdit, onDelete }) {
+function SavedGridRow({ s, n, onEdit, onDelete, onNote }) {
     const st = STATUS[s.status] || STATUS.submitted;
     return (
         <>
@@ -141,6 +141,13 @@ function SavedGridRow({ s, n, onEdit, onDelete }) {
                 </div>
             </div>
             {s.team_note && <div className="ag-team-note-banner">📝 <b>หมายเหตุจากทีม:</b> {s.team_note}</div>}
+            {/* หมายเหตุของเอเจนซี่เอง — คนละช่องกับของทีม เขียนทับกันไม่ได้ */}
+            <div className="ag-note-row">
+                <span className="ag-note-lbl">📝 หมายเหตุถึงทีม</span>
+                <input className="ag-note-input" defaultValue={s.agency_note || ''}
+                    placeholder="เช่น คิวว่าง 20 ก.ย. / ขอเปลี่ยนสินค้า"
+                    onBlur={e => { const v = e.target.value.trim(); if (v !== (s.agency_note || '')) onNote(s, v); }} />
+            </div>
         </>
     );
 }
@@ -173,7 +180,7 @@ function SubItem({ s, onEdit }) {
 }
 
 // section 1 กลุ่มสินค้า — โชว์ความต้องการ (Platform/Tier/จำนวน) + ฟอร์มใส่ชื่อ + ลิสต์ของกลุ่ม
-function GroupSection({ token, group, gi, subs, onReload, onEdit, onDelete, agencyName, platformBudgets = {} }) {
+function GroupSection({ token, group, gi, subs, onReload, onEdit, onDelete, onNote, agencyName, platformBudgets = {} }) {
     const groupProducts = group.products || [];
     const groupPlats = groupPlatforms(group);
     const groupTiers = [...new Set((group.allocations || []).map(a => a.tier).filter(Boolean))];
@@ -308,7 +315,7 @@ function GroupSection({ token, group, gi, subs, onReload, onEdit, onDelete, agen
             <div className="ag-add-scroll">
                 <div className="ag-add-grid">
                     <div className="ag-add-head"><span>NAME</span><span>PLATFORM</span><span>FOLLOWER</span><span>PRODUCT</span><span>AGENCY</span><span>BUDGET</span><span>LINK ACCOUNT</span><span /></div>
-                    {groupSubs.map((s, si) => <SavedGridRow key={s.id} s={s} n={si + 1} onEdit={onEdit} onDelete={onDelete} />)}
+                    {groupSubs.map((s, si) => <SavedGridRow key={s.id} s={s} n={si + 1} onEdit={onEdit} onDelete={onDelete} onNote={onNote} />)}
                     {rows.map((en, i) => (
                         <div className="ag-add-row" key={i}>
                             <div className="atr-name"><span className="atr-num">{groupSubs.length + i + 1}</span><input value={en.account_name} onChange={e => upRow(i, 'account_name', e.target.value)} placeholder="ชื่อ Account" onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); saveRow(i); } }} /></div>
@@ -355,6 +362,12 @@ export default function AgencyPortal() {
         api(`/agency/${token}`).then(res => setInfo(res.data)).catch(err => setError(err.message));
     }
     useEffect(() => { load(); }, [token]);
+    // บันทึกหมายเหตุของเอเจนซี่ (ไม่ต้อง reload ทั้งหน้า — ค่าอยู่ในช่องอยู่แล้ว)
+    async function saveNote(sub, text) {
+        try { await api(`/agency/${token}/submissions/${sub.id}`, { method: 'PUT', body: { agency_note: text || null } }); }
+        catch (err) { alert(err.message); }
+    }
+
     // ลบรายชื่อของตัวเองออก — ถ้าทีมคัดเลือกไปแล้วต้องเตือนให้หนักกว่าเดิม
     async function deleteSub(sub) {
         const picked = sub.status === 'confirmed';
@@ -594,7 +607,7 @@ export default function AgencyPortal() {
                     {adGroups.length > 0 ? (
                         <>
                             {adGroups.map((g, gi) => (
-                                <GroupSection key={g.key || gi} token={token} group={g} gi={gi} subs={subs} onReload={load} onEdit={setEditSub} onDelete={deleteSub} agencyName={info.agency_name} platformBudgets={platformBudgets} />
+                                <GroupSection key={g.key || gi} token={token} group={g} gi={gi} subs={subs} onReload={load} onEdit={setEditSub} onDelete={deleteSub} onNote={saveNote} agencyName={info.agency_name} platformBudgets={platformBudgets} />
                             ))}
                             {ungrouped.length > 0 && (
                                 <div className="agency-card">

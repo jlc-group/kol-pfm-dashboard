@@ -167,7 +167,7 @@ router.put('/:token/submissions/:subId', async (req, res, next) => {
             }
         }
         const {
-            account_name, followers, platform, product, agency, budget, link_account,
+            account_name, followers, platform, product, agency, budget, link_account, agency_note,
             draft_link, draft_link2, draft_link3, draft_link4, draft_link5,
             gencode, feedback, feedback2, feedback3, feedback4, feedback5,
             approved, draft_status, post_url, post_date, id_post, code_expire,
@@ -182,6 +182,7 @@ router.put('/:token/submissions/:subId', async (req, res, next) => {
             platform, product, agency,
             budget: budget !== undefined ? (Number(budget) || 0) : undefined,
             link_account,
+            agency_note: agency_note !== undefined ? ((agency_note && String(agency_note).trim()) ? String(agency_note).trim() : null) : undefined,
             draft_link, draft_link2, draft_link3, draft_link4, draft_link5,
             gencode, feedback, feedback2, feedback3, feedback4, feedback5,
             approved, draft_status, post_url, post_date, id_post, code_expire,
