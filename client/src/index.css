@@ -2255,3 +2255,29 @@ a { text-decoration: none; color: inherit; }
 .ag-note-input::placeholder { color: #a8bfb6; }
 /* หมายเหตุจากเอเจนซี่ ที่ทีมเห็นในตารางรายชื่อ */
 .sub-note-from-agency { margin-top: 5px; font-size: 11.5px; line-height: 1.45; color: #0f766e; background: #ecfdf5; border: 1px solid #a7f3d0; border-radius: 8px; padding: 5px 9px; }
+/* ตั้งค่าคลิปต่อคนในกลุ่มสินค้า */
+.clips-box { background: #f7fbf9; border: 1px solid var(--border); border-radius: 11px; padding: 10px 12px; margin-bottom: 10px; }
+.clips-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.clips-title { font-size: 12px; font-weight: 800; color: var(--mint-dark); }
+.clips-count { font-size: 11.5px; font-weight: 700; color: var(--muted); }
+.clip-row { display: flex; align-items: center; gap: 8px; margin-bottom: 7px; }
+.clip-no { flex: none; width: 20px; height: 20px; border-radius: 50%; background: var(--mint); color: #fff; font-size: 10.5px; font-weight: 800; display: grid; place-items: center; }
+.clip-row input { flex: 1; min-width: 0; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; background: #fff; font-size: 12.5px; color: var(--text); }
+.clip-row input:focus { outline: none; border-color: var(--mint); box-shadow: 0 0 0 3px rgba(16,185,129,.12); }
+.clip-rm { flex: none; width: 26px; height: 26px; border-radius: 7px; border: 1px solid var(--border); background: #fff; color: var(--muted); cursor: pointer; line-height: 1; }
+.clip-rm:hover { border-color: #f0a3a3; color: #d64545; background: #fff5f5; }
+.clip-add { display: inline-flex; align-items: center; gap: 5px; padding: 7px 12px; border: 1px dashed var(--border); border-radius: 8px; background: #fff; color: var(--mint-dark); font-size: 12px; font-weight: 700; cursor: pointer; }
+.clip-add:hover { border-color: var(--mint); background: var(--bg-soft); }
+.clips-hint { margin: 7px 0 0; font-size: 11.5px; color: var(--muted); line-height: 1.5; }
+/* ป้ายจำนวนคลิปในแถวที่ยุบแล้ว (หน้าคัดเลือก) */
+.ag-clip-chip { flex: none; padding: 2px 8px; border-radius: 999px; background: #eef2ff; border: 1px solid #c7d2fe; color: #4338ca; font-size: 10.5px; font-weight: 800; white-space: nowrap; }
+.ag-budget-split { display: block; margin-top: 2px; font-size: 10.5px; font-weight: 600; color: var(--muted); }
+.ag-clip-note { color: var(--muted); }
+.ag-group-prog-clip { margin-top: 3px; font-size: 11px; font-weight: 700; color: #4338ca; }
+/* ชื่อคลิปในตาราง On Process + ป้ายจำนวนคลิปในตารางรายชื่อฝั่งทีม */
+.proc-name-txt { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.proc-clip-tag { font-size: 10.5px; font-weight: 700; color: #4338ca; background: #eef2ff; border: 1px solid #c7d2fe; border-radius: 6px; padding: 1px 6px; align-self: flex-start; }
+.sub-clip-chip { display: inline-block; margin-inline-start: 6px; padding: 1px 7px; border-radius: 999px; background: #eef2ff; border: 1px solid #c7d2fe; color: #4338ca; font-size: 10px; font-weight: 800; vertical-align: middle; }
+.sub-budget-split { display: block; margin-top: 2px; font-size: 10.5px; font-weight: 600; color: var(--muted); }
+.grp-count-clip { color: #4338ca; }
+.bh-sub { font-size: 12px; font-weight: 600; opacity: .8; }

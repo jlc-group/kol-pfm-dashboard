@@ -10,6 +10,7 @@ import OnProcessTable from '../components/OnProcessTable.jsx';
 import ProductChips, { ProductSummary } from '../components/ProductChips.jsx';
 import { productLabel } from '../data/products.js';
 import { groupPlatforms } from '../data/adGroups.js';
+import { groupClips, clipCount, collapseByPerson, countPeople } from '../data/clips.js';
 import { tabBadges, markSeen, seedDraftsSeen } from '../utils/tabUpdates.js';
 
 // ค่าที่เก็บเป็นสตริงคั่นด้วย , (เช่น content_format) → แยกเป็นรายตัว
@@ -121,19 +122,25 @@ function EditSubmissionModal({ token, sub, products = [], onClose, onSaved, agen
 // แถวที่บันทึกแล้ว — แสดงในตารางเดิม (ล็อกอ่านอย่างเดียว) ไม่เด้งไปลิสต์ด้านล่าง
 function SavedGridRow({ s, n, onEdit, onDelete, onNote }) {
     const st = STATUS[s.status] || STATUS.submitted;
+    const clips = s._clips || [s];          // แถวนี้ยุบมาจากกี่คลิป
+    const perClipBudget = Number(clips[0]?.budget) || 0;
     return (
         <>
             <div className={'ag-add-row ag-saved-row' + (s.team_note ? ' has-note' : '')}>
                 <div className="atr-name">
                     <span className="atr-num done">{n}</span>
                     <span className="ag-saved-name">{s.account_name}</span>
+                    {clips.length > 1 && <span className="ag-clip-chip" title={clips.map(c => c.clip_name || `คลิป ${c.clip_no}`).join(" · ")}>{clips.length} คลิป</span>}
                     <span className={`status ${st.cls} ag-saved-status`}>{st.label}</span>
                 </div>
                 <span className="ag-saved-cell">{s.platform || '—'}</span>
                 <span className="ag-saved-cell">{Number(s.followers) > 0 ? Number(s.followers).toLocaleString('en-US') : '—'}</span>
                 <span className="ag-saved-cell"><ProductSummary value={s.product} max={2} /></span>
                 <span className="ag-saved-cell">{s.agency || '—'}</span>
-                <span className="ag-saved-cell">฿{Number(s.budget || 0).toLocaleString('th-TH')}</span>
+                <span className="ag-saved-cell">
+                    ฿{Number(s.budget || 0).toLocaleString('th-TH')}
+                    {clips.length > 1 && <small className="ag-budget-split">฿{perClipBudget.toLocaleString('th-TH')} × {clips.length}</small>}
+                </span>
                 <span className="ag-saved-cell">{s.link_account ? <a href={s.link_account} target="_blank" rel="noreferrer"><Icon name="eye" size={14} /> ลิงก์</a> : '—'}</span>
                 <div className="atr-action">
                     <button type="button" className="atr-edit" title="แก้ไขข้อมูล" onClick={() => onEdit(s)}><Icon name="edit" size={14} /></button>
@@ -185,16 +192,23 @@ function GroupSection({ token, group, gi, subs, onReload, onEdit, onDelete, onNo
     const groupPlats = groupPlatforms(group);
     const groupTiers = [...new Set((group.allocations || []).map(a => a.tier).filter(Boolean))];
     // API ส่งมาแบบใหม่สุดขึ้นก่อน — กลับด้านให้คนที่บันทึกทีหลังต่อท้ายลงมาเรื่อย ๆ
-    const groupSubs = subs.filter(s => s.group_key === group.key)
+    const groupRows = subs.filter(s => s.group_key === group.key)
         .slice().sort((a, b) => (a.submitted_at || '').localeCompare(b.submitted_at || '') || (a.id - b.id));
+    // หน้านี้ = หน้าคัดเลือก "คน" จึงยุบแถวพี่น้อง (คนเดียวกันหลายคลิป) ให้เหลือคนละแถว
+    const groupSubs = collapseByPerson(groupRows);
+    const perClip = clipCount(group);              // กลุ่มนี้ 1 คนส่งกี่คลิป
+    const clipNames = groupClips(group);
     const total = group.kol_count || 0;
 
     // Budget ของกลุ่มนี้ (สำหรับปุ่มหารเฉลี่ยแบบเหมาราคา) — ใช้งบต่อกลุ่ม, ถ้าข้อมูลเดิมไม่มีค่อย fallback งบต่อ Platform
     const groupPlatform = groupPlats[0] || null;
+    const totalClips = (Number(group.kol_count) || 0) * perClip;   // เป้าจำนวนคลิปทั้งกลุ่ม
     const groupBudget = (group.budget != null && group.budget !== '')
         ? (Number(group.budget) || 0)
         : (groupPlatform ? (Number(platformBudgets[groupPlatform]) || 0) : 0);
-    const perHead = (groupBudget > 0 && total > 0) ? Math.round(groupBudget / total) : 0;
+    // งบเป็นต่อคลิป เพราะเวลายิงแอดคิดจากงบของคลิปนั้น ๆ
+    const perHead = (groupBudget > 0 && totalClips > 0) ? Math.round(groupBudget / totalClips) : 0;
+    const perUnit = perClip > 1 ? 'คลิป' : 'คน';
     const fmtBaht = n => '฿' + (Number(n) || 0).toLocaleString('th-TH');
 
     // จำว่ากลุ่มนี้ "หารเฉลี่ยแล้ว" (ต่อ token+group) เพื่อให้แถวใหม่เติมยอดต่อหัวอัตโนมัติ แม้รีเฟรชหน้า
@@ -215,7 +229,7 @@ function GroupSection({ token, group, gi, subs, onReload, onEdit, onDelete, onNo
         try { localStorage.setItem(divKey, '1'); } catch { /* ignore */ }
         setRows(rs => rs.map(r => (r.saving ? r : { ...r, budget: String(perHead) })));   // ทับทุกแถวที่กำลังกรอก
         // ทับ Budget ของคนที่บันทึกแล้วทุกคนในกลุ่มบนเซิร์ฟเวอร์
-        const toUpdate = groupSubs.filter(s => (Number(s.budget) || 0) !== perHead);
+        const toUpdate = groupRows.filter(s => (Number(s.budget) || 0) !== perHead);   // ทุกแถวคลิป
         if (toUpdate.length) {
             try {
                 await Promise.all(toUpdate.map(s => api(`/agency/${token}/submissions/${s.id}`, { method: 'PUT', body: { budget: perHead } })));
@@ -227,7 +241,7 @@ function GroupSection({ token, group, gi, subs, onReload, onEdit, onDelete, onNo
     // ล้าง Budget ทั้งกลุ่ม — เผื่อกดหารเฉลี่ยผิด หรืออยากกลับไปกรอกทีละคน
     // ทับของจริงบนเซิร์ฟเวอร์ด้วย เลยถามยืนยันก่อนเสมอ
     async function clearBudget() {
-        const hasBudget = groupSubs.filter(x => (Number(x.budget) || 0) > 0);
+        const hasBudget = groupRows.filter(x => (Number(x.budget) || 0) > 0);   // ทุกแถวคลิป
         const msg = hasBudget.length
             ? `ล้าง Budget ของกลุ่มนี้?\nคนที่บันทึกไปแล้ว ${hasBudget.length} คน จะถูกตั้งเป็น 0 ด้วย`
             : 'ล้าง Budget ที่กรอกค้างไว้ในกลุ่มนี้?';
@@ -280,7 +294,8 @@ function GroupSection({ token, group, gi, subs, onReload, onEdit, onDelete, onNo
                 </div>
                 <div className="ag-group-prog">
                     <div className="ag-group-prog-num">{groupSubs.length}<span>/{total}</span></div>
-                    <div className="ag-group-prog-lbl">ส่งแล้ว / ต้องการ</div>
+                    <div className="ag-group-prog-lbl">คน · ส่งแล้ว / ต้องการ</div>
+                    {perClip > 1 && <div className="ag-group-prog-clip">{groupRows.length}/{totalClips} คลิป</div>}
                 </div>
             </div>
 
@@ -296,16 +311,17 @@ function GroupSection({ token, group, gi, subs, onReload, onEdit, onDelete, onNo
                 <div className="ag-budget-bar">
                     <span className="ag-budget-info">
                         💰 Budget กลุ่มนี้ <b>{fmtBaht(groupBudget)}</b> · ต้องการ {total} คน
-                        {divided && <span className="ag-divided-tag">✓ หารเฉลี่ยแล้ว {fmtBaht(perHead)}/คน (แถวใหม่เติมอัตโนมัติ)</span>}
+                        {perClip > 1 && <span className="ag-clip-note"> × {perClip} คลิป = {totalClips} คลิป</span>}
+                        {divided && <span className="ag-divided-tag">✓ หารเฉลี่ยแล้ว {fmtBaht(perHead)}/{perUnit} (แถวใหม่เติมอัตโนมัติ)</span>}
                     </span>
                     {/* จับสองปุ่มเป็นกลุ่มเดียว จะได้เกาะกันชิดขวาเสมอ แม้ตอนข้อความยาวจนตกบรรทัด */}
                     <div className="ag-budget-actions">
                         <button type="button" className={'ag-divide-btn' + (divided ? ' on' : '')} onClick={divideBudget} disabled={perHead <= 0}
                             title="เหมาราคา: หารงบเท่าๆ กันทุกคน แล้วจำไว้ทั้งกลุ่ม (ทับ Budget ทุกคน + แถวใหม่เติมให้อัตโนมัติ)">
-                            {divided ? `↻ ทับใหม่ (${fmtBaht(perHead)}/คน)` : `= หารเฉลี่ยเท่ากัน (${fmtBaht(perHead)}/คน)`}
+                            {divided ? `↻ ทับใหม่ (${fmtBaht(perHead)}/${perUnit})` : `= หารเฉลี่ยเท่ากัน (${fmtBaht(perHead)}/${perUnit})`}
                         </button>
                         <button type="button" className="ag-clear-btn" onClick={clearBudget}
-                            disabled={!divided && !groupSubs.some(x => (Number(x.budget) || 0) > 0) && !rows.some(r => r.budget)}
+                            disabled={!divided && !groupRows.some(x => (Number(x.budget) || 0) > 0) && !rows.some(r => r.budget)}
                             title="ล้าง Budget ของทุกคนในกลุ่มนี้ กลับไปกรอกทีละคนเอง">
                             ล้างงบ
                         </button>
@@ -530,7 +546,7 @@ export default function AgencyPortal() {
                         </div>
                         <div className="agency-info-item">
                             <div className="agency-info-k">จำนวน KOL ที่คัดเลือกแล้ว</div>
-                            <div className="agency-info-v big">{subs.filter(s => s.status === 'confirmed').length} <span className="agency-info-unit">{displayTarget ? `/ เป้าหมาย ${displayTarget} คน` : `/ ส่งมา ${subs.length} คน`}</span></div>
+                            <div className="agency-info-v big">{countPeople(subs.filter(s => s.status === 'confirmed'))} <span className="agency-info-unit">{displayTarget ? `/ เป้าหมาย ${displayTarget} คน` : `/ ส่งมา ${countPeople(subs)} คน`}</span></div>
                         </div>
                         <div className="agency-info-item">
                             <div className="agency-info-k">สินค้าที่คุณรับผิดชอบ {formProducts.length > 0 && <span className="adg-count">({formProducts.length})</span>}</div>
@@ -663,7 +679,7 @@ export default function AgencyPortal() {
                                 <button type="button" className="agency-add-row" onClick={addEntry}><Icon name="plus" size={15} /> เพิ่มอีกแถว</button>
                             </div>
                             <div className="agency-card">
-                                <h3>รายชื่อที่ส่งแล้ว ({subs.length})</h3>
+                                <h3>รายชื่อที่ส่งแล้ว ({countPeople(subs)})</h3>
                                 {subs.length === 0 ? (
                                     <p className="empty" style={{ padding: '20px 0' }}>ยังไม่มีรายชื่อ — เพิ่มด้านบนได้เลย</p>
                                 ) : (

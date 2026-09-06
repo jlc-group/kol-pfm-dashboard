@@ -82,7 +82,11 @@ function ProcessRow({ sub, putSubmission, reload, showAds = false, group = null,
         <div className="proc-row">
             <div className="proc-name">
                 <span className="proc-seq">{seq}</span>
-                <span>{sub.account_name}</span>
+                <span className="proc-name-txt">
+                    {sub.account_name}
+                    {/* คนเดียวกันอาจมีหลายแถว = หลายคลิป บอกให้ชัดว่าแถวนี้คือคลิปไหน */}
+                    {sub.clip_name && <span className="proc-clip-tag">🎬 {sub.clip_name}</span>}
+                </span>
             </div>
             <div className="proc-cell">
                 <ProductSummary value={sub.product} max={2} />
@@ -210,6 +214,7 @@ function GroupBar({ group, gi, count }) {
  */
 export default function OnProcessTable({ subs = [], groups = [], showAds = false, scope = '', putSubmission, reload, directEdit = false }) {
     const [platFilter, setPlatFilter] = useState('all');   // ตัวกรองตามแพลตฟอร์ม
+    const [clipFilter, setClipFilter] = useState('all');   // ตัวกรองตามคลิป (กลุ่มที่ 1 คนส่งหลายคลิป)
     // เรียงเก่า -> ใหม่ ให้ตรงกับแท็บรายชื่อและฝั่งลิงก์เอเจนซี่ (API ส่งมาแบบใหม่สุดขึ้นก่อน)
     const confirmed = subs.filter(s => s.status === 'confirmed')
         .slice().sort((a, b) => (a.submitted_at || '').localeCompare(b.submitted_at || '') || (a.id - b.id));
@@ -218,7 +223,11 @@ export default function OnProcessTable({ subs = [], groups = [], showAds = false
     }
     // แพลตฟอร์มที่มีจริงในลิสต์ (ทำเป็นปุ่มกรอง)
     const platforms = [...new Set(confirmed.map(s => s.platform).filter(Boolean))];
-    const view = platFilter === 'all' ? confirmed : confirmed.filter(s => (s.platform || '') === platFilter);
+    // ชื่อคลิปที่มีจริงในลิสต์ (กลุ่มที่ 1 คนส่ง 2 คลิปจะมีมากกว่า 1 ชื่อ)
+    const clipNames = [...new Set(confirmed.map(s => s.clip_name).filter(Boolean))];
+    const view = confirmed
+        .filter(s => platFilter === 'all' || (s.platform || '') === platFilter)
+        .filter(s => clipFilter === 'all' || (s.clip_name || '') === clipFilter);
 
     const groupMap = {};
     groups.forEach(g => { groupMap[g.key] = g; });
@@ -226,6 +235,19 @@ export default function OnProcessTable({ subs = [], groups = [], showAds = false
     const rowsFor = list => list.map((s, i) => (
         <ProcessRow key={s.id} sub={s} seq={i + 1} putSubmission={putSubmission} reload={reload} showAds={showAds} scope={scope} group={groupMap[s.group_key] || null} directEdit={directEdit} />
     ));
+
+    // แถบปุ่มกรองคลิป — โชว์เมื่อแคมเปญนี้มีคนที่ต้องส่งมากกว่า 1 คลิป
+    const clipBar = clipNames.length > 1 ? (
+        <div className="proc-platfilter">
+            <span className="proc-platfilter-lbl">คลิป:</span>
+            <button type="button" className={'proc-plat-chip' + (clipFilter === 'all' ? ' on' : '')} onClick={() => setClipFilter('all')}>ทั้งหมด ({confirmed.length})</button>
+            {clipNames.map(c => (
+                <button type="button" key={c} className={'proc-plat-chip' + (clipFilter === c ? ' on' : '')} onClick={() => setClipFilter(c)}>
+                    {c} ({confirmed.filter(s => s.clip_name === c).length})
+                </button>
+            ))}
+        </div>
+    ) : null;
 
     // แถบปุ่มกรองแพลตฟอร์ม (โชว์เมื่อมีมากกว่า 1 แพลตฟอร์ม)
     const filterBar = platforms.length > 1 ? (
@@ -248,6 +270,7 @@ export default function OnProcessTable({ subs = [], groups = [], showAds = false
         return (
             <div>
                 {filterBar}
+                {clipBar}
                 <div className="proc-tbl-scroll">
                     <div className={tblCls}>
                         {visibleGroups.map((g) => {
@@ -277,6 +300,7 @@ export default function OnProcessTable({ subs = [], groups = [], showAds = false
     return (
         <div>
             {filterBar}
+                {clipBar}
             <div className="proc-tbl-scroll">
                 <div className={tblCls}>
                     {procHead(showAds)}

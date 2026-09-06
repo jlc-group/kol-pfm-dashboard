@@ -738,7 +738,11 @@ const dashboard = {
         // 3) ตัวเลขรวม
         const totalBudget = projects.reduce((s, p) => s + (Number(p.budget) || 0), 0);   // งบที่วางไว้รวม
         const totalFee = subs.reduce((a, s) => a + (Number(s.budget) || 0), 0);           // ค่าใช้จ่ายจริงของ KOL
-        const totalKols = subs.length;
+        // 1 แถว = 1 คลิป — คนเดียวกันอาจมีหลายคลิป จึงนับ "คน" จาก person_key
+        const totalKols = new Set(subs.map(s => s.person_key || ('sub:' + s.id))).size;
+        const totalClips = subs.length;
+        // งบเก็บต่อคลิป ค่าเฉลี่ยหลักจึงเป็น "ต่อคลิป" ส่วน "ต่อคน" ไว้ดูค่าตัวรวมของคนหนึ่ง
+        const avgCostPerClip = totalClips > 0 ? Math.round(totalFee / totalClips) : 0;
         const avgCostPerKol = totalKols > 0 ? Math.round(totalFee / totalKols) : 0;
         const totalViews = subs.reduce((a, s) => a + (Number(s.ad_reach) || 0), 0);       // ยอดวิว = Reach จากแอด
 
@@ -746,12 +750,13 @@ const dashboard = {
         const byPlatform = {};
         subs.forEach(s => {
             const p = s.platform || 'อื่นๆ';
-            if (!byPlatform[p]) byPlatform[p] = { platform: p, count: 0, views: 0, feeSum: 0 };
+            if (!byPlatform[p]) byPlatform[p] = { platform: p, count: 0, people: new Set(), views: 0, feeSum: 0 };
             const b = byPlatform[p];
-            b.count += 1; b.views += Number(s.ad_reach) || 0; b.feeSum += Number(s.budget) || 0;
+            b.count += 1; b.people.add(s.person_key || ('sub:' + s.id));
+            b.views += Number(s.ad_reach) || 0; b.feeSum += Number(s.budget) || 0;
         });
         const platforms = Object.values(byPlatform).map(b => ({
-            platform: b.platform, kols_count: b.count, views: b.views,
+            platform: b.platform, kols_count: b.people.size, clips_count: b.count, views: b.views,
             engagement: null, avg_cost: b.count ? Math.round(b.feeSum / b.count) : 0
         }));
         const platformSet = new Set(subs.map(s => s.platform).filter(Boolean));
@@ -868,7 +873,7 @@ const dashboard = {
         });
         const brandSummary = Object.values(brandMap).map(b => ({
             brand: b.brand, budget: b.budget,
-            kols_count: subs.filter(s => b.projectIds.has(s.project_id)).length
+            kols_count: new Set(subs.filter(s => b.projectIds.has(s.project_id)).map(s => s.person_key || ('sub:' + s.id))).size
         })).sort((a, b) => b.budget - a.budget);
 
         // 8) รายการ campaign (project) สำหรับ dropdown — ตามสิทธิ์ (ไม่ผูกกับตัวกรองอื่น)
@@ -880,11 +885,13 @@ const dashboard = {
 
         return {
             total_kols: totalKols,
+            total_clips: totalClips,
             total_campaigns: projects.length,   // จำนวนแคมเปญที่เอางบมารวมกัน
             total_budget: totalBudget,
             total_spent: totalFee,
             total_views: totalViews,
             avg_cost_per_kol: avgCostPerKol,
+            avg_cost_per_clip: avgCostPerClip,
             cpm, cpe,
             platform_count: platformSet.size,
             platform_list: [...platformSet],
@@ -1101,7 +1108,7 @@ const submissions = {
         const s = db.submissions.find(x => x.id === Number(subId));
         return s ? clone(s) : null;
     },
-    async add({ project_id, account_name, followers, platform, product, budget, agency, link_account, group_key, tier, agency_token, code_expire }) {
+    async add({ project_id, account_name, followers, platform, product, budget, agency, link_account, group_key, tier, agency_token, code_expire, person_key, clip_no, clip_name }) {
         const row = {
             id: nextId('submissions'),
             project_id: Number(project_id),
@@ -1109,6 +1116,8 @@ const submissions = {
             product: product || null, budget: budget || 0,
             agency: agency || null, link_account: link_account || null,
             group_key: group_key || null, tier: tier || null,
+            // แถวพี่น้อง = คนเดียวกัน แต่คนละคลิป (ผูกกันด้วย person_key)
+            person_key, clip_no: Number(clip_no) || 1, clip_name: clip_name || null,
             agency_token: agency_token || null,   // เจ้าของ (ลิงก์เอเจนซี่ที่ส่งเข้ามา)
             status: 'submitted', // submitted | confirmed | rejected
             draft_link: null, draft_link2: null, draft_link3: null, draft_link4: null, draft_link5: null,
@@ -1126,6 +1135,47 @@ const submissions = {
         };
         db.submissions.push(row); persist();
         return clone(row);
+    },
+    // เพิ่ม KOL 1 คน = สร้างแถวให้ครบทุกคลิปที่กลุ่มนั้นกำหนดไว้
+    // (ช่อง Gencode / โพสต์ / ยอดวิว / แอด ผูกกับคลิป จึงต้องแยกแถว)
+    async addPerson(fields, clipNames = []) {
+        const names = Array.isArray(clipNames) ? clipNames.filter(c => c && String(c).trim()) : [];
+        const personKey = 'p' + Math.random().toString(36).slice(2, 10);
+        if (names.length < 2) {
+            return [await submissions.add({ ...fields, person_key: personKey, clip_no: 1, clip_name: names[0] || null })];
+        }
+        const out = [];
+        for (let i = 0; i < names.length; i++) {
+            out.push(await submissions.add({ ...fields, person_key: personKey, clip_no: i + 1, clip_name: names[i] }));
+        }
+        return out;
+    },
+    // ลบทั้งคน (ทุกคลิปของ person_key เดียวกัน)
+    async removePerson(subId, projectId) {
+        const target = db.submissions.find(x => x.id === Number(subId) && x.project_id === Number(projectId));
+        if (!target) return null;
+        const key = target.person_key;
+        const gone = key
+            ? db.submissions.filter(x => x.person_key === key && x.project_id === Number(projectId))
+            : [target];
+        const ids = new Set(gone.map(x => x.id));
+        db.submissions = db.submissions.filter(x => !ids.has(x.id));
+        persist();
+        return { removed: gone.length, account_name: target.account_name };
+    },
+    // แก้ข้อมูล "ตัวคน" ให้ทุกคลิปพร้อมกัน (ชื่อ/ยอดฟอล/Platform/สินค้า/ลิงก์ช่อง/ผู้ติดต่อ)
+    async updatePerson(subId, projectId, fields, byName) {
+        const target = db.submissions.find(x => x.id === Number(subId) && x.project_id === Number(projectId));
+        if (!target) return null;
+        const sibs = target.person_key
+            ? db.submissions.filter(x => x.person_key === target.person_key && x.project_id === Number(projectId))
+            : [target];
+        let head = null;
+        for (const sib of sibs) {
+            const r = await submissions.update(sib.id, projectId, fields, byName);
+            if (sib.id === target.id) head = r;
+        }
+        return head;
     },
     // อัปเดตได้ทั้งสถานะคัดเลือก + ข้อมูลดราฟงาน
     async update(subId, projectId, fields, byName) {
@@ -1152,7 +1202,7 @@ const submissions = {
         }
         const before = {};
         STAMP_F.forEach(f => { before[f] = s[f]; });
-        for (const k of ['account_name', 'followers', 'platform', 'product', 'agency', 'budget', 'link_account', 'concept', 'gen_date', 'group_key', 'tier', 'status', 'draft_link', 'draft_link2', 'draft_link3', 'draft_link4', 'draft_link5', 'gencode', 'feedback', 'feedback2', 'feedback3', 'feedback4', 'feedback5', 'approved', 'draft_status', 'post_url', 'post_date', 'id_post', 'code_expire', 'ad_status', 'ad_spend', 'ad_reach', 'ad_start', 'ad_end', 'ad_note', 'team_note', 'agency_note', 'views', 'likes', 'comments', 'saves', 'shares', 'content_format', 'perf_synced_at']) {
+        for (const k of ['account_name', 'followers', 'platform', 'product', 'agency', 'budget', 'link_account', 'concept', 'gen_date', 'group_key', 'tier', 'clip_name', 'status', 'draft_link', 'draft_link2', 'draft_link3', 'draft_link4', 'draft_link5', 'gencode', 'feedback', 'feedback2', 'feedback3', 'feedback4', 'feedback5', 'approved', 'draft_status', 'post_url', 'post_date', 'id_post', 'code_expire', 'ad_status', 'ad_spend', 'ad_reach', 'ad_start', 'ad_end', 'ad_note', 'team_note', 'agency_note', 'views', 'likes', 'comments', 'saves', 'shares', 'content_format', 'perf_synced_at']) {
             if (fields[k] !== undefined) s[k] = fields[k];
         }
         // บันทึกว่า "ใครแก้ล่าสุดเมื่อไหร่" ของลิงก์คลิป / Gencode / ID Post

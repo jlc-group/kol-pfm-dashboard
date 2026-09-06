@@ -110,7 +110,10 @@ export default function Dashboard() {
                     </div>
                     <div className="bento-hero-value">{data ? fmtMoney(data.total_budget) : '—'}</div>
                     <div className="bento-hero-stats">
-                        <div><div className="bh-k">จำนวน KOL</div><div className="bh-v">{data ? data.total_kols : '—'}</div></div>
+                        <div><div className="bh-k">จำนวน KOL</div><div className="bh-v">
+                            {data ? data.total_kols : '—'}
+                            {data && data.total_clips > data.total_kols && <span className="bh-sub"> · {data.total_clips} คลิป</span>}
+                        </div></div>
                         <div><div className="bh-k">แคมเปญ</div><div className="bh-v">{data ? data.total_campaigns : '—'}</div></div>
                         <div><div className="bh-k">ค่าจ้าง KOL ที่ใช้ไป</div><div className="bh-v">{data ? fmtMoney(data.total_spent) : '—'}</div></div>
                     </div>
@@ -124,9 +127,12 @@ export default function Dashboard() {
                         <div className="summary-sub">จากทุกแพลตฟอร์ม</div>
                     </div>
                     <div className="bento-mini">
-                        <div className="bento-mini-top"><span className="summary-label">Avg Cost / KOL</span><div className="mini-ico"><Icon name="star" size={18} /></div></div>
-                        <div className="bento-mini-value">{data ? fmtMoney(data.avg_cost_per_kol) : '—'}</div>
-                        <div className="summary-sub">ค่าเฉลี่ยต่อคน</div>
+                        <div className="bento-mini-top"><span className="summary-label">Avg Cost / Clip</span><div className="mini-ico"><Icon name="star" size={18} /></div></div>
+                        <div className="bento-mini-value">{data ? fmtMoney(data.avg_cost_per_clip ?? data.avg_cost_per_kol) : '—'}</div>
+                        <div className="summary-sub">
+                            ค่าเฉลี่ยต่อคลิป (ใช้คิดงบยิงแอด)
+                            {data && data.total_clips > data.total_kols && <><br />ต่อคน {fmtMoney(data.avg_cost_per_kol)}</>}
+                        </div>
                     </div>
                 </div>
             </div>

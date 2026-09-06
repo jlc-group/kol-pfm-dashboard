@@ -62,7 +62,7 @@ function CheckMultiSelect({ options, selected, onToggle, disabled, disabledText,
 
 const emptyAlloc = () => ({ tier: '', kols: '' });   // Platform ย้ายไปอยู่ระดับกลุ่มแล้ว (allocation เหลือแค่ Tier/จำนวน)
 const genKey = () => 'g' + Math.random().toString(36).slice(2, 9);
-const newGroup = (over = {}) => ({ key: genKey(), platform: '', concept: '', target: [], content_type: '', media_type: '', content_format: '', products: [], allocations: [emptyAlloc()], brief: '', draft: '', budget: '', code_expire: 60, ...over });
+const newGroup = (over = {}) => ({ key: genKey(), platform: '', concept: '', clips: [], target: [], content_type: '', media_type: '', content_format: '', products: [], allocations: [emptyAlloc()], brief: '', draft: '', budget: '', code_expire: 60, ...over });
 // แปลงข้อมูลเดิม → allocations แบบใหม่ (เหลือ tier/kols) + คืน platform ของกลุ่ม
 function migAllocations(g) {
     if (Array.isArray(g.allocations) && g.allocations.length) return g.allocations.map(a => ({ tier: a.tier || '', kols: a.kols ?? '' }));
@@ -84,7 +84,7 @@ function initGroups(editing) {
         return editing.ad_groups.map(g => {
             const plat = migPlatform(g);
             const seededBudget = (g.budget != null && g.budget !== '') ? g.budget : ((groupsPerPlat[plat] === 1 && Number(pb[plat]) > 0) ? pb[plat] : '');
-            return newGroup({ key: g.key || genKey(), platform: plat, concept: g.concept || '', target: asTargetArray(g.target), content_type: g.content_type || '', media_type: g.media_type || '', content_format: g.content_format || '', brief: g.brief || '', products: [...(g.products || [])], allocations: migAllocations(g), budget: seededBudget, code_expire: Number(g.code_expire) || 60 });
+            return newGroup({ key: g.key || genKey(), platform: plat, concept: g.concept || '', clips: [...(g.clips || [])], target: asTargetArray(g.target), content_type: g.content_type || '', media_type: g.media_type || '', content_format: g.content_format || '', brief: g.brief || '', products: [...(g.products || [])], allocations: migAllocations(g), budget: seededBudget, code_expire: Number(g.code_expire) || 60 });
         });
     }
     const prods = editing?.products || [];
@@ -142,6 +142,10 @@ export default function ProjectForm({ editing, onClose, onSaved }) {
     const removeAllocation = (i, ai) => setAdGroups(g => g.map((x, idx) => idx === i ? { ...x, allocations: x.allocations.length > 1 ? x.allocations.filter((_, j) => j !== ai) : x.allocations } : x));
     const setAllocation = (i, ai, k, v) => setAdGroups(g => g.map((x, idx) => idx === i ? { ...x, allocations: x.allocations.map((a, j) => j === ai ? { ...a, [k]: v } : a) } : x));
     const removeGroup = i => setAdGroups(g => g.filter((_, idx) => idx !== i));
+    // คลิปต่อคนของกลุ่ม (ชื่อคลิป) — ว่าง = 1 คน 1 คลิป
+    const addClip = i => setAdGroups(g => g.map((x, idx) => idx !== i ? x : ({ ...x, clips: [...(x.clips || []), ''] })));
+    const removeClip = (i, ci) => setAdGroups(g => g.map((x, idx) => idx !== i ? x : ({ ...x, clips: (x.clips || []).filter((_, j) => j !== ci) })));
+    const setClip = (i, ci, v) => setAdGroups(g => g.map((x, idx) => idx !== i ? x : ({ ...x, clips: (x.clips || []).map((c, j) => j === ci ? v : c) })));
     const setGroupField = (i, k, v) => setAdGroups(g => g.map((x, idx) => idx === i ? { ...x, [k]: v } : x));
     function addProductToGroup(i, code) {
         if (!code) return;
@@ -194,7 +198,7 @@ export default function ProjectForm({ editing, onClose, onSaved }) {
                 const plats = splitCsv(g.platform);
                 // platform (เดี่ยว) คงไว้ให้โค้ดเก่าอ่านได้ ตัวจริงคือ platforms
                 const allocations = g.allocations.filter(a => a.tier).map(a => ({ platform: plats[0] || null, tier: a.tier, kols: Number(a.kols) || 0 }));
-                return { key: g.key || genKey(), platform: plats[0] || null, platforms: plats, concept: g.concept || null, target: asTargetArray(g.target), content_type: g.content_type || null, media_type: g.media_type || null, content_format: g.content_format || null, brief: (g.brief && g.brief.trim()) ? g.brief.trim() : null, products: g.products, allocations, kol_count: allocations.reduce((s, a) => s + a.kols, 0), budget: Number(String(g.budget).replace(/\D/g, '')) || 0, code_expire: Number(g.code_expire) || 60 };
+                return { key: g.key || genKey(), platform: plats[0] || null, platforms: plats, concept: g.concept || null, target: asTargetArray(g.target), content_type: g.content_type || null, media_type: g.media_type || null, content_format: g.content_format || null, clips: (g.clips || []).map(c => String(c || '').trim()).filter(Boolean), brief: (g.brief && g.brief.trim()) ? g.brief.trim() : null, products: g.products, allocations, kol_count: allocations.reduce((s, a) => s + a.kols, 0), budget: Number(String(g.budget).replace(/\D/g, '')) || 0, code_expire: Number(g.code_expire) || 60 };
             });
             const flatProducts = groups.flatMap(g => g.products);
             const totalKol = groups.reduce((s, g) => s + g.kol_count, 0); // KOL เป้าหมายรวม = ผลรวมทุกกลุ่ม
@@ -400,6 +404,28 @@ export default function ProjectForm({ editing, onClose, onSaved }) {
                                         <MultiSelect value={g.content_format} options={CONTENT_FORMATS}
                                             onChange={v => setGroupField(i, 'content_format', v)}
                                             placeholder="— Content Format —" itemName="Content Format" />
+                                    </div>
+                                    {/* คลิปต่อคน — KOL 1 คนในกลุ่มนี้ต้องส่งกี่คลิป ตั้งชื่อคลิปได้
+                                        ไม่ตั้ง = 1 คน 1 คลิป (แบบเดิม) */}
+                                    <div className="clips-box">
+                                        <div className="clips-head">
+                                            <span className="clips-title">🎬 คลิปต่อคน</span>
+                                            <span className="clips-count">{Math.max(1, (g.clips || []).length)} คลิป / คน</span>
+                                        </div>
+                                        {(g.clips || []).map((c, ci) => (
+                                            <div className="clip-row" key={ci}>
+                                                <span className="clip-no">{ci + 1}</span>
+                                                <input value={c} placeholder={`ชื่อคลิปที่ ${ci + 1} เช่น คลิปงาน Event`}
+                                                    onChange={e => setClip(i, ci, e.target.value)} />
+                                                <button type="button" className="clip-rm" title="ลบคลิปนี้" onClick={() => removeClip(i, ci)}>×</button>
+                                            </div>
+                                        ))}
+                                        <button type="button" className="clip-add" onClick={() => addClip(i)}>
+                                            <Icon name="plus" size={14} /> เพิ่มคลิป
+                                        </button>
+                                        {(g.clips || []).length === 0 && (
+                                            <p className="clips-hint">ยังไม่ได้ตั้ง = 1 คนส่ง 1 คลิป · กดเพิ่มคลิปถ้าคนหนึ่งต้องส่งหลายคลิป</p>
+                                        )}
                                     </div>
                                     {/* จำนวนวัน Gencode (โค้ดใช้ได้กี่วัน) */}
                                     <label className="platform-budget platform-budget-row">

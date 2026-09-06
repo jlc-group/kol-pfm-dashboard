@@ -135,7 +135,8 @@ router.post('/:token', async (req, res, next) => {
         if (!account_name) return res.status(400).json({ status: 'error', message: 'กรุณาระบุชื่อ Account' });
         // จำนวนวัน Gencode เริ่มต้น = ตามที่ตั้งไว้ในกลุ่มสินค้านั้น (ถ้ามี)
         const grp = (project.ad_groups || []).find(g => g.key === group_key);
-        const data = await store.submissions.add({
+        // กลุ่มนี้กำหนดให้ 1 คนส่งหลายคลิป -> สร้างแถวให้ครบทุกคลิปเลย เอเจนซี่กรอกชื่อครั้งเดียว
+        const rows = await store.submissions.addPerson({
             project_id: project.id,
             account_name,
             followers: Number(followers) || 0,
@@ -148,8 +149,8 @@ router.post('/:token', async (req, res, next) => {
             tier: tier || null,
             code_expire: grp ? (Number(grp.code_expire) || 60) : 60,
             agency_token: link.scoped ? link.token : null   // ติดตราเจ้าของ (เฉพาะลิงก์แยกต่อเจ้า)
-        });
-        res.status(201).json({ status: 'success', data });
+        }, (grp && grp.clips) || []);
+        res.status(201).json({ status: 'success', data: rows[0], data_all: rows });
     } catch (err) { next(err); }
 });
 
@@ -176,7 +177,12 @@ router.put('/:token/submissions/:subId', async (req, res, next) => {
         if (account_name !== undefined && !String(account_name).trim()) {
             return res.status(400).json({ status: 'error', message: 'กรุณาระบุชื่อ Account' });
         }
-        const data = await store.submissions.update(req.params.subId, project.id, {
+        // ช่อง "ตัวคน" (ชื่อ/ยอดฟอล/Platform/สินค้า/ลิงก์ช่อง/ผู้ติดต่อ) แก้ทีเดียวให้ครบทุกคลิป
+        // ช่อง "ตัวงาน" (งบ/Gencode/ดราฟ/โพสต์/ยอดวิว) เป็นของแต่ละคลิป จึงแก้เฉพาะแถวนั้น
+        const personFields = ['account_name', 'followers', 'platform', 'product', 'link_account', 'agency'];
+        const isPersonEdit = personFields.some(f => req.body[f] !== undefined);
+        const writer = isPersonEdit ? store.submissions.updatePerson : store.submissions.update;
+        const data = await writer.call(store.submissions, req.params.subId, project.id, {
             account_name: account_name !== undefined ? String(account_name).trim() : undefined,
             followers: followers !== undefined ? (Number(followers) || 0) : undefined,
             platform, product, agency,
@@ -207,8 +213,9 @@ router.delete('/:token/submissions/:subId', async (req, res, next) => {
         if (link.scoped && target.agency_token !== link.token) {
             return res.status(403).json({ status: 'error', message: 'ไม่มีสิทธิ์ลบรายการนี้' });
         }
-        await store.submissions.remove(req.params.subId, project.id);
-        res.json({ status: 'success', message: 'ลบรายชื่อแล้ว' });
+        // ลบทั้งคน (ทุกคลิปของคนนี้) — หน้าคัดเลือกยุบเป็นแถวเดียว การลบจึงต้องลบทั้งชุด
+        const gone = await store.submissions.removePerson(req.params.subId, project.id);
+        res.json({ status: 'success', message: `ลบรายชื่อแล้ว (${gone.removed} คลิป)` });
     } catch (err) { next(err); }
 });
 
@@ -224,7 +231,8 @@ router.post('/:token/batch', async (req, res, next) => {
 
         const added = [];
         for (const it of valid) {
-            added.push(await store.submissions.add({
+            const grp = (project.ad_groups || []).find(g => g.key === it.group_key);
+            const rows = await store.submissions.addPerson({
                 project_id: project.id,
                 account_name: String(it.account_name).trim(),
                 followers: Number(it.followers) || 0,
@@ -232,8 +240,10 @@ router.post('/:token/batch', async (req, res, next) => {
                 product: it.product || null,
                 budget: Number(it.budget) || 0,
                 agency: link.name || null,
-                agency_token: link.scoped ? link.token : null
-            }));
+                agency_token: link.scoped ? link.token : null,
+                group_key: it.group_key || null
+            }, (grp && grp.clips) || []);
+            added.push(...rows);
         }
         res.status(201).json({ status: 'success', count: added.length, data: added });
     } catch (err) { next(err); }

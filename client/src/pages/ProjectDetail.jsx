@@ -10,6 +10,7 @@ import { unreadCount } from '../components/MessageBox.jsx';
 import ChatDock from '../components/ChatDock.jsx';
 import { productLabel, asTargetArray } from '../data/products.js';
 import { groupPlatforms } from '../data/adGroups.js';
+import { clipCount, collapseByPerson, countPeople } from '../data/clips.js';
 import { tabBadges, markSeen, seedDraftsSeen } from '../utils/tabUpdates.js';
 import { fmtRange } from '../utils/date.js';
 
@@ -436,11 +437,21 @@ export default function ProjectDetail() {
     const subRow = (s, i) => (
         <tr key={s.id}>
             <td className="sub-no">{i + 1}</td>
-            <td><strong>{s.account_name}</strong></td>
+            <td>
+                <strong>{s.account_name}</strong>
+                {(s._clips || []).length > 1 && (
+                    <span className="sub-clip-chip" title={s._clips.map(c => c.clip_name || `คลิป ${c.clip_no}`).join(" · ")}>{s._clips.length} คลิป</span>
+                )}
+            </td>
             <td>{s.platform ? <span className="tag">{s.platform}</span> : '—'}</td>
             <td className="muted"><ProductSummary value={s.product} /></td>
             <td className="muted">{s.agency || '—'}</td>
-            <td className="num">฿{Number(s.budget).toLocaleString('th-TH')}</td>
+            <td className="num">
+                ฿{Number(s.budget).toLocaleString('th-TH')}
+                {(s._clips || []).length > 1 && (
+                    <small className="sub-budget-split">฿{(Number(s._clips[0].budget) || 0).toLocaleString('th-TH')} × {s._clips.length}</small>
+                )}
+            </td>
             <td>{s.link_account ? <a className="work-link" href={s.link_account} target="_blank" rel="noreferrer"><Icon name="eye" size={12} /> เปิด</a> : '—'}</td>
             <td>
                 <input className="sub-note-input" defaultValue={s.team_note || ''} placeholder="📝 เช่น ย้ายไปสินค้าอื่น"
@@ -500,9 +511,10 @@ export default function ProjectDetail() {
     };
     // ทั้ง 3 สถานะของชุด subs ที่ให้มา (รอคัดเลือก / คัดเลือกแล้ว / ไม่เลือก)
     const statusBlocks = (list) => {
-        const pend = oldestFirst(list.filter(s => s.status !== 'confirmed' && s.status !== 'rejected'));
-        const conf = oldestFirst(list.filter(s => s.status === 'confirmed'));
-        const rej = oldestFirst(list.filter(s => s.status === 'rejected'));
+        // แท็บนี้คือหน้าคัดเลือก "คน" — ยุบแถวพี่น้อง (คนเดียวกันหลายคลิป) ให้เหลือคนละแถว
+        const pend = oldestFirst(collapseByPerson(list.filter(s => s.status !== 'confirmed' && s.status !== 'rejected')));
+        const conf = oldestFirst(collapseByPerson(list.filter(s => s.status === 'confirmed')));
+        const rej = oldestFirst(collapseByPerson(list.filter(s => s.status === 'rejected')));
         return <>
             {statusBlock('pending', 'รอคัดเลือก', pend, 'คัดเลือก')}
             {statusBlock('confirmed', 'คัดเลือกแล้ว', conf, 'จัดการ', 'grp-confirmed')}
@@ -511,7 +523,7 @@ export default function ProjectDetail() {
     };
     // แถบหัวกลุ่มสินค้า (ฝั่งทีม)
     const teamGroupBar = (g, gi, gsubs) => {
-        const conf = gsubs.filter(s => s.status === 'confirmed').length;
+        const conf = countPeople(gsubs.filter(s => s.status === 'confirmed'));
         return (
             <div className="grp-bar grp-bar-stack">
                 <div className="grp-bar-row">
@@ -519,7 +531,10 @@ export default function ProjectDetail() {
                     <div className="grp-chips"><ProductSummary value={g.products || []} max={4} /></div>
                     {g.concept && <span className="grp-concept">📝 Concept: {g.concept}</span>}
                 </div>
-                <span className="grp-count grp-count-under">{conf}/{g.kol_count || gsubs.length} คัดเลือก</span>
+                <span className="grp-count grp-count-under">
+                    {conf}/{g.kol_count || countPeople(gsubs)} คน คัดเลือก
+                    {clipCount(g) > 1 && <span className="grp-count-clip"> · {gsubs.filter(s => s.status === 'confirmed').length}/{(Number(g.kol_count) || 0) * clipCount(g)} คลิป</span>}
+                </span>
             </div>
         );
     };
@@ -580,7 +595,7 @@ export default function ProjectDetail() {
                 </div>
                 <div className="pd-metric">
                     <div className="pd-metric-icon kol"><Icon name="star" size={22} /></div>
-                    <div><div className="pd-metric-label">จำนวน KOL (คัดเลือกแล้ว)</div><div className="pd-metric-value">{submissions.filter(s => s.status === 'confirmed').length}{project.kol_target ? <span style={{ fontSize: 14, fontWeight: 500, color: 'var(--muted)' }}> / {project.kol_target}</span> : ''}</div></div>
+                    <div><div className="pd-metric-label">จำนวน KOL (คัดเลือกแล้ว)</div><div className="pd-metric-value">{countPeople(submissions.filter(s => s.status === 'confirmed'))}{project.kol_target ? <span style={{ fontSize: 14, fontWeight: 500, color: 'var(--muted)' }}> / {project.kol_target}</span> : ''}</div></div>
                 </div>
                 <div className="pd-metric">
                     <div className="pd-metric-icon date"><Icon name="calendar" size={20} /></div>
