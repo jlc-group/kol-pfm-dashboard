@@ -129,7 +129,6 @@ function ProcessRow({ sub, putSubmission, reload, showAds = false, group = null,
             </div>
             <div className="proc-cell" title={adLocked ? lockTip : undefined}>
                 <input type="url" value={postUrl} onChange={e => setPostUrl(e.target.value)} placeholder="ลิงก์โพสต์" disabled={!canEditPost} />
-                {adLocked && <span className="proc-locked">🔒 ยิงแอดแล้ว</span>}
             </div>
             <div className="proc-cell"><DatePicker value={postDate} onChange={setPostDate} disabled={!unlocked} placeholder="เลือกวัน" /></div>
             <div className="proc-cell" title={adLocked ? lockTip : undefined}>
