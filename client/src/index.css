@@ -2314,3 +2314,5 @@ a { text-decoration: none; color: inherit; }
 .grp-bar .prodchip, .grp-bar .prodchip-more { background: #fff; border-color: transparent; color: var(--mint-dark); }
 .grp-bar .prodchip:hover { background: #fff; }
 
+/* เตือนค่าจ้างเกินงบ บนการ์ดสรุปภาพรวม */
+.bento-hero-over { margin-top: 10px; font-size: 12.5px; font-weight: 700; color: #fff; background: rgba(220, 38, 38, .28); border: 1px solid rgba(255, 255, 255, .45); border-radius: 9px; padding: 7px 12px; display: inline-block; }

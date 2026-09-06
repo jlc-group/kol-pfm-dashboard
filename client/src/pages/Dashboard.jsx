@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { api } from '../api/client.js';
 import Icon from '../components/Icon.jsx';
 import DatePicker from '../components/DatePicker.jsx';
@@ -24,19 +24,13 @@ function fmtNum(n) {
 }
 const fmtMoney = n => '฿' + (Number(n) || 0).toLocaleString('th-TH');
 
-function monthRange() {
-    // ค่าเริ่มต้น = เดือนปัจจุบัน (ต้น-ปลายเดือน) — ใช้เวลาท้องถิ่น เลี่ยงปัญหา timezone
-    const now = new Date();
-    const y = now.getFullYear();
-    const m = now.getMonth();
-    const pad = n => String(n).padStart(2, '0');
-    const lastDay = new Date(y, m + 1, 0).getDate();
-    return { from: `${y}-${pad(m + 1)}-01`, to: `${y}-${pad(m + 1)}-${pad(lastDay)}` };
-}
+// หน้าภาพรวมเริ่มต้นที่ "ทั้งหมด" — อยากดูรายเดือนค่อยกดเลือกช่วงวันที่เอง
+// (เดิมตั้งต้นเป็นเดือนปัจจุบัน ทำให้การ์ดสรุปโชว์แค่บางส่วนของแคมเปญ
+//  แต่ช่องงบด้านบนเป็นยอดทั้งแคมเปญ อ่านคู่กันแล้วเข้าใจผิดว่าเหลืองบเยอะ)
+const ALL_TIME = { from: '', to: '' };
 
 export default function Dashboard() {
-    const def = useMemo(monthRange, []);
-    const [filters, setFilters] = useState({ brand: '', from: def.from, to: def.to, projectId: '' });
+    const [filters, setFilters] = useState({ brand: '', from: ALL_TIME.from, to: ALL_TIME.to, projectId: '' });
     const [data, setData] = useState(null);
     const [error, setError] = useState('');
     const [showTrend, setShowTrend] = useState(false);
@@ -109,6 +103,12 @@ export default function Dashboard() {
                         <div className="bento-hero-ico"><Icon name="coins" size={20} /></div>
                     </div>
                     <div className="bento-hero-value">{data ? fmtMoney(data.total_budget) : '—'}</div>
+                    {/* ค่าจ้างจริงเกินงบเมื่อไหร่ต้องเห็นทันที ไม่ใช่ต้องไปนั่งลบเอง */}
+                    {data && data.total_budget > 0 && data.total_spent > data.total_budget && (
+                        <div className="bento-hero-over">
+                            ⚠️ ค่าจ้างจริง {fmtMoney(data.total_spent)} · เกินงบ {fmtMoney(data.total_spent - data.total_budget)}
+                        </div>
+                    )}
                     <div className="bento-hero-stats">
                         <div><div className="bh-k">จำนวน KOL</div><div className="bh-v">
                             {data ? data.total_kols : '—'}
