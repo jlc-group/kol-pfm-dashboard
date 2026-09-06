@@ -134,7 +134,7 @@ export default function Dashboard() {
                         <div className="bento-mini-top"><span className="summary-label">Avg Cost / Clip</span><div className="mini-ico"><Icon name="star" size={18} /></div></div>
                         <div className="bento-mini-value">{data ? fmtMoney(data.avg_cost_per_clip ?? data.avg_cost_per_kol) : '—'}</div>
                         <div className="summary-sub">
-                            ค่าเฉลี่ยต่อคลิป (ใช้คิดงบยิงแอด)
+                            ค่าเฉลี่ยต่อคลิป
                             {data && data.total_clips > data.total_kols && <><br />ต่อคน {fmtMoney(data.avg_cost_per_kol)}</>}
                         </div>
                     </div>
