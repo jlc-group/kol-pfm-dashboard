@@ -2281,3 +2281,33 @@ a { text-decoration: none; color: inherit; }
 .sub-budget-split { display: block; margin-top: 2px; font-size: 10.5px; font-weight: 600; color: var(--muted); }
 .grp-count-clip { color: #4338ca; }
 .bh-sub { font-size: 12px; font-weight: 600; opacity: .8; }
+
+/* ===== แถบแบ่งกลุ่มให้เห็นชัด =====
+   เดิมเป็นแถบจาง ๆ กลืนกับแถวข้อมูล เลื่อนยาว ๆ แล้วแยกไม่ออกว่าจบกลุ่มไหน
+   เปลี่ยนเป็นแถบมินต์ทึบ ตัวหนังสือขาว + เว้นระยะเหนือแถบให้ห่างชัด */
+.grp-bar {
+    padding: 13px 16px;
+    margin: 38px 0 12px;
+    background: linear-gradient(90deg, var(--mint-dark), var(--mint));
+    border: 0;
+    border-radius: 13px;
+    box-shadow: 0 6px 18px rgba(16, 185, 129, .22);
+    color: #fff;
+}
+.kol-group-card:first-child .grp-bar, .proc-group:first-child .grp-bar { margin-top: 6px; }
+.grp-bar .grp-no {
+    background: #fff; color: var(--mint-dark);
+    font-size: 14px; font-weight: 900; letter-spacing: .2px;
+    padding: 5px 15px; border: 0; box-shadow: 0 2px 6px rgba(0, 0, 0, .12);
+}
+.grp-bar .grp-no.muted-bar { color: #6b7280; }
+.grp-bar .grp-concept { color: #fff; opacity: .95; font-weight: 600; }
+.grp-bar .grp-count {
+    background: rgba(255, 255, 255, .24); color: #fff;
+    border: 1px solid rgba(255, 255, 255, .45); font-size: 12px;
+}
+.grp-bar .grp-count-clip { color: #eef2ff; }
+/* ชิปสินค้าบนพื้นมินต์ต้องเป็นพื้นขาว ไม่งั้นกลืนหาย */
+.grp-bar .prodchip, .grp-bar .prodchip-more { background: #fff; border-color: transparent; color: var(--mint-dark); }
+.grp-bar .prodchip:hover { background: #fff; }
+
