@@ -2307,7 +2307,10 @@ a { text-decoration: none; color: inherit; }
     border: 1px solid rgba(255, 255, 255, .45); font-size: 12px;
 }
 .grp-bar .grp-count-clip { color: #eef2ff; }
-/* ชิปสินค้าบนพื้นมินต์ต้องเป็นพื้นขาว ไม่งั้นกลืนหาย */
+/* รหัสสินค้า/ชิป บนพื้นมินต์ ต้องเป็นสีขาว ไม่งั้นสีน้ำเงินเดิมอ่านไม่ออก */
+.grp-bar .prod-codes { color: #fff; }
+.grp-bar .prod-codes-more { color: #fff; border-color: rgba(255, 255, 255, .65); }
+.grp-bar .prod-codes-more:hover { background: rgba(255, 255, 255, .18); }
 .grp-bar .prodchip, .grp-bar .prodchip-more { background: #fff; border-color: transparent; color: var(--mint-dark); }
 .grp-bar .prodchip:hover { background: #fff; }
 
