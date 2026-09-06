@@ -433,8 +433,9 @@ export default function ProjectDetail() {
     const projectPlatforms = [...new Set((project.ad_groups || []).flatMap(g => groupPlatforms(g)))];
 
     // แถวในตารางรายชื่อ KOL (action ต่างกันตามกลุ่ม)
-    const subRow = (s) => (
+    const subRow = (s, i) => (
         <tr key={s.id}>
+            <td className="sub-no">{i + 1}</td>
             <td><strong>{s.account_name}</strong></td>
             <td>{s.platform ? <span className="tag">{s.platform}</span> : '—'}</td>
             <td className="muted"><ProductSummary value={s.product} /></td>
@@ -468,6 +469,10 @@ export default function ProjectDetail() {
         </tr>
     );
 
+    // เรียงเก่า -> ใหม่ ให้เหมือนฝั่งลิงก์เอเจนซี่ (API ส่งมาแบบใหม่สุดขึ้นก่อน)
+    const oldestFirst = list => list.slice().sort((a, b) =>
+        (a.submitted_at || '').localeCompare(b.submitted_at || '') || (a.id - b.id));
+
     // บล็อกสถานะ 1 อัน (คืน null ถ้าไม่มีรายการ)
     const statusBlock = (dotClass, title, rows, actionLabel, extraCls = '') => {
         if (rows.length === 0) return null;
@@ -481,7 +486,7 @@ export default function ProjectDetail() {
                 <div className={'panel no-pad ' + extraCls}>
                     <table className="data-table tight">
                         <thead><tr>
-                            <th>ชื่อ Account</th><th>Platform</th><th>Product</th><th>KOL Contact</th>
+                            <th className="sub-no">#</th><th>ชื่อ Account</th><th>Platform</th><th>Product</th><th>KOL Contact</th>
                             <th className="num">Budget</th><th>ลิงก์</th><th>หมายเหตุ</th><th className="actions">{actionLabel}</th>
                             <th className="tbl-spacer" aria-hidden="true"></th>
                         </tr></thead>
@@ -493,9 +498,9 @@ export default function ProjectDetail() {
     };
     // ทั้ง 3 สถานะของชุด subs ที่ให้มา (รอคัดเลือก / คัดเลือกแล้ว / ไม่เลือก)
     const statusBlocks = (list) => {
-        const pend = list.filter(s => s.status !== 'confirmed' && s.status !== 'rejected');
-        const conf = list.filter(s => s.status === 'confirmed');
-        const rej = list.filter(s => s.status === 'rejected');
+        const pend = oldestFirst(list.filter(s => s.status !== 'confirmed' && s.status !== 'rejected'));
+        const conf = oldestFirst(list.filter(s => s.status === 'confirmed'));
+        const rej = oldestFirst(list.filter(s => s.status === 'rejected'));
         return <>
             {statusBlock('pending', 'รอคัดเลือก', pend, 'คัดเลือก')}
             {statusBlock('confirmed', 'คัดเลือกแล้ว', conf, 'จัดการ', 'grp-confirmed')}

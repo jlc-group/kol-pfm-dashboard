@@ -210,7 +210,9 @@ function GroupBar({ group, gi, count }) {
  */
 export default function OnProcessTable({ subs = [], groups = [], showAds = false, scope = '', putSubmission, reload, directEdit = false }) {
     const [platFilter, setPlatFilter] = useState('all');   // ตัวกรองตามแพลตฟอร์ม
-    const confirmed = subs.filter(s => s.status === 'confirmed');
+    // เรียงเก่า -> ใหม่ ให้ตรงกับแท็บรายชื่อและฝั่งลิงก์เอเจนซี่ (API ส่งมาแบบใหม่สุดขึ้นก่อน)
+    const confirmed = subs.filter(s => s.status === 'confirmed')
+        .slice().sort((a, b) => (a.submitted_at || '').localeCompare(b.submitted_at || '') || (a.id - b.id));
     if (confirmed.length === 0) {
         return <p className="empty" style={{ padding: '20px 0' }}>ยังไม่มี KOL ที่ถูกคัดเลือก — คัดเลือก KOL ก่อนจึงจะอัปเดตงานได้</p>;
     }
