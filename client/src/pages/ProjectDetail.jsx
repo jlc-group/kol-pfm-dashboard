@@ -591,7 +591,21 @@ export default function ProjectDetail() {
             <div className="pd-metrics">
                 <div className="pd-metric">
                     <div className="pd-metric-icon budget"><Icon name="coins" size={22} /></div>
-                    <div><div className="pd-metric-label">งบประมาณ</div><div className="pd-metric-value">฿{Number(project.budget).toLocaleString('th-TH')}</div></div>
+                    {(() => {
+                        // งบที่ตั้งไว้ + ที่รีเควสเพิ่มทีหลัง (ใช้กติกาเดียวกับหน้าภาพรวม)
+                        const planned = Number(project.budget) || 0;
+                        const spent = submissions.filter(s => s.status === 'confirmed').reduce((n, s) => n + (Number(s.budget) || 0), 0);
+                        const extra = Math.max(0, spent - planned);
+                        return (
+                            <div>
+                                <div className="pd-metric-label">งบประมาณ</div>
+                                <div className="pd-metric-value">฿{(planned + extra).toLocaleString('th-TH')}</div>
+                                {extra > 0 && (
+                                    <div className="pd-metric-extra">ตั้งไว้ ฿{planned.toLocaleString('th-TH')} · เพิ่มระหว่างทาง ฿{extra.toLocaleString('th-TH')}</div>
+                                )}
+                            </div>
+                        );
+                    })()}
                 </div>
                 <div className="pd-metric">
                     <div className="pd-metric-icon kol"><Icon name="star" size={22} /></div>

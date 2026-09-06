@@ -57,8 +57,12 @@ export default function Dashboard() {
     const topKols = data?.top_kols || [];
     const shownKols = showAllKols ? topKols : topKols.slice(0, TOP_PREVIEW);
 
-    const budgetUsedPct = data && data.total_budget > 0
-        ? Math.min(100, Math.round((data.total_spent / data.total_budget) * 100)) : 0;
+    // ค่าจ้างเกินงบที่ตั้งไว้ = มีรีเควสเพิ่มระหว่างทาง ไม่ใช่ความผิดพลาด
+    // งบรวมจึงต้องบวกส่วนที่เพิ่มเข้าไปด้วย ไม่ใช่ขึ้นเตือนว่าเกิน
+    const planned = Number(data?.total_budget) || 0;
+    const spent = Number(data?.total_spent) || 0;
+    const extra = Math.max(0, spent - planned);      // ส่วนที่รีเควสเพิ่มทีหลัง
+    const budgetTotal = planned + extra;
     const maxBrandBudget = Math.max(1, ...(data?.brand_summary || []).map(b => b.budget));
 
     return (
@@ -102,11 +106,11 @@ export default function Dashboard() {
                         <span className="bento-hero-label">งบประมาณแคมเปญทั้งหมด</span>
                         <div className="bento-hero-ico"><Icon name="coins" size={20} /></div>
                     </div>
-                    <div className="bento-hero-value">{data ? fmtMoney(data.total_budget) : '—'}</div>
-                    {/* ค่าจ้างจริงเกินงบเมื่อไหร่ต้องเห็นทันที ไม่ใช่ต้องไปนั่งลบเอง */}
-                    {data && data.total_budget > 0 && data.total_spent > data.total_budget && (
-                        <div className="bento-hero-over">
-                            ⚠️ ค่าจ้างจริง {fmtMoney(data.total_spent)} · เกินงบ {fmtMoney(data.total_spent - data.total_budget)}
+                    <div className="bento-hero-value">{data ? fmtMoney(budgetTotal) : '—'}</div>
+                    {/* แจกแจงว่ามาจากงบที่ตั้งไว้เท่าไร บวกที่รีเควสเพิ่มทีหลังเท่าไร */}
+                    {extra > 0 && (
+                        <div className="bento-hero-extra">
+                            ตั้งไว้ {fmtMoney(planned)} · เพิ่มระหว่างทาง {fmtMoney(extra)}
                         </div>
                     )}
                     <div className="bento-hero-stats">
