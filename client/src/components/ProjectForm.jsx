@@ -10,7 +10,8 @@ import { groupPlatforms, splitCsv } from '../data/adGroups.js';
 const BRANDS = ["Jula's Herb", 'Code Lab', 'Jdent', 'Jarvit', 'Beauterry', 'Jernis', 'Dermiq', 'Minimii', 'Any Skin'];
 // รายชื่อทีมงานที่รับเป็น Owner ของแคมเปญ — แก้/เพิ่มชื่อตรงนี้ได้เลย
 // ตั้งใจไม่ดึงจากรายชื่อผู้ใช้ในระบบ เพราะบัญชีล็อกอิน (admin/member) ไม่ใช่คนที่ดูแลแคมเปญจริง
-const OWNERS = ['ทราย', 'อุ้ม', 'แพรวแพรว', 'ป้อนข้าว'];
+// รายชื่อคนดูแล/คนสร้าง ดึงจากผู้ใช้จริงที่อนุมัติแล้ว (เดิมเป็นรายชื่อตายตัวในโค้ด
+// คนเข้าใหม่เลยไม่โผล่ ต้องมาแก้โค้ดทุกครั้ง)
 // กลุ่ม Target สำหรับการยิงแอด (ตามช่วงอายุ)
 const CONTENT_TYPES = ['Review', 'Sale'];
 // รูปแบบสื่อที่ต้องการจาก KOL กลุ่มนี้
@@ -134,6 +135,13 @@ export default function ProjectForm({ editing, onClose, onSaved }) {
     const briefInputRef = useRef(null);
     const [error, setError] = useState('');
     const [saving, setSaving] = useState(false);
+    const [owners, setOwners] = useState([]);
+    useEffect(() => {
+        api('/users/options')
+            .then(res => setOwners((res.data || []).map(u => u.name)))
+            .catch(() => setOwners([]));
+    }, []);
+    const OWNERS = owners;
 
     function update(k, v) { setForm(f => ({ ...f, [k]: v })); }
     // เริ่มจากกลุ่มสินค้า แล้วค่อยเลือก Platform ในหัวกลุ่ม

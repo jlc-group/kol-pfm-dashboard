@@ -12,9 +12,12 @@ router.use(authenticate);
 router.get('/options', async (req, res, next) => {
     try {
         const all = await store.users.listWithTeam();
+        // เอาเฉพาะคนที่อนุมัติแล้วและไม่ใช่บัญชีเอเจนซี่ — คนพวกนี้คือคนที่ดูแลแคมเปญได้จริง
+        // ใช้ชื่อเล่นเป็นหลัก เพราะทีมเรียกกันด้วยชื่อเล่น
         const data = all
-            .filter(u => u.is_active)
-            .map(u => ({ id: u.id, name: u.full_name || u.username }));
+            .filter(u => u.is_active !== false && (u.status || 'active') === 'active' && u.role !== 'agency')
+            .map(u => ({ id: u.id, name: u.nickname || u.full_name || u.username }))
+            .sort((a, b) => a.name.localeCompare(b.name, 'th'));
         res.json({ status: 'success', data });
     } catch (err) { next(err); }
 });
