@@ -2354,3 +2354,14 @@ a { text-decoration: none; color: inherit; }
 .brand-pick .brand-pick-item input { accent-color: var(--mint-dark); }
 .brand-chips-cell { display: inline-flex; flex-wrap: wrap; gap: 4px; }
 .badge-manager { background: #eef2ff; color: #4338ca; }
+/* ตัวเลขคนรออนุมัติบนเมนูผู้ใช้งาน */
+.nav-badge { margin-inline-start: auto; min-width: 20px; padding: 1px 7px; border-radius: 20px; background: #ef4444; color: #fff; font-size: 11px; font-weight: 800; text-align: center; }
+/* ปุ่มรองในหน้า login/รออนุมัติ */
+.btn-login.ghost { background: #fff; color: var(--muted); border: 1px solid var(--border); box-shadow: none; }
+.btn-login.ghost:hover { border-color: var(--mint); color: var(--mint-dark); }
+/* สถานะ + ปุ่มอนุมัติคำขอเข้าใช้งาน */
+.badge-pending { background: #fff4e0; color: #b7791f; border: 1px solid #f6c667; }
+.btn-approve { padding: 5px 11px; border-radius: 8px; border: 1px solid var(--mint); background: var(--bg-soft); color: var(--mint-dark); font-size: 11.5px; font-weight: 800; cursor: pointer; white-space: nowrap; }
+.btn-approve:hover { background: var(--mint); color: #fff; }
+.btn-reject-sm { padding: 5px 10px; border-radius: 8px; border: 1px solid var(--border); background: #fff; color: var(--muted); font-size: 11.5px; font-weight: 800; cursor: pointer; }
+.btn-reject-sm:hover { border-color: #f0a3a3; color: #d64545; background: #fff5f5; }

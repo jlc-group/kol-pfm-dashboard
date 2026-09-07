@@ -156,7 +156,19 @@ export default function Users() {
         catch (err) { alert(err.message); }
     }
 
-    function handleSaved() { setModal(null); load(); }
+    function handleSaved() { setModal(null); load(); window.dispatchEvent(new Event('kol:users-changed')); }
+
+    // อนุมัติ / ปฏิเสธ คำขอเข้าใช้งาน
+    async function setStatus(u, status) {
+        const what = status === 'active' ? 'อนุมัติ' : 'ปฏิเสธ';
+        if (!confirm(`${what}คำขอของ "${u.nickname || u.username}" ?`)) return;
+        try {
+            await api(`/users/${u.id}`, { method: 'PUT', body: { status } });
+            load();
+            window.dispatchEvent(new Event('kol:users-changed'));
+        }
+        catch (err) { alert(err.message); }
+    }
 
     return (
         <div>
@@ -205,9 +217,23 @@ export default function Users() {
                                             ? <span className="brand-chips-cell">{u.brands.map(b => <span className="cat-chip" key={b}>{b}</span>)}</span>
                                             : <span className="muted">ยังไม่ได้กำหนด</span>}
                                 </td>
-                                <td>{u.is_active ? <span className="badge badge-member">ใช้งาน</span> : <span className="badge badge-off">ปิด</span>}</td>
+                                <td>
+                                    {(u.status || 'active') === 'pending'
+                                        ? <span className="badge badge-pending">⏳ รออนุมัติ</span>
+                                        : (u.status === 'rejected'
+                                            ? <span className="badge badge-off">ปฏิเสธ</span>
+                                            : (u.is_active
+                                                ? <span className="badge badge-member">ใช้งาน</span>
+                                                : <span className="badge badge-off">ปิด</span>))}
+                                </td>
                                 <td className="actions">
                                     <span className="row-actions">
+                                        {(u.status || 'active') === 'pending' && (
+                                            <>
+                                                <button className="btn-approve" title="อนุมัติให้เข้าใช้งาน" onClick={() => setStatus(u, 'active')}>✓ อนุมัติ</button>
+                                                <button className="btn-reject-sm" title="ปฏิเสธคำขอ" onClick={() => setStatus(u, 'rejected')}>✕</button>
+                                            </>
+                                        )}
                                         <button className="icon-btn" title="แก้ไข" onClick={() => setModal({ editing: u })}><Icon name="edit" size={16} /></button>
                                         <button className="icon-btn danger" title="ลบ" onClick={() => handleDelete(u)}><Icon name="trash" size={16} /></button>
                                     </span>

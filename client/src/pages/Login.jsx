@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext.jsx';
 
 export default function Login() {
@@ -66,7 +66,7 @@ export default function Login() {
                 </form>
 
                 <div className="login-hint">
-                    ยังไม่มีบัญชี? ติดต่อผู้ดูแลระบบเพื่อขอ username และรหัสผ่าน
+                    ยังไม่มีบัญชี? <Link to="/register">ขอสิทธิ์เข้าใช้งาน</Link>
                 </div>
             </div>
         </div>

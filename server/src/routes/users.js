@@ -2,7 +2,7 @@ const express = require('express');
 const bcrypt = require('bcryptjs');
 const store = require('../store');
 const { authenticate, requireRole } = require('../middleware/auth');
-const { normalizeRole } = require('../data/roles');
+const { normalizeRole, STATUSES } = require('../data/roles');
 
 const router = express.Router();
 router.use(authenticate);
@@ -19,6 +19,13 @@ router.get('/options', async (req, res, next) => {
     } catch (err) { next(err); }
 });
 
+// GET /api/users/pending-count — จำนวนคนที่รออนุมัติ (ไว้ทำตัวเลขแจ้งเตือนบนเมนู)
+router.get('/pending-count', requireRole('admin'), async (req, res, next) => {
+    try {
+        res.json({ status: 'success', data: { count: await store.users.countPending() } });
+    } catch (err) { next(err); }
+});
+
 // GET /api/users — รายชื่อผู้ใช้ (admin เท่านั้น)
 router.get('/', requireRole('admin'), async (req, res, next) => {
     try {
@@ -30,7 +37,7 @@ router.get('/', requireRole('admin'), async (req, res, next) => {
 // POST /api/users — สร้างผู้ใช้ใหม่ (admin เท่านั้น)
 router.post('/', requireRole('admin'), async (req, res, next) => {
     try {
-        const { username, password, full_name, role, team_id, brands, agency_tokens } = req.body;
+        const { username, password, full_name, nickname, role, team_id, brands, agency_tokens } = req.body;
         if (!username || !password) {
             return res.status(400).json({ status: 'error', message: 'กรุณาระบุ username และ password' });
         }
@@ -39,7 +46,8 @@ router.post('/', requireRole('admin'), async (req, res, next) => {
         // admin/manager เห็นทุกแบรนด์อยู่แล้ว ไม่ต้องเก็บรายการแบรนด์ให้สับสน
         const safeBrands = safeRole === 'member' && Array.isArray(brands) ? brands.filter(Boolean) : [];
         const safeTokens = safeRole === 'agency' && Array.isArray(agency_tokens) ? agency_tokens.filter(Boolean) : [];
-        const data = await store.users.create({ username, password_hash, full_name, role: safeRole, team_id, brands: safeBrands, agency_tokens: safeTokens });
+        // admin สร้างให้เอง = อนุมัติทันที ไม่ต้องรอ
+        const data = await store.users.create({ username, password_hash, full_name, nickname, role: safeRole, team_id, brands: safeBrands, agency_tokens: safeTokens, status: 'active' });
         res.status(201).json({ status: 'success', data });
     } catch (err) {
         if (err.code === '23505') return res.status(409).json({ status: 'error', message: err.message });
@@ -50,8 +58,10 @@ router.post('/', requireRole('admin'), async (req, res, next) => {
 // PUT /api/users/:id — แก้ไขผู้ใช้ (admin เท่านั้น)
 router.put('/:id', requireRole('admin'), async (req, res, next) => {
     try {
-        const { full_name, role, team_id, is_active, password, brands, agency_tokens } = req.body;
-        const fields = { full_name, team_id };
+        const { full_name, nickname, role, team_id, is_active, password, brands, agency_tokens, status } = req.body;
+        const fields = { full_name, nickname, team_id };
+        // สถานะบัญชี: pending (รออนุมัติ) / active (อนุมัติแล้ว) / rejected (ปฏิเสธ)
+        if (status && STATUSES.includes(status)) fields.status = status;
         if (role) fields.role = normalizeRole(role);
         // เปลี่ยนเป็น admin/manager = ล้างรายการแบรนด์ทิ้ง (เห็นทุกแบรนด์อยู่แล้ว)
         if (fields.role && fields.role !== 'member') fields.brands = [];

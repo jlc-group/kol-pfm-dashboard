@@ -6,6 +6,34 @@ const { authenticate } = require('../middleware/auth');
 
 const router = express.Router();
 
+// POST /api/auth/register — สมัครเอง แล้วรอ admin อนุมัติ
+// สมัครแล้วยังเข้าใช้อะไรไม่ได้เลยจนกว่าจะอนุมัติ (status = pending)
+router.post('/register', async (req, res, next) => {
+    try {
+        const { username, password, full_name, nickname } = req.body || {};
+        if (!username || !password) {
+            return res.status(400).json({ status: 'error', message: 'กรุณากรอกชื่อผู้ใช้และรหัสผ่าน' });
+        }
+        if (String(password).length < 8) {
+            return res.status(400).json({ status: 'error', message: 'รหัสผ่านต้องยาวอย่างน้อย 8 ตัวอักษร' });
+        }
+        if (!String(nickname || '').trim()) {
+            return res.status(400).json({ status: 'error', message: 'กรุณากรอกชื่อเล่น' });
+        }
+        const password_hash = await bcrypt.hash(password, 10);
+        // สมัครเองได้แค่ member และยังไม่มีแบรนด์ — admin เป็นคนกำหนดทีหลัง
+        await store.users.create({
+            username: String(username).trim(), password_hash,
+            full_name: full_name || null, nickname: String(nickname).trim(),
+            role: 'member', brands: [], agency_tokens: [], status: 'pending'
+        });
+        res.status(201).json({ status: 'success', message: 'สมัครเรียบร้อย รอผู้ดูแลระบบอนุมัติ' });
+    } catch (err) {
+        if (err.code === '23505') return res.status(409).json({ status: 'error', message: 'มีชื่อผู้ใช้นี้อยู่แล้ว' });
+        next(err);
+    }
+});
+
 // POST /api/auth/login — เข้าสู่ระบบ คืน JWT token
 router.post('/login', async (req, res, next) => {
     try {
@@ -37,7 +65,11 @@ router.post('/login', async (req, res, next) => {
                 id: user.id,
                 username: user.username,
                 full_name: user.full_name,
+                nickname: user.nickname || null,
                 role: user.role,
+                status: user.status || 'active',
+                brands: user.brands || [],
+                agency_tokens: user.agency_tokens || [],
                 team_id: user.team_id,
                 team_name: user.team_name
             }

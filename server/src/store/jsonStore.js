@@ -127,11 +127,14 @@ const users = {
                 return clone(safe);
             });
     },
-    async create({ username, password_hash, full_name, role, team_id, brands, agency_tokens }) {
+    async create({ username, password_hash, full_name, nickname, role, team_id, brands, agency_tokens, status }) {
         if (db.users.some(u => u.username === username)) throw duplicateError('มี username นี้อยู่แล้ว');
         const row = {
             id: nextId('users'), username, password_hash,
-            full_name: full_name || null, role: role || 'member',
+            full_name: full_name || null, nickname: nickname || null,
+            role: role || 'member',
+            // pending = สมัครเองแล้วรออนุมัติ · active = ใช้งานได้ · rejected = ปฏิเสธ
+            status: status || 'active',
             // แบรนด์ที่ member คนนี้ดูได้ (admin/manager ไม่ใช้ค่านี้ เห็นทุกแบรนด์อยู่แล้ว)
             brands: Array.isArray(brands) ? brands.filter(Boolean) : [],
             // เฉพาะ role agency — ลิงก์เอเจนซี่ที่บัญชีนี้เข้าได้ (1 เจ้าอาจมีหลายแคมเปญ)
@@ -145,7 +148,7 @@ const users = {
     async update(id, fields) {
         const u = db.users.find(u => u.id === Number(id));
         if (!u) return null;
-        for (const key of ['full_name', 'role', 'team_id', 'is_active', 'password_hash']) {
+        for (const key of ['full_name', 'nickname', 'role', 'team_id', 'is_active', 'status', 'password_hash']) {
             if (fields[key] !== undefined && fields[key] !== null) u[key] = fields[key];
         }
         // brands เป็น array — ต้องยอมให้เซ็ตเป็น [] ได้ (ถอดแบรนด์ออกทั้งหมด)
@@ -154,6 +157,9 @@ const users = {
         u.updated_at = now(); persist();
         const { password_hash, ...safe } = u;
         return clone(safe);
+    },
+    async countPending() {
+        return db.users.filter(u => (u.status || 'active') === 'pending').length;
     },
     async remove(id) {
         const idx = db.users.findIndex(u => u.id === Number(id));

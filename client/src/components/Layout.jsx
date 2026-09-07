@@ -1,7 +1,8 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext.jsx';
 import Icon from './Icon.jsx';
+import { api } from '../api/client.js';
 import ChangePasswordModal from './ChangePasswordModal.jsx';
 
 const MAIN_NAV = [
@@ -23,6 +24,20 @@ export default function Layout() {
     const { user, logout, isAdmin } = useAuth();
     const navigate = useNavigate();
     const [showPw, setShowPw] = useState(false);
+    // จำนวนคนที่สมัครแล้วรออนุมัติ — ไม่มีอีเมลแจ้ง admin ต้องเห็นจากตัวเลขบนเมนู
+    const [pendingCount, setPendingCount] = useState(0);
+    useEffect(() => {
+        if (user?.role !== 'admin') return;
+        let alive = true;
+        const load = () => api('/users/pending-count')
+            .then(r => { if (alive) setPendingCount(r.data?.count || 0); })
+            .catch(() => {});
+        load();
+        const t = setInterval(load, 60000);
+        // อนุมัติ/ปฏิเสธเสร็จ หน้าผู้ใช้งานจะยิง event นี้มา ตัวเลขจะได้เปลี่ยนทันที
+        window.addEventListener('kol:users-changed', load);
+        return () => { alive = false; clearInterval(t); window.removeEventListener('kol:users-changed', load); };
+    }, [user]);
 
     function handleLogout() {
         logout();
@@ -39,6 +54,9 @@ export default function Layout() {
             >
                 <Icon name={item.icon} size={19} />
                 {item.label}
+                {item.to === '/users' && pendingCount > 0 && (
+                    <span className="nav-badge" title={`มี ${pendingCount} คนรออนุมัติ`}>{pendingCount}</span>
+                )}
             </NavLink>
         );
     }

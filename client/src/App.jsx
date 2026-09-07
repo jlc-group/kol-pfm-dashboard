@@ -3,6 +3,8 @@ import { useAuth } from './auth/AuthContext.jsx';
 import ProtectedRoute from './components/ProtectedRoute.jsx';
 import Layout from './components/Layout.jsx';
 import Login from './pages/Login.jsx';
+import Register from './pages/Register.jsx';
+import Pending from './pages/Pending.jsx';
 import AgencyPortal from './pages/AgencyPortal.jsx';
 import Dashboard from './pages/Dashboard.jsx';
 import Kols from './pages/Kols.jsx';
@@ -27,6 +29,7 @@ export default function App() {
     return (
         <Routes>
             <Route path="/login" element={<Login />} />
+            <Route path="/register" element={<Register />} />
             <Route path="/agency/:token" element={<AgencyPortal />} />
             <Route
                 path="/"

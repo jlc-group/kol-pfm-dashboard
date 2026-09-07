@@ -34,4 +34,8 @@ function normalizeRole(role) {
 // เอเจนซี่ห้ามแตะข้อมูลฝั่ง dashboard ทุกชนิด (เข้าได้แค่ /api/agency ที่ใช้ token)
 const isAgency = user => !!user && user.role === 'agency';
 
-module.exports = { ROLES, ROLE_LABEL, seesAllBrands, allowedBrands, canSeeBrand, normalizeRole, isAgency };
+// สถานะบัญชี: pending = สมัครแล้วรอ admin อนุมัติ (ยังไม่เห็นข้อมูลใด ๆ)
+const STATUSES = ['pending', 'active', 'rejected'];
+const isApproved = user => !!user && (user.status || 'active') === 'active' && user.is_active !== false;
+
+module.exports = { ROLES, ROLE_LABEL, seesAllBrands, allowedBrands, canSeeBrand, normalizeRole, isAgency, STATUSES, isApproved };
