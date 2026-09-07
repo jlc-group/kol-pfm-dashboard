@@ -501,6 +501,7 @@ export default function AgencyPortal() {
     const briefEntries = Object.entries(info.product_briefs || {}).filter(([, b]) => b && (b.link || b.file));
     const openBriefFile = code => window.open(`/api/agency/${token}/product-brief/${encodeURIComponent(code)}/file`, '_blank');
     const platformBriefEntries = Object.entries(info.platform_briefs || {}).filter(([, b]) => b && (b.link || b.file));
+    const mainBrief = info.brief_link || null;   // บรีฟหลักของแคมเปญ (ทั้งแคมเปญ ไม่แยก Platform/สินค้า)
     const openPlatformBriefFile = pf => window.open(`/api/agency/${token}/platform-brief/${encodeURIComponent(pf)}/file`, '_blank');
     const isAgencyLink = !!info.agency_name;                 // ลิงก์แยกต่อเจ้า (ไม่ใช่ลิงก์รวมเดิม)
     const platformBudgets = info.platform_budgets || {};     // งบต่อ Platform เฉพาะที่รับผิดชอบ
@@ -572,9 +573,20 @@ export default function AgencyPortal() {
                 </div>
 
                 {/* บรีฟของเจ้านี้ — บรีฟหลักต่อ Platform + บรีฟต่อสินค้า */}
-                {(platformBriefEntries.length > 0 || briefEntries.length > 0) && (
+                {(mainBrief || platformBriefEntries.length > 0 || briefEntries.length > 0) && (
                     <div className="agency-card">
                         <h3>📄 บรีฟงานของคุณ <span className="dash-section-sub">บรีฟตาม Platform / สินค้าที่คุณรับผิดชอบ</span></h3>
+                        {mainBrief && (
+                            <>
+                                <div className="pbrief-group-lbl">บรีฟหลักของแคมเปญ</div>
+                                <div className="pbrief-view-list" style={{ marginBottom: (platformBriefEntries.length || briefEntries.length) ? 16 : 0 }}>
+                                    <div className="pbrief-view">
+                                        <span className="pbrief-view-name">📋 ทั้งแคมเปญ</span>
+                                        <a className="brief-link" href={mainBrief} target="_blank" rel="noreferrer"><Icon name="eye" size={14} /> เปิดลิงก์บรีฟ</a>
+                                    </div>
+                                </div>
+                            </>
+                        )}
                         {platformBriefEntries.length > 0 && (
                             <>
                                 <div className="pbrief-group-lbl">บรีฟหลัก (ตาม Platform)</div>
