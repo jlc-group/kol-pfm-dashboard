@@ -304,13 +304,14 @@ const kols = {
                 const views = Number(s.views) || 0;
                 const likes = Number(s.likes) || 0, comments = Number(s.comments) || 0;
                 const saves = Number(s.saves) || 0, shares = Number(s.shares) || 0;
-                const engagement = likes + comments + saves + shares;
+                const reposts = Number(s.reposts) || 0;   // IG เท่านั้น อันอื่นเป็น 0 อยู่แล้ว
+                const engagement = likes + comments + saves + shares + reposts;
                 const totalCost = (Number(s.budget) || 0) + (Number(s.ad_spend) || 0);
                 const cpm = views > 0 ? Number((totalCost / (views / 1000)).toFixed(2)) : 0;
                 const cpe = engagement > 0 ? Number((totalCost / engagement).toFixed(2)) : 0;
                 const er = views > 0 ? Number(((engagement / views) * 100).toFixed(2)) : 0;
                 const perf = {
-                    views, likes, comments, saves, shares, engagement, er,
+                    views, likes, comments, saves, shares, reposts, engagement, er,
                     ad_spend: Number(s.ad_spend) || 0, total_cost: totalCost, cpm, cpe,
                     performance: views > 0
                         ? ((cpm > 0 && cpm <= GOOD_CPM && cpe > 0 && cpe <= GOOD_CPE) ? 'Good' : 'Improve')
@@ -785,7 +786,8 @@ const dashboard = {
             const comments = Number(s.comments) || 0;
             const saves = Number(s.saves) || 0;
             const shares = Number(s.shares) || 0;
-            const engagementTotal = likes + comments + saves + shares;
+            const reposts = Number(s.reposts) || 0;
+            const engagementTotal = likes + comments + saves + shares + reposts;
             const fee = Number(s.budget) || 0;
             const adSpend = Number(s.ad_spend) || 0;
             const cost = fee + adSpend;                // ต้นทุนรวม = ค่าตัว + ค่ายิงแอด
@@ -799,7 +801,7 @@ const dashboard = {
                 fee, ad_spend: adSpend, cost,
                 views,                                  // ยอดวิวคอนเทนต์ ไม่ใช่ reach จากแอด
                 ad_reach: Number(s.ad_reach) || 0,      // เก็บไว้เทียบ ไม่ได้ใช้จัดอันดับ
-                likes, comments, saves, shares,
+                likes, comments, saves, shares, reposts,
                 engagement_total: engagementTotal,
                 engagement: views > 0 ? Number(((engagementTotal / views) * 100).toFixed(2)) : null,
                 cpm, cpe,
@@ -1128,7 +1130,9 @@ const submissions = {
             team_note: null,   // หมายเหตุจากทีมถึงเอเจนซี่ (เช่น ขอย้ายไปสินค้าอื่น)
             agency_note: null, // หมายเหตุจากเอเจนซี่ถึงทีม (คนละช่องกับ team_note ต่างฝ่ายต่างเขียนของตัวเอง)
             // ผลงานคอนเทนต์ (กรอกมือ หรือดึงจาก TikTok API ภายหลัง)
-            views: 0, likes: 0, comments: 0, saves: 0, shares: 0, content_format: null, perf_synced_at: null,
+            views: 0, likes: 0, comments: 0, saves: 0, shares: 0,
+            reposts: 0,   // เฉพาะ Instagram (แพลตฟอร์มอื่นไม่มีช่องนี้ให้กรอก)
+            content_format: null, perf_synced_at: null,
             concept: null, gen_date: null,
             submitted_at: now(), decided_at: null, decided_by: null,
             list_updated_at: now(), work_updated_at: null, draft_updated_at: null  // ใช้ทำแจ้งเตือนแท็บ + per-KOL ดราฟใหม่
@@ -1202,7 +1206,7 @@ const submissions = {
         }
         const before = {};
         STAMP_F.forEach(f => { before[f] = s[f]; });
-        for (const k of ['account_name', 'followers', 'platform', 'product', 'agency', 'budget', 'link_account', 'concept', 'gen_date', 'group_key', 'tier', 'clip_name', 'status', 'draft_link', 'draft_link2', 'draft_link3', 'draft_link4', 'draft_link5', 'gencode', 'feedback', 'feedback2', 'feedback3', 'feedback4', 'feedback5', 'approved', 'draft_status', 'post_url', 'post_date', 'id_post', 'code_expire', 'ad_status', 'ad_spend', 'ad_reach', 'ad_start', 'ad_end', 'ad_note', 'team_note', 'agency_note', 'views', 'likes', 'comments', 'saves', 'shares', 'content_format', 'perf_synced_at']) {
+        for (const k of ['account_name', 'followers', 'platform', 'product', 'agency', 'budget', 'link_account', 'concept', 'gen_date', 'group_key', 'tier', 'clip_name', 'status', 'draft_link', 'draft_link2', 'draft_link3', 'draft_link4', 'draft_link5', 'gencode', 'feedback', 'feedback2', 'feedback3', 'feedback4', 'feedback5', 'approved', 'draft_status', 'post_url', 'post_date', 'id_post', 'code_expire', 'ad_status', 'ad_spend', 'ad_reach', 'ad_start', 'ad_end', 'ad_note', 'team_note', 'agency_note', 'views', 'likes', 'comments', 'saves', 'shares', 'reposts', 'content_format', 'perf_synced_at']) {
             if (fields[k] !== undefined) s[k] = fields[k];
         }
         // บันทึกว่า "ใครแก้ล่าสุดเมื่อไหร่" ของลิงก์คลิป / Gencode / ID Post

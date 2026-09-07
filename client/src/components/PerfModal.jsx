@@ -16,9 +16,11 @@ import { api } from '../api/client.js';
 export default function PerfModal({ sub, fetchUrl, onSave, onClose }) {
     // ดึงอัตโนมัติได้เฉพาะ TikTok — FB/IG/อื่น ๆ ยังไม่มีทางดึง ต้องกรอกมือ
     const canFetch = sub.platform === "TikTok";
+    // Repost มีเฉพาะ Instagram — แพลตฟอร์มอื่นไม่ต้องขึ้นช่องนี้ให้รก
+    const hasRepost = sub.platform === 'Instagram';
     const [f, setF] = useState({
         views: sub.views || '', likes: sub.likes || '', comments: sub.comments || '',
-        saves: sub.saves || '', shares: sub.shares || ''
+        saves: sub.saves || '', shares: sub.shares || '', reposts: sub.reposts || ''
     });
     const [saving, setSaving] = useState(false);
     const [fetching, setFetching] = useState(false);
@@ -26,7 +28,8 @@ export default function PerfModal({ sub, fetchUrl, onSave, onClose }) {
     const up = (k, v) => setF(s => ({ ...s, [k]: v }));
     const num = v => Number(String(v).replace(/[^\d]/g, '')) || 0;
 
-    const engagement = num(f.likes) + num(f.comments) + num(f.saves) + num(f.shares);
+    const engagement = num(f.likes) + num(f.comments) + num(f.saves) + num(f.shares)
+        + (hasRepost ? num(f.reposts) : 0);
     const er = num(f.views) > 0 ? ((engagement / num(f.views)) * 100).toFixed(2) : '0';
 
     async function fetchTikTok() {
@@ -50,7 +53,8 @@ export default function PerfModal({ sub, fetchUrl, onSave, onClose }) {
         try {
             await onSave({
                 views: num(f.views), likes: num(f.likes), comments: num(f.comments),
-                saves: num(f.saves), shares: num(f.shares)
+                saves: num(f.saves), shares: num(f.shares),
+                ...(hasRepost ? { reposts: num(f.reposts) } : {})
             });
             onClose();
         } catch (err) { alert(err.message); }
@@ -83,6 +87,12 @@ export default function PerfModal({ sub, fetchUrl, onSave, onClose }) {
                     <div className="field"><label>Saves</label><input inputMode="numeric" value={f.saves} onChange={e => up('saves', e.target.value.replace(/\D/g, ''))} placeholder="0" /></div>
                     <div className="field"><label>Shares</label><input inputMode="numeric" value={f.shares} onChange={e => up('shares', e.target.value.replace(/\D/g, ''))} placeholder="0" /></div>
                 </div>
+                {hasRepost && (
+                    <div className="field">
+                        <label>Repost <span className="dash-section-sub">เฉพาะ Instagram</span></label>
+                        <input inputMode="numeric" value={f.reposts} onChange={e => up('reposts', e.target.value.replace(/\D/g, ''))} placeholder="0" />
+                    </div>
+                )}
                 <div className="perf-er">Engagement รวม: <b>{engagement.toLocaleString()}</b> · Engagement Rate: <b>{er}%</b></div>
 
                 <div className="modal-actions">

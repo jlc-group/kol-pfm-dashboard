@@ -372,7 +372,7 @@ router.put('/:id/submissions/:subId', async (req, res, next) => {
             feedback, feedback2, feedback3, feedback4, feedback5,
             post_url, post_date, id_post, code_expire,
             account_name, platform, product, agency, budget, link_account, concept, gen_date, team_note,
-            views, likes, comments, saves, shares   // ผลงานคอนเทนต์ จากโมดัล Perf
+            views, likes, comments, saves, shares, reposts   // ผลงานคอนเทนต์ จากโมดัล Perf
         } = req.body;
         if (status !== undefined && !['confirmed', 'rejected', 'submitted'].includes(status)) {
             return res.status(400).json({ status: 'error', message: 'สถานะไม่ถูกต้อง' });
@@ -388,7 +388,8 @@ router.put('/:id/submissions/:subId', async (req, res, next) => {
             budget: budget !== undefined ? (Number(budget) || 0) : undefined,
             link_account, concept, gen_date,
             team_note: team_note !== undefined ? ((team_note && String(team_note).trim()) ? String(team_note).trim() : null) : undefined,
-            views: views !== undefined ? (Number(views) || 0) : undefined, likes: likes !== undefined ? (Number(likes) || 0) : undefined, comments: comments !== undefined ? (Number(comments) || 0) : undefined, saves: saves !== undefined ? (Number(saves) || 0) : undefined, shares: shares !== undefined ? (Number(shares) || 0) : undefined
+            views: views !== undefined ? (Number(views) || 0) : undefined, likes: likes !== undefined ? (Number(likes) || 0) : undefined, comments: comments !== undefined ? (Number(comments) || 0) : undefined, saves: saves !== undefined ? (Number(saves) || 0) : undefined, shares: shares !== undefined ? (Number(shares) || 0) : undefined,
+            reposts: reposts !== undefined ? (Number(reposts) || 0) : undefined
         }, byName);
         if (!data) return res.status(404).json({ status: 'error', message: 'ไม่พบรายการ' });
         if (status !== undefined) {
