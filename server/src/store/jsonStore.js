@@ -127,11 +127,13 @@ const users = {
                 return clone(safe);
             });
     },
-    async create({ username, password_hash, full_name, role, team_id }) {
+    async create({ username, password_hash, full_name, role, team_id, brands }) {
         if (db.users.some(u => u.username === username)) throw duplicateError('มี username นี้อยู่แล้ว');
         const row = {
             id: nextId('users'), username, password_hash,
             full_name: full_name || null, role: role || 'member',
+            // แบรนด์ที่ member คนนี้ดูได้ (admin/manager ไม่ใช้ค่านี้ เห็นทุกแบรนด์อยู่แล้ว)
+            brands: Array.isArray(brands) ? brands.filter(Boolean) : [],
             team_id: team_id || null, is_active: true, created_at: now(), updated_at: now()
         };
         db.users.push(row); persist();
@@ -144,6 +146,8 @@ const users = {
         for (const key of ['full_name', 'role', 'team_id', 'is_active', 'password_hash']) {
             if (fields[key] !== undefined && fields[key] !== null) u[key] = fields[key];
         }
+        // brands เป็น array — ต้องยอมให้เซ็ตเป็น [] ได้ (ถอดแบรนด์ออกทั้งหมด)
+        if (Array.isArray(fields.brands)) u.brands = fields.brands.filter(Boolean);
         u.updated_at = now(); persist();
         const { password_hash, ...safe } = u;
         return clone(safe);

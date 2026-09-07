@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { api } from '../api/client.js';
 import Icon from '../components/Icon.jsx';
 import Avatar from '../components/Avatar.jsx';
+import { BRANDS, ROLE_LABEL } from '../data/brands.js';
 
 function UserForm({ editing, teams, onClose, onSaved }) {
     const [form, setForm] = useState({
@@ -9,6 +10,7 @@ function UserForm({ editing, teams, onClose, onSaved }) {
         password: '',
         full_name: editing?.full_name || '',
         role: editing?.role || 'member',
+        brands: Array.isArray(editing?.brands) ? editing.brands : [],
         team_id: editing?.team_id || ''
     });
     const [error, setError] = useState('');
@@ -24,6 +26,8 @@ function UserForm({ editing, teams, onClose, onSaved }) {
             const body = {
                 full_name: form.full_name,
                 role: form.role,
+                // admin/manager เห็นทุกแบรนด์ ไม่ต้องส่งรายการแบรนด์ไป
+                brands: form.role === 'member' ? form.brands : [],
                 team_id: form.team_id ? Number(form.team_id) : null
             };
             if (form.password) body.password = form.password;
@@ -64,8 +68,9 @@ function UserForm({ editing, teams, onClose, onSaved }) {
                         <div className="field">
                             <label>สิทธิ์</label>
                             <select value={form.role} onChange={e => update('role', e.target.value)}>
-                                <option value="member">สมาชิกทีม</option>
-                                <option value="admin">ผู้ดูแลระบบ</option>
+                                <option value="member">Member — เห็นเฉพาะแบรนด์ที่กำหนด</option>
+                                <option value="manager">Manager — เห็นทุกแบรนด์</option>
+                                <option value="admin">ผู้ดูแลระบบ — เห็นทุกอย่าง</option>
                             </select>
                         </div>
                         <div className="field">
@@ -76,6 +81,22 @@ function UserForm({ editing, teams, onClose, onSaved }) {
                             </select>
                         </div>
                     </div>
+                    {form.role === 'member' && (
+                        <div className="field">
+                            <label>แบรนด์ที่ดูได้ <span className="dash-section-sub">เลือกได้หลายแบรนด์ · ไม่เลือกเลย = ยังไม่เห็นข้อมูลใด ๆ</span></label>
+                            <div className="brand-pick">
+                                {BRANDS.map(b => (
+                                    <label key={b} className={'brand-pick-item' + (form.brands.includes(b) ? ' on' : '')}>
+                                        <input type="checkbox" checked={form.brands.includes(b)}
+                                            onChange={() => update('brands', form.brands.includes(b)
+                                                ? form.brands.filter(x => x !== b)
+                                                : [...form.brands, b])} />
+                                        {b}
+                                    </label>
+                                ))}
+                            </div>
+                        </div>
+                    )}
                     <div className="modal-actions">
                         <button type="button" className="btn-ghost" onClick={onClose}>ยกเลิก</button>
                         <button type="submit" className="btn-primary" disabled={saving}>
@@ -130,7 +151,7 @@ export default function Users() {
                 <table className="data-table">
                     <thead>
                         <tr>
-                            <th>ผู้ใช้</th><th>สิทธิ์</th><th>ทีม</th><th>สถานะ</th><th className="actions">จัดการ</th>
+                            <th>ผู้ใช้</th><th>สิทธิ์</th><th>แบรนด์ที่ดูได้</th><th>สถานะ</th><th className="actions">จัดการ</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -149,8 +170,14 @@ export default function Users() {
                                         </div>
                                     </div>
                                 </td>
-                                <td><span className={`badge badge-${u.role}`}>{u.role === 'admin' ? 'ผู้ดูแลระบบ' : 'สมาชิก'}</span></td>
-                                <td>{u.team_name ? <span className="cat-chip">{u.team_name}</span> : <span className="muted">—</span>}</td>
+                                <td><span className={`badge badge-${u.role}`}>{ROLE_LABEL[u.role] || u.role}</span></td>
+                                <td>
+                                    {u.role !== 'member'
+                                        ? <span className="muted">ทุกแบรนด์</span>
+                                        : (u.brands || []).length > 0
+                                            ? <span className="brand-chips-cell">{u.brands.map(b => <span className="cat-chip" key={b}>{b}</span>)}</span>
+                                            : <span className="muted">ยังไม่ได้กำหนด</span>}
+                                </td>
                                 <td>{u.is_active ? <span className="badge badge-member">ใช้งาน</span> : <span className="badge badge-off">ปิด</span>}</td>
                                 <td className="actions">
                                     <span className="row-actions">
