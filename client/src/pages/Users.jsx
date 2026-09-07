@@ -8,7 +8,7 @@ function UserForm({ editing, agencyLinks, onClose, onSaved }) {
     const [form, setForm] = useState({
         username: editing?.username || '',
         password: '',
-        full_name: editing?.full_name || '',
+        nickname: editing?.nickname || '',
         role: editing?.role || 'member',
         brands: Array.isArray(editing?.brands) ? editing.brands : [],
         agency_tokens: Array.isArray(editing?.agency_tokens) ? editing.agency_tokens : [],
@@ -24,7 +24,7 @@ function UserForm({ editing, agencyLinks, onClose, onSaved }) {
         setError(''); setSaving(true);
         try {
             const body = {
-                full_name: form.full_name,
+                nickname: form.nickname,
                 role: form.role,
                 // admin/manager เห็นทุกแบรนด์ ไม่ต้องส่งรายการแบรนด์ไป
                 brands: form.role === 'member' ? form.brands : [],
@@ -56,8 +56,8 @@ function UserForm({ editing, agencyLinks, onClose, onSaved }) {
                             disabled={isEdit} required />
                     </div>
                     <div className="field">
-                        <label>ชื่อ-นามสกุล</label>
-                        <input value={form.full_name} onChange={e => update('full_name', e.target.value)} />
+                        <label>ชื่อเล่น <span className="dash-section-sub">ชื่อที่ใช้แสดงในระบบ</span></label>
+                        <input value={form.nickname} onChange={e => update('nickname', e.target.value)} placeholder="ชื่อที่ทีมเรียกกัน" />
                     </div>
                     <div className="field">
                         <label>{isEdit ? 'รหัสผ่านใหม่ (เว้นว่างถ้าไม่เปลี่ยน)' : 'รหัสผ่าน *'}</label>
@@ -188,9 +188,9 @@ export default function Users() {
                             <tr key={u.id}>
                                 <td>
                                     <div className="inf-cell">
-                                        <Avatar name={u.full_name || u.username} size={40} />
+                                        <Avatar name={u.nickname || u.full_name || u.username} size={40} />
                                         <div>
-                                            <div className="inf-cell-name">{u.full_name || u.username}</div>
+                                            <div className="inf-cell-name">{u.nickname || u.full_name || u.username}</div>
                                             <div className="inf-cell-user">@{u.username}</div>
                                         </div>
                                     </div>
