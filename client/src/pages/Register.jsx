@@ -7,7 +7,7 @@ import { api } from '../api/client.js';
  * และเป็นคนกำหนดว่าให้อยู่แบรนด์ไหน / บทบาทอะไร
  */
 export default function Register() {
-    const [f, setF] = useState({ username: '', nickname: '', full_name: '', password: '', confirm: '' });
+    const [f, setF] = useState({ username: '', full_name: '', password: '', confirm: '' });
     const [error, setError] = useState('');
     const [done, setDone] = useState(false);
     const [saving, setSaving] = useState(false);
@@ -25,7 +25,7 @@ export default function Register() {
                 method: 'POST',
                 body: {
                     username: f.username.trim(), password: f.password,
-                    nickname: f.nickname.trim(), full_name: f.full_name.trim() || null
+                    full_name: f.full_name.trim() || null
                 }
             });
             setDone(true);
@@ -58,14 +58,9 @@ export default function Register() {
                 {error && <div className="login-error">{error}</div>}
                 <form onSubmit={submit}>
                     <div className="field">
-                        <label>ชื่อผู้ใช้ *</label>
+                        <label>ชื่อผู้ใช้ * <span className="dash-section-sub">ใช้เข้าสู่ระบบ และเป็นชื่อที่แสดงในระบบ</span></label>
                         <input value={f.username} onChange={e => up('username', e.target.value)}
-                            placeholder="ใช้เข้าสู่ระบบ" required autoFocus autoComplete="username" />
-                    </div>
-                    <div className="field">
-                        <label>ชื่อเล่น *</label>
-                        <input value={f.nickname} onChange={e => up('nickname', e.target.value)}
-                            placeholder="ชื่อที่ทีมเรียกกัน" required />
+                            placeholder="เช่น ชื่อเล่นของคุณ" required autoFocus autoComplete="username" />
                     </div>
                     <div className="field">
                         <label>ชื่อ-นามสกุล</label>

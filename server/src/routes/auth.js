@@ -10,21 +10,18 @@ const router = express.Router();
 // สมัครแล้วยังเข้าใช้อะไรไม่ได้เลยจนกว่าจะอนุมัติ (status = pending)
 router.post('/register', async (req, res, next) => {
     try {
-        const { username, password, full_name, nickname } = req.body || {};
+        const { username, password, full_name } = req.body || {};
         if (!username || !password) {
             return res.status(400).json({ status: 'error', message: 'กรุณากรอกชื่อผู้ใช้และรหัสผ่าน' });
         }
         if (String(password).length < 8) {
             return res.status(400).json({ status: 'error', message: 'รหัสผ่านต้องยาวอย่างน้อย 8 ตัวอักษร' });
         }
-        if (!String(nickname || '').trim()) {
-            return res.status(400).json({ status: 'error', message: 'กรุณากรอกชื่อเล่น' });
-        }
         const password_hash = await bcrypt.hash(password, 10);
         // สมัครเองได้แค่ member และยังไม่มีแบรนด์ — admin เป็นคนกำหนดทีหลัง
         await store.users.create({
             username: String(username).trim(), password_hash,
-            full_name: full_name || null, nickname: String(nickname).trim(),
+            full_name: full_name || null,
             role: 'member', brands: [], agency_tokens: [], status: 'pending'
         });
         res.status(201).json({ status: 'success', message: 'สมัครเรียบร้อย รอผู้ดูแลระบบอนุมัติ' });

@@ -163,6 +163,13 @@ const users = {
     async update(id, fields) {
         const u = db.users.find(u => u.id === Number(id));
         if (!u) return null;
+        // เปลี่ยนชื่อผู้ใช้ได้ แต่ห้ามซ้ำกับคนอื่น (ชื่อนี้ใช้เข้าสู่ระบบ)
+        if (fields.username && fields.username !== u.username) {
+            if (db.users.some(x => x.username === fields.username && x.id !== u.id)) {
+                throw duplicateError('มี username นี้อยู่แล้ว');
+            }
+            u.username = fields.username;
+        }
         for (const key of ['full_name', 'nickname', 'role', 'team_id', 'is_active', 'status', 'password_hash']) {
             if (fields[key] !== undefined && fields[key] !== null) u[key] = fields[key];
         }

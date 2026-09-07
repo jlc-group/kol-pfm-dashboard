@@ -8,7 +8,6 @@ function UserForm({ editing, agencyLinks, onClose, onSaved }) {
     const [form, setForm] = useState({
         username: editing?.username || '',
         password: '',
-        nickname: editing?.nickname || '',
         role: editing?.role || 'member',
         brands: Array.isArray(editing?.brands) ? editing.brands : [],
         agency_tokens: Array.isArray(editing?.agency_tokens) ? editing.agency_tokens : [],
@@ -24,12 +23,12 @@ function UserForm({ editing, agencyLinks, onClose, onSaved }) {
         setError(''); setSaving(true);
         try {
             const body = {
-                nickname: form.nickname,
                 role: form.role,
                 // admin/manager เห็นทุกแบรนด์ ไม่ต้องส่งรายการแบรนด์ไป
                 brands: form.role === 'member' ? form.brands : [],
                 agency_tokens: form.role === 'agency' ? form.agency_tokens : [],
             };
+            body.username = form.username.trim();
             if (form.password) body.password = form.password;
             if (isEdit) {
                 await api(`/users/${editing.id}`, { method: 'PUT', body });
@@ -53,11 +52,7 @@ function UserForm({ editing, agencyLinks, onClose, onSaved }) {
                     <div className="field">
                         <label>Username *</label>
                         <input value={form.username} onChange={e => update('username', e.target.value)}
-                            disabled={isEdit} required />
-                    </div>
-                    <div className="field">
-                        <label>ชื่อเล่น <span className="dash-section-sub">ชื่อที่ใช้แสดงในระบบ</span></label>
-                        <input value={form.nickname} onChange={e => update('nickname', e.target.value)} placeholder="ชื่อที่ทีมเรียกกัน" />
+                            required />
                     </div>
                     <div className="field">
                         <label>{isEdit ? 'รหัสผ่านใหม่ (เว้นว่างถ้าไม่เปลี่ยน)' : 'รหัสผ่าน *'}</label>
@@ -192,7 +187,7 @@ export default function Users() {
                                         <div>
                                             {/* ชื่อผู้ใช้ขึ้นก่อนเป็นตัวเด่น ชื่อเล่น/ชื่อเต็มอยู่บรรทัดล่าง */}
                                             <div className="inf-cell-name">@{u.username}</div>
-                                            {(u.nickname || u.full_name) && (
+                                            {(u.nickname || u.full_name) && (u.nickname || u.full_name) !== u.username && (
                                                 <div className="inf-cell-user">{u.nickname || u.full_name}</div>
                                             )}
                                         </div>

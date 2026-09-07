@@ -61,8 +61,9 @@ router.post('/', requireRole('admin'), async (req, res, next) => {
 // PUT /api/users/:id — แก้ไขผู้ใช้ (admin เท่านั้น)
 router.put('/:id', requireRole('admin'), async (req, res, next) => {
     try {
-        const { full_name, nickname, role, team_id, is_active, password, brands, agency_tokens, status } = req.body;
-        const fields = { full_name, nickname, team_id };
+        const { username, full_name, role, team_id, is_active, password, brands, agency_tokens, status } = req.body;
+        const fields = { full_name, team_id };
+        if (username && String(username).trim()) fields.username = String(username).trim();
         // สถานะบัญชี: pending (รออนุมัติ) / active (อนุมัติแล้ว) / rejected (ปฏิเสธ)
         if (status && STATUSES.includes(status)) fields.status = status;
         if (role) fields.role = normalizeRole(role);
