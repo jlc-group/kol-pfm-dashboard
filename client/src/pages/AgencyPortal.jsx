@@ -7,6 +7,7 @@ import { api } from '../api/client.js';
 import Icon from '../components/Icon.jsx';
 import Avatar from '../components/Avatar.jsx';
 import OnProcessTable from '../components/OnProcessTable.jsx';
+import StageCards from '../components/StageCards.jsx';
 import ProductChips, { ProductSummary } from '../components/ProductChips.jsx';
 import { productLabel } from '../data/products.js';
 import { groupPlatforms } from '../data/adGroups.js';
@@ -364,6 +365,7 @@ export default function AgencyPortal() {
     const [savedMsg, setSavedMsg] = useState('');
     const [tab, setTab] = useState('list'); // list | process
     const [editSub, setEditSub] = useState(null); // KOL ที่กำลังแก้ไข
+    const [stage, setStage] = useState('all');    // ตัวกรองขั้นงานจากการ์ดสรุป
     const [badges, setBadges] = useState({ listNew: false, processNew: false });
     const [toasts, setToasts] = useState([]);       // แจ้งเตือนเด้งอัตโนมัติ (Feedback/สถานะดราฟจากทีม)
     const toastId = useRef(0);
@@ -695,8 +697,10 @@ export default function AgencyPortal() {
                 {tab === 'process' && (
                     <div className="agency-card">
                         <h3>On Process <span className="dash-section-sub">อัปเดตงานของ KOL ที่ถูกคัดเลือกแล้ว</span></h3>
+                        <StageCards subs={subs} value={stage} onChange={setStage} />
                         <OnProcessTable
                             subs={subs}
+                            stage={stage} onClearStage={() => setStage('all')}
                             groups={adGroups}
                             scope={token}
                             directEdit

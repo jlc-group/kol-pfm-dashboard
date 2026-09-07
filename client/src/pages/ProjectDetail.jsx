@@ -11,7 +11,7 @@ import ChatDock from '../components/ChatDock.jsx';
 import { productLabel, asTargetArray } from '../data/products.js';
 import { groupPlatforms } from '../data/adGroups.js';
 import { clipCount, collapseByPerson, countPeople } from '../data/clips.js';
-import { countStages, STAGES } from '../data/workStage.js';
+import StageCards from '../components/StageCards.jsx';
 import { tabBadges, markSeen, seedDraftsSeen } from '../utils/tabUpdates.js';
 import { fmtRange } from '../utils/date.js';
 
@@ -541,8 +541,6 @@ export default function ProjectDetail() {
         );
     };
 
-    // สรุปสถานะงาน On Process (นับจาก KOL ที่คัดเลือกแล้ว) — เกณฑ์อยู่ที่ data/workStage.js
-    const procStats = () => countStages(submissions.filter(s => s.status === 'confirmed'));
 
     return (
         <div>
@@ -892,31 +890,16 @@ export default function ProjectDetail() {
                 ))
             )}
 
-            {subTab === 'process' && (() => {
-                const st = procStats();
-                return (
+            {subTab === 'process' && (
                     <>
-                        <div className="proc-stat-grid">
-                            {/* กดการ์ดเพื่อกรองตารางด้านล่างเฉพาะขั้นนั้น กดซ้ำ = เอาตัวกรองออก */}
-                            {STAGES.map(({ key, label }) => (
-                                <button type="button" key={key}
-                                    className={'proc-stat-card ' + key + (stage === key ? ' on' : '')}
-                                    aria-pressed={stage === key}
-                                    title={stage === key ? 'กดอีกครั้งเพื่อดูทั้งหมด' : `ดูเฉพาะ${label}`}
-                                    onClick={() => setStage(v => v === key ? 'all' : key)}>
-                                    <span className="proc-stat-num">{st[key]}</span>
-                                    <span className="proc-stat-lbl">{label}</span>
-                                </button>
-                            ))}
-                        </div>
+                        <StageCards subs={submissions} value={stage} onChange={setStage} />
                         <div className="panel">
                             <OnProcessTable subs={submissions} groups={project.ad_groups || []} showAds scope={id}
                                 putSubmission={putSubmission} reload={loadSubs}
                                 stage={stage} onClearStage={() => setStage('all')} />
                         </div>
                     </>
-                );
-            })()}
+            )}
 
 
             {/* กล่องแชทลอย — มีเฉพาะหน้าแคมเปญ แสดงเอเจนซี่ของแคมเปญนี้ */}
