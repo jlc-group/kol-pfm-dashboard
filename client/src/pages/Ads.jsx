@@ -296,6 +296,22 @@ export default function Ads() {
                 ))}
             </div>
 
+            {/* กรอง Platform — เดิมซ่อนอยู่ในหัวคอลัมน์ KOL มองไม่เห็น
+                ใช้ state ตัวเดียวกับตัวกรองในหัวคอลัมน์ กดที่ไหนก็ตรงกัน */}
+            {platformOptions.length > 1 && (
+                <div className="brand-filter">
+                    <span className="brand-filter-label">▼ Platform:</span>
+                    <button className={'brand-chip' + (platform === '' ? ' active' : '')} onClick={() => setPlatform('')}>
+                        ทุก Platform ({countIf('platform', () => true)})
+                    </button>
+                    {platformOptions.map(pf => (
+                        <button key={pf} className={'brand-chip' + (platform === pf ? ' active' : '')} onClick={() => setPlatform(pf)}>
+                            {pf} ({countIf('platform', r => r.platform === pf)})
+                        </button>
+                    ))}
+                </div>
+            )}
+
             {error && <div className="alert-error">{error}</div>}
 
             {/* การ์ดสรุปค่าแอด */}
