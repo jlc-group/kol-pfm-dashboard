@@ -1,6 +1,7 @@
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { useAuth } from './auth/AuthContext.jsx';
 import ProtectedRoute from './components/ProtectedRoute.jsx';
+import AgencyRoute from './components/AgencyRoute.jsx';
 import Layout from './components/Layout.jsx';
 import Login from './pages/Login.jsx';
 import Register from './pages/Register.jsx';
@@ -30,7 +31,7 @@ export default function App() {
         <Routes>
             <Route path="/login" element={<Login />} />
             <Route path="/register" element={<Register />} />
-            <Route path="/agency/:token" element={<AgencyPortal />} />
+            <Route path="/agency/:token" element={<AgencyRoute><AgencyPortal /></AgencyRoute>} />
             <Route
                 path="/"
                 element={

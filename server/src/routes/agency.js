@@ -4,9 +4,37 @@ const fs = require('fs');
 const store = require('../store');
 const multer = require('multer');
 const chatHub = require('../services/chatHub');
+const { authenticate } = require('../middleware/auth');
 
 const UPLOAD_DIR = path.join(__dirname, '..', '..', 'uploads');
 const router = express.Router();
+
+// ===== ต้องล็อกอินก่อนถึงจะเปิดลิงก์งานได้ =====
+// ยกเว้น 2 เส้นที่เบราว์เซอร์แนบ token ไปด้วยไม่ได้ (รูปในแชท + ช่อง SSE)
+// สองเส้นนั้นยังกันด้วย token ในลิงก์เหมือนเดิม — ฝั่งทีมก็ใช้เส้นเดียวกันนี้
+// เส้นที่ยังต้องเปิดไว้ (เบราว์เซอร์แนบ token ไปกับ <img> และ EventSource ไม่ได้)
+function isPublicPath(pathname) {
+    return pathname.endsWith('/stream') || pathname.endsWith('/image') || pathname.endsWith('/thumb');
+}
+
+function requireAgencyAccess(req, res, next) {
+    if (isPublicPath(req.path)) return next();
+    authenticate(req, res, () => {
+        const u = req.user;
+        if (!u) return res.status(401).json({ status: 'error', message: 'กรุณาเข้าสู่ระบบก่อน' });
+        // ทีม/แอดมิน/Manager เปิดดูได้ทุกลิงก์ (ต้องเข้าไปตรวจงานอยู่แล้ว)
+        if (u.role !== 'agency') return next();
+        // บัญชีเอเจนซี่ เปิดได้เฉพาะลิงก์ที่ admin ผูกไว้ให้
+        store.users.findById(u.id).then(acc => {
+            const own = (acc && acc.agency_tokens) || [];
+            if (!own.includes(req.params.token || req.path.split('/')[1])) {
+                return res.status(403).json({ status: 'error', message: 'ลิงก์นี้ไม่ใช่งานของบัญชีคุณ' });
+            }
+            next();
+        }).catch(next);
+    });
+}
+router.use(requireAgencyAccess);
 
 // ---------- ไฟล์ Report ที่เอเจนซี่อัปเข้ามา ----------
 const REPORT_EXT = ['.pdf', '.png', '.jpg', '.jpeg', '.webp', '.ppt', '.pptx', '.xls', '.xlsx', '.doc', '.docx', '.csv'];

@@ -1,11 +1,12 @@
 import { useState } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { useNavigate, useLocation, Link } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext.jsx';
 import PasswordInput from '../components/PasswordInput.jsx';
 
 export default function Login() {
     const { login } = useAuth();
     const navigate = useNavigate();
+    const loc = useLocation();
     const [username, setUsername] = useState('');
     const [password, setPassword] = useState('');
     const [error, setError] = useState('');
@@ -16,7 +17,16 @@ export default function Login() {
         setError('');
         setLoading(true);
         try {
-            await login(username.trim(), password);
+            const u = await login(username.trim(), password);
+            // มาจากลิงก์งานที่กดไว้ก่อนล็อกอิน -> พากลับไปที่เดิม
+            const from = loc.state && loc.state.from;
+            if (from) { navigate(from, { replace: true }); return; }
+            // บัญชีเอเจนซี่ไม่มีอะไรให้ดูใน dashboard -> เข้าลิงก์งานของตัวเองเลย
+            if (u && u.role === 'agency') {
+                const tk = (u.agency_tokens || [])[0];
+                navigate(tk ? `/agency/${tk}` : '/', { replace: true });
+                return;
+            }
             navigate('/');
         } catch (err) {
             setError(err.message || 'เข้าสู่ระบบไม่สำเร็จ');
