@@ -55,7 +55,14 @@ export default function DraftModal({ sub, onSave, onClose }) {
         <div className="modal-backdrop" onClick={onClose}>
             <div className="modal wide" onClick={e => e.stopPropagation()}>
                 <div className="draft-head">
-                    <div className="draft-name">{sub.account_name} <span className="muted">· {sub.platform || '—'}</span></div>
+                    <div className="draft-name">
+                        {/* กดชื่อเพื่อเปิดหน้า Account ของ KOL (ถ้ามีลิงก์ช่อง) */}
+                        {sub.link_account
+                            ? <a className="draft-name-link" href={sub.link_account} target="_blank" rel="noreferrer"
+                                title={`เปิดหน้า Account: ${sub.link_account}`}>{sub.account_name}<Icon name="eye" size={13} /></a>
+                            : sub.account_name}
+                        <span className="muted"> · {sub.platform || '—'}</span>
+                    </div>
                 </div>
 
                 {/* ดราฟ 1 - 5 (วนลูป) */}
