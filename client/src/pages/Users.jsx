@@ -3,6 +3,7 @@ import { api } from '../api/client.js';
 import Icon from '../components/Icon.jsx';
 import Avatar from '../components/Avatar.jsx';
 import { BRANDS, ROLE_LABEL } from '../data/brands.js';
+import PasswordInput from '../components/PasswordInput.jsx';
 
 function UserForm({ editing, agencyLinks, onClose, onSaved }) {
     const [form, setForm] = useState({
@@ -56,8 +57,9 @@ function UserForm({ editing, agencyLinks, onClose, onSaved }) {
                     </div>
                     <div className="field">
                         <label>{isEdit ? 'รหัสผ่านใหม่ (เว้นว่างถ้าไม่เปลี่ยน)' : 'รหัสผ่าน *'}</label>
-                        <input type="password" value={form.password}
-                            onChange={e => update('password', e.target.value)} required={!isEdit} />
+                        <PasswordInput value={form.password}
+                            onChange={e => update('password', e.target.value)}
+                            autoComplete="new-password" required={!isEdit} />
                     </div>
                     <div className="field">
                         <label>สิทธิ์</label>

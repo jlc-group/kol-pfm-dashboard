@@ -2365,3 +2365,12 @@ a { text-decoration: none; color: inherit; }
 .btn-approve:hover { background: var(--mint); color: #fff; }
 .btn-reject-sm { padding: 5px 10px; border-radius: 8px; border: 1px solid var(--border); background: #fff; color: var(--muted); font-size: 11.5px; font-weight: 800; cursor: pointer; }
 .btn-reject-sm:hover { border-color: #f0a3a3; color: #d64545; background: #fff5f5; }
+/* ช่องรหัสผ่าน + ปุ่มตาเปิด/ปิดการมองเห็น */
+.pw-field { position: relative; display: block; }
+.pw-field input { width: 100%; padding-inline-end: 42px; }
+.pw-eye {
+    position: absolute; inset-inline-end: 6px; top: 50%; transform: translateY(-50%);
+    width: 32px; height: 32px; display: grid; place-items: center;
+    border: 0; background: transparent; color: var(--muted); cursor: pointer; border-radius: 8px;
+}
+.pw-eye:hover { color: var(--mint-dark); background: var(--bg-soft); }

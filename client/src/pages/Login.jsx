@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext.jsx';
+import PasswordInput from '../components/PasswordInput.jsx';
 
 export default function Login() {
     const { login } = useAuth();
@@ -51,8 +52,7 @@ export default function Login() {
                     </div>
                     <div className="field">
                         <label>Password</label>
-                        <input
-                            type="password"
+                        <PasswordInput
                             value={password}
                             onChange={e => setPassword(e.target.value)}
                             placeholder="กรอก Password"

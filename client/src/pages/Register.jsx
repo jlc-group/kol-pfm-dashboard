@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { api } from '../api/client.js';
+import PasswordInput from '../components/PasswordInput.jsx';
 
 /**
  * หน้าสมัครใช้งาน — สมัครเองได้ แต่ยังเข้าใช้อะไรไม่ได้จนกว่า admin จะอนุมัติ
@@ -68,12 +69,12 @@ export default function Register() {
                     </div>
                     <div className="field">
                         <label>รหัสผ่าน * <span className="dash-section-sub">อย่างน้อย 8 ตัวอักษร</span></label>
-                        <input type="password" value={f.password} onChange={e => up('password', e.target.value)}
+                        <PasswordInput value={f.password} onChange={e => up('password', e.target.value)}
                             required autoComplete="new-password" />
                     </div>
                     <div className="field">
                         <label>ยืนยันรหัสผ่าน *</label>
-                        <input type="password" value={f.confirm} onChange={e => up('confirm', e.target.value)}
+                        <PasswordInput value={f.confirm} onChange={e => up('confirm', e.target.value)}
                             required autoComplete="new-password" />
                     </div>
                     <button type="submit" className="btn-login" disabled={saving}>
