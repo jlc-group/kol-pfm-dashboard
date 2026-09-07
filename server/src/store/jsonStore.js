@@ -398,6 +398,7 @@ const projects = {
             products: Array.isArray(fields.products) ? fields.products : [],
             ad_groups: Array.isArray(fields.ad_groups) ? fields.ad_groups : [],
             owner: fields.owner || null,
+            creator: fields.creator || null,   // ชื่อคนสร้างโปรเจค (ทีมใช้บัญชีร่วมกัน created_by จึงบอกไม่ได้ว่าใคร)
             brief_link: fields.brief_link || null,
             brief_file: fields.brief_file || null,
             product_briefs: fields.product_briefs || {},   // บรีฟต่อสินค้า { code: { link, file } }
@@ -414,7 +415,7 @@ const projects = {
     async update(id, fields) {
         const p = db.projects.find(p => p.id === Number(id));
         if (!p) return null;
-        for (const key of ['name', 'brand', 'objective', 'product', 'products', 'ad_groups', 'owner', 'brief_link', 'product_briefs', 'platform_briefs', 'platform_budgets', 'kol_target', 'budget', 'start_date', 'end_date', 'status', 'description', 'updated_by']) {
+        for (const key of ['name', 'brand', 'objective', 'product', 'products', 'ad_groups', 'owner', 'creator', 'brief_link', 'product_briefs', 'platform_briefs', 'platform_budgets', 'kol_target', 'budget', 'start_date', 'end_date', 'status', 'description', 'updated_by']) {
             // null = ผู้ใช้ล้างค่าออกจริง ๆ (route ส่งเฉพาะคีย์ที่ client ส่งมา คีย์ที่ไม่ได้แก้จะเป็น undefined)
             if (fields[key] !== undefined) p[key] = fields[key];
         }

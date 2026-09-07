@@ -111,6 +111,7 @@ export default function ProjectForm({ editing, onClose, onSaved }) {
         brief_link: editing?.brief_link || '',
         // ไม่เติมชื่อคนที่ล็อกอินให้อัตโนมัติแล้ว — ให้เลือกจากรายชื่อทีมงานเอง
         owner: editing?.owner || '',
+        creator: editing?.creator || '',
         budget: editing?.budget ?? '',
         kol_target: editing?.kol_target ?? '',
         start_date: editing?.start_date || '',
@@ -229,6 +230,7 @@ export default function ProjectForm({ editing, onClose, onSaved }) {
                 platform_briefs,
                 platform_budgets,
                 owner: form.owner || null,
+                creator: form.creator || null,
                 budget: totalBudget,
                 kol_target: totalKol,
                 start_date: form.start_date || null,
@@ -464,15 +466,28 @@ export default function ProjectForm({ editing, onClose, onSaved }) {
                         </div>
                     </div>
 
-                    <div className="field">
-                        <label>Project Owner</label>
-                        <select value={form.owner} onChange={e => update('owner', e.target.value)}>
-                            <option value="">— เลือก —</option>
-                            {OWNERS.map(n => <option key={n} value={n}>{n}</option>)}
-                            {form.owner && !OWNERS.includes(form.owner) && (
-                                <option value={form.owner}>{form.owner}</option>
-                            )}
-                        </select>
+                    <div className="field-row">
+                        <div className="field">
+                            <label>Project Owner</label>
+                            <select value={form.owner} onChange={e => update('owner', e.target.value)}>
+                                <option value="">— เลือก —</option>
+                                {OWNERS.map(n => <option key={n} value={n}>{n}</option>)}
+                                {form.owner && !OWNERS.includes(form.owner) && (
+                                    <option value={form.owner}>{form.owner}</option>
+                                )}
+                            </select>
+                        </div>
+                        {/* ทีมใช้บัญชีเดียวร่วมกัน ระบบจึงบันทึกได้แค่ "System Admin" ต้องเลือกชื่อจริงเอง */}
+                        <div className="field">
+                            <label>ผู้สร้างโปรเจค</label>
+                            <select value={form.creator} onChange={e => update('creator', e.target.value)}>
+                                <option value="">— เลือก —</option>
+                                {OWNERS.map(n => <option key={n} value={n}>{n}</option>)}
+                                {form.creator && !OWNERS.includes(form.creator) && (
+                                    <option value={form.creator}>{form.creator}</option>
+                                )}
+                            </select>
+                        </div>
                     </div>
 
                     <div className="field-row">

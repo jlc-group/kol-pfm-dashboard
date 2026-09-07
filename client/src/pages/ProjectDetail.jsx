@@ -555,7 +555,7 @@ export default function ProjectDetail() {
                     </div>
                     <h1 className="pd-title">{project.name}</h1>
                     <div className="pd-hero-by">
-                        {project.created_by_name && <span>👤 สร้างโดย {project.created_by_name}</span>}
+                        {(project.creator || project.created_by_name) && <span>👤 สร้างโดย {project.creator || project.created_by_name}</span>}
                         {project.updated_by_name && <span> · ✎ แก้ไขล่าสุดโดย {project.updated_by_name}</span>}
                     </div>
                 </div>
