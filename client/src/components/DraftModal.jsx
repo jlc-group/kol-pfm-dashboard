@@ -39,7 +39,13 @@ export default function DraftModal({ sub, onSave, onClose }) {
     const [saving, setSaving] = useState(false);
 
     const setDraft = (i, key, val) => setDrafts(ds => ds.map((d, idx) => idx === i ? { ...d, [key]: val } : d));
-    const addDraft = () => setDrafts(ds => ds.length < MAX_DRAFTS ? [...ds, { link: '', fb: '' }] : ds);
+    // เพิ่มดราฟใหม่ = เริ่มตรวจรอบใหม่ ต้องล้างผลตรวจรอบก่อนออกด้วย
+    // ไม่งั้นดราฟ 2 จะขึ้นปุ่ม Revise ค้างมาจากรอบที่แล้ว เหมือนตรวจไปแล้วทั้งที่ยังไม่ได้ดู
+    const addDraft = () => {
+        if (drafts.length >= MAX_DRAFTS) return;
+        setDrafts(ds => [...ds, { link: '', fb: '' }]);
+        setDraftStatus('');
+    };
     const removeDraft = i => setDrafts(ds => ds.length > 1 ? ds.filter((_, idx) => idx !== i) : ds);
 
     async function save() {
