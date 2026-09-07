@@ -30,7 +30,7 @@ router.get('/', requireRole('admin'), async (req, res, next) => {
 // POST /api/users — สร้างผู้ใช้ใหม่ (admin เท่านั้น)
 router.post('/', requireRole('admin'), async (req, res, next) => {
     try {
-        const { username, password, full_name, role, team_id, brands } = req.body;
+        const { username, password, full_name, role, team_id, brands, agency_tokens } = req.body;
         if (!username || !password) {
             return res.status(400).json({ status: 'error', message: 'กรุณาระบุ username และ password' });
         }
@@ -38,7 +38,8 @@ router.post('/', requireRole('admin'), async (req, res, next) => {
         const password_hash = await bcrypt.hash(password, 10);
         // admin/manager เห็นทุกแบรนด์อยู่แล้ว ไม่ต้องเก็บรายการแบรนด์ให้สับสน
         const safeBrands = safeRole === 'member' && Array.isArray(brands) ? brands.filter(Boolean) : [];
-        const data = await store.users.create({ username, password_hash, full_name, role: safeRole, team_id, brands: safeBrands });
+        const safeTokens = safeRole === 'agency' && Array.isArray(agency_tokens) ? agency_tokens.filter(Boolean) : [];
+        const data = await store.users.create({ username, password_hash, full_name, role: safeRole, team_id, brands: safeBrands, agency_tokens: safeTokens });
         res.status(201).json({ status: 'success', data });
     } catch (err) {
         if (err.code === '23505') return res.status(409).json({ status: 'error', message: err.message });
@@ -49,12 +50,14 @@ router.post('/', requireRole('admin'), async (req, res, next) => {
 // PUT /api/users/:id — แก้ไขผู้ใช้ (admin เท่านั้น)
 router.put('/:id', requireRole('admin'), async (req, res, next) => {
     try {
-        const { full_name, role, team_id, is_active, password, brands } = req.body;
+        const { full_name, role, team_id, is_active, password, brands, agency_tokens } = req.body;
         const fields = { full_name, team_id };
         if (role) fields.role = normalizeRole(role);
         // เปลี่ยนเป็น admin/manager = ล้างรายการแบรนด์ทิ้ง (เห็นทุกแบรนด์อยู่แล้ว)
         if (fields.role && fields.role !== 'member') fields.brands = [];
         else if (Array.isArray(brands)) fields.brands = brands.filter(Boolean);
+        if (fields.role && fields.role !== 'agency') fields.agency_tokens = [];
+        else if (Array.isArray(agency_tokens)) fields.agency_tokens = agency_tokens.filter(Boolean);
         if (typeof is_active === 'boolean') fields.is_active = is_active;
         if (password) fields.password_hash = await bcrypt.hash(password, 10);
 

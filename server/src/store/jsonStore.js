@@ -127,13 +127,15 @@ const users = {
                 return clone(safe);
             });
     },
-    async create({ username, password_hash, full_name, role, team_id, brands }) {
+    async create({ username, password_hash, full_name, role, team_id, brands, agency_tokens }) {
         if (db.users.some(u => u.username === username)) throw duplicateError('มี username นี้อยู่แล้ว');
         const row = {
             id: nextId('users'), username, password_hash,
             full_name: full_name || null, role: role || 'member',
             // แบรนด์ที่ member คนนี้ดูได้ (admin/manager ไม่ใช้ค่านี้ เห็นทุกแบรนด์อยู่แล้ว)
             brands: Array.isArray(brands) ? brands.filter(Boolean) : [],
+            // เฉพาะ role agency — ลิงก์เอเจนซี่ที่บัญชีนี้เข้าได้ (1 เจ้าอาจมีหลายแคมเปญ)
+            agency_tokens: Array.isArray(agency_tokens) ? agency_tokens.filter(Boolean) : [],
             team_id: team_id || null, is_active: true, created_at: now(), updated_at: now()
         };
         db.users.push(row); persist();
@@ -148,6 +150,7 @@ const users = {
         }
         // brands เป็น array — ต้องยอมให้เซ็ตเป็น [] ได้ (ถอดแบรนด์ออกทั้งหมด)
         if (Array.isArray(fields.brands)) u.brands = fields.brands.filter(Boolean);
+        if (Array.isArray(fields.agency_tokens)) u.agency_tokens = fields.agency_tokens.filter(Boolean);
         u.updated_at = now(); persist();
         const { password_hash, ...safe } = u;
         return clone(safe);

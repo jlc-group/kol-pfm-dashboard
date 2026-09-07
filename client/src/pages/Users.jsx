@@ -4,13 +4,14 @@ import Icon from '../components/Icon.jsx';
 import Avatar from '../components/Avatar.jsx';
 import { BRANDS, ROLE_LABEL } from '../data/brands.js';
 
-function UserForm({ editing, teams, onClose, onSaved }) {
+function UserForm({ editing, teams, agencyLinks, onClose, onSaved }) {
     const [form, setForm] = useState({
         username: editing?.username || '',
         password: '',
         full_name: editing?.full_name || '',
         role: editing?.role || 'member',
         brands: Array.isArray(editing?.brands) ? editing.brands : [],
+        agency_tokens: Array.isArray(editing?.agency_tokens) ? editing.agency_tokens : [],
         team_id: editing?.team_id || ''
     });
     const [error, setError] = useState('');
@@ -28,6 +29,7 @@ function UserForm({ editing, teams, onClose, onSaved }) {
                 role: form.role,
                 // admin/manager เห็นทุกแบรนด์ ไม่ต้องส่งรายการแบรนด์ไป
                 brands: form.role === 'member' ? form.brands : [],
+                agency_tokens: form.role === 'agency' ? form.agency_tokens : [],
                 team_id: form.team_id ? Number(form.team_id) : null
             };
             if (form.password) body.password = form.password;
@@ -71,6 +73,7 @@ function UserForm({ editing, teams, onClose, onSaved }) {
                                 <option value="member">Member — เห็นเฉพาะแบรนด์ที่กำหนด</option>
                                 <option value="manager">Manager — เห็นทุกแบรนด์</option>
                                 <option value="admin">ผู้ดูแลระบบ — เห็นทุกอย่าง</option>
+                                <option value="agency">Agency — เห็นเฉพาะลิงก์งานของตัวเอง</option>
                             </select>
                         </div>
                         <div className="field">
@@ -81,6 +84,26 @@ function UserForm({ editing, teams, onClose, onSaved }) {
                             </select>
                         </div>
                     </div>
+                    {form.role === 'agency' && (
+                        <div className="field">
+                            <label>ลิงก์งานที่เข้าได้ <span className="dash-section-sub">เลือกได้หลายลิงก์ · บัญชีนี้จะเข้า dashboard ไม่ได้เลย</span></label>
+                            {agencyLinks.length === 0 ? (
+                                <p className="dash-section-sub">ยังไม่มีลิงก์เอเจนซี่ในระบบ — สร้างที่หน้าแคมเปญก่อน</p>
+                            ) : (
+                                <div className="brand-pick">
+                                    {agencyLinks.map(l => (
+                                        <label key={l.token} className={'brand-pick-item' + (form.agency_tokens.includes(l.token) ? ' on' : '')}>
+                                            <input type="checkbox" checked={form.agency_tokens.includes(l.token)}
+                                                onChange={() => update('agency_tokens', form.agency_tokens.includes(l.token)
+                                                    ? form.agency_tokens.filter(x => x !== l.token)
+                                                    : [...form.agency_tokens, l.token])} />
+                                            {l.agency_name || l.token} · {l.project_name}
+                                        </label>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    )}
                     {form.role === 'member' && (
                         <div className="field">
                             <label>แบรนด์ที่ดูได้ <span className="dash-section-sub">เลือกได้หลายแบรนด์ · ไม่เลือกเลย = ยังไม่เห็นข้อมูลใด ๆ</span></label>
@@ -112,14 +135,16 @@ function UserForm({ editing, teams, onClose, onSaved }) {
 export default function Users() {
     const [users, setUsers] = useState([]);
     const [teams, setTeams] = useState([]);
+    const [agencyLinks, setAgencyLinks] = useState([]);   // ลิงก์เอเจนซี่ทุกแคมเปญ (ไว้ผูกกับบัญชี role agency)
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
     const [modal, setModal] = useState(null); // null | {editing?}
 
     function load() {
         setLoading(true);
-        Promise.all([api('/users'), api('/teams')])
-            .then(([u, t]) => { setUsers(u.data); setTeams(t.data); })
+        // ใช้เส้นเดิมที่คืนลิงก์เอเจนซี่ทุกแคมเปญอยู่แล้ว ไม่ต้องทำเส้นใหม่
+        Promise.all([api('/users'), api('/teams'), api('/projects/chats/all')])
+            .then(([u, t, a]) => { setUsers(u.data); setTeams(t.data); setAgencyLinks(a.data || []); })
             .catch(err => setError(err.message))
             .finally(() => setLoading(false));
     }
@@ -172,7 +197,9 @@ export default function Users() {
                                 </td>
                                 <td><span className={`badge badge-${u.role}`}>{ROLE_LABEL[u.role] || u.role}</span></td>
                                 <td>
-                                    {u.role !== 'member'
+                                    {u.role === 'agency'
+                                        ? <span className="cat-chip">{(u.agency_tokens || []).length} ลิงก์งาน</span>
+                                        : u.role !== 'member'
                                         ? <span className="muted">ทุกแบรนด์</span>
                                         : (u.brands || []).length > 0
                                             ? <span className="brand-chips-cell">{u.brands.map(b => <span className="cat-chip" key={b}>{b}</span>)}</span>
@@ -191,7 +218,7 @@ export default function Users() {
                 </table>
             </div>
 
-            {modal && <UserForm editing={modal.editing} teams={teams} onClose={() => setModal(null)} onSaved={handleSaved} />}
+            {modal && <UserForm editing={modal.editing} teams={teams} agencyLinks={agencyLinks} onClose={() => setModal(null)} onSaved={handleSaved} />}
         </div>
     );
 }

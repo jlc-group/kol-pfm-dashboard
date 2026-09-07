@@ -3,12 +3,13 @@
  *   admin   = ผู้ดูแลระบบ เห็นทุกแบรนด์ + เข้าเมนูฝั่งผู้ดูแลระบบได้ (รอบทำจ่าย/ประวัติ/ผู้ใช้งาน/ทีม)
  *   manager = เห็นทุกแบรนด์ แต่เข้าเมนูฝั่งผู้ดูแลระบบไม่ได้
  *   member  = เห็นเฉพาะแบรนด์ที่ admin กำหนดให้ (เก็บได้หลายแบรนด์)
+ *   agency  = เอเจนซี่ภายนอก ไม่เห็น dashboard เลย เข้าได้แค่หน้าลิงก์ของตัวเอง
  *
  * แยกไฟล์ไว้เพราะทั้ง route / store / หน้าจอ ต้องตัดสินด้วยกติกาชุดเดียวกัน
  * ถ้าเขียนกระจายจะเพี้ยนกันเองตอนแก้
  */
-const ROLES = ['admin', 'manager', 'member'];
-const ROLE_LABEL = { admin: 'ผู้ดูแลระบบ', manager: 'Manager', member: 'Member' };
+const ROLES = ['admin', 'manager', 'member', 'agency'];
+const ROLE_LABEL = { admin: 'ผู้ดูแลระบบ', manager: 'Manager', member: 'Member', agency: 'Agency' };
 
 // เห็นข้อมูลได้ทุกแบรนด์ไหม
 function seesAllBrands(user) {
@@ -30,4 +31,7 @@ function normalizeRole(role) {
     return ROLES.includes(role) ? role : 'member';
 }
 
-module.exports = { ROLES, ROLE_LABEL, seesAllBrands, allowedBrands, canSeeBrand, normalizeRole };
+// เอเจนซี่ห้ามแตะข้อมูลฝั่ง dashboard ทุกชนิด (เข้าได้แค่ /api/agency ที่ใช้ token)
+const isAgency = user => !!user && user.role === 'agency';
+
+module.exports = { ROLES, ROLE_LABEL, seesAllBrands, allowedBrands, canSeeBrand, normalizeRole, isAgency };

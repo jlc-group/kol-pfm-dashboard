@@ -4,6 +4,15 @@ const cors = require('cors');
 const store = require('./store');
 const { authenticate } = require('./middleware/auth');
 
+// บัญชี role "agency" ห้ามแตะข้อมูลฝั่ง dashboard ทุกเส้น
+// ประกาศไว้บนสุดเพราะ /api/stats/* อยู่เหนือจุด mount ของ routes อื่น
+const blockAgency = (req, res, next) => {
+    if (req.user && req.user.role === 'agency') {
+        return res.status(403).json({ status: 'error', message: 'บัญชีเอเจนซี่เข้าส่วนนี้ไม่ได้ — ใช้ลิงก์งานของคุณแทน' });
+    }
+    next();
+};
+
 const app = express();
 const PORT = process.env.PORT || 4000;
 
@@ -22,7 +31,7 @@ app.get('/api/health', (req, res) => {
 });
 
 // สรุปตัวเลขภาพรวมสำหรับหน้า Dashboard (ตามสิทธิ์ทีม)
-app.get('/api/stats/overview', authenticate, async (req, res, next) => {
+app.get('/api/stats/overview', authenticate, blockAgency, async (req, res, next) => {
     try {
         const scope = req.user.role === 'admin' ? null : req.user.team_id;
         const [total_kols, total_projects, total_teams,
@@ -45,7 +54,7 @@ app.get('/api/stats/overview', authenticate, async (req, res, next) => {
 });
 
 // สรุปข้อมูลหน้า Dashboard Overview ตามตัวกรอง (แบรนด์/วันที่/campaign)
-app.get('/api/stats/dashboard', authenticate, async (req, res, next) => {
+app.get('/api/stats/dashboard', authenticate, blockAgency, async (req, res, next) => {
     try {
         const scopeTeamId = req.user.role === 'admin' ? null : req.user.team_id;
         const { brand, from, to, project_id } = req.query;
@@ -61,7 +70,7 @@ app.get('/api/stats/dashboard', authenticate, async (req, res, next) => {
 });
 
 // สรุปงบประมาณ ตามตัวกรอง (เดือน/แบรนด์) + เคารพสิทธิ์ทีม
-app.get('/api/stats/budget', authenticate, async (req, res, next) => {
+app.get('/api/stats/budget', authenticate, blockAgency, async (req, res, next) => {
     try {
         const scopeTeamId = req.user.role === 'admin' ? null : req.user.team_id;
         const { brand, from, to } = req.query;
@@ -73,7 +82,7 @@ app.get('/api/stats/budget', authenticate, async (req, res, next) => {
 });
 
 // เทรนด์งบรายเดือน
-app.get('/api/stats/budget/trend', authenticate, async (req, res, next) => {
+app.get('/api/stats/budget/trend', authenticate, blockAgency, async (req, res, next) => {
     try {
         const scopeTeamId = req.user.role === 'admin' ? null : req.user.team_id;
         const { brand, year } = req.query;
@@ -85,7 +94,7 @@ app.get('/api/stats/budget/trend', authenticate, async (req, res, next) => {
 });
 
 // รายงานแคมเปญ (Campaign Reports) — KOLS/BUDGET/USED/POST RATE ต่อแคมเปญ
-app.get('/api/stats/reports', authenticate, async (req, res, next) => {
+app.get('/api/stats/reports', authenticate, blockAgency, async (req, res, next) => {
     try {
         const scopeTeamId = req.user.role === 'admin' ? null : req.user.team_id;
         const { brand } = req.query;
@@ -95,7 +104,7 @@ app.get('/api/stats/reports', authenticate, async (req, res, next) => {
 });
 
 // รายงานเชิงลึกของ 1 แคมเปญ (Report Analysis)
-app.get('/api/stats/reports/:id', authenticate, async (req, res, next) => {
+app.get('/api/stats/reports/:id', authenticate, blockAgency, async (req, res, next) => {
     try {
         const scopeTeamId = req.user.role === 'admin' ? null : req.user.team_id;
         const data = await store.reports.detail(req.params.id, scopeTeamId);
@@ -106,14 +115,15 @@ app.get('/api/stats/reports/:id', authenticate, async (req, res, next) => {
 
 // routes
 app.use('/api/auth', require('./routes/auth'));
-app.use('/api/teams', require('./routes/teams'));
-app.use('/api/users', require('./routes/users'));
-app.use('/api/kols', require('./routes/kols'));
-app.use('/api/projects', require('./routes/projects'));
-app.use('/api/payments', require('./routes/payments'));
-app.use('/api/activity', require('./routes/activity'));
-app.use('/api/ads', require('./routes/ads'));
-app.use('/api/rate-requests', require('./routes/rateRequests'));
+
+app.use('/api/teams', authenticate, blockAgency, require('./routes/teams'));
+app.use('/api/users', authenticate, blockAgency, require('./routes/users'));
+app.use('/api/kols', authenticate, blockAgency, require('./routes/kols'));
+app.use('/api/projects', authenticate, blockAgency, require('./routes/projects'));
+app.use('/api/payments', authenticate, blockAgency, require('./routes/payments'));
+app.use('/api/activity', authenticate, blockAgency, require('./routes/activity'));
+app.use('/api/ads', authenticate, blockAgency, require('./routes/ads'));
+app.use('/api/rate-requests', authenticate, blockAgency, require('./routes/rateRequests'));
 app.use('/api/agency', require('./routes/agency')); // สาธารณะ (Agency ใช้ลิงก์)
 
 // error handler
