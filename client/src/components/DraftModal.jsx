@@ -109,7 +109,10 @@ export default function DraftModal({ sub, onSave, onClose }) {
                 )}
                 <div className="modal-actions">
                     <button type="button" className="btn-ghost" onClick={onClose}>ปิด</button>
-                    <button type="button" className="btn-primary" onClick={save} disabled={saving}>{saving ? 'กำลังบันทึก...' : 'บันทึก'}</button>
+                    {/* ปุ่มบันทึกสีเข้ม เพื่อเตือนว่าต้องกดบันทึกก่อนปิดทุกครั้ง */}
+                    <button type="button" className="btn-primary btn-save-strong" onClick={save} disabled={saving}>
+                        💾 {saving ? 'กำลังบันทึก...' : 'บันทึก'}
+                    </button>
                 </div>
             </div>
         </div>

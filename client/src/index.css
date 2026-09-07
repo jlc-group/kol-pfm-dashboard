@@ -2338,3 +2338,10 @@ a { text-decoration: none; color: inherit; }
     font-size: 11.5px; font-weight: 700; cursor: pointer;
 }
 .proc-stagebar button:hover { border-color: var(--mint); color: var(--mint-dark); }
+/* ปุ่มบันทึกแบบเน้น — สีเข้มกว่าปุ่มปกติ ให้รู้ว่าต้องกดก่อนปิดทุกครั้ง */
+.btn-save-strong {
+    background: linear-gradient(135deg, #064e3b, #047857);
+    box-shadow: 0 6px 18px rgba(6, 78, 59, .38);
+    font-weight: 800; letter-spacing: .2px;
+}
+.btn-save-strong:hover { background: linear-gradient(135deg, #053a2c, #036249); }
