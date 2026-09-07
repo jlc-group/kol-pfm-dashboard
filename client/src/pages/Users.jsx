@@ -4,7 +4,7 @@ import Icon from '../components/Icon.jsx';
 import Avatar from '../components/Avatar.jsx';
 import { BRANDS, ROLE_LABEL } from '../data/brands.js';
 
-function UserForm({ editing, teams, agencyLinks, onClose, onSaved }) {
+function UserForm({ editing, agencyLinks, onClose, onSaved }) {
     const [form, setForm] = useState({
         username: editing?.username || '',
         password: '',
@@ -12,7 +12,6 @@ function UserForm({ editing, teams, agencyLinks, onClose, onSaved }) {
         role: editing?.role || 'member',
         brands: Array.isArray(editing?.brands) ? editing.brands : [],
         agency_tokens: Array.isArray(editing?.agency_tokens) ? editing.agency_tokens : [],
-        team_id: editing?.team_id || ''
     });
     const [error, setError] = useState('');
     const [saving, setSaving] = useState(false);
@@ -30,7 +29,6 @@ function UserForm({ editing, teams, agencyLinks, onClose, onSaved }) {
                 // admin/manager เห็นทุกแบรนด์ ไม่ต้องส่งรายการแบรนด์ไป
                 brands: form.role === 'member' ? form.brands : [],
                 agency_tokens: form.role === 'agency' ? form.agency_tokens : [],
-                team_id: form.team_id ? Number(form.team_id) : null
             };
             if (form.password) body.password = form.password;
             if (isEdit) {
@@ -66,23 +64,14 @@ function UserForm({ editing, teams, agencyLinks, onClose, onSaved }) {
                         <input type="password" value={form.password}
                             onChange={e => update('password', e.target.value)} required={!isEdit} />
                     </div>
-                    <div className="field-row">
-                        <div className="field">
-                            <label>สิทธิ์</label>
+                    <div className="field">
+                        <label>สิทธิ์</label>
                             <select value={form.role} onChange={e => update('role', e.target.value)}>
                                 <option value="member">Member — เห็นเฉพาะแบรนด์ที่กำหนด</option>
                                 <option value="manager">Manager — เห็นทุกแบรนด์</option>
                                 <option value="admin">ผู้ดูแลระบบ — เห็นทุกอย่าง</option>
                                 <option value="agency">Agency — เห็นเฉพาะลิงก์งานของตัวเอง</option>
                             </select>
-                        </div>
-                        <div className="field">
-                            <label>ทีม</label>
-                            <select value={form.team_id} onChange={e => update('team_id', e.target.value)}>
-                                <option value="">— ไม่ระบุ —</option>
-                                {teams.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
-                            </select>
-                        </div>
                     </div>
                     {form.role === 'agency' && (
                         <div className="field">
@@ -134,7 +123,6 @@ function UserForm({ editing, teams, agencyLinks, onClose, onSaved }) {
 
 export default function Users() {
     const [users, setUsers] = useState([]);
-    const [teams, setTeams] = useState([]);
     const [agencyLinks, setAgencyLinks] = useState([]);   // ลิงก์เอเจนซี่ทุกแคมเปญ (ไว้ผูกกับบัญชี role agency)
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
@@ -143,8 +131,8 @@ export default function Users() {
     function load() {
         setLoading(true);
         // ใช้เส้นเดิมที่คืนลิงก์เอเจนซี่ทุกแคมเปญอยู่แล้ว ไม่ต้องทำเส้นใหม่
-        Promise.all([api('/users'), api('/teams'), api('/projects/chats/all')])
-            .then(([u, t, a]) => { setUsers(u.data); setTeams(t.data); setAgencyLinks(a.data || []); })
+        Promise.all([api('/users'), api('/projects/chats/all')])
+            .then(([u, a]) => { setUsers(u.data); setAgencyLinks(a.data || []); })
             .catch(err => setError(err.message))
             .finally(() => setLoading(false));
     }
@@ -244,7 +232,7 @@ export default function Users() {
                 </table>
             </div>
 
-            {modal && <UserForm editing={modal.editing} teams={teams} agencyLinks={agencyLinks} onClose={() => setModal(null)} onSaved={handleSaved} />}
+            {modal && <UserForm editing={modal.editing} agencyLinks={agencyLinks} onClose={() => setModal(null)} onSaved={handleSaved} />}
         </div>
     );
 }

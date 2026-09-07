@@ -16,8 +16,7 @@ const MAIN_NAV = [
 const ADMIN_NAV = [
     { to: '/payments', label: 'รอบทำจ่าย', icon: 'wallet' },
     { to: '/activity', label: 'ประวัติการแก้ไข', icon: 'history' },
-    { to: '/users', label: 'ผู้ใช้งาน', icon: 'users' },
-    { to: '/teams', label: 'ทีม', icon: 'team' }
+    { to: '/users', label: 'ผู้ใช้งาน', icon: 'users' }
 ];
 
 export default function Layout() {
