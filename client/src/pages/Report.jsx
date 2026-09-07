@@ -105,7 +105,7 @@ export default function Report() {
                 <h3>📊 ผลงานคอนเทนต์ / Content Performance <span className="dash-section-sub">{perf.measured_count || 0}/{perf.contents || 0} คลิปมีข้อมูล</span></h3>
                 <div className="rpt-cost-grid" style={{ marginTop: 12 }}>
                     <div className="rpt-cost c-green"><div className="rpt-cost-k">TOTAL VIEWS</div><div className="rpt-cost-v">{fmtV(perf.total_views)}</div><div className="rpt-cost-sub">{N(perf.total_views)} วิว</div></div>
-                    <div className="rpt-cost c-blue"><div className="rpt-cost-k">TOTAL ENGAGEMENT</div><div className="rpt-cost-v">{fmtV(perf.total_engagement)}</div><div className="rpt-cost-sub">ไลก์ + คอมเมนต์ + เซฟ + แชร์</div></div>
+                    <div className="rpt-cost c-blue"><div className="rpt-cost-k">TOTAL ENGAGEMENT</div><div className="rpt-cost-v">{fmtV(perf.total_engagement)}</div><div className="rpt-cost-sub">ไลก์ + คอมเมนต์ + Bookmark + แชร์</div></div>
                     <div className="rpt-cost c-orange"><div className="rpt-cost-k">AVG VIEWS / คลิป</div><div className="rpt-cost-v">{N(perf.avg_views)}</div><div className="rpt-cost-sub">เฉลี่ยต่อคลิปที่มีข้อมูล</div></div>
                     <div className="rpt-cost c-green"><div className="rpt-cost-k">ENGAGEMENT RATE</div><div className="rpt-cost-v">{perf.engagement_rate}%</div><div className="rpt-cost-sub">Engagement / Views</div></div>
                 </div>
@@ -170,7 +170,7 @@ export default function Report() {
                 <div className="panel">
                     <h3>❤️ Engagement Breakdown</h3>
                     <div className="rpt-eng-grid">
-                        {[['ไลก์', eb.likes], ['เซฟ', eb.saves], ['แชร์', eb.shares], ['คอมเมนต์', eb.comments]].map(([lbl, v]) => (
+                        {[['ไลก์', eb.likes], ['Bookmark', eb.saves], ['แชร์', eb.shares], ['คอมเมนต์', eb.comments]].map(([lbl, v]) => (
                             <div className="rpt-eng" key={lbl}><div className="rpt-eng-v">{fmtV(v)}</div><div className="rpt-eng-k">{lbl}</div><div className="rpt-eng-sub">{ebPct(v)}%</div></div>
                         ))}
                     </div>
@@ -222,7 +222,7 @@ export default function Report() {
                                     <span><i>views</i><b>{fmtV(k.views)}</b></span>
                                     <span><i>likes</i><b>{fmtV(k.likes)}</b></span>
                                     <span><i>comments</i><b>{fmtV(k.comments)}</b></span>
-                                    <span><i>saves</i><b>{fmtV(k.saves)}</b></span>
+                                    <span><i>bookmark</i><b>{fmtV(k.saves)}</b></span>
                                     <span><i>shares</i><b>{fmtV(k.shares)}</b></span>
                                     <span className="sep"><i>CPM</i><b>{Number(k.cpm) > 0 ? B(k.cpm) : '—'}</b></span>
                                     <span><i>CPE</i><b>{Number(k.cpe) > 0 ? B(k.cpe) : '—'}</b></span>
