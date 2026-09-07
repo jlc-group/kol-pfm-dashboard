@@ -127,10 +127,9 @@ export default function ProjectForm({ editing, onClose, onSaved }) {
     const setPbLink = (code, link) => { setProductBriefs(m => ({ ...m, [code]: { ...(m[code] || {}), link } })); setPbFiles(f => { const n = { ...f }; delete n[code]; return n; }); };
     const setPbFile = (code, file) => { setPbFiles(f => ({ ...f, [code]: file })); setProductBriefs(m => ({ ...m, [code]: { ...(m[code] || {}), link: '' } })); };
     // บรีฟหลักต่อ Platform
-    const [platformBriefs, setPlatformBriefs] = useState(() => editing?.platform_briefs || {}); // { platform: { link, file } }
-    const [pfBriefFiles, setPfBriefFiles] = useState({}); // platform -> File (รออัปโหลด)
-    const setPfBriefLink = (pf, link) => { setPlatformBriefs(m => ({ ...m, [pf]: { ...(m[pf] || {}), link } })); setPfBriefFiles(f => { const n = { ...f }; delete n[pf]; return n; }); };
-    const setPfBriefFile = (pf, file) => { setPfBriefFiles(f => ({ ...f, [pf]: file })); setPlatformBriefs(m => ({ ...m, [pf]: { ...(m[pf] || {}), link: '' } })); };
+    // ไม่มีช่องให้กรอกบรีฟต่อ Platform แล้ว (ใช้บรีฟเฉพาะกลุ่มแทน)
+    // แต่ยังอ่านค่าเดิมมาส่งกลับตอนบันทึก แคมเปญเก่าจะได้ไม่เสียลิงก์บรีฟที่เคยใส่ไว้
+    const platformBriefs = editing?.platform_briefs || {};
     const briefInputRef = useRef(null);
     const [error, setError] = useState('');
     const [saving, setSaving] = useState(false);
@@ -168,11 +167,6 @@ export default function ProjectForm({ editing, onClose, onSaved }) {
         if (!form.name.trim()) m.push('ชื่อแคมเปญ');
         if (!form.brand) m.push('Brand');
         if (!form.objective.trim()) m.push('รายละเอียดแคมเปญ');
-        const briefOk = platforms.length > 0 && platforms.every(pf => {
-            const cur = platformBriefs[pf] || {};
-            return (cur.link && cur.link.trim()) || cur.file || pfBriefFiles[pf];
-        });
-        if (!briefOk) m.push('บรีฟหลักของแต่ละ Platform');
         const groupsOk = adGroups.length > 0 && adGroups.every(g =>
             g.platform && g.products.length && g.content_type &&
             (targetsForProducts(g.products).length === 0 || asTargetArray(g.target).length > 0) &&
@@ -255,11 +249,6 @@ export default function ProjectForm({ editing, onClose, onSaved }) {
             if (briefFile) {
                 try { await uploadFile(`/projects/${pid}/brief/upload`, briefFile); }
                 catch (e) { alert(`อัปโหลดบรีฟหลักไม่สำเร็จ: ${e.message}`); }
-            }
-            // อัปโหลดไฟล์บรีฟหลักต่อ Platform (ที่เพิ่งเลือกใหม่)
-            for (const [pf, file] of Object.entries(pfBriefFiles)) {
-                try { await uploadFile(`/projects/${pid}/platform-brief/${encodeURIComponent(pf)}/file`, file); }
-                catch (e) { alert(`อัปโหลดบรีฟ ${pf} ไม่สำเร็จ: ${e.message}`); }
             }
             // อัปโหลดไฟล์บรีฟต่อสินค้า (ที่เพิ่งเลือกใหม่)
             for (const [code, file] of Object.entries(pbFiles)) {
@@ -472,26 +461,6 @@ export default function ProjectForm({ editing, onClose, onSaved }) {
                             <button type="button" className="adgroup-add" onClick={addGroup}>
                                 <Icon name="plus" size={15} /> เพิ่มกลุ่มสินค้า
                             </button>
-
-                            {/* บรีฟหลัก — ขึ้นตาม Platform ที่กลุ่มสินค้าเลือกไว้ */}
-                            {platforms.map(pf => {
-                                const cur = platformBriefs[pf] || {};
-                                const pendingFile = pfBriefFiles[pf];
-                                return (
-                                    <div className="platform-brief" key={pf}>
-                                        <span className="platform-brief-lbl">📄 บรีฟหลักของ {pf}</span>
-                                        <div className="pbrief-row">
-                                            <input className="pbrief-link" type="url" value={cur.link || ''} onChange={e => setPfBriefLink(pf, e.target.value)}
-                                                placeholder="ลิงก์บรีฟ (https://...)" disabled={!!pendingFile} />
-                                            <label className={'pbrief-file-btn' + ((pendingFile || cur.file) ? ' has-file' : '')}>
-                                                <Icon name="upload" size={14} /> {pendingFile ? pendingFile.name : (cur.file ? cur.file.original : 'อัปไฟล์')}
-                                                <input type="file" hidden accept=".pdf,.png,.jpg,.jpeg,.webp,.doc,.docx,.ppt,.pptx"
-                                                    onChange={e => { if (e.target.files[0]) setPfBriefFile(pf, e.target.files[0]); }} />
-                                            </label>
-                                        </div>
-                                    </div>
-                                );
-                            })}
                         </div>
                     </div>
 
