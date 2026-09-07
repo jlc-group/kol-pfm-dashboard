@@ -926,11 +926,11 @@ a { text-decoration: none; color: inherit; }
 
 /* ตาราง On Process (แถวแนวนอน) */
 .proc-tbl-scroll { overflow-x: auto; }
-.proc-tbl { min-width: 840px; }
+.proc-tbl { min-width: 900px; }
 .proc-tbl-head, .proc-row {
     display: grid;
     /* KOL PRODUCT PLATFORM DRAFT POST POSTDATE GENCODE IDPOST EXPIRE จัดการ */
-    grid-template-columns: 0.95fr 0.65fr 0.6fr 0.72fr 1.5fr 1.15fr 0.9fr 0.85fr 0.5fr 0.6fr;
+    grid-template-columns: 0.95fr 0.65fr 0.6fr 1.1fr 1.5fr 1.15fr 0.9fr 0.85fr 0.5fr 0.6fr;
     gap: 7px; align-items: center;
 }
 .proc-tbl-head { font-size: 10px; font-weight: 700; color: var(--muted); letter-spacing: .3px; padding: 0 4px 9px; }
@@ -954,11 +954,11 @@ a { text-decoration: none; color: inherit; }
 .proc-plat { display: inline-block; background: var(--bg-soft); color: var(--mint-dark); font-size: 11px; font-weight: 700; padding: 4px 8px; border-radius: 8px; }
 .proc-prod { display: inline-block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; background: #eef4ff; color: #3b5ba5; font-size: 11px; font-weight: 800; padding: 4px 9px; border-radius: 8px; }
 /* คอลัมน์ Ads (เฉพาะ Dashboard) — Target + Content Type */
-.proc-tbl.with-ads { min-width: 1190px; }
+.proc-tbl.with-ads { min-width: 1250px; }
 .proc-tbl.with-ads .proc-tbl-head, .proc-tbl.with-ads .proc-row {
     /* KOL PRODUCT TARGET C_TYPE C_FORMAT PLATFORM DRAFT POST POSTDATE GENCODE IDPOST EXPIRE จัดการ
        6 คอลัมน์แรกเป็นชิปสั้น ๆ บีบให้ชิดกัน แล้วเอาที่ว่างไปเพิ่มให้ช่องลิงก์โพสต์ */
-    grid-template-columns: 0.94fr 0.66fr 0.77fr 0.54fr 0.86fr 0.52fr 0.66fr 1.64fr 0.98fr 0.75fr 0.73fr 0.5fr 0.62fr;
+    grid-template-columns: 0.94fr 0.66fr 0.77fr 0.54fr 0.86fr 0.52fr 1fr 1.64fr 0.98fr 0.75fr 0.73fr 0.5fr 0.62fr;
 }
 .proc-ads-tgt { display: inline-block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; background: #fff4ed; color: #c2591b; font-size: 10.5px; font-weight: 800; padding: 4px 8px; border-radius: 8px; }
 .proc-ctype-chip { display: inline-block; background: #f3ecff; color: #6d3fc0; font-size: 11px; font-weight: 800; padding: 4px 9px; border-radius: 8px; }
@@ -980,13 +980,14 @@ a { text-decoration: none; color: inherit; }
 }
 .proc-viewdraft:hover { background: var(--mint); color: #fff; }
 /* ป้ายผลตรวจดราฟ (ให้เอเจนซี่เห็นชัดว่า Approve/ขอแก้ไข) */
-.proc-draft-cell { display: flex; flex-direction: column; align-items: flex-start; gap: 5px; }
+.proc-draft-cell { display: flex; flex-direction: column; align-items: flex-start; gap: 5px; min-width: 0; }
+.proc-draft-cell > * { max-width: 100%; }
 .draft-verdict { display: inline-flex; align-items: center; gap: 4px; padding: 3px 10px; border-radius: 20px; font-size: 11px; font-weight: 800; white-space: nowrap; }
 .draft-verdict.approved { background: #059669; color: #fff; box-shadow: 0 2px 8px rgba(5,150,105,.3); }
 .draft-verdict.revise { background: #fff4e0; color: #b7791f; border: 1px solid #f6c667; }
 .proc-appr { border-radius: 50%; width: 16px; height: 16px; display: grid; place-items: center; font-size: 10.5px; color: #fff; }
 .proc-viewdraft.has-new { border-color: #ef4444; box-shadow: 0 0 0 3px rgba(239,68,68,.12); }
-.draft-new-pill { background: #ef4444; color: #fff; font-size: 9.5px; font-weight: 800; padding: 2px 7px; border-radius: 20px; margin-left: 2px; white-space: nowrap; animation: tabpulse 1.6s ease-in-out infinite; }
+.draft-new-pill { display: inline-block; background: #ef4444; color: #fff; font-size: 9.5px; font-weight: 800; padding: 2px 7px; border-radius: 20px; margin-left: 2px; white-space: nowrap; animation: tabpulse 1.6s ease-in-out infinite; }
 .proc-appr.appr { background: #059669; }
 .proc-appr.rev { background: #f59e0b; }
 .proc-viewdraft:hover .proc-appr { background: #fff; color: var(--mint-dark); }

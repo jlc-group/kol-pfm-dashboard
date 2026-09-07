@@ -119,8 +119,9 @@ function ProcessRow({ sub, putSubmission, reload, showAds = false, group = null,
             <div className="proc-cell proc-draft-cell">
                 <button type="button" className={'proc-viewdraft' + (showDraftNew ? ' has-new' : '')} onClick={openDraft}>
                     <Icon name="eye" size={14} /> View Draft
-                    {showDraftNew && <span className="draft-new-pill" title="มีดราฟอัปเดตใหม่">ดราฟใหม่</span>}
                 </button>
+                {/* ป้ายนี้เคยอยู่ในปุ่ม ทำให้ปุ่มกว้างเกินคอลัมน์แล้วล้นไปทับช่อง Post */}
+                {showDraftNew && <span className="draft-new-pill" title="มีดราฟอัปเดตใหม่">ดราฟใหม่</span>}
                 {sub.draft_status === 'approve' && <span className="draft-verdict approved" title="ทีมอนุมัติดราฟแล้ว">✓ Approved</span>}
                 {sub.draft_status === 'revise' && <span className="draft-verdict revise" title="ทีมขอให้แก้ไขดราฟ">↻ ขอแก้ไข</span>}
                 <button type="button" className={'proc-perf-btn' + (hasPerf ? ' has' : '')} onClick={() => setShowPerf(true)} title="กรอก/ดูผลงานคอนเทนต์ (Views/Engagement)">
