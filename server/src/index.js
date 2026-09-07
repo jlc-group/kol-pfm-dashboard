@@ -3,6 +3,7 @@ const express = require('express');
 const cors = require('cors');
 const store = require('./store');
 const { authenticate } = require('./middleware/auth');
+const { allowedBrands } = require('./data/roles');
 
 // บัญชี role "agency" ห้ามแตะข้อมูลฝั่ง dashboard ทุกเส้น
 // ประกาศไว้บนสุดเพราะ /api/stats/* อยู่เหนือจุด mount ของ routes อื่น
@@ -45,10 +46,10 @@ app.get('/api/health', (req, res) => {
     res.json({ status: 'OK', service: 'KOL Dashboard v2 API', timestamp: new Date().toISOString() });
 });
 
-// สรุปตัวเลขภาพรวมสำหรับหน้า Dashboard (ตามสิทธิ์ทีม)
+// สรุปตัวเลขภาพรวมสำหรับหน้า Dashboard (ตามแบรนด์ที่ผู้ใช้ดูได้)
 app.get('/api/stats/overview', authenticate, blockPending, blockAgency, async (req, res, next) => {
     try {
-        const scope = req.user.role === 'admin' ? null : req.user.team_id;
+        const scope = allowedBrands(req.account || req.user);
         const [total_kols, total_projects, total_teams,
                kols_by_platform, projects_by_status, members_by_team] = await Promise.all([
             store.kols.count(),
@@ -71,10 +72,10 @@ app.get('/api/stats/overview', authenticate, blockPending, blockAgency, async (r
 // สรุปข้อมูลหน้า Dashboard Overview ตามตัวกรอง (แบรนด์/วันที่/campaign)
 app.get('/api/stats/dashboard', authenticate, blockPending, blockAgency, async (req, res, next) => {
     try {
-        const scopeTeamId = req.user.role === 'admin' ? null : req.user.team_id;
+        const scopeBrands = allowedBrands(req.account || req.user);
         const { brand, from, to, project_id } = req.query;
         const data = await store.dashboard.overview({
-            scopeTeamId,
+            scopeBrands,
             brand: brand || undefined,
             from: from || undefined,
             to: to || undefined,
@@ -87,10 +88,10 @@ app.get('/api/stats/dashboard', authenticate, blockPending, blockAgency, async (
 // สรุปงบประมาณ ตามตัวกรอง (เดือน/แบรนด์) + เคารพสิทธิ์ทีม
 app.get('/api/stats/budget', authenticate, blockPending, blockAgency, async (req, res, next) => {
     try {
-        const scopeTeamId = req.user.role === 'admin' ? null : req.user.team_id;
+        const scopeBrands = allowedBrands(req.account || req.user);
         const { brand, from, to } = req.query;
         const data = await store.budget.overview({
-            scopeTeamId, brand: brand || undefined, from: from || undefined, to: to || undefined
+            scopeBrands, brand: brand || undefined, from: from || undefined, to: to || undefined
         });
         res.json({ status: 'success', data });
     } catch (err) { next(err); }
@@ -99,10 +100,10 @@ app.get('/api/stats/budget', authenticate, blockPending, blockAgency, async (req
 // เทรนด์งบรายเดือน
 app.get('/api/stats/budget/trend', authenticate, blockPending, blockAgency, async (req, res, next) => {
     try {
-        const scopeTeamId = req.user.role === 'admin' ? null : req.user.team_id;
+        const scopeBrands = allowedBrands(req.account || req.user);
         const { brand, year } = req.query;
         const data = await store.budget.trend({
-            scopeTeamId, brand: brand || undefined, year: year || String(new Date().getFullYear())
+            scopeBrands, brand: brand || undefined, year: year || String(new Date().getFullYear())
         });
         res.json({ status: 'success', data });
     } catch (err) { next(err); }
@@ -111,9 +112,9 @@ app.get('/api/stats/budget/trend', authenticate, blockPending, blockAgency, asyn
 // รายงานแคมเปญ (Campaign Reports) — KOLS/BUDGET/USED/POST RATE ต่อแคมเปญ
 app.get('/api/stats/reports', authenticate, blockPending, blockAgency, async (req, res, next) => {
     try {
-        const scopeTeamId = req.user.role === 'admin' ? null : req.user.team_id;
+        const scopeBrands = allowedBrands(req.account || req.user);
         const { brand } = req.query;
-        const data = await store.reports.campaigns({ scopeTeamId, brand: brand || undefined });
+        const data = await store.reports.campaigns({ scopeBrands, brand: brand || undefined });
         res.json({ status: 'success', data });
     } catch (err) { next(err); }
 });
@@ -121,8 +122,8 @@ app.get('/api/stats/reports', authenticate, blockPending, blockAgency, async (re
 // รายงานเชิงลึกของ 1 แคมเปญ (Report Analysis)
 app.get('/api/stats/reports/:id', authenticate, blockPending, blockAgency, async (req, res, next) => {
     try {
-        const scopeTeamId = req.user.role === 'admin' ? null : req.user.team_id;
-        const data = await store.reports.detail(req.params.id, scopeTeamId);
+        const scopeBrands = allowedBrands(req.account || req.user);
+        const data = await store.reports.detail(req.params.id, scopeBrands);
         if (!data) return res.status(404).json({ status: 'error', message: 'ไม่พบแคมเปญ' });
         res.json({ status: 'success', data });
     } catch (err) { next(err); }

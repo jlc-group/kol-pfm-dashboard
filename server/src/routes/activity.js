@@ -11,7 +11,7 @@ router.get('/', async (req, res, next) => {
     try {
         const { user_id, project_id, from, to } = req.query;
         const data = await store.activity.list({
-            scopeTeamId: null, // admin เห็นทุกทีม
+            scopeBrands: null, // หน้านี้ admin เท่านั้น จึงเห็นทุกแบรนด์เสมอ
             user_id: user_id || undefined,
             project_id: project_id || undefined,
             from: from || undefined,

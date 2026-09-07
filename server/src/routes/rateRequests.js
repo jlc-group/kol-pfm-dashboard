@@ -1,6 +1,7 @@
 const express = require('express');
 const store = require('../store');
 const { authenticate } = require('../middleware/auth');
+const { allowedBrands } = require('../data/roles');
 
 const router = express.Router();
 router.use(authenticate);
@@ -24,8 +25,8 @@ router.post('/', async (req, res, next) => {
 // GET /api/rate-requests — รายการคำขอ (ตามสิทธิ์ทีม)
 router.get('/', async (req, res, next) => {
     try {
-        const scopeTeamId = req.user.role === 'admin' ? null : req.user.team_id;
-        const data = await store.rateRequests.list({ scopeTeamId });
+        const scopeBrands = allowedBrands(req.account || req.user);
+        const data = await store.rateRequests.list({ scopeBrands });
         res.json({ status: 'success', data });
     } catch (err) { next(err); }
 });

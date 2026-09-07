@@ -14,11 +14,13 @@ router.get('/', async (req, res, next) => {
     } catch (err) { next(err); }
 });
 
-// GET /api/kols/used — Influencer ที่ถูกใช้ในแคมเปญ (รวมซ้ำ + แนบผลงาน) ตามสิทธิ์ทีม
+// GET /api/kols/used — Influencer ที่ถูกใช้ในแคมเปญ (รวมซ้ำ + แนบผลงาน) — เห็นได้ทุกแบรนด์
 router.get('/used', async (req, res, next) => {
     try {
-        const scopeTeamId = req.user.role === 'admin' ? null : req.user.team_id;
-        const data = await store.kols.usedWithCampaigns(scopeTeamId);
+        // หน้าคลัง KOL เปิดให้ทุกคนเห็นเท่ากัน รวมค่าตัวที่แบรนด์อื่นเคยจ่าย
+        // (ตกลงกันไว้ว่าให้หา KOL ได้ง่าย ไม่ต้องกั้นตามแบรนด์)
+        const scopeBrands = null;
+        const data = await store.kols.usedWithCampaigns(scopeBrands);
         res.json({ status: 'success', data });
     } catch (err) { next(err); }
 });
@@ -26,17 +28,21 @@ router.get('/used', async (req, res, next) => {
 // GET /api/kols/analytics — KOL ทุกคนที่คัดเลือกแล้วจากทุกแคมเปญ (สำหรับหน้า KOL Analytics)
 router.get('/analytics', async (req, res, next) => {
     try {
-        const scopeTeamId = req.user.role === 'admin' ? null : req.user.team_id;
-        const data = await store.kols.analytics(scopeTeamId);
+        // หน้าคลัง KOL เปิดให้ทุกคนเห็นเท่ากัน รวมค่าตัวที่แบรนด์อื่นเคยจ่าย
+        // (ตกลงกันไว้ว่าให้หา KOL ได้ง่าย ไม่ต้องกั้นตามแบรนด์)
+        const scopeBrands = null;
+        const data = await store.kols.analytics(scopeBrands);
         res.json({ status: 'success', data });
     } catch (err) { next(err); }
 });
 
-// GET /api/kols/:id/usages — รายละเอียด Influencer + ประวัติการใช้งานในแคมเปญ (ตามสิทธิ์ทีม)
+// GET /api/kols/:id/usages — รายละเอียด Influencer + ประวัติการใช้งาน — เห็นได้ทุกแบรนด์
 router.get('/:id/usages', async (req, res, next) => {
     try {
-        const scopeTeamId = req.user.role === 'admin' ? null : req.user.team_id;
-        const data = await store.kols.detailWithUsages(req.params.id, scopeTeamId);
+        // หน้าคลัง KOL เปิดให้ทุกคนเห็นเท่ากัน รวมค่าตัวที่แบรนด์อื่นเคยจ่าย
+        // (ตกลงกันไว้ว่าให้หา KOL ได้ง่าย ไม่ต้องกั้นตามแบรนด์)
+        const scopeBrands = null;
+        const data = await store.kols.detailWithUsages(req.params.id, scopeBrands);
         if (!data) return res.status(404).json({ status: 'error', message: 'ไม่พบ Influencer' });
         res.json({ status: 'success', data });
     } catch (err) { next(err); }

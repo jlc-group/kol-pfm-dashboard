@@ -1,6 +1,7 @@
 const express = require('express');
 const store = require('../store');
 const { authenticate } = require('../middleware/auth');
+const { allowedBrands, canSeeBrand } = require('../data/roles');
 
 const router = express.Router();
 router.use(authenticate);
@@ -10,10 +11,10 @@ const AD_STATUSES = ['ยังไม่ยิง', 'ยิงแล้ว'];
 // GET /api/ads — รายการโพสต์ที่ยิงแอด + สรุปภาพรวม (ตามสิทธิ์ทีม + ตัวกรอง)
 router.get('/', async (req, res, next) => {
     try {
-        const scopeTeamId = req.user.role === 'admin' ? null : req.user.team_id;
+        const scopeBrands = allowedBrands(req.account || req.user);
         const { brand, status, from, to } = req.query;
         const data = await store.ads.list({
-            scopeTeamId,
+            scopeBrands,
             brand: brand || undefined,
             status: status || undefined,
             from: from || undefined,
@@ -28,9 +29,9 @@ router.put('/:subId', async (req, res, next) => {
     try {
         const ctx = await store.ads.subContext(req.params.subId);
         if (!ctx) return res.status(404).json({ status: 'error', message: 'ไม่พบโพสต์' });
-        // ตรวจสิทธิ์: admin ได้ทุกทีม, member เฉพาะทีมตัวเอง
-        if (req.user.role !== 'admin' && ctx.team_id !== req.user.team_id) {
-            return res.status(403).json({ status: 'error', message: 'ไม่มีสิทธิ์แก้ไขของทีมอื่น' });
+        // ตรวจสิทธิ์ตามแบรนด์: admin/manager ได้ทุกแบรนด์, member เฉพาะแบรนด์ตัวเอง
+        if (!canSeeBrand(req.account || req.user, ctx.brand)) {
+            return res.status(403).json({ status: 'error', message: 'ไม่มีสิทธิ์แก้ไขข้อมูลของแบรนด์อื่น' });
         }
 
         const { ad_status, ad_spend, ad_reach, ad_start, ad_end, ad_note } = req.body;

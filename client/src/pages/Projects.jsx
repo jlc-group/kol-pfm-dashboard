@@ -4,8 +4,8 @@ import { api } from '../api/client.js';
 import { useAuth } from '../auth/AuthContext.jsx';
 import Icon from '../components/Icon.jsx';
 import ProjectForm from '../components/ProjectForm.jsx';
+import { visibleBrands } from '../data/brands.js';
 
-const BRANDS = ["Jula's Herb", 'Code Lab', 'Jdent', 'Jarvit', 'Beauterry', 'Jernis', 'Dermiq', 'Minimii', 'Any Skin'];
 const STATUS_LABEL = {
     Draft: 'ร่าง', Active: 'กำลังทำ', Completed: 'เสร็จสิ้น', Cancelled: 'ยกเลิก'
 };
@@ -72,6 +72,8 @@ function matchSearch(p, q) {
 }
 
 export default function Projects() {
+    const { user } = useAuth();
+    const BRANDS = visibleBrands(user);   // เห็นเฉพาะแบรนด์ที่ตัวเองดูแล
     const { isAdmin } = useAuth();
     const navigate = useNavigate();
     const [projects, setProjects] = useState([]);

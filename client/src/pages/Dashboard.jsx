@@ -5,8 +5,9 @@ import DatePicker from '../components/DatePicker.jsx';
 import BudgetTrendModal from '../components/BudgetTrendModal.jsx';
 import { ProductSummary } from '../components/ProductChips.jsx';
 import ScoreModal from '../components/ScoreModal.jsx';
+import { visibleBrands } from '../data/brands.js';
+import { useAuth } from '../auth/AuthContext.jsx';
 
-const BRANDS = ["Jula's Herb", 'Code Lab', 'Jdent', 'Jarvit', 'Beauterry', 'Jernis', 'Dermiq', 'Minimii', 'Any Skin'];
 const TOP_PREVIEW = 5;   // Top Influencer แสดงกี่อันดับก่อนกดดูเพิ่ม
 
 const PLATFORM_CARDS = [
@@ -30,6 +31,8 @@ const fmtMoney = n => '฿' + (Number(n) || 0).toLocaleString('th-TH');
 const ALL_TIME = { from: '', to: '' };
 
 export default function Dashboard() {
+    const { user } = useAuth();
+    const BRANDS = visibleBrands(user);   // เห็นเฉพาะแบรนด์ที่ตัวเองดูแล
     const [filters, setFilters] = useState({ brand: '', from: ALL_TIME.from, to: ALL_TIME.to, projectId: '' });
     const [data, setData] = useState(null);
     const [error, setError] = useState('');

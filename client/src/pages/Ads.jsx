@@ -6,11 +6,12 @@ import Avatar from '../components/Avatar.jsx';
 import { productLabel, asTargetArray } from '../data/products.js';
 import { ProductSummary } from '../components/ProductChips.jsx';
 import { fmtDate } from '../utils/date.js';
+import { visibleBrands } from '../data/brands.js';
+import { useAuth } from '../auth/AuthContext.jsx';
 
 // ค่าที่เก็บเป็นสตริงคั่นด้วย , (เช่น content_format) → แยกเป็นรายตัว
 const splitCsv = v => (v ? String(v).split(',').map(x => x.trim()).filter(Boolean) : []);
 
-const BRANDS = ["Jula's Herb", 'Code Lab', 'Jdent', 'Jarvit', 'Beauterry', 'Jernis', 'Dermiq', 'Minimii', 'Any Skin'];
 const STATUSES = ['ยังไม่ยิง', 'ยิงแล้ว'];
 
 const fmtMoney = n => '฿' + (Number(n) || 0).toLocaleString('th-TH');
@@ -215,6 +216,8 @@ function AdRow({ row, onSaved }) {
 }
 
 export default function Ads() {
+    const { user } = useAuth();
+    const BRANDS = visibleBrands(user);   // เห็นเฉพาะแบรนด์ที่ตัวเองดูแล
     const [month, setMonth] = useState(currentMonth());
     const [allTime, setAllTime] = useState(true);
     const [brand, setBrand] = useState('');

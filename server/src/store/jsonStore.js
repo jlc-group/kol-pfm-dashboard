@@ -109,6 +109,21 @@ function attachTeamName(u) {
     return { ...u, team_name: team ? team.name : null };
 }
 
+
+// ===== ตัวกรองสิทธิ์กลาง =====
+// scope = null/undefined  -> เห็นทุกแบรนด์ (admin / manager)
+// scope = []              -> ยังไม่ได้รับแบรนด์ = ไม่เห็นอะไรเลย
+// scope = [ชื่อแบรนด์...]  -> เห็นเฉพาะแคมเปญของแบรนด์นั้น
+// เขียนไว้ที่เดียวเพราะเดิมเงื่อนไขนี้ถูกก็อปไว้ 17 จุด พลาดจุดเดียว = ข้อมูลข้ามแบรนด์หลุด
+function inScope(project, scope) {
+    if (!Array.isArray(scope)) return true;
+    return scope.includes(project && project.brand);
+}
+function scopeProjects(list, scope) {
+    if (!Array.isArray(scope)) return list;
+    return list.filter(p => scope.includes(p.brand));
+}
+
 const users = {
     async findByUsername(username) {
         const u = db.users.find(u => u.username === username);
@@ -224,10 +239,10 @@ const kols = {
     async count() { return db.kols.length; },
 
     // ดึง Influencer ที่ "ถูกใช้ในแคมเปญ" — รวมชื่อซ้ำเป็นรายเดียว + แนบแคมเปญ (ผลงาน) แต่ละอัน
-    // scopeTeamId = null (admin เห็นทุกทีม) หรือเลข team_id (member เห็นเฉพาะแคมเปญทีมตัวเอง)
-    async usedWithCampaigns(scopeTeamId = null) {
+    // scopeBrands = null (admin/manager เห็นทุกแบรนด์) หรือ array ชื่อแบรนด์ (member เห็นเฉพาะแบรนด์ตัวเอง)
+    async usedWithCampaigns(scopeBrands = null) {
         let projs = db.projects;
-        if (scopeTeamId != null) projs = projs.filter(p => p.team_id === Number(scopeTeamId));
+        projs = scopeProjects(projs, scopeBrands);
         const projById = {};
         projs.forEach(p => { projById[p.id] = p; });
         const projIds = new Set(projs.map(p => p.id));
@@ -253,11 +268,11 @@ const kols = {
     },
 
     // รายละเอียด Influencer 1 คน + ประวัติการใช้งานในแคมเปญ (งบ/วิว/ลิงก์ผลงาน/วันที่ลงงาน)
-    async detailWithUsages(kolId, scopeTeamId = null) {
+    async detailWithUsages(kolId, scopeBrands = null) {
         const k = db.kols.find(x => x.id === Number(kolId));
         if (!k) return null;
         let projs = db.projects;
-        if (scopeTeamId != null) projs = projs.filter(p => p.team_id === Number(scopeTeamId));
+        projs = scopeProjects(projs, scopeBrands);
         const projById = {};
         projs.forEach(p => { projById[p.id] = p; });
         const projIds = new Set(projs.map(p => p.id));
@@ -288,10 +303,10 @@ const kols = {
     },
 
     // KOL Analytics — รวม KOL ที่คัดเลือกแล้วจากทุกแคมเปญ (ตามสิทธิ์ทีม)
-    async analytics(scopeTeamId = null) {
+    async analytics(scopeBrands = null) {
         const MONTHS_EN = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
         let projs = db.projects;
-        if (scopeTeamId != null) projs = projs.filter(p => p.team_id === Number(scopeTeamId));
+        projs = scopeProjects(projs, scopeBrands);
         const projById = {};
         projs.forEach(p => { projById[p.id] = p; });
         const projIds = new Set(projs.map(p => p.id));
@@ -377,10 +392,10 @@ function enrichProject(p) {
 const genReportId = () => 'r' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 
 const projects = {
-    // scopeTeamId = null (admin เห็นหมด) หรือเลข team_id (member เห็นเฉพาะทีมตัวเอง)
-    async list(scopeTeamId = null) {
+    // scopeBrands = null (เห็นทุกแบรนด์) หรือ array ชื่อแบรนด์
+    async list(scopeBrands = null) {
         let rows = db.projects.slice();
-        if (scopeTeamId != null) rows = rows.filter(p => p.team_id === Number(scopeTeamId));
+        rows = scopeProjects(rows, scopeBrands);
         rows.sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''));
         return rows.map(p => clone(enrichProject(p)));
     },
@@ -492,11 +507,11 @@ const projects = {
         return clone(link);
     },
     // รวมห้องแชททุกแคมเปญที่ทีมนี้มองเห็น — ใช้ทำรายการห้องในกล่องแชทลอย
-    // scopeTeamId = null คือ admin เห็นหมด
-    async listTeamChats(scopeTeamId) {
+    // scopeBrands = null คือเห็นทุกแบรนด์
+    async listTeamChats(scopeBrands) {
         const out = [];
         for (const p of db.projects) {
-            if (scopeTeamId != null && p.team_id !== Number(scopeTeamId)) continue;
+            if (!inScope(p, scopeBrands)) continue;
             for (const l of (p.agency_links || [])) {
                 const msgs = l.messages || [];
                 const readAt = l.team_read_at ? new Date(l.team_read_at).getTime() : 0;
@@ -668,14 +683,13 @@ const projects = {
         persist();
         return clone(p);
     },
-    async count(scopeTeamId = null) {
-        if (scopeTeamId == null) return db.projects.length;
-        return db.projects.filter(p => p.team_id === Number(scopeTeamId)).length;
+    async count(scopeBrands = null) {
+        return scopeProjects(db.projects, scopeBrands).length;
     },
     // จำนวน Project แยกตามสถานะ (สำหรับกราฟเล็ก)
-    async statusCounts(scopeTeamId = null) {
+    async statusCounts(scopeBrands = null) {
         let rows = db.projects;
-        if (scopeTeamId != null) rows = rows.filter(p => p.team_id === Number(scopeTeamId));
+        rows = scopeProjects(rows, scopeBrands);
         const order = ['Draft', 'Active', 'Completed', 'Cancelled'];
         const map = {};
         rows.forEach(p => { map[p.status] = (map[p.status] || 0) + 1; });
@@ -726,13 +740,13 @@ teams.memberCounts = async function () {
 
 // ============================ dashboard (สรุปตามตัวกรอง) ============================
 const dashboard = {
-    // filters: { scopeTeamId, brand, from, to, projectId }
+    // filters: { scopeBrands, brand, from, to, projectId }
     async overview(filters = {}) {
-        const { scopeTeamId = null, brand, from, to, projectId } = filters;
+        const { scopeBrands = null, brand, from, to, projectId } = filters;
 
         // 1) คัดกรอง projects ตามสิทธิ์ + ตัวกรอง (แบรนด์/แคมเปญ) — ไม่กรองด้วยวันที่ตรงนี้ (ไปกรองที่ตัว KOL แทน)
         let projects = db.projects.slice();
-        if (scopeTeamId != null) projects = projects.filter(p => p.team_id === Number(scopeTeamId));
+        projects = scopeProjects(projects, scopeBrands);
         if (brand) projects = projects.filter(p => p.brand === brand);
         if (projectId) projects = projects.filter(p => p.id === Number(projectId));
 
@@ -894,7 +908,7 @@ const dashboard = {
 
         // 8) รายการ campaign (project) สำหรับ dropdown — ตามสิทธิ์ (ไม่ผูกกับตัวกรองอื่น)
         let campaignScope = db.projects.slice();
-        if (scopeTeamId != null) campaignScope = campaignScope.filter(p => p.team_id === Number(scopeTeamId));
+        campaignScope = scopeProjects(campaignScope, scopeBrands);
         const campaigns = campaignScope
             .sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''))
             .map(p => ({ id: p.id, name: p.name, brand: p.brand }));
@@ -1003,9 +1017,9 @@ function spendMaps() {
 }
 
 const budget = {
-    async overview({ scopeTeamId = null, brand, from, to } = {}) {
+    async overview({ scopeBrands = null, brand, from, to } = {}) {
         let projs = db.projects.slice();
-        if (scopeTeamId != null) projs = projs.filter(p => p.team_id === Number(scopeTeamId));
+        projs = scopeProjects(projs, scopeBrands);
         if (brand) projs = projs.filter(p => p.brand === brand);
         if (from) projs = projs.filter(p => !p.start_date || p.start_date >= from);
         if (to) projs = projs.filter(p => !p.start_date || p.start_date <= to);
@@ -1052,9 +1066,9 @@ const budget = {
     },
 
     // เทรนด์รายเดือน (ใช้ไป + CPM/CPE ต่อเดือน)
-    async trend({ scopeTeamId = null, brand, year } = {}) {
+    async trend({ scopeBrands = null, brand, year } = {}) {
         let projs = db.projects.slice();
-        if (scopeTeamId != null) projs = projs.filter(p => p.team_id === Number(scopeTeamId));
+        projs = scopeProjects(projs, scopeBrands);
         if (brand) projs = projs.filter(p => p.brand === brand);
 
         const { fee, views, eng } = spendMaps();
@@ -1092,9 +1106,9 @@ const activity = {
         db.activity_logs.push(row); persist();
         return clone(row);
     },
-    async list({ scopeTeamId = null, user_id, project_id, from, to, limit = 300 } = {}) {
+    async list({ scopeBrands = null, user_id, project_id, from, to, limit = 300 } = {}) {
         let rows = db.activity_logs.slice();
-        if (scopeTeamId != null) rows = rows.filter(r => r.team_id === Number(scopeTeamId));
+        rows = scopeProjects(rows, scopeBrands);
         if (user_id) rows = rows.filter(r => r.user_id === Number(user_id));
         if (project_id) rows = rows.filter(r => r.project_id === Number(project_id));
         if (from) rows = rows.filter(r => (r.created_at || '') >= from);
@@ -1103,9 +1117,9 @@ const activity = {
         return rows.slice(0, limit).map(clone);
     },
     // รายชื่อผู้ใช้ที่เคยมีประวัติ (สำหรับ dropdown ฟิลเตอร์)
-    async actors(scopeTeamId = null) {
+    async actors(scopeBrands = null) {
         let rows = db.activity_logs;
-        if (scopeTeamId != null) rows = rows.filter(r => r.team_id === Number(scopeTeamId));
+        rows = scopeProjects(rows, scopeBrands);
         const map = {};
         rows.forEach(r => { if (r.user_id) map[r.user_id] = r.user_name; });
         return Object.entries(map).map(([id, name]) => ({ id: Number(id), name })).sort((a, b) => a.name.localeCompare(b.name));
@@ -1279,12 +1293,12 @@ const ads = {
         const s = db.submissions.find(x => x.id === Number(subId));
         if (!s) return null;
         const p = db.projects.find(pr => pr.id === s.project_id) || null;
-        return { submission: clone(s), project_id: s.project_id, team_id: p ? p.team_id : null, project_name: p ? p.name : null, account_name: s.account_name };
+        return { submission: clone(s), project_id: s.project_id, team_id: p ? p.team_id : null, brand: p ? p.brand : null, project_name: p ? p.name : null, account_name: s.account_name };
     },
 
     // รายการโพสต์ที่ "มีลิงก์โพสต์แล้ว" + ข้อมูลแอด พร้อมสรุปภาพรวม
-    // filters: { scopeTeamId, brand, status, from, to }
-    async list({ scopeTeamId = null, brand, status, from, to } = {}) {
+    // filters: { scopeBrands, brand, status, from, to }
+    async list({ scopeBrands = null, brand, status, from, to } = {}) {
         const projById = {};
         db.projects.forEach(p => { projById[p.id] = p; });
 
@@ -1330,7 +1344,7 @@ const ads = {
                 };
             });
 
-        if (scopeTeamId != null) rows = rows.filter(r => r.team_id === Number(scopeTeamId));
+        rows = scopeProjects(rows, scopeBrands);
         if (brand) rows = rows.filter(r => r.brand === brand);
         if (status) rows = rows.filter(r => r.ad_status === status);
         if (from) rows = rows.filter(r => !r.post_date || r.post_date >= from);
@@ -1373,9 +1387,9 @@ const ads = {
 // ============================ reports (Campaign Reports) ============================
 const reports = {
     // รายการแคมเปญ + ตัวเลขสรุปสำหรับหน้ารายงาน (KOLS / BUDGET / USED / POST RATE)
-    async campaigns({ scopeTeamId = null, brand } = {}) {
+    async campaigns({ scopeBrands = null, brand } = {}) {
         let projs = db.projects.slice();
-        if (scopeTeamId != null) projs = projs.filter(p => p.team_id === Number(scopeTeamId));
+        projs = scopeProjects(projs, scopeBrands);
         if (brand) projs = projs.filter(p => p.brand === brand);
 
         return projs
@@ -1397,10 +1411,10 @@ const reports = {
     },
 
     // รายงานเชิงลึกของ 1 แคมเปญ (Report Analysis)
-    async detail(projectId, scopeTeamId = null) {
+    async detail(projectId, scopeBrands = null) {
         const p = db.projects.find(x => x.id === Number(projectId));
         if (!p) return null;
-        if (scopeTeamId != null && p.team_id !== Number(scopeTeamId)) return null;
+        if (!inScope(p, scopeBrands)) return null;
 
         const subs = db.submissions.filter(s => s.project_id === p.id && s.status === 'confirmed');
         const rows = subs.map((s, i) => {
@@ -1604,9 +1618,9 @@ const rateRequests = {
         db.rate_requests.push(row); persist();
         return clone(row);
     },
-    async list({ scopeTeamId = null } = {}) {
+    async list({ scopeBrands = null } = {}) {
         let rows = db.rate_requests.slice();
-        if (scopeTeamId != null) rows = rows.filter(r => r.team_id === Number(scopeTeamId));
+        rows = scopeProjects(rows, scopeBrands);
         return rows.sort((a, b) => (b.created_at || '').localeCompare(a.created_at || '')).map(clone);
     }
 };

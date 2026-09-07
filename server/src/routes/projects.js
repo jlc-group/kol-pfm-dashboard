@@ -42,10 +42,11 @@ const STATUS_LABEL = { Draft: 'ร่าง', Active: 'กำลังทำ', C
 
 // ตรวจว่าผู้ใช้มีสิทธิ์แก้ project นี้ไหม (admin ได้ทุกอัน, member เฉพาะทีมตัวเอง)
 async function canEditProject(req, projectId) {
-    const teamId = await store.projects.findTeamId(projectId);
-    if (teamId === undefined) return { ok: false, code: 404, message: 'ไม่พบ Project' };
-    if (req.user.role !== 'admin' && teamId !== req.user.team_id) {
-        return { ok: false, code: 403, message: 'ไม่มีสิทธิ์แก้ไข Project ของทีมอื่น' };
+    const proj = await store.projects.findByIdFull(projectId);
+    if (!proj) return { ok: false, code: 404, message: 'ไม่พบ Project' };
+    // สิทธิ์แก้ไขยึดตามแบรนด์ของแคมเปญ (admin/manager แก้ได้ทุกแบรนด์)
+    if (!canSeeBrand(req.account || req.user, proj.brand)) {
+        return { ok: false, code: 403, message: 'ไม่มีสิทธิ์แก้ไขแคมเปญของแบรนด์อื่น' };
     }
     return { ok: true };
 }
@@ -65,10 +66,10 @@ async function record(req, id, action, summary, projectName, teamId) {
     } catch { /* เงียบไว้ */ }
 }
 
-// GET /api/projects — รายการ Project (admin เห็นหมด / member เห็นเฉพาะทีมตัวเอง)
+// GET /api/projects — รายการ Project (admin/manager เห็นหมด / member เห็นเฉพาะแบรนด์ตัวเอง)
 router.get('/', async (req, res, next) => {
     try {
-        const scope = req.user.role === 'admin' ? null : req.user.team_id;
+        const scope = allowedBrands(req.account || req.user);
         const data = await store.projects.list(scope);
         res.json({ status: 'success', data });
     } catch (err) { next(err); }
@@ -77,7 +78,7 @@ router.get('/', async (req, res, next) => {
 // GET /api/projects/chats/all — รายการห้องแชททุกแคมเปญ (ไว้ทำกล่องแชทลอยที่อยู่ทุกหน้า)
 router.get('/chats/all', async (req, res, next) => {
     try {
-        const scope = req.user.role === 'admin' ? null : req.user.team_id;
+        const scope = allowedBrands(req.account || req.user);
         const data = await store.projects.listTeamChats(scope);
         res.json({ status: 'success', data });
     } catch (err) { next(err); }
@@ -282,6 +283,7 @@ router.get('/:id/platform-brief/:platform/file', async (req, res, next) => {
 
 // ---------- Agency Submissions (คัดเลือก KOL จากเอเจนซี่) ----------
 const crypto = require('crypto');
+const { allowedBrands, seesAllBrands, canSeeBrand } = require('../data/roles');
 
 // POST /api/projects/:id/share — สร้าง/ดึงลิงก์แชร์ให้ Agency (ลิงก์รวมเดิม)
 router.post('/:id/share', async (req, res, next) => {
