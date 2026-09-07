@@ -3,6 +3,7 @@ import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext.jsx';
 import Icon from './Icon.jsx';
 import { api } from '../api/client.js';
+import { ROLE_LABEL } from '../data/brands.js';
 import ChangePasswordModal from './ChangePasswordModal.jsx';
 
 const MAIN_NAV = [
@@ -82,8 +83,10 @@ export default function Layout() {
                         <div className="user-meta">
                             <div className="user-name">{user?.full_name || user?.username}</div>
                             <div className="user-role">
-                                {user?.role === 'admin' ? 'ผู้ดูแลระบบ' : 'สมาชิกทีม'}
-                                {user?.team_name ? ` · ${user.team_name}` : ''}
+                                {ROLE_LABEL[user?.role] || user?.role}
+                                {user?.role === 'member' && (user?.brands || []).length > 0
+                                    ? ` · ${user.brands.join(', ')}`
+                                    : ''}
                             </div>
                         </div>
                     </div>
