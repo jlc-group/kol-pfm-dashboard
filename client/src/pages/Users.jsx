@@ -190,8 +190,11 @@ export default function Users() {
                                     <div className="inf-cell">
                                         <Avatar name={u.nickname || u.full_name || u.username} size={40} />
                                         <div>
-                                            <div className="inf-cell-name">{u.nickname || u.full_name || u.username}</div>
-                                            <div className="inf-cell-user">@{u.username}</div>
+                                            {/* ชื่อผู้ใช้ขึ้นก่อนเป็นตัวเด่น ชื่อเล่น/ชื่อเต็มอยู่บรรทัดล่าง */}
+                                            <div className="inf-cell-name">@{u.username}</div>
+                                            {(u.nickname || u.full_name) && (
+                                                <div className="inf-cell-user">{u.nickname || u.full_name}</div>
+                                            )}
                                         </div>
                                     </div>
                                 </td>
