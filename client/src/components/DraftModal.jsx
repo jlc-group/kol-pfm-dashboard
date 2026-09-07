@@ -109,9 +109,12 @@ export default function DraftModal({ sub, onSave, onClose }) {
                 )}
                 <div className="modal-actions">
                     <button type="button" className="btn-ghost" onClick={onClose}>ปิด</button>
-                    {/* ปุ่มบันทึกสีเข้ม เพื่อเตือนว่าต้องกดบันทึกก่อนปิดทุกครั้ง */}
-                    <button type="button" className="btn-primary btn-save-strong" onClick={save} disabled={saving}>
-                        💾 {saving ? 'กำลังบันทึก...' : 'บันทึก'}
+                    {/* ยังไม่ได้เลือก Revise/Approve = เขียวอ่อน
+                        เลือกแล้ว = เขียวเข้ม เตือนว่ามีผลตรวจรออยู่ ต้องกดบันทึกก่อนปิด */}
+                    <button type="button" className={'btn-primary' + (draftStatus ? ' btn-save-strong' : '')}
+                        onClick={save} disabled={saving}
+                        title={draftStatus ? 'มีผลตรวจที่ยังไม่ได้บันทึก' : undefined}>
+                        {draftStatus ? '💾 ' : ''}{saving ? 'กำลังบันทึก...' : 'บันทึก'}
                     </button>
                 </div>
             </div>
