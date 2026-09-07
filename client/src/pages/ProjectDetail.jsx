@@ -11,6 +11,7 @@ import ChatDock from '../components/ChatDock.jsx';
 import { productLabel, asTargetArray } from '../data/products.js';
 import { groupPlatforms } from '../data/adGroups.js';
 import { clipCount, collapseByPerson, countPeople } from '../data/clips.js';
+import { countStages, STAGES } from '../data/workStage.js';
 import { tabBadges, markSeen, seedDraftsSeen } from '../utils/tabUpdates.js';
 import { fmtRange } from '../utils/date.js';
 
@@ -318,6 +319,7 @@ export default function ProjectDetail() {
     const [newLinkPlatforms, setNewLinkPlatforms] = useState([]);
     const [newLinkKol, setNewLinkKol] = useState('');
     const [copiedToken, setCopiedToken] = useState('');
+    const [stage, setStage] = useState('all');   // ตัวกรองขั้นงานจากการ์ดสรุป
     const [subTab, setSubTab] = useState('list'); // list | process
     const [badges, setBadges] = useState({ listNew: false, processNew: false });
     const [subsLoaded, setSubsLoaded] = useState(false);
@@ -539,20 +541,8 @@ export default function ProjectDetail() {
         );
     };
 
-    // สรุปสถานะงาน On Process (นับจาก KOL ที่คัดเลือกแล้ว) — funnel: รอส่งดราฟ → รอตรวจ → Approve → ลงงาน
-    const procStats = () => {
-        const conf = submissions.filter(s => s.status === 'confirmed');
-        const isPosted = s => s.post_url && String(s.post_url).trim();
-        const hasDraft = s => [s.draft_link, s.draft_link2, s.draft_link3, s.draft_link4, s.draft_link5].some(l => l && String(l).trim());
-        let todo = 0, review = 0, approved = 0, posted = 0;
-        conf.forEach(s => {
-            if (isPosted(s)) posted++;
-            else if (s.draft_status === 'approve') approved++;
-            else if (hasDraft(s)) review++;
-            else todo++;
-        });
-        return { todo, review, approved, posted };
-    };
+    // สรุปสถานะงาน On Process (นับจาก KOL ที่คัดเลือกแล้ว) — เกณฑ์อยู่ที่ data/workStage.js
+    const procStats = () => countStages(submissions.filter(s => s.status === 'confirmed'));
 
     return (
         <div>
@@ -907,13 +897,22 @@ export default function ProjectDetail() {
                 return (
                     <>
                         <div className="proc-stat-grid">
-                            <div className="proc-stat-card todo"><span className="proc-stat-num">{st.todo}</span><span className="proc-stat-lbl">รอส่งดราฟ</span></div>
-                            <div className="proc-stat-card review"><span className="proc-stat-num">{st.review}</span><span className="proc-stat-lbl">รอตรวจดราฟ</span></div>
-                            <div className="proc-stat-card approved"><span className="proc-stat-num">{st.approved}</span><span className="proc-stat-lbl">ดราฟ Approve แล้ว</span></div>
-                            <div className="proc-stat-card posted"><span className="proc-stat-num">{st.posted}</span><span className="proc-stat-lbl">ลงงานแล้ว</span></div>
+                            {/* กดการ์ดเพื่อกรองตารางด้านล่างเฉพาะขั้นนั้น กดซ้ำ = เอาตัวกรองออก */}
+                            {STAGES.map(({ key, label }) => (
+                                <button type="button" key={key}
+                                    className={'proc-stat-card ' + key + (stage === key ? ' on' : '')}
+                                    aria-pressed={stage === key}
+                                    title={stage === key ? 'กดอีกครั้งเพื่อดูทั้งหมด' : `ดูเฉพาะ${label}`}
+                                    onClick={() => setStage(v => v === key ? 'all' : key)}>
+                                    <span className="proc-stat-num">{st[key]}</span>
+                                    <span className="proc-stat-lbl">{label}</span>
+                                </button>
+                            ))}
                         </div>
                         <div className="panel">
-                            <OnProcessTable subs={submissions} groups={project.ad_groups || []} showAds scope={id} putSubmission={putSubmission} reload={loadSubs} />
+                            <OnProcessTable subs={submissions} groups={project.ad_groups || []} showAds scope={id}
+                                putSubmission={putSubmission} reload={loadSubs}
+                                stage={stage} onClearStage={() => setStage('all')} />
                         </div>
                     </>
                 );

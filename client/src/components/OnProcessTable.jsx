@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { workStage, STAGES } from '../data/workStage.js';
 import Icon from './Icon.jsx';
 import DatePicker from './DatePicker.jsx';
 import DraftModal from './DraftModal.jsx';
@@ -212,7 +213,7 @@ function GroupBar({ group, gi, count }) {
  * ตาราง On Process — แสดง KOL ที่ถูกคัดเลือกแล้ว ให้ทีม/เอเจนซี่อัปเดตงาน + ดราฟ
  * props: subs, groups (ad_groups — ถ้ามีจะแบ่งเป็นกลุ่มสินค้า), putSubmission(subId, payload), reload()
  */
-export default function OnProcessTable({ subs = [], groups = [], showAds = false, scope = '', putSubmission, reload, directEdit = false }) {
+export default function OnProcessTable({ subs = [], groups = [], showAds = false, scope = '', putSubmission, reload, directEdit = false, stage = 'all', onClearStage }) {
     const [platFilter, setPlatFilter] = useState('all');   // ตัวกรองตามแพลตฟอร์ม
     const [clipFilter, setClipFilter] = useState('all');   // ตัวกรองตามคลิป (กลุ่มที่ 1 คนส่งหลายคลิป)
     // เรียงเก่า -> ใหม่ ให้ตรงกับแท็บรายชื่อและฝั่งลิงก์เอเจนซี่ (API ส่งมาแบบใหม่สุดขึ้นก่อน)
@@ -227,7 +228,8 @@ export default function OnProcessTable({ subs = [], groups = [], showAds = false
     const clipNames = [...new Set(confirmed.map(s => s.clip_name).filter(Boolean))];
     const view = confirmed
         .filter(s => platFilter === 'all' || (s.platform || '') === platFilter)
-        .filter(s => clipFilter === 'all' || (s.clip_name || '') === clipFilter);
+        .filter(s => clipFilter === 'all' || (s.clip_name || '') === clipFilter)
+        .filter(s => stage === 'all' || workStage(s) === stage);   // ตัวกรองจากการ์ดสรุปด้านบน
 
     const groupMap = {};
     groups.forEach(g => { groupMap[g.key] = g; });
@@ -235,6 +237,15 @@ export default function OnProcessTable({ subs = [], groups = [], showAds = false
     const rowsFor = list => list.map((s, i) => (
         <ProcessRow key={s.id} sub={s} seq={i + 1} putSubmission={putSubmission} reload={reload} showAds={showAds} scope={scope} group={groupMap[s.group_key] || null} directEdit={directEdit} />
     ));
+
+    // บอกให้ชัดว่าตารางถูกกรองอยู่ ไม่งั้นงงว่าทำไมรายชื่อหายไป
+    const stageLabel = (STAGES.find(x => x.key === stage) || {}).label;
+    const stageBar = stageLabel ? (
+        <div className="proc-stagebar">
+            <span>กำลังดูเฉพาะ <b>{stageLabel}</b> · {view.length} รายการ</span>
+            {onClearStage && <button type="button" onClick={onClearStage}>× ดูทั้งหมด</button>}
+        </div>
+    ) : null;
 
     // แถบปุ่มกรองคลิป — โชว์เมื่อแคมเปญนี้มีคนที่ต้องส่งมากกว่า 1 คลิป
     const clipBar = clipNames.length > 1 ? (
@@ -269,6 +280,7 @@ export default function OnProcessTable({ subs = [], groups = [], showAds = false
         const visibleGroups = groups.filter(g => view.some(s => s.group_key === g.key));
         return (
             <div>
+                {stageBar}
                 {filterBar}
                 {clipBar}
                 <div className="proc-tbl-scroll">
@@ -299,8 +311,9 @@ export default function OnProcessTable({ subs = [], groups = [], showAds = false
     // ไม่มีกลุ่ม → ตารางเดียว
     return (
         <div>
+            {stageBar}
             {filterBar}
-                {clipBar}
+            {clipBar}
             <div className="proc-tbl-scroll">
                 <div className={tblCls}>
                     {procHead(showAds)}
