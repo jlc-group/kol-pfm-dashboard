@@ -277,6 +277,18 @@ export default function ProjectForm({ editing, onClose, onSaved }) {
                 </div>
                 {error && <div className="alert-error">{error}</div>}
                 <form onSubmit={handleSubmit}>
+                    {/* ทีมใช้บัญชีเดียวร่วมกัน ระบบจึงบันทึกได้แค่ "System Admin" ต้องเลือกชื่อจริงเอง */}
+                    <div className="field">
+                        <label>Project Creator</label>
+                        <select value={form.creator} onChange={e => update('creator', e.target.value)}>
+                            <option value="">— เลือก —</option>
+                            {OWNERS.map(n => <option key={n} value={n}>{n}</option>)}
+                            {form.creator && !OWNERS.includes(form.creator) && (
+                                <option value={form.creator}>{form.creator}</option>
+                            )}
+                        </select>
+                    </div>
+
                     <div className="field-row">
                         <div className="field">
                             <label>Brand</label>
@@ -466,28 +478,15 @@ export default function ProjectForm({ editing, onClose, onSaved }) {
                         </div>
                     </div>
 
-                    <div className="field-row">
-                        <div className="field">
-                            <label>Project Owner</label>
-                            <select value={form.owner} onChange={e => update('owner', e.target.value)}>
-                                <option value="">— เลือก —</option>
-                                {OWNERS.map(n => <option key={n} value={n}>{n}</option>)}
-                                {form.owner && !OWNERS.includes(form.owner) && (
-                                    <option value={form.owner}>{form.owner}</option>
-                                )}
-                            </select>
-                        </div>
-                        {/* ทีมใช้บัญชีเดียวร่วมกัน ระบบจึงบันทึกได้แค่ "System Admin" ต้องเลือกชื่อจริงเอง */}
-                        <div className="field">
-                            <label>ผู้สร้างโปรเจค</label>
-                            <select value={form.creator} onChange={e => update('creator', e.target.value)}>
-                                <option value="">— เลือก —</option>
-                                {OWNERS.map(n => <option key={n} value={n}>{n}</option>)}
-                                {form.creator && !OWNERS.includes(form.creator) && (
-                                    <option value={form.creator}>{form.creator}</option>
-                                )}
-                            </select>
-                        </div>
+                    <div className="field">
+                        <label>Project Owner</label>
+                        <select value={form.owner} onChange={e => update('owner', e.target.value)}>
+                            <option value="">— เลือก —</option>
+                            {OWNERS.map(n => <option key={n} value={n}>{n}</option>)}
+                            {form.owner && !OWNERS.includes(form.owner) && (
+                                <option value={form.owner}>{form.owner}</option>
+                            )}
+                        </select>
                     </div>
 
                     <div className="field-row">
