@@ -406,7 +406,11 @@ export default function ProjectDetail() {
     const productsForPlatforms = plats => {
         if (!plats.length) return [];
         const set = new Set();
-        (project?.ad_groups || []).forEach(g => { if (plats.includes(g.platform)) (g.products || []).forEach(c => set.add(c)); });
+        // เทียบกับทุก Platform ของกลุ่ม ไม่ใช่แค่ g.platform ตัวเดียว
+        // ไม่งั้นกลุ่มที่ลง TikTok+Instagram จะไม่มีสินค้าขึ้นตอนเลือก Instagram
+        (project?.ad_groups || []).forEach(g => {
+            if (groupPlatforms(g).some(pf => plats.includes(pf))) (g.products || []).forEach(c => set.add(c));
+        });
         return [...set];
     };
     const toggleNewProduct = code => setNewLinkProducts(a => a.includes(code) ? a.filter(x => x !== code) : [...a, code]);
