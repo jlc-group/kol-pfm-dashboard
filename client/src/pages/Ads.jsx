@@ -224,44 +224,40 @@ function AdRow({ row, onSaved }) {
                 <span className="ads-camp-name">{row.project_name || '—'}</span>
                 {row.brand && <span className="tag">{row.brand}</span>}
             </div>
-            <div className="ads-cell ads-prod">
+            {/* สินค้า + Target อยู่ช่องเดียวกัน (เป็นเรื่องเดียวกัน) เพื่อให้ตารางพอดีจอ */}
+            <div className="ads-cell ads-stack">
                 <ProductSummary value={row.product} max={2} />
-            </div>
-            <div className="ads-cell ads-prod">
                 {asTargetArray(row.target).length > 0
-                    ? asTargetArray(row.target).map(t => <span className="proc-ads-tgt" key={t} title={t}>🎯 {t}</span>)
-                    : <span className="muted">—</span>}
+                    ? <div className="ads-sub">{asTargetArray(row.target).map(t => <span className="proc-ads-tgt" key={t} title={t}>🎯 {t}</span>)}</div>
+                    : null}
             </div>
-            <div className="ads-cell">
-                {row.content_type ? (
-                    <span className="proc-ctype-chip">{row.content_type}</span>
-                ) : <span className="muted">—</span>}
-            </div>
-            <div className="ads-cell">
-                {row.media_type || row.group_format ? (
+            <div className="ads-cell ads-stack">
+                {row.content_type || row.media_type || row.group_format ? (
                     <>
+                        {row.content_type && <span className="proc-ctype-chip">{row.content_type}</span>}
                         {row.media_type && <span className="proc-ctype-chip media">{row.media_type}</span>}
                         {splitCsv(row.group_format).map(x => <span className="proc-ctype-chip fmt" key={x}>{x}</span>)}
                     </>
                 ) : <span className="muted">—</span>}
             </div>
-            <div className="ads-cell ads-post">
-                {row.post_url
-                    ? <a href={row.post_url} target="_blank" rel="noreferrer" title="เปิดโพสต์"><Icon name="eye" size={16} /></a>
-                    : <span className="muted">—</span>}
-                <EnteredAt at={row.post_url_at} by={row.post_url_by} has={row.post_url} />
+            {/* โพสต์ + Gencode + ID Post ซ้อนกัน — ใช้คู่กันตอนไปตั้งค่าในระบบยิงแอด */}
+            <div className="ads-cell ads-stack">
+                <div className="ads-code-line">
+                    {row.post_url
+                        ? <a href={row.post_url} target="_blank" rel="noreferrer" title="เปิดโพสต์"><Icon name="eye" size={15} /></a>
+                        : <span className="muted">—</span>}
+                    <CopyCode value={row.gencode} />
+                </div>
+                {row.id_post
+                    ? <span className="ads-code ads-sub" title={row.id_post}>{row.id_post}</span>
+                    : <span className="muted ads-sub">ยังไม่มี ID Post</span>}
             </div>
-            <div className="ads-cell">
-                <CopyCode value={row.gencode} />
-                <EnteredAt at={row.gencode_at} by={row.gencode_by} has={row.gencode} />
-            </div>
-            <div className="ads-cell">
-                {row.id_post ? <span className="ads-code" title={row.id_post}>{row.id_post}</span> : <span className="muted">—</span>}
-                <EnteredAt at={row.id_post_at} by={row.id_post_by} has={row.id_post} />
-            </div>
-            <div className="ads-cell">
+            {/* วันลงงาน / วันยิงแอด ซ้อนกัน */}
+            <div className="ads-cell ads-stack">
                 {row.post_date ? <span className="ads-postdate">{fmtDate(row.post_date)}</span> : <span className="muted">—</span>}
-                <EnteredAt at={row.post_date_at} by={row.post_date_by} has={row.post_date} />
+                <span className="ads-sub" title="วันที่ยิงแอด (ระบบลงให้ตอนกดสถานะเป็นยิงแล้ว)">
+                    {end ? '▸ ยิง ' + fmtDate(end) : <span className="muted">▸ ยังไม่ยิง</span>}
+                </span>
                 {reportLag !== null && reportLag >= 2 && (
                     <span className={'ads-lag ' + (reportLag <= 3 ? 'warn' : 'bad')}
                         title={`KOL ลงงาน ${fmtDate(row.post_date)} แต่เพิ่งแจ้งเข้าระบบ ${fmtDate(row.post_date_at)} — ช้าไป ${reportLag} วัน ทำให้เริ่มยิงแอดได้ช้าตามไปด้วย`}>
@@ -275,12 +271,6 @@ function AdRow({ row, onSaved }) {
                 </button>
                 {/* ย้ายตัวบอกสถานะการบันทึกมาจากช่อง CPM ที่เอาออกไป */}
                 {saving ? <span className="proc-status">…</span> : saved ? <span className="proc-status ok">✓</span> : null}
-            </div>
-            {/* แก้เองไม่ได้ — ระบบลงวันที่ให้ตอนกดปุ่มสถานะเป็น "ยิงแล้ว" และล้างให้เมื่อกดกลับเป็น "ยังไม่ยิง" */}
-            <div className="ads-cell">
-                {end
-                    ? <span className="ads-postdate" title="ลงอัตโนมัติจากวันที่กดยิงแอด">{fmtDate(end)}</span>
-                    : <span className="muted" title="กดปุ่มสถานะเป็น 'ยิงแล้ว' แล้ววันที่จะขึ้นเอง">—</span>}
             </div>
             <div className="ads-cell ads-late">
                 {lateDays === null
@@ -459,13 +449,12 @@ export default function Ads() {
                                         options={[{ value: '', label: 'ทุก Platform', count: countIf('platform', () => true) },
                                         ...platformOptions.map(p => ({ value: p, label: p, count: countIf('platform', r => r.platform === p) }))]} />
                                 </span>
-                                <span>แคมเปญ</span><span>PRODUCT</span><span>TARGET</span><span>CONTENT TYPE</span><span>CONTENT FORMAT</span><span>โพสต์</span><span>GENCODE</span><span>ID POST</span><span>Post Date</span>
+                                <span>แคมเปญ</span><span>PRODUCT / TARGET</span><span>CONTENT</span><span>โพสต์ / GENCODE / ID</span><span>วันลง / วันยิง</span>
                                 <span>สถานะ
                                     <ColumnFilter label="สถานะยิงแอด" value={status} onPick={setStatus}
                                         options={[{ value: '', label: 'ทุกสถานะ', count: countIf('status', () => true) },
                                         ...STATUSES.map(st => ({ value: st, label: st === 'ยิงแล้ว' ? '✓ ยิงแล้ว' : st, count: countIf('status', r => r.ad_status === st) }))]} />
                                 </span>
-                                <span>วันยิงแอด</span>
                                 <span>ยิงช้า
                                     <ColumnFilter label="ความช้า" value={late} onPick={setLate}
                                         options={[{ value: '', label: 'ทั้งหมด', count: countIf('late', () => true) },
