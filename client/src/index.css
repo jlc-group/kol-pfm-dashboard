@@ -2585,3 +2585,11 @@ a { text-decoration: none; color: inherit; }
 
 .btn-ghost.danger { color: var(--danger); border-color: #fbd5dc; }
 .btn-ghost.danger:hover { background: #fdecef; border-color: var(--danger); }
+
+/* ป้าย Performance ที่ถูกล็อกไว้ + ลูกศรเทียบกับตอนสแตมป์ */
+.perf-pill.locked { box-shadow: inset 0 0 0 1.5px rgba(0,0,0,.12); }
+.perf-pill.wait { background: #fdf0e3; color: #b45309; }
+.perf-live { display: inline-flex; align-items: center; gap: 6px; }
+.perf-move { font-weight: 800; font-size: 13px; }
+.perf-move.up { color: var(--mint); }
+.perf-move.down { color: var(--danger); }

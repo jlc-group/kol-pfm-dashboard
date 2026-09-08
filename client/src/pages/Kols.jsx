@@ -41,6 +41,12 @@ function PerfBadge({ row }) {
 กรอกได้ที่ปุ่ม 📊 ในหน้า On Process ของแคมเปญ`}>Not rated</span>
         );
     }
+    // member ไม่ได้รับตัวเลข CPM/CPE มา (เป็นข้อมูลลับ) แต่ยังเห็นผลตัดสินได้
+    if (row.cpm == null) {
+        return row.performance === 'Good'
+            ? <span className="perf-pill good" title="ผ่านเกณฑ์ความคุ้มค่า">✓ Pass</span>
+            : <span className="perf-pill bad" title="ยังไม่ผ่านเกณฑ์ความคุ้มค่า">✕ Fail</span>;
+    }
     const cpmOk = row.cpm > 0 && row.cpm <= GOOD_CPM;
     const cpeOk = row.cpe > 0 && row.cpe <= GOOD_CPE;
     const mark = ok => (ok ? '✓ ผ่าน' : '✕ เกินเกณฑ์');
@@ -48,12 +54,56 @@ function PerfBadge({ row }) {
         `CPM ฿${N(row.cpm)} (เกณฑ์ ไม่เกิน ${GOOD_CPM})  ${mark(cpmOk)}`,
         `CPE ฿${N(row.cpe)} (เกณฑ์ ไม่เกิน ${GOOD_CPE})  ${mark(cpeOk)}`,
         '',
-        `ต้นทุนรวม ฿${N(row.total_cost)} = ค่าตัว ฿${N(row.cost)} + ค่ายิงแอด ฿${N(row.ad_spend)}`,
         `ยอดวิว ${N(row.views)} · Engagement ${N(row.engagement)} (ER ${row.er}%)`
     ].join('\n');
     return cpmOk && cpeOk
         ? <span className="perf-pill good" title={tip}>✓ Pass</span>
         : <span className="perf-pill bad" title={tip}>✕ Fail</span>;
+}
+
+// ป้ายผลที่ "ล็อกไว้" ตอนค่าแอดถึงเกณฑ์ — แก้ไม่ได้ ล้างไม่ได้ ระบบสแตมป์ให้เอง
+function StampBadge({ row }) {
+    const st = row.perf_stamp;
+    if (!st) {
+        if (row.stamp_waiting) {
+            return <span className="perf-pill wait" title={`ค่ายิงแอดถึงเกณฑ์แล้ว แต่ยังไม่มียอดวิวให้ตัดสิน
+ระบบจะสแตมป์ให้เองทันทีที่ข้อมูลผลงานเข้ามา`}>รอข้อมูลผลงาน</span>;
+        }
+        return <span className="perf-pill none" title="ยังไม่ถึงเกณฑ์ — จะสแตมป์อัตโนมัติเมื่อค่ายิงแอดสะสมถึง 10,000 บาท">ยังไม่ถึงเกณฑ์</span>;
+    }
+    const when = fmtD(String(st.at).slice(0, 10));
+    const cost = st.cpm != null
+        ? `CPM ฿${N(st.cpm)} (เกณฑ์ ≤ ${GOOD_CPM})
+CPE ฿${N(st.cpe)} (เกณฑ์ ≤ ${GOOD_CPE})`
+        : 'CPM/CPE ดูได้เฉพาะผู้ดูแลระบบและ Manager';
+    const tip = [
+        `🔒 ล็อกไว้ตั้งแต่ ${when} — แก้ไม่ได้`,
+        '',
+        cost,
+        `ยอดวิว ${N(st.views)} · Engagement ${N(st.engagement)} (ER ${st.er}%)`
+    ].join(String.fromCharCode(10));
+    return st.verdict === 'Pass'
+        ? <span className="perf-pill good locked" title={tip}>🔒 ✓ Pass</span>
+        : <span className="perf-pill bad locked" title={tip}>🔒 ✕ Fail</span>;
+}
+
+// ผลปัจจุบัน + ลูกศรเทียบกับตอนสแตมป์ (แอดยังวิ่งอยู่ ตัวเลขขยับได้เรื่อย ๆ)
+function LiveBadge({ row }) {
+    if (!row.performance) return <PerfBadge row={row} />;
+    const st = row.perf_stamp;
+    const now = row.performance === 'Good' ? 'Pass' : 'Fail';
+    let move = null;
+    if (st) {
+        if (st.verdict === now) move = null;
+        else if (st.verdict === 'Fail' && now === 'Pass') move = { ico: '↑', cls: 'up', why: 'ดีขึ้นจากตอนสแตมป์ (ตอนนั้นไม่ผ่าน)' };
+        else move = { ico: '↓', cls: 'down', why: 'แย่ลงจากตอนสแตมป์ (ตอนนั้นผ่าน)' };
+    }
+    return (
+        <span className="perf-live">
+            <PerfBadge row={row} />
+            {move && <span className={'perf-move ' + move.cls} title={move.why}>{move.ico}</span>}
+        </span>
+    );
 }
 
 // ช่อง Gencode / ID Post — ข้อความยาวจนถูกตัดท้าย เลยมีปุ่มคัดลอกค่าเต็มให้
@@ -274,10 +324,11 @@ export default function Kols() {
                                         title={sort === 'perf-best' ? 'เรียง: ผ่านเกณฑ์ขึ้นก่อน — กดอีกครั้งเพื่อสลับเป็นไม่ผ่านขึ้นก่อน'
                                             : sort === 'perf-worst' ? 'เรียง: ไม่ผ่านเกณฑ์ขึ้นก่อน — กดอีกครั้งเพื่อกลับไปเรียงตามเดือน'
                                                 : 'กดเพื่อเรียงตาม Performance'}>
-                                        Performance
+                                        Performance ตอนนี้
                                         <span className="ka-sort-ico">{sort === 'perf-best' ? '▲' : sort === 'perf-worst' ? '▼' : '⇅'}</span>
                                     </button>
                                 </th>
+                                <th title="ผลที่ระบบล็อกไว้ตอนค่ายิงแอดสะสมถึง 10,000 บาท — แก้ไม่ได้">Performance @10K 🔒</th>
                                 <th>วันที่ลงงาน</th><th>วันที่เริ่ม Gen</th><th>Days</th>
                                 <th className="ka-sort-th">
                                     <button type="button" className={'ka-sort' + (sort.startsWith('left-') ? ' on' : '')} onClick={sortByLeft}
@@ -313,7 +364,8 @@ export default function Kols() {
                                     <td className="num">{N(r.cost)}</td>
                                     <td className="num">{r.cpm ? '฿' + N(r.cpm) : '—'}</td>
                                     <td className="num">{r.cpe ? '฿' + N(r.cpe) : '—'}</td>
-                                    <td><PerfBadge row={r} /></td>
+                                    <td><LiveBadge row={r} /></td>
+                                    <td><StampBadge row={r} /></td>
                                     <td>{fmtD(r.post_date)}</td>
                                     <td>{fmtD(r.gen_date)}</td>
                                     <td>{r.days ? `${r.days} Days` : '—'}</td>

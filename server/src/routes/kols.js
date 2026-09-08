@@ -1,6 +1,7 @@
 const express = require('express');
 const store = require('../store');
 const { authenticate, requireRole } = require('../middleware/auth');
+const { canSeeCostMetrics } = require('../data/roles');
 
 const router = express.Router();
 router.use(authenticate);
@@ -32,6 +33,13 @@ router.get('/analytics', async (req, res, next) => {
         // (ตกลงกันไว้ว่าให้หา KOL ได้ง่าย ไม่ต้องกั้นตามแบรนด์)
         const scopeBrands = null;
         const data = await store.kols.analytics(scopeBrands);
+        // ปิดตัวเลขต้นทุนสำหรับคนที่ไม่ใช่ admin/manager — ยังเห็นผล Pass/Fail ได้เหมือนเดิม
+        if (!canSeeCostMetrics(req.account || req.user)) {
+            (data.rows || []).forEach(r => {
+                r.cpm = null; r.cpe = null; r.ad_spend = null; r.total_cost = null;
+                if (r.perf_stamp) { r.perf_stamp = { ...r.perf_stamp, cpm: null, cpe: null, ad_spend: null, total_cost: null }; }
+            });
+        }
         res.json({ status: 'success', data });
     } catch (err) { next(err); }
 });

@@ -16,7 +16,7 @@ function verdict(k) {
 
     // ประเด็นที่มักเป็นสาเหตุจริง: วิวเยอะแต่ต้นทุนแพง
     if (by('views').earned / 25 >= 0.7 && costPts / 40 <= 0.35) {
-        lines.push(`ยอดวิวสูง แต่ต้นทุนรวม ${B(k.cost)} (ค่าตัว ${B(k.fee)} + ค่าแอด ${B(k.ad_spend)}) ทำให้ CPM ${B(k.cpm)} และ CPE ${B(k.cpe)} แพงกว่าคนอื่น จึงเสียคะแนนด้านความคุ้มค่าไปเกือบหมด`);
+        lines.push(`ยอดวิวสูง แต่ต้นทุนรวมทำให้ CPM ${B(k.cpm)} และ CPE ${B(k.cpe)} แพงกว่าคนอื่น จึงเสียคะแนนด้านความคุ้มค่าไปเกือบหมด`);
     } else if (costPts / 40 >= 0.7 && reachPts / 60 <= 0.35) {
         lines.push(`ต้นทุนคุ้มมาก แต่ยอดวิวและ engagement ยังน้อยกว่าคนอื่นในกลุ่ม`);
     } else if (costPts / 40 >= 0.6 && reachPts / 60 >= 0.6) {
@@ -104,7 +104,7 @@ export default function ScoreModal({ k, onClose }) {
 
                 <div className="sc-formula muted">
                     เกณฑ์ให้น้ำหนัก: Engagement Rate 35% · ยอดวิว 25% · CPM 20% · CPE 20%
-                    <br />ต้นทุนที่ใช้คิด CPM/CPE = ค่าตัว {B(k.fee)} + ค่ายิงแอด {B(k.ad_spend)} = <b>{B(k.cost)}</b>
+                    <br />ต้นทุนที่ใช้คิด CPM/CPE = ค่าตัว + ค่ายิงแอดรวมกัน
                 </div>
 
                 <div className="modal-actions">

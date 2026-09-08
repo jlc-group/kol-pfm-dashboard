@@ -33,9 +33,12 @@ function normalizeRole(role) {
 
 // เอเจนซี่ห้ามแตะข้อมูลฝั่ง dashboard ทุกชนิด (เข้าได้แค่ /api/agency ที่ใช้ token)
 const isAgency = user => !!user && user.role === 'agency';
+// ตัวเลขต้นทุน (CPM / CPE / ค่าแอด) เห็นได้เฉพาะ admin กับ manager
+// เพราะ CPM ถอดกลับเป็นค่ายิงแอดได้ด้วยเลขคณิตชั้นเดียว ซึ่งเป็นข้อมูลลับ
+const canSeeCostMetrics = user => !!user && (user.role === 'admin' || user.role === 'manager');
 
 // สถานะบัญชี: pending = สมัครแล้วรอ admin อนุมัติ (ยังไม่เห็นข้อมูลใด ๆ)
 const STATUSES = ['pending', 'active', 'rejected'];
 const isApproved = user => !!user && (user.status || 'active') === 'active' && user.is_active !== false;
 
-module.exports = { ROLES, ROLE_LABEL, seesAllBrands, allowedBrands, canSeeBrand, normalizeRole, isAgency, STATUSES, isApproved };
+module.exports = { ROLES, ROLE_LABEL, seesAllBrands, allowedBrands, canSeeBrand, canSeeCostMetrics, normalizeRole, isAgency, STATUSES, isApproved };

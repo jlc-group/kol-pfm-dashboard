@@ -138,6 +138,8 @@ app.use('/api/kols', authenticate, blockPending, blockAgency, require('./routes/
 app.use('/api/projects', authenticate, blockPending, blockAgency, require('./routes/projects'));
 app.use('/api/payments', authenticate, blockPending, blockAgency, require('./routes/payments'));
 app.use('/api/activity', authenticate, blockPending, blockAgency, require('./routes/activity'));
+// ระบบยิงแอดของบริษัทยิงเข้ามาเอง ใช้ API key ไม่ใช่บัญชีคน จึงต้องอยู่นอกเส้นที่บังคับล็อกอิน
+app.use('/api/ads-sync', require('./routes/adsSync'));
 app.use('/api/ads', authenticate, blockPending, blockAgency, require('./routes/ads'));
 app.use('/api/rate-requests', authenticate, blockPending, blockAgency, require('./routes/rateRequests'));
 app.use('/api/agency', require('./routes/agency')); // สาธารณะ (Agency ใช้ลิงก์)

@@ -379,12 +379,17 @@ const kols = {
                 const cpm = views > 0 ? Number((totalCost / (views / 1000)).toFixed(2)) : 0;
                 const cpe = engagement > 0 ? Number((totalCost / engagement).toFixed(2)) : 0;
                 const er = views > 0 ? Number(((engagement / views) * 100).toFixed(2)) : 0;
+                const spendNow = Number(s.ad_spend) || 0;
                 const perf = {
                     views, likes, comments, saves, shares, reposts, engagement, er,
-                    ad_spend: Number(s.ad_spend) || 0, total_cost: totalCost, cpm, cpe,
+                    ad_spend: spendNow, total_cost: totalCost, cpm, cpe,
                     performance: views > 0
                         ? ((cpm > 0 && cpm <= GOOD_CPM && cpe > 0 && cpe <= GOOD_CPE) ? 'Good' : 'Improve')
-                        : null   // ยังไม่กรอกผลงาน = ยังตัดสินไม่ได้
+                        : null,  // ยังไม่กรอกผลงาน = ยังตัดสินไม่ได้
+                    // ผลที่ล็อกไว้ตอนค่าแอดถึงเกณฑ์ (ถ้ายังไม่ถึงจะเป็น null)
+                    perf_stamp: s.perf_stamp ? clone(s.perf_stamp) : null,
+                    // ถึงเกณฑ์แล้วแต่ยังไม่มีผลงานให้ตัดสิน — รอสแตมป์อยู่
+                    stamp_waiting: !s.perf_stamp && spendNow >= AD_STAMP_AT && views <= 0
                 };
                 return {
                     sub_id: s.id, project_id: s.project_id, project_name: p ? p.name : null,
@@ -1227,6 +1232,40 @@ const activity = {
     }
 };
 
+// ===== สแตมป์ Performance ตอนค่าแอดถึงเกณฑ์ =====
+// ค่าแอดสะสมถึง 10,000 เมื่อไหร่ ให้เก็บภาพนิ่งของผลงาน ณ ตอนนั้นไว้ถาวร
+// แก้ไม่ได้ ล้างไม่ได้ ไม่มีทางเขียนทับจาก API — เป็นหลักฐานว่าตอนถึงเกณฑ์ผลเป็นอย่างไร
+const AD_STAMP_AT = 10000;
+
+function engagementOf(s) {
+    return (Number(s.likes) || 0) + (Number(s.comments) || 0) + (Number(s.saves) || 0)
+        + (Number(s.shares) || 0) + (Number(s.reposts) || 0);
+}
+
+// คืนค่า stamp ถ้าเพิ่งสแตมป์รอบนี้ / null ถ้ายังไม่ถึงเงื่อนไข
+function maybeStamp(s) {
+    if (!s || s.perf_stamp) return null;                       // สแตมป์แล้วห้ามแตะซ้ำ
+    const spend = Number(s.ad_spend) || 0;
+    if (spend < AD_STAMP_AT) return null;
+    const views = Number(s.views) || 0;
+    // ถึงเกณฑ์แล้วแต่ยังไม่มีผลงาน -> รอไว้ก่อน ไม่งั้นจะล็อกค่าว่างค้างถาวร
+    if (views <= 0) return null;
+    const engagement = engagementOf(s);
+    const totalCost = (Number(s.budget) || 0) + spend;
+    const cpm = Number((totalCost / (views / 1000)).toFixed(2));
+    const cpe = engagement > 0 ? Number((totalCost / engagement).toFixed(2)) : 0;
+    s.perf_stamp = {
+        at: now(),
+        ad_spend: spend,
+        views, engagement,
+        er: Number(((engagement / views) * 100).toFixed(2)),
+        total_cost: totalCost,
+        cpm, cpe,
+        verdict: (cpm > 0 && cpm <= GOOD_CPM && cpe > 0 && cpe <= GOOD_CPE) ? 'Pass' : 'Fail'
+    };
+    return s.perf_stamp;
+}
+
 // ============================ submissions (รายชื่อ KOL ที่ Agency ส่งเข้ามา) ============================
 const submissions = {
     async listByProject(projectId) {
@@ -1333,6 +1372,8 @@ const submissions = {
                 throw e;
             }
         }
+        // perf_stamp ห้ามเซ็ตจากภายนอกเด็ดขาด ระบบเป็นคนสแตมป์เองเท่านั้น
+        delete fields.perf_stamp;
         const before = {};
         STAMP_F.forEach(f => { before[f] = s[f]; });
         for (const k of ['account_name', 'followers', 'platform', 'product', 'agency', 'budget', 'link_account', 'concept', 'gen_date', 'group_key', 'tier', 'clip_name', 'status', 'draft_link', 'draft_link2', 'draft_link3', 'draft_link4', 'draft_link5', 'gencode', 'feedback', 'feedback2', 'feedback3', 'feedback4', 'feedback5', 'approved', 'draft_status', 'post_url', 'post_date', 'id_post', 'code_expire', 'ad_status', 'ad_spend', 'ad_reach', 'ad_start', 'ad_end', 'ad_note', 'team_note', 'agency_note', 'views', 'likes', 'comments', 'saves', 'shares', 'reposts', 'content_format', 'perf_synced_at']) {
@@ -1361,6 +1402,9 @@ const submissions = {
         if (keys.some(k => WORK_F.includes(k))) s.work_updated_at = now();
         if (keys.some(k => DRAFT_F.includes(k))) s.draft_updated_at = now();
         if (fields.status !== undefined) { s.decided_at = now(); s.decided_by = byName || s.decided_by; }
+        // เช็คทุกครั้งที่ข้อมูลขยับ — ค่าแอดถึงเกณฑ์แล้วและมีผลงานให้ตัดสิน ก็สแตมป์ทันที
+        // (กรอกผลงานทีหลังก็สแตมป์ตอนนั้น ไม่ต้องรอให้ค่าแอดขยับอีกรอบ)
+        maybeStamp(s);
         persist();
         return clone(s);
     },
@@ -1386,6 +1430,38 @@ const submissions = {
 };
 
 // ============================ ads (ติดตามการยิงแอด + สรุปค่าแอด) ============================
+// รับข้อมูลจากระบบยิงแอดของบริษัท — จับคู่ด้วย Gencode หรือ ID Post
+// ค่าแอดไม่ถูกแสดงที่ไหนในหน้าเว็บ ใช้เป็นตัวจุดชนวนสแตมป์อย่างเดียว
+const adsSync = {
+    async apply(rows) {
+        const out = { updated: 0, stamped: 0, not_found: [], skipped: 0 };
+        for (const r of (rows || [])) {
+            const key = String(r.gencode || r.id_post || r.submission_id || '').trim();
+            if (!key) { out.skipped++; continue; }
+            const s = db.submissions.find(x =>
+                (r.submission_id && x.id === Number(r.submission_id))
+                || (r.gencode && String(x.gencode || '').trim() === String(r.gencode).trim())
+                || (r.id_post && String(x.id_post || '').trim() === String(r.id_post).trim()));
+            if (!s) { out.not_found.push(key); continue; }
+            // ค่าแอดเดินหน้าอย่างเดียว กันข้อมูลย้อนหลังมาลบยอดสะสม
+            if (r.ad_spend !== undefined) {
+                const next = Number(r.ad_spend) || 0;
+                if (next > (Number(s.ad_spend) || 0)) s.ad_spend = next;
+            }
+            if (r.ad_reach !== undefined) s.ad_reach = Number(r.ad_reach) || 0;
+            for (const k of ['views', 'likes', 'comments', 'saves', 'shares', 'reposts']) {
+                if (r[k] !== undefined) s[k] = Number(r[k]) || 0;
+            }
+            s.ad_synced_at = now();
+            s.updated_at = now();
+            out.updated++;
+            if (maybeStamp(s)) out.stamped++;
+        }
+        persist();
+        return out;
+    }
+};
+
 const adCpm = (spend, reach) => (reach > 0 ? Math.round(spend / (reach / 1000)) : 0);
 
 const ads = {
@@ -2042,4 +2118,4 @@ const rateRequests = {
     }
 };
 
-module.exports = { teams, users, kols, projects, projectKols, dashboard, payments, installments, payBatches, budget, activity, submissions, ads, reports, rateRequests, meta, _duplicateError: duplicateError };
+module.exports = { teams, users, kols, projects, projectKols, dashboard, payments, installments, payBatches, budget, activity, submissions, ads, adsSync, reports, rateRequests, meta, _duplicateError: duplicateError };
