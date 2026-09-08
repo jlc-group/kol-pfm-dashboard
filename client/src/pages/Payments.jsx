@@ -131,6 +131,7 @@ function PendingTab({ items, picked, setPicked, onMakeBatch }) {
                                     <span className="inst-project">
                                         {i.brand && <span className="inst-brand">{i.brand}</span>}
                                         {i.project_name}
+                                        {i.group_no && <span className="inst-grp">กลุ่ม {i.group_no}</span>}
                                     </span>
                                     <span className="inst-no">งวด {i.no}/{i.of}</span>
                                     <span className="inst-pct">{i.percent}%</span>
@@ -287,7 +288,9 @@ function BatchCard({ b, onChanged }) {
                         <div className="batch-item" key={i.id}>
                             <span>
                                 {i.brand && <span className="inst-brand">{i.brand}</span>}
-                                {i.project_name} <span className="muted">งวด {i.no}/{i.of} · {i.percent}%</span>
+                                {i.project_name}
+                                {i.group_no && <span className="inst-grp">กลุ่ม {i.group_no}</span>}
+                                <span className="muted">งวด {i.no}/{i.of} · {i.percent}%</span>
                             </span>
                             <b>{baht(i.amount)}</b>
                         </div>
@@ -345,25 +348,41 @@ function CampaignCard({ row, onOpen }) {
 
 // ตัวแก้แผนงวด
 function PlanModal({ row, onClose, onSaved }) {
-    const agencyOpts = (row.agencies || []);
-    const budget = Number(row.budget) || 0;
+    const groups = row.ad_groups || [];
+    // แผนการจ่ายแยกตาม (เอเจนซี่ + กลุ่ม) — ฐานคิด % คืองบของกลุ่มนั้น ไม่ใช่งบทั้งแคมเปญ
+    const [groupKey, setGroupKey] = useState(groups.length === 1 ? groups[0].key : '');
+    const curGroup = groups.find(g => g.key === groupKey) || null;
+    const budget = curGroup ? (Number(curGroup.budget) || 0) : (Number(row.budget) || 0);
+    const agencyOpts = curGroup
+        ? (curGroup.agencies || [])
+        : (row.agencies || []);
     const blank = n => Array.from({ length: n }, () => ({
         percent: Math.round(100 / n), amount: Math.round(budget / n), due_date: ''
     }));
-    const planOf = name => {
-        const its = (row.installments || []).filter(i => i.agency === name);
+    const planOf = (name, gk) => {
+        const its = (row.installments || []).filter(i => i.agency === name && (i.group_key || '') === (gk || ''));
         return its.length ? its.map(i => ({ percent: i.percent, amount: i.amount, due_date: i.due_date || '' })) : blank(2);
     };
 
     const [agency, setAgency] = useState(agencyOpts[0] || '');
-    const [plan, setPlan] = useState(planOf(agencyOpts[0] || ''));
+    const [plan, setPlan] = useState(planOf(agencyOpts[0] || '', groups.length === 1 ? groups[0].key : ''));
     const [saving, setSaving] = useState(false);
 
-    const locked = (row.installments || []).some(i => i.agency === agency && i.status === 'paid');
+    const mineHere = i => i.agency === agency && (i.group_key || '') === (groupKey || '');
+    const locked = (row.installments || []).some(i => mineHere(i) && i.status === 'paid');
     // แถวในตารางด้านบนยังเป็นแค่ร่าง — ใบแจ้งหนี้ต้องผูกกับงวดที่บันทึกแล้วเท่านั้น
-    const saved = (row.installments || []).filter(i => i.agency === agency).sort((a, b) => a.no - b.no);
+    const saved = (row.installments || []).filter(mineHere).sort((a, b) => a.no - b.no);
 
-    function pickAgency(name) { setAgency(name); setPlan(planOf(name)); }
+    function pickAgency(name) { setAgency(name); setPlan(planOf(name, groupKey)); }
+    // เปลี่ยนกลุ่ม = เปลี่ยนทั้งฐานงบ รายชื่อเอเจนซี่ และแผนที่เคยตั้งไว้ของกลุ่มนั้น
+    function pickGroup(gk) {
+        setGroupKey(gk);
+        const g = groups.find(x => x.key === gk) || null;
+        const opts = g ? (g.agencies || []) : (row.agencies || []);
+        const a = opts.includes(agency) ? agency : (opts[0] || '');
+        setAgency(a);
+        setPlan(planOf(a, gk));
+    }
 
     // แก้ % แล้วคิดยอดให้อัตโนมัติ · แก้ยอดเองได้ ไม่ไปยุ่งกับ %
     const setRow = (idx, k, v) => setPlan(p => p.map((x, i) => {
@@ -379,7 +398,7 @@ function PlanModal({ row, onClose, onSaved }) {
         if (!agency) { alert('ยังไม่มีเอเจนซี่ในแคมเปญนี้ — สร้างลิงก์เอเจนซี่ในหน้าแคมเปญก่อน'); return; }
         setSaving(true);
         try {
-            await api(`/payments/${row.project_id}/plan`, { method: 'PUT', body: { agency, plan } });
+            await api(`/payments/${row.project_id}/plan`, { method: 'PUT', body: { agency, group_key: groupKey || null, plan } });
             onSaved();
         } catch (err) { alert(err.message); setSaving(false); }
     }
@@ -394,7 +413,7 @@ function PlanModal({ row, onClose, onSaved }) {
                             <div className="pay-project">{row.project_name}</div>
                             <div className="pay-sub">
                                 {row.brand && <span className="cat-chip">{row.brand}</span>}
-                                <span className="muted"> · งบ {baht(budget)}</span>
+                                <span className="muted"> · ฐานคิดยอด {baht(budget)}{curGroup ? " (กลุ่มนี้)" : " (ทั้งแคมเปญ)"}</span>
                             </div>
                         </div>
                     </div>
@@ -402,6 +421,19 @@ function PlanModal({ row, onClose, onSaved }) {
                 </div>
 
                 <div className="plan-box">
+                    {groups.length > 0 && (
+                        <div className="field">
+                            <label>กลุ่มที่จะทำจ่าย</label>
+                            <select value={groupKey} onChange={e => pickGroup(e.target.value)}>
+                                <option value="">ทั้งแคมเปญ · งบ {baht(Number(row.budget) || 0)}</option>
+                                {groups.map((g, i) => (
+                                    <option key={g.key} value={g.key}>
+                                        กลุ่มที่ {i + 1}{g.concept ? " · " + g.concept : ""} · งบ {baht(g.budget)}
+                                    </option>
+                                ))}
+                            </select>
+                        </div>
+                    )}
                     <div className="field-row">
                         <div className="field">
                             <label>เอเจนซี่</label>
@@ -409,7 +441,7 @@ function PlanModal({ row, onClose, onSaved }) {
                                 <select value={agency} onChange={e => pickAgency(e.target.value)}>
                                     {agencyOpts.map(a => <option key={a} value={a}>{a}</option>)}
                                 </select>
-                            ) : <div className="perf-readonly">ยังไม่มีเอเจนซี่ — สร้างลิงก์ในหน้าแคมเปญก่อน</div>}
+                            ) : <div className="perf-readonly">{curGroup ? 'ยังไม่มีเอเจนซี่รับผิดชอบกลุ่มนี้' : 'ยังไม่มีเอเจนซี่ — สร้างลิงก์ในหน้าแคมเปญก่อน'}</div>}
                         </div>
                         <div className="field">
                             <label>แบ่งเป็นกี่งวด</label>

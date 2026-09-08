@@ -1063,6 +1063,11 @@ const payments = {
                     notes: pay.notes || null,
                     quotation_link: pay.quotation_link || null,
                     agencies: projectAgencies(p),          // เอเจนซี่ของแคมเปญนี้ (จากบัญชีที่ผูกกับลิงก์)
+                    // กลุ่มในแคมเปญ + งบของกลุ่ม + เจ้าที่รับผิดชอบ (ไว้ตั้งแผนจ่ายแยกกลุ่ม)
+                    ad_groups: (p.ad_groups || []).map(g => ({
+                        key: g.key, concept: g.concept || null, budget: Number(g.budget) || 0,
+                        agencies: projectAgencies(p, g.key)
+                    })),
                     installments: its.map(decorateInstallment),
                     planned_amount: planAmt,
                     paid_amount: paidAmt,
@@ -1696,9 +1701,11 @@ const meta = {
 // pay_batch   = 1 รอบทำจ่าย = สลิป 1 ใบ = เอเจนซี่ 1 เจ้า + วันที่ 1 วัน แต่รวมได้หลายงวดหลายแคมเปญ
 
 // เอเจนซี่ของแคมเปญ — เอาจากบัญชีที่ผูกกับลิงก์ ถ้าไม่มีค่อยใช้ชื่อบนลิงก์
-function projectAgencies(p) {
+function projectAgencies(p, groupKey) {
     const out = [];
     for (const l of (p.agency_links || [])) {
+        // ระบุกลุ่มมา = เอาเฉพาะเจ้าที่รับผิดชอบกลุ่มนั้น (ลิงก์เก่าที่ไม่ได้เลือกกลุ่มถือว่ารับทุกกลุ่ม)
+        if (groupKey && Array.isArray(l.groups) && l.groups.length && !l.groups.includes(groupKey)) continue;
         const acc = db.users.find(u => u.role === 'agency' && (u.agency_tokens || []).includes(l.token));
         const name = (acc && acc.username) || l.name;
         if (name && !out.includes(name)) out.push(name);
@@ -1709,8 +1716,12 @@ function projectAgencies(p) {
 function decorateInstallment(it) {
     const p = db.projects.find(x => x.id === it.project_id);
     const batch = it.batch_id ? db.pay_batches.find(b => b.id === it.batch_id) : null;
+    const gi = it.group_key && p ? (p.ad_groups || []).findIndex(g => g.key === it.group_key) : -1;
+    const g = gi >= 0 ? p.ad_groups[gi] : null;
     return clone({
         ...it,
+        group_no: gi >= 0 ? gi + 1 : null,
+        group_concept: g ? g.concept : null,
         project_name: p ? p.name : null,
         brand: p ? p.brand : null,
         project_budget: p ? p.budget : null,
@@ -1723,7 +1734,8 @@ const installments = {
     async listByProject(projectId) {
         return db.installments
             .filter(i => i.project_id === Number(projectId))
-            .sort((a, b) => (a.agency || '').localeCompare(b.agency || '', 'th') || a.no - b.no)
+            .sort((a, b) => (a.agency || '').localeCompare(b.agency || '', 'th')
+                || (a.group_key || '').localeCompare(b.group_key || '') || a.no - b.no)
             .map(decorateInstallment);
     },
     // ทุกงวดในระบบ (ไว้ทำหน้ารอบทำจ่าย) — pending = ยังไม่เข้ารอบไหน
@@ -1736,18 +1748,23 @@ const installments = {
     },
     // ตั้ง/แก้แผนการจ่ายของ (แคมเปญ + เอเจนซี่) — แทนที่ของเดิมทั้งชุด
     // งวดที่จ่ายไปแล้วห้ามยุ่ง ไม่งั้นยอดในสลิปที่ออกไปแล้วจะเพี้ยน
-    async setPlan(projectId, agency, plan) {
+    async setPlan(projectId, agency, groupKey, plan) {
         const p = db.projects.find(x => x.id === Number(projectId));
         if (!p) return { error: 'ไม่พบแคมเปญ' };
-        const mine = db.installments.filter(i => i.project_id === p.id && i.agency === agency);
+        const gk = groupKey || null;
+        if (gk && !(p.ad_groups || []).some(g => g.key === gk)) return { error: 'ไม่พบกลุ่มนี้ในแคมเปญ' };
+        // แผนแยกกันตาม (แคมเปญ + เอเจนซี่ + กลุ่ม) — คนละกลุ่มไม่ทับกัน
+        const same = i => i.project_id === p.id && i.agency === agency && (i.group_key || null) === gk;
+        const mine = db.installments.filter(same);
         if (mine.some(i => i.status === 'paid')) {
             return { error: 'มีงวดที่ทำจ่ายไปแล้ว แก้แผนไม่ได้ ต้องยกเลิกรอบทำจ่ายนั้นก่อน' };
         }
-        db.installments = db.installments.filter(i => !(i.project_id === p.id && i.agency === agency));
+        db.installments = db.installments.filter(i => !same(i));
         const rows = plan.map((x, idx) => ({
             id: nextId('installments'),
             project_id: p.id,
             agency,
+            group_key: gk,
             no: idx + 1,
             of: plan.length,
             percent: Number(x.percent) || 0,

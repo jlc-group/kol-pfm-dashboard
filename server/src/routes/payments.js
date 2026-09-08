@@ -125,13 +125,13 @@ router.put('/installments/:id', async (req, res, next) => {
 // body: { agency, plan: [{ percent, amount, due_date, note }] }
 router.put('/:projectId/plan', async (req, res, next) => {
     try {
-        const { agency, plan } = req.body;
+        const { agency, group_key, plan } = req.body;
         if (!agency) return res.status(400).json({ status: 'error', message: 'กรุณาระบุเอเจนซี่ของแผนนี้' });
         if (!Array.isArray(plan) || !plan.length) {
             return res.status(400).json({ status: 'error', message: 'กรุณาระบุงวดอย่างน้อย 1 งวด' });
         }
         if (plan.length > 12) return res.status(400).json({ status: 'error', message: 'แบ่งได้สูงสุด 12 งวด' });
-        const r = await store.installments.setPlan(req.params.projectId, agency, plan);
+        const r = await store.installments.setPlan(req.params.projectId, agency, group_key || null, plan);
         if (r.error) return res.status(400).json({ status: 'error', message: r.error });
         res.json({ status: 'success', data: r.data });
     } catch (err) { next(err); }
