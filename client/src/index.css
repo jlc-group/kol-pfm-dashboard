@@ -2573,3 +2573,12 @@ a { text-decoration: none; color: inherit; }
     background: #fdf0e3; color: #92400e; border-radius: 12px; padding: 11px 15px;
     font-size: 12.5px; line-height: 1.7; margin-bottom: 12px;
 }
+
+/* บล็อกรอบวันที่ในแท็บรอทำจ่าย */
+.due-block { margin-bottom: 20px; }
+.due-head {
+    display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+    padding: 9px 4px 10px; border-bottom: 2px solid var(--mint); margin-bottom: 10px;
+}
+.due-date { font-size: 14.5px; font-weight: 800; color: #0f766e; }
+.due-sum { font-size: 12.5px; color: #45605a; }

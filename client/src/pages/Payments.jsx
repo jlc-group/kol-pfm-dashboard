@@ -9,6 +9,16 @@ import { BRANDS } from '../data/brands.js';
 
 const baht = n => '฿' + Number(n || 0).toLocaleString('th-TH');
 
+const TH_MON = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
+// '2026-09-15' -> '15 ก.ย. 2026'
+function fmtDateTh(d) {
+    if (!d) return "—";
+    const [y, m, day] = String(d).slice(0, 10).split('-');
+    if (!y || !m || !day) return String(d);
+    return Number(day) + ' ' + (TH_MON[Number(m) - 1] || m) + ' ' + y;
+}
+
+
 // ช่องอัปโหลด/ดูไฟล์ (ใบเสนอราคา หรือ ใบแจ้งหนี้ — อยู่ที่แคมเปญ ออกทีเดียวทั้งงาน)
 function FileSlot({ label, uploadPath, viewPath, meta, onUploaded, compact, link, onSaveLink, onUploadFile, onDeleteFile }) {
     const inputRef = useRef(null);
@@ -107,16 +117,12 @@ function FileSlot({ label, uploadPath, viewPath, meta, onUploaded, compact, link
 
 // ===================== แท็บ 1: งวดค้างจ่าย =====================
 // จัดกลุ่มตามเอเจนซี่ เพราะสลิป 1 ใบ = เอเจนซี่ 1 เจ้า
+// ===================== แท็บ 1: งวดรอทำจ่าย =====================
+// จัดตาม "รอบวันที่" ก่อน แล้วค่อยแยกเอเจนซี่ — 1 วัน + 1 เอเจนซี่ = สลิป 1 ใบ
 function PendingTab({ items, picked, setPicked, onMakeBatch, onTakeAll }) {
-    // เจ้าที่กำลังเลือกอยู่ — เลือกแล้วเจ้าอื่นติ๊กไม่ได้
-    const lockedAgency = picked.length ? (items.find(i => i.id === picked[0]) || {}).agency : null;
-
-    const byAgency = {};
-    items.forEach(i => {
-        const key = i.agency || '— ยังไม่ระบุเอเจนซี่ —';
-        (byAgency[key] = byAgency[key] || []).push(i);
-    });
-    const agencies = Object.keys(byAgency).sort((a, b) => a.localeCompare(b, 'th'));
+    // เจ้าที่กำลังเลือกอยู่ — เลือกแล้วกลุ่มอื่นติ๊กไม่ได้ (สลิปใบเดียวโอนให้เจ้าเดียว วันเดียว)
+    const cur = picked.length ? items.find(i => i.id === picked[0]) : null;
+    const lockKey = cur ? (cur.due_date || '') + '|' + (cur.agency || '') : null;
 
     if (!items.length) {
         return (
@@ -127,58 +133,88 @@ function PendingTab({ items, picked, setPicked, onMakeBatch, onTakeAll }) {
         );
     }
 
+    // รวมเป็นชั้น: วันที่ -> เอเจนซี่ -> งวด
+    const byDate = {};
+    items.forEach(i => {
+        const d = i.due_date || '';
+        const a = i.agency || '— ยังไม่ระบุเอเจนซี่ —';
+        byDate[d] = byDate[d] || {};
+        (byDate[d][a] = byDate[d][a] || []).push(i);
+    });
+    // ไม่กำหนดวันไปอยู่ท้ายสุด
+    const dates = Object.keys(byDate).sort((a, b) => (a || '9999').localeCompare(b || '9999'));
+
     const toggle = id => setPicked(p => p.includes(id) ? p.filter(x => x !== id) : [...p, id]);
     const toggleAll = list => {
         const ids = list.map(i => i.id);
         const allOn = ids.every(id => picked.includes(id));
         setPicked(allOn ? picked.filter(id => !ids.includes(id)) : [...new Set([...picked, ...ids])]);
     };
+    const sumOf = list => list.reduce((s, i) => s + (Number(i.amount) || 0), 0);
 
     return (
         <>
-            {agencies.map(name => {
-                const list = byAgency[name];
-                const sum = list.reduce((s, i) => s + (Number(i.amount) || 0), 0);
-                const blocked = lockedAgency && name !== lockedAgency;
+            {dates.map(d => {
+                const groups = byDate[d];
+                const all = Object.values(groups).flat();
+                const agencies = Object.keys(groups).sort((a, b) => a.localeCompare(b, 'th'));
                 return (
-                    <div className={'inst-group' + (blocked ? ' blocked' : '')} key={name}>
-                        <div className="inst-group-head">
-                            <input type="checkbox" disabled={blocked}
-                                checked={list.every(i => picked.includes(i.id))}
-                                onChange={() => toggleAll(list)} />
-                            <span className="inst-agency"><Icon name="users" size={15} /> {name}</span>
-                            <span className="inst-group-sum">รอทำจ่าย {list.length} งวด · <b>{baht(sum)}</b></span>
-                            {!blocked && (
-                                <button type="button" className="inst-take-all"
-                                    onClick={() => onTakeAll(list)}>
-                                    รวมทั้งหมดของเจ้านี้ → สร้างรอบทำจ่าย
-                                </button>
-                            )}
-                            {blocked && <span className="inst-blocked-note">เลือกได้ทีละเอเจนซี่ (สลิป 1 ใบ = 1 เจ้า)</span>}
+                    <div className="due-block" key={d || 'nodate'}>
+                        <div className="due-head">
+                            <span className="due-date">
+                                {d ? '📅 รอบ ' + fmtDateTh(d) : '📅 ยังไม่กำหนดวันครบกำหนด'}
+                            </span>
+                            <span className="due-sum">{all.length} งวด · <b>{baht(sumOf(all))}</b></span>
                         </div>
-                        <div className="inst-rows">
-                            {list.map(i => (
-                                <label className={'inst-row' + (picked.includes(i.id) ? ' on' : '')} key={i.id}>
-                                    <input type="checkbox" disabled={blocked}
-                                        checked={picked.includes(i.id)} onChange={() => toggle(i.id)} />
-                                    <span className="inst-project">
-                                        {i.brand && <span className="inst-brand">{i.brand}</span>}
-                                        {i.project_name}
-                                        {i.group_no && <span className="inst-grp">กลุ่ม {i.group_no}</span>}
-                                    </span>
-                                    <span className="inst-no">งวด {i.no}/{i.of}</span>
-                                    <span className="inst-pct">{i.percent}%</span>
-                                    <span className="inst-amt">{baht(i.amount)}</span>
-                                    <span className="inst-due">
-                                        {i.due_date ? '📅 ' + fmtDate(i.due_date) : <span className="muted">ไม่กำหนดวัน</span>}
-                                        <span className={'inv-chip ' + (i.invoice || i.invoice_link ? 'ok' : 'no')}
-                                            title={i.invoice ? 'แนบไฟล์แล้ว: ' + i.invoice.original : (i.invoice_link || 'ยังไม่ได้แนบใบแจ้งหนี้ของงวดนี้')}>
-                                            🧾 {i.invoice || i.invoice_link ? 'มีแล้ว' : 'ยังไม่มี'}
-                                        </span>
-                                    </span>
-                                </label>
-                            ))}
-                        </div>
+
+                        {agencies.map(name => {
+                            const list = groups[name];
+                            const key = (d || '') + '|' + (name === '— ยังไม่ระบุเอเจนซี่ —' ? '' : name);
+                            const blocked = lockKey && key !== lockKey;
+                            return (
+                                <div className={'inst-group' + (blocked ? ' blocked' : '')} key={name}>
+                                    <div className="inst-group-head">
+                                        <input type="checkbox" disabled={blocked}
+                                            checked={list.every(i => picked.includes(i.id))}
+                                            onChange={() => toggleAll(list)} />
+                                        <span className="inst-agency"><Icon name="users" size={15} /> {name}</span>
+                                        <span className="inst-group-sum">{list.length} งวด · <b>{baht(sumOf(list))}</b></span>
+                                        {!blocked && (
+                                            <button type="button" className="inst-take-all" onClick={() => onTakeAll(list)}>
+                                                รวมทั้งหมด → สร้างรอบทำจ่าย
+                                            </button>
+                                        )}
+                                        {blocked && <span className="inst-blocked-note">สลิป 1 ใบ = 1 เอเจนซี่ 1 รอบวันที่</span>}
+                                    </div>
+                                    <div className="inst-rows">
+                                        {list.map(i => (
+                                            <label className={'inst-row' + (picked.includes(i.id) ? ' on' : '')} key={i.id}>
+                                                <input type="checkbox" disabled={blocked}
+                                                    checked={picked.includes(i.id)} onChange={() => toggle(i.id)} />
+                                                <span className="inst-project">
+                                                    {i.brand && <span className="inst-brand">{i.brand}</span>}
+                                                    {i.project_name}
+                                                    {i.group_no && (
+                                                        <span className="inst-grp" title={i.group_concept || ''}>
+                                                            กลุ่ม {i.group_no}{i.group_concept ? ' · ' + i.group_concept : ''}
+                                                        </span>
+                                                    )}
+                                                </span>
+                                                <span className="inst-no">งวด {i.no}/{i.of}</span>
+                                                <span className="inst-pct">{i.percent}%</span>
+                                                <span className="inst-amt">{baht(i.amount)}</span>
+                                                <span className="inst-due">
+                                                    <span className={'inv-chip ' + (i.invoice || i.invoice_link ? 'ok' : 'no')}
+                                                        title={i.invoice ? 'แนบไฟล์แล้ว: ' + i.invoice.original : (i.invoice_link || 'ยังไม่ได้แนบใบแจ้งหนี้ของงวดนี้')}>
+                                                        🧾 {i.invoice || i.invoice_link ? 'มีใบแจ้งหนี้' : 'ยังไม่มีใบแจ้งหนี้'}
+                                                    </span>
+                                                </span>
+                                            </label>
+                                        ))}
+                                    </div>
+                                </div>
+                            );
+                        })}
                     </div>
                 );
             })}
@@ -186,7 +222,8 @@ function PendingTab({ items, picked, setPicked, onMakeBatch, onTakeAll }) {
             {picked.length > 0 && (
                 <div className="inst-bar">
                     <div className="inst-bar-info">
-                        <span className="inst-bar-agency">{lockedAgency}</span>
+                        <span className="inst-bar-agency">{cur && cur.agency}</span>
+                        {cur && cur.due_date && <span>รอบ {fmtDateTh(cur.due_date)}</span>}
                         <span>เลือก <b>{picked.length}</b> งวด</span>
                         <span className="inst-bar-total">
                             รวม {baht(items.filter(i => picked.includes(i.id)).reduce((s, i) => s + (Number(i.amount) || 0), 0))}
