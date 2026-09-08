@@ -536,73 +536,72 @@ function PlanModal({ row, onClose, onSaved, onReload }) {
                         </div>
                     )}
 
-                    <div className="plan-rows">
-                        <div className="plan-row head">
-                            <span>งวด</span><span>%</span><span>ยอด (฿)</span><span>ครบกำหนด</span>
-                        </div>
-                        {plan.map((x, i) => (
-                            <div className="plan-row" key={i}>
-                                <span className="plan-no">{i + 1}/{plan.length}</span>
-                                <input type="number" min="0" max="100" value={x.percent} disabled={locked}
-                                    onChange={e => setRow(i, 'percent', e.target.value)} />
-                                <input type="number" min="0" value={x.amount} disabled={locked}
-                                    onChange={e => setRow(i, 'amount', e.target.value)} />
-                                <DatePicker value={x.due_date} onChange={v => setRow(i, 'due_date', v)} />
-                            </div>
-                        ))}
-                        <div className="plan-row sum">
-                            <span>รวม</span>
+                    {/* ใบเสนอราคาออกทีเดียวทั้งงาน จึงอยู่เหนือรายการงวด */}
+                    <div className="pay-files">
+                        <FileSlot label="ใบเสนอราคา (ทั้งแคมเปญ)"
+                            uploadPath={`/payments/${row.project_id}/upload/quotation`}
+                            viewPath={`/payments/${row.project_id}/file/quotation`}
+                            meta={row.quotation} onUploaded={() => onReload && onReload()}
+                            onDeleteFile={async () => {
+                                await api(`/payments/${row.project_id}/file/quotation`, { method: 'DELETE' });
+                                if (onReload) await onReload();
+                            }}
+                            link={row.quotation_link}
+                            onSaveLink={async v => {
+                                await api(`/payments/${row.project_id}`, { method: 'PUT', body: { quotation_link: v || null } });
+                                if (onReload) await onReload();
+                            }} />
+                    </div>
+
+                    {/* 1 งวด = 1 การ์ด: ยอด -> ใบแจ้งหนี้ของงวดนั้น -> วันที่ทำจ่าย */}
+                    <div className="plan-cards">
+                        {plan.map((x, i) => {
+                            const it = saved[i] || null;
+                            return (
+                                <div className="plan-card" key={i}>
+                                    <div className="plan-card-head">
+                                        <span className="plan-no">งวด {i + 1}/{plan.length}</span>
+                                        <label className="plan-f">
+                                            <span>%</span>
+                                            <input type="number" min="0" max="100" value={x.percent} disabled={locked}
+                                                onChange={e => setRow(i, 'percent', e.target.value)} />
+                                        </label>
+                                        <label className="plan-f wide">
+                                            <span>ยอด (฿)</span>
+                                            <input type="number" min="0" value={x.amount} disabled={locked}
+                                                onChange={e => setRow(i, 'amount', e.target.value)} />
+                                        </label>
+                                    </div>
+                                    <div className="plan-card-row">
+                                        <span className="plan-card-lbl">ใบแจ้งหนี้</span>
+                                        <FileSlot compact
+                                            viewPath={it ? `/payments/installments/${it.id}/invoice` : null}
+                                            meta={it && it.invoice}
+                                            link={it && it.invoice_link}
+                                            onUploadFile={file => attachInvoiceFile(i, file)}
+                                            onSaveLink={v => attachInvoiceLink(i, v)}
+                                            onDeleteFile={it ? async () => {
+                                                await api(`/payments/installments/${it.id}/invoice`, { method: 'DELETE' });
+                                                if (onReload) await onReload();
+                                            } : null} />
+                                    </div>
+                                    <div className="plan-card-row">
+                                        <span className="plan-card-lbl">วันที่ทำจ่าย</span>
+                                        <DatePicker value={x.due_date} onChange={v => setRow(i, 'due_date', v)} />
+                                    </div>
+                                </div>
+                            );
+                        })}
+                        <div className="plan-sum">
+                            <span>รวมทุกงวด</span>
                             <span className={sumPct === 100 ? '' : 'plan-warn'}>{sumPct}%</span>
                             <span className={sumAmt === budget ? '' : 'plan-warn'}>{baht(sumAmt)}</span>
                             <span className="muted">{sumAmt !== budget && budget > 0 ? 'งบ ' + baht(budget) : ''}</span>
                         </div>
                     </div>
-                    <p className="alp-hint">ยอดคิดจาก % ของงบให้อัตโนมัติ แก้ตัวเลขทับได้ · รวมไม่ครบ 100% ก็บันทึกได้ เผื่อกรณีจ่ายไม่เต็มงบ</p>
+                    <p className="alp-hint">ยอดคิดจาก % ของงบให้อัตโนมัติ แก้ตัวเลขทับได้ · แนบใบแจ้งหนี้ก่อนกดบันทึกแผนได้ ระบบจะบันทึกแผนให้เอง</p>
                     </>)}
                 </div>
-
-                <div className="pay-files">
-                    <FileSlot label="ใบเสนอราคา (ทั้งแคมเปญ)"
-                        uploadPath={`/payments/${row.project_id}/upload/quotation`}
-                        viewPath={`/payments/${row.project_id}/file/quotation`}
-                        meta={row.quotation} onUploaded={() => onReload && onReload()}
-                        onDeleteFile={async () => {
-                            await api(`/payments/${row.project_id}/file/quotation`, { method: 'DELETE' });
-                            if (onReload) await onReload();
-                        }}
-                        link={row.quotation_link}
-                        onSaveLink={async v => {
-                            await api(`/payments/${row.project_id}`, { method: 'PUT', body: { quotation_link: v || null } });
-                            if (onReload) await onReload();
-                        }} />
-                </div>
-
-                {/* ใบแจ้งหนี้ออกแยกใบต่องวด — แนบก่อนบันทึกแผนได้ ระบบบันทึกให้เอง */}
-                {!noGroupPicked && (
-                <div className="inv-block">
-                    <div className="file-slot-label">ใบแจ้งหนี้ (แยกตามงวด)</div>
-                    {plan.map((x, idx) => {
-                        const it = saved[idx] || null;
-                        return (
-                            <div className="inv-row" key={idx}>
-                                <span className="plan-no">งวด {idx + 1}/{plan.length}</span>
-                                <span className="inv-amt">{baht(x.amount)}</span>
-                                <FileSlot compact
-                                    viewPath={it ? `/payments/installments/${it.id}/invoice` : null}
-                                    meta={it && it.invoice}
-                                    link={it && it.invoice_link}
-                                    onUploadFile={file => attachInvoiceFile(idx, file)}
-                                    onSaveLink={v => attachInvoiceLink(idx, v)}
-                                    onDeleteFile={it ? async () => {
-                                        await api(`/payments/installments/${it.id}/invoice`, { method: 'DELETE' });
-                                        if (onReload) await onReload();
-                                    } : null} />
-                            </div>
-                        );
-                    })}
-                    <p className="alp-hint">แนบก่อนกดบันทึกแผนได้ — ระบบจะบันทึกแผนให้อัตโนมัติตอนแนบไฟล์แรก</p>
-                </div>
-                )}
 
                 <div className="modal-actions">
                     <button className="btn-ghost" onClick={onClose}>ปิด</button>
