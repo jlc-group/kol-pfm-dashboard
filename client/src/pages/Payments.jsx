@@ -206,8 +206,13 @@ function PendingTab({ items, picked, setPicked, onMakeBatch, onTakeAll }) {
 
 // popup ยืนยันรอบทำจ่าย
 function BatchModal({ agency, items, cycle, batches, onClose, onDone }) {
-    // ตัวกรองเลือกรอบเจาะจงไว้ (เช่น 25 ก.ย.) ก็เติมวันให้เลย ไม่ต้องพิมพ์ซ้ำ
-    const [payDate, setPayDate] = useState(cycle && cycle.length === 10 ? cycle : '');
+    // เติมวันที่ให้เอง ไม่ต้องมากรอกซ้ำ: ใช้ตัวกรองรอบก่อน ถ้าไม่มีก็ใช้วันครบกำหนดของงวดที่เลือก
+    const guessDate = () => {
+        if (cycle && cycle.length === 10) return cycle;
+        const dues = [...new Set(items.map(i => i.due_date).filter(Boolean))].sort();
+        return dues.length ? dues[dues.length - 1] : '';   // งวดครบกำหนดต่างวัน = ใช้วันหลังสุด
+    };
+    const [payDate, setPayDate] = useState(guessDate);
     const [note, setNote] = useState('');
     const [saving, setSaving] = useState(false);
     const total = items.reduce((s, i) => s + (Number(i.amount) || 0), 0);
@@ -255,6 +260,9 @@ function BatchModal({ agency, items, cycle, batches, onClose, onDone }) {
                 <div className="field">
                     <label>วันที่ทำจ่าย</label>
                     <DatePicker value={payDate} onChange={setPayDate} />
+                    {payDate && payDate === guessDate() && (
+                        <span className="cpw-hint">เติมให้จากวันครบกำหนดของงวดที่เลือก — แก้ได้ถ้าโอนจริงคนละวัน</span>
+                    )}
                 </div>
                 {sameDay ? (
                     <div className="batch-merge">
