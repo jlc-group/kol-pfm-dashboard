@@ -379,10 +379,9 @@ function PlanModal({ row, onClose, onSaved, onReload }) {
     // แผนการจ่ายแยกตาม (เอเจนซี่ + กลุ่ม) — ฐานคิด % คืองบของกลุ่มนั้น ไม่ใช่งบทั้งแคมเปญ
     // '' = ยังไม่เลือก · ALL = ทั้งแคมเปญ · อื่น ๆ = key ของกลุ่ม
     const ALL = '__ALL__';
-    const hasWholePlan = (row.installments || []).some(i => !i.group_key);
-    const firstGroup = groups.length === 0
-        ? ALL
-        : (groups.length === 1 ? groups[0].key : (hasWholePlan ? ALL : ''));
+    // แคมเปญที่มีกลุ่ม -> เริ่มที่ตัวเลือกว่างเสมอ ให้คนกดเลือกเองว่าจะตั้งของกลุ่มไหน
+    // (เดิมเลือกให้ล่วงหน้า เลยดูเหมือนไม่ต้องเลือกอะไร แล้วเผลอตั้งผิดก้อน)
+    const firstGroup = groups.length === 0 ? ALL : '';
     const [groupKey, setGroupKey] = useState(firstGroup);
     const curGroup = groups.find(g => g.key === groupKey) || null;
     const noGroupPicked = groupKey === '';        // ยังไม่เลือก = ยังตั้งแผนไม่ได้
@@ -509,6 +508,11 @@ function PlanModal({ row, onClose, onSaved, onReload }) {
                             {noGroupPicked && <p className="alp-hint">เลือกก่อนว่าจะตั้งแผนของกลุ่มไหน หรือจ่ายรวมทั้งแคมเปญ</p>}
                         </div>
                     )}
+                    {noGroupPicked ? (
+                        <div className="plan-empty">
+                            👆 เลือกกลุ่มที่จะทำจ่ายด้านบนก่อน แล้วตารางแบ่งงวดกับช่องใบแจ้งหนี้จะขึ้นตรงนี้
+                        </div>
+                    ) : (<>
                     <div className="field-row">
                         <div className="field">
                             <label>เอเจนซี่</label>
@@ -554,6 +558,7 @@ function PlanModal({ row, onClose, onSaved, onReload }) {
                         </div>
                     </div>
                     <p className="alp-hint">ยอดคิดจาก % ของงบให้อัตโนมัติ แก้ตัวเลขทับได้ · รวมไม่ครบ 100% ก็บันทึกได้ เผื่อกรณีจ่ายไม่เต็มงบ</p>
+                    </>)}
                 </div>
 
                 <div className="pay-files">
@@ -572,7 +577,8 @@ function PlanModal({ row, onClose, onSaved, onReload }) {
                         }} />
                 </div>
 
-                {/* ใบแจ้งหนี้ออกแยกใบต่องวด — แนบได้เฉพาะงวดที่บันทึกแผนแล้ว */}
+                {/* ใบแจ้งหนี้ออกแยกใบต่องวด — แนบก่อนบันทึกแผนได้ ระบบบันทึกให้เอง */}
+                {!noGroupPicked && (
                 <div className="inv-block">
                     <div className="file-slot-label">ใบแจ้งหนี้ (แยกตามงวด)</div>
                     {plan.map((x, idx) => {
@@ -596,6 +602,7 @@ function PlanModal({ row, onClose, onSaved, onReload }) {
                     })}
                     <p className="alp-hint">แนบก่อนกดบันทึกแผนได้ — ระบบจะบันทึกแผนให้อัตโนมัติตอนแนบไฟล์แรก</p>
                 </div>
+                )}
 
                 <div className="modal-actions">
                     <button className="btn-ghost" onClick={onClose}>ปิด</button>
