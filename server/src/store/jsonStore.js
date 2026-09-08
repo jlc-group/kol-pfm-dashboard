@@ -1061,6 +1061,7 @@ const payments = {
                     quotation: pay.quotation || null,
                     invoice: pay.invoice || null,
                     notes: pay.notes || null,
+                    quotation_link: pay.quotation_link || null,
                     agencies: projectAgencies(p),          // เอเจนซี่ของแคมเปญนี้ (จากบัญชีที่ผูกกับลิงก์)
                     installments: its.map(decorateInstallment),
                     planned_amount: planAmt,
@@ -1076,7 +1077,7 @@ const payments = {
     async update(projectId, fields) {
         if (!db.projects.some(p => p.id === Number(projectId))) return null;
         const pay = ensurePayment(projectId);
-        for (const key of ['agency_name', 'payment_date', 'status', 'notes']) {
+        for (const key of ['agency_name', 'payment_date', 'status', 'notes', 'quotation_link']) {
             if (fields[key] !== undefined) pay[key] = fields[key];
         }
         pay.updated_at = now();
@@ -1754,6 +1755,7 @@ const installments = {
             due_date: x.due_date || null,
             note: x.note || null,
             invoice: null,          // ใบแจ้งหนี้ของงวดนี้ (ออกแยกใบต่องวด)
+            invoice_link: null,     // หรือจะใส่เป็นลิงก์แทนไฟล์ก็ได้
             status: 'pending',
             batch_id: null,
             created_at: now(), updated_at: now()
@@ -1780,6 +1782,15 @@ const installments = {
         const it = db.installments.find(i => i.id === Number(id));
         if (!it) return null;
         it.invoice = meta;
+        it.updated_at = now();
+        persist();
+        return decorateInstallment(it);
+    },
+    // ลิงก์ใบแจ้งหนี้ — งวดที่จ่ายแล้วก็แก้ได้ เหมือนไฟล์
+    async setInvoiceLink(id, link) {
+        const it = db.installments.find(i => i.id === Number(id));
+        if (!it) return null;
+        it.invoice_link = (link && String(link).trim()) ? String(link).trim() : null;
         it.updated_at = now();
         persist();
         return decorateInstallment(it);

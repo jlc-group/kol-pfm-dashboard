@@ -2527,3 +2527,10 @@ a { text-decoration: none; color: inherit; }
 .inv-chip { font-size: 11px; border-radius: 999px; padding: 2px 9px; margin-left: 9px; white-space: nowrap; }
 .inv-chip.ok { background: #e8f7f1; color: #0f766e; }
 .inv-chip.no { background: #fdf0e3; color: #b45309; }
+
+/* ช่องเอกสาร: ไฟล์ หรือ ลิงก์ */
+.fs-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.fs-link { display: flex; align-items: center; gap: 7px; flex: 1; min-width: 220px; }
+.fs-link input { margin: 0; flex: 1; min-width: 0; font-size: 12.5px; padding: 7px 11px; }
+.fs-link-save { padding: 6px 14px; font-size: 12px; flex-shrink: 0; }
+.fs-link-ok { color: var(--mint); font-weight: 700; }

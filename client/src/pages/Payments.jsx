@@ -10,9 +10,19 @@ import { BRANDS } from '../data/brands.js';
 const baht = n => '฿' + Number(n || 0).toLocaleString('th-TH');
 
 // ช่องอัปโหลด/ดูไฟล์ (ใบเสนอราคา หรือ ใบแจ้งหนี้ — อยู่ที่แคมเปญ ออกทีเดียวทั้งงาน)
-function FileSlot({ label, uploadPath, viewPath, meta, onUploaded, compact }) {
+function FileSlot({ label, uploadPath, viewPath, meta, onUploaded, compact, link, onSaveLink }) {
     const inputRef = useRef(null);
     const [busy, setBusy] = useState(false);
+    const [url, setUrl] = useState(link || '');
+    const [done, setDone] = useState(false);
+    useEffect(() => { setUrl(link || ''); }, [link]);
+
+    async function saveLink() {
+        setBusy(true);
+        try { await onSaveLink(url.trim()); setDone(true); }
+        catch (err) { alert(err.message); }
+        finally { setBusy(false); }
+    }
 
     async function handleFile(e) {
         const file = e.target.files[0];
@@ -33,20 +43,36 @@ function FileSlot({ label, uploadPath, viewPath, meta, onUploaded, compact }) {
     return (
         <div className={'file-slot' + (compact ? ' compact' : '')}>
             {label && <div className="file-slot-label">{label}</div>}
-            {meta ? (
-                <div className="file-has">
-                    <button className="file-view" onClick={view} title="เปิดดูไฟล์">
-                        <Icon name="file" size={15} /> <span className="file-name">{meta.original}</span>
+            <div className="fs-row">
+                {meta ? (
+                    <div className="file-has">
+                        <button className="file-view" onClick={view} title="เปิดดูไฟล์">
+                            <Icon name="file" size={15} /> <span className="file-name">{meta.original}</span>
+                        </button>
+                        <button className="icon-btn" title="เปลี่ยนไฟล์" onClick={() => inputRef.current.click()} disabled={busy}>
+                            <Icon name="upload" size={15} />
+                        </button>
+                    </div>
+                ) : (
+                    <button className="file-upload-btn" onClick={() => inputRef.current.click()} disabled={busy}>
+                        <Icon name="upload" size={15} /> {busy ? 'กำลังอัปโหลด...' : 'อัปโหลดไฟล์'}
                     </button>
-                    <button className="icon-btn" title="เปลี่ยนไฟล์" onClick={() => inputRef.current.click()} disabled={busy}>
-                        <Icon name="upload" size={15} />
-                    </button>
-                </div>
-            ) : (
-                <button className="file-upload-btn" onClick={() => inputRef.current.click()} disabled={busy}>
-                    <Icon name="upload" size={15} /> {busy ? 'กำลังอัปโหลด...' : 'อัปโหลด'}
-                </button>
-            )}
+                )}
+                {/* ใส่เป็นลิงก์แทนก็ได้ (เอกสารอยู่ Drive/Dropbox) */}
+                {onSaveLink && (
+                    <div className="fs-link">
+                        <input type="url" value={url} placeholder="หรือวางลิงก์เอกสาร https://..."
+                            onChange={e => { setUrl(e.target.value); setDone(false); }} />
+                        {url !== (link || '') && (
+                            <button className="btn-primary fs-link-save" onClick={saveLink} disabled={busy}>บันทึก</button>
+                        )}
+                        {done && <span className="fs-link-ok">✓</span>}
+                        {link && url === link && (
+                            <a className="brief-link" href={link} target="_blank" rel="noreferrer"><Icon name="eye" size={14} /> เปิด</a>
+                        )}
+                    </div>
+                )}
+            </div>
             <input ref={inputRef} type="file" accept=".pdf,.png,.jpg,.jpeg,.webp" hidden onChange={handleFile} />
         </div>
     );
@@ -111,9 +137,9 @@ function PendingTab({ items, picked, setPicked, onMakeBatch }) {
                                     <span className="inst-amt">{baht(i.amount)}</span>
                                     <span className="inst-due">
                                         {i.due_date ? '📅 ' + fmtDate(i.due_date) : <span className="muted">ไม่กำหนดวัน</span>}
-                                        <span className={'inv-chip ' + (i.invoice ? 'ok' : 'no')}
-                                            title={i.invoice ? 'แนบใบแจ้งหนี้แล้ว: ' + i.invoice.original : 'ยังไม่ได้แนบใบแจ้งหนี้ของงวดนี้'}>
-                                            🧾 {i.invoice ? 'มีแล้ว' : 'ยังไม่มี'}
+                                        <span className={'inv-chip ' + (i.invoice || i.invoice_link ? 'ok' : 'no')}
+                                            title={i.invoice ? 'แนบไฟล์แล้ว: ' + i.invoice.original : (i.invoice_link || 'ยังไม่ได้แนบใบแจ้งหนี้ของงวดนี้')}>
+                                            🧾 {i.invoice || i.invoice_link ? 'มีแล้ว' : 'ยังไม่มี'}
                                         </span>
                                     </span>
                                 </label>
@@ -279,7 +305,7 @@ function CampaignCard({ row, onOpen }) {
     const pct = planned > 0 ? Math.round((paid / planned) * 100) : 0;
     const state = planned === 0 ? 'none' : paid >= planned ? 'done' : 'part';
     const invTotal = (row.installments || []).length;
-    const invDone = (row.installments || []).filter(i => i.invoice).length;
+    const invDone = (row.installments || []).filter(i => i.invoice || i.invoice_link).length;
     return (
         <div className="pcard" onClick={onOpen}>
             <div className={'pcard-accent payacc-' + (state === 'done' ? 'pay-done' : 'pay-wait')} />
@@ -306,7 +332,7 @@ function CampaignCard({ row, onOpen }) {
                         <div className="pcard-budget-lbl">งบแคมเปญ</div>
                     </div>
                     <div className="pay-docs">
-                        <span className={row.quotation ? 'doc-ok' : 'doc-no'}>📄 เสนอราคา</span>
+                        <span className={row.quotation || row.quotation_link ? 'doc-ok' : 'doc-no'}>📄 เสนอราคา</span>
                         <span className={invTotal > 0 && invDone === invTotal ? 'doc-ok' : 'doc-no'}>
                             🧾 แจ้งหนี้ {invTotal > 0 ? invDone + "/" + invTotal : ""}
                         </span>
@@ -427,7 +453,12 @@ function PlanModal({ row, onClose, onSaved }) {
                     <FileSlot label="ใบเสนอราคา (ทั้งแคมเปญ)"
                         uploadPath={`/payments/${row.project_id}/upload/quotation`}
                         viewPath={`/payments/${row.project_id}/file/quotation`}
-                        meta={row.quotation} onUploaded={onSaved} />
+                        meta={row.quotation} onUploaded={onSaved}
+                        link={row.quotation_link}
+                        onSaveLink={async v => {
+                            await api(`/payments/${row.project_id}`, { method: 'PUT', body: { quotation_link: v || null } });
+                            onSaved();
+                        }} />
                 </div>
 
                 {/* ใบแจ้งหนี้ออกแยกใบต่องวด — แนบได้เฉพาะงวดที่บันทึกแผนแล้ว */}
@@ -442,7 +473,12 @@ function PlanModal({ row, onClose, onSaved }) {
                             <FileSlot compact
                                 uploadPath={`/payments/installments/${i.id}/invoice`}
                                 viewPath={`/payments/installments/${i.id}/invoice`}
-                                meta={i.invoice} onUploaded={onSaved} />
+                                meta={i.invoice} onUploaded={onSaved}
+                                link={i.invoice_link}
+                                onSaveLink={async v => {
+                                    await api(`/payments/installments/${i.id}/invoice-link`, { method: 'PUT', body: { link: v || null } });
+                                    onSaved();
+                                }} />
                         </div>
                     ))}
                 </div>

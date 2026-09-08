@@ -91,6 +91,15 @@ router.post('/installments/:id/invoice', (req, res, next) => {
     });
 });
 
+// PUT /api/payments/installments/:id/invoice-link — ใส่ใบแจ้งหนี้เป็นลิงก์แทนไฟล์
+router.put('/installments/:id/invoice-link', async (req, res, next) => {
+    try {
+        const data = await store.installments.setInvoiceLink(req.params.id, req.body && req.body.link);
+        if (!data) return res.status(404).json({ status: 'error', message: 'ไม่พบงวดนี้' });
+        res.json({ status: 'success', data });
+    } catch (err) { next(err); }
+});
+
 // GET /api/payments/installments/:id/invoice — เปิดใบแจ้งหนี้ของงวด
 router.get('/installments/:id/invoice', async (req, res, next) => {
     try {
@@ -201,8 +210,8 @@ router.get('/batches/:id/slip', async (req, res, next) => {
 // PUT /api/payments/:projectId — แก้ ชื่อเอเจนซี่ / รอบวันจ่าย / สถานะ / โน้ต
 router.put('/:projectId', async (req, res, next) => {
     try {
-        const { agency_name, payment_date, status, notes } = req.body;
-        const data = await store.payments.update(req.params.projectId, { agency_name, payment_date, status, notes });
+        const { agency_name, payment_date, status, notes, quotation_link } = req.body;
+        const data = await store.payments.update(req.params.projectId, { agency_name, payment_date, status, notes, quotation_link });
         if (!data) return res.status(404).json({ status: 'error', message: 'ไม่พบ Project' });
         res.json({ status: 'success', data });
     } catch (err) { next(err); }
