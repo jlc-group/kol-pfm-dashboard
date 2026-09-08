@@ -107,7 +107,7 @@ function FileSlot({ label, uploadPath, viewPath, meta, onUploaded, compact, link
 
 // ===================== แท็บ 1: งวดค้างจ่าย =====================
 // จัดกลุ่มตามเอเจนซี่ เพราะสลิป 1 ใบ = เอเจนซี่ 1 เจ้า
-function PendingTab({ items, picked, setPicked, onMakeBatch }) {
+function PendingTab({ items, picked, setPicked, onMakeBatch, onTakeAll }) {
     // เจ้าที่กำลังเลือกอยู่ — เลือกแล้วเจ้าอื่นติ๊กไม่ได้
     const lockedAgency = picked.length ? (items.find(i => i.id === picked[0]) || {}).agency : null;
 
@@ -122,7 +122,7 @@ function PendingTab({ items, picked, setPicked, onMakeBatch }) {
         return (
             <div className="panel empty-state">
                 <div className="empty-emoji">✅</div>
-                <p>ไม่มีงวดค้างจ่ายตามตัวกรองที่เลือก</p>
+                <p>ไม่มีงวดรอทำจ่ายตามตัวกรองที่เลือก</p>
             </div>
         );
     }
@@ -147,7 +147,13 @@ function PendingTab({ items, picked, setPicked, onMakeBatch }) {
                                 checked={list.every(i => picked.includes(i.id))}
                                 onChange={() => toggleAll(list)} />
                             <span className="inst-agency"><Icon name="users" size={15} /> {name}</span>
-                            <span className="inst-group-sum">ค้าง {list.length} งวด · <b>{baht(sum)}</b></span>
+                            <span className="inst-group-sum">รอทำจ่าย {list.length} งวด · <b>{baht(sum)}</b></span>
+                            {!blocked && (
+                                <button type="button" className="inst-take-all"
+                                    onClick={() => onTakeAll(list)}>
+                                    รวมทั้งหมดของเจ้านี้ → สร้างรอบทำจ่าย
+                                </button>
+                            )}
                             {blocked && <span className="inst-blocked-note">เลือกได้ทีละเอเจนซี่ (สลิป 1 ใบ = 1 เจ้า)</span>}
                         </div>
                         <div className="inst-rows">
@@ -199,19 +205,28 @@ function PendingTab({ items, picked, setPicked, onMakeBatch }) {
 }
 
 // popup ยืนยันรอบทำจ่าย
-function BatchModal({ agency, items, onClose, onDone }) {
-    const [payDate, setPayDate] = useState('');
+function BatchModal({ agency, items, cycle, batches, onClose, onDone }) {
+    // ตัวกรองเลือกรอบเจาะจงไว้ (เช่น 25 ก.ย.) ก็เติมวันให้เลย ไม่ต้องพิมพ์ซ้ำ
+    const [payDate, setPayDate] = useState(cycle && cycle.length === 10 ? cycle : '');
     const [note, setNote] = useState('');
     const [saving, setSaving] = useState(false);
     const total = items.reduce((s, i) => s + (Number(i.amount) || 0), 0);
+    // รอบของเจ้านี้ในวันเดียวกันที่มีอยู่แล้ว — ถ้ามี ควรรวมเข้าใบเดิมแทนออกสลิปสองใบ
+    const sameDay = (batches || []).find(b => b.agency === agency && b.pay_date && b.pay_date === payDate);
 
     async function save() {
         setSaving(true);
         try {
-            await api('/payments/batches', {
-                method: 'POST',
-                body: { agency, pay_date: payDate || null, note: note || null, installment_ids: items.map(i => i.id) }
-            });
+            if (sameDay) {
+                await api(`/payments/batches/${sameDay.id}/items`, {
+                    method: 'POST', body: { installment_ids: items.map(i => i.id) }
+                });
+            } else {
+                await api('/payments/batches', {
+                    method: 'POST',
+                    body: { agency, pay_date: payDate || null, note: note || null, installment_ids: items.map(i => i.id) }
+                });
+            }
             onDone();
         } catch (err) { alert(err.message); setSaving(false); }
     }
@@ -241,15 +256,22 @@ function BatchModal({ agency, items, onClose, onDone }) {
                     <label>วันที่ทำจ่าย</label>
                     <DatePicker value={payDate} onChange={setPayDate} />
                 </div>
-                <div className="field">
-                    <label>หมายเหตุ</label>
-                    <input value={note} onChange={e => setNote(e.target.value)} placeholder="เช่น รอบ 25 ก.ย." />
-                </div>
+                {sameDay ? (
+                    <div className="batch-merge">
+                        มีรอบของ <b>{agency}</b> วันเดียวกันอยู่แล้ว ({baht(sameDay.total)} · {sameDay.item_count} งวด)
+                        <br />กดยืนยันแล้วจะ<b>รวมเข้าใบเดิม</b> ยอดใหม่ {baht(sameDay.total + total)} — สลิปยังเป็นใบเดียว
+                    </div>
+                ) : (
+                    <div className="field">
+                        <label>หมายเหตุ</label>
+                        <input value={note} onChange={e => setNote(e.target.value)} placeholder="เช่น รอบ 25 ก.ย." />
+                    </div>
+                )}
 
                 <div className="modal-actions">
                     <button className="btn-ghost" onClick={onClose} disabled={saving}>ยกเลิก</button>
                     <button className="btn-primary" onClick={save} disabled={saving}>
-                        <Icon name="check" size={16} /> {saving ? 'กำลังบันทึก...' : 'ยืนยันรอบทำจ่าย'}
+                        <Icon name="check" size={16} /> {saving ? 'กำลังบันทึก...' : (sameDay ? 'รวมเข้ารอบเดิม' : 'ยืนยันรอบทำจ่าย')}
                     </button>
                 </div>
             </div>
@@ -273,7 +295,7 @@ function BatchCard({ b, onChanged }) {
     }
 
     async function cancel() {
-        if (!confirm(`ยกเลิกรอบทำจ่ายนี้?\nงวดทั้ง ${b.item_count} งวดจะกลับไปเป็นค้างจ่ายเหมือนเดิม`)) return;
+        if (!confirm(`ยกเลิกรอบทำจ่ายนี้?\nงวดทั้ง ${b.item_count} งวดจะกลับไปเป็นรอทำจ่ายเหมือนเดิม`)) return;
         try { await api(`/payments/batches/${b.id}`, { method: 'DELETE' }); onChanged(); }
         catch (err) { alert(err.message); }
     }
@@ -667,7 +689,7 @@ export default function Payments() {
 
             <div className="pay-tabs">
                 <button className={'pay-tab' + (tab === 'pending' ? ' active' : '')} onClick={() => setTab('pending')}>
-                    ค้างจ่าย <span className="pay-tab-n">{shownPending.length}</span>
+                    รอทำจ่าย <span className="pay-tab-n">{shownPending.length}</span>
                 </button>
                 <button className={'pay-tab' + (tab === 'batches' ? ' active' : '')} onClick={() => setTab('batches')}>
                     รอบที่จ่ายแล้ว <span className="pay-tab-n">{shownBatches.length}</span>
@@ -704,8 +726,8 @@ export default function Payments() {
                     </>
                 ) : tab === 'pending' ? (
                     <>
-                        <span>ค้าง <strong>{shownPending.length}</strong> งวด</span>
-                        <span>ยอดค้างรวม <strong>{baht(pendingTotal)}</strong></span>
+                        <span>รอทำจ่าย <strong>{shownPending.length}</strong> งวด</span>
+                        <span>ยอดรวม <strong>{baht(pendingTotal)}</strong></span>
                     </>
                 ) : (
                     <>
@@ -721,7 +743,8 @@ export default function Payments() {
                 <div className="panel"><p className="empty">กำลังโหลด...</p></div>
             ) : tab === 'pending' ? (
                 <PendingTab items={shownPending} picked={picked} setPicked={setPicked}
-                    onMakeBatch={() => setShowBatch(true)} />
+                    onMakeBatch={() => setShowBatch(true)}
+                    onTakeAll={list => { setPicked(list.map(i => i.id)); setShowBatch(true); }} />
             ) : tab === 'batches' ? (
                 shownBatches.length === 0 ? (
                     <div className="panel empty-state">
@@ -748,6 +771,7 @@ export default function Payments() {
 
             {showBatch && pickedItems.length > 0 && (
                 <BatchModal agency={pickedItems[0].agency} items={pickedItems}
+                    cycle={cycle} batches={batches}
                     onClose={() => setShowBatch(false)} onDone={refresh} />
             )}
 

@@ -177,6 +177,15 @@ router.post('/batches', async (req, res, next) => {
     } catch (err) { next(err); }
 });
 
+// POST /api/payments/batches/:id/items — เติมงวดเข้ารอบเดิม (สลิปใบเดียวเหมือนเดิม)
+router.post('/batches/:id/items', async (req, res, next) => {
+    try {
+        const r = await store.payBatches.addItems(req.params.id, req.body && req.body.installment_ids);
+        if (r.error) return res.status(400).json({ status: 'error', message: r.error });
+        res.json({ status: 'success', data: r.data });
+    } catch (err) { next(err); }
+});
+
 // PUT /api/payments/batches/:id — แก้วันจ่าย/โน้ต
 router.put('/batches/:id', async (req, res, next) => {
     try {

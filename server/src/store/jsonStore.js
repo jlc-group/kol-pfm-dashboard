@@ -1865,6 +1865,23 @@ const payBatches = {
         persist();
         return { data: decorateBatch(b) };
     },
+    // เติมงวดเข้ารอบที่มีอยู่แล้ว — สลิปยังเป็นใบเดียว ยอดรวมขยับตาม
+    async addItems(id, installment_ids) {
+        const b = db.pay_batches.find(x => x.id === Number(id));
+        if (!b) return { error: 'ไม่พบรอบทำจ่ายนี้' };
+        const ids = (installment_ids || []).map(Number);
+        const rows = db.installments.filter(i => ids.includes(i.id));
+        if (rows.length !== ids.length) return { error: 'มีงวดที่หาไม่เจอในระบบ' };
+        if (rows.some(i => i.status === 'paid')) return { error: 'มีงวดที่ถูกรวมในรอบอื่นไปแล้ว' };
+        if (rows.some(i => i.agency !== b.agency)) {
+            return { error: 'งวดที่เลือกไม่ใช่ของ ' + b.agency + ' — สลิปใบเดียวโอนให้เจ้าเดียว' };
+        }
+        rows.forEach(i => { i.status = 'paid'; i.batch_id = b.id; i.updated_at = now(); });
+        b.total = db.installments.filter(i => i.batch_id === b.id).reduce((s, i) => s + (Number(i.amount) || 0), 0);
+        b.updated_at = now();
+        persist();
+        return { data: decorateBatch(b) };
+    },
     async update(id, fields) {
         const b = db.pay_batches.find(x => x.id === Number(id));
         if (!b) return null;
