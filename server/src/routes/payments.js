@@ -36,6 +36,14 @@ const fileOk = (req, file, cb) => {
     cb(ok ? null : new Error('รองรับเฉพาะไฟล์ PDF หรือรูปภาพ'), ok);
 };
 const slipUpload = multer({ storage: slipStorage, limits: { fileSize: 15 * 1024 * 1024 }, fileFilter: fileOk });
+// ใบแจ้งหนี้รายงวด
+const invUpload = multer({
+    storage: multer.diskStorage({
+        destination: (req, file, cb) => cb(null, UPLOAD_DIR),
+        filename: (req, file, cb) => cb(null, `inst${req.params.id}_invoice_${Date.now()}${path.extname(file.originalname)}`)
+    }),
+    limits: { fileSize: 15 * 1024 * 1024 }, fileFilter: fileOk
+});
 const upload = multer({
     storage,
     limits: { fileSize: 15 * 1024 * 1024 }, // 15MB
@@ -61,6 +69,36 @@ router.get('/installments', async (req, res, next) => {
     try {
         const data = await store.installments.list({ status: req.query.status || null });
         res.json({ status: 'success', data });
+    } catch (err) { next(err); }
+});
+
+// POST /api/payments/installments/:id/invoice — แนบใบแจ้งหนี้ของงวดนี้
+router.post('/installments/:id/invoice', (req, res, next) => {
+    invUpload.single('file')(req, res, async (err) => {
+        if (err) return res.status(400).json({ status: 'error', message: err.message });
+        if (!req.file) return res.status(400).json({ status: 'error', message: 'ไม่พบไฟล์' });
+        try {
+            const meta = {
+                filename: req.file.filename,
+                original: Buffer.from(req.file.originalname, 'latin1').toString('utf8'),
+                size: req.file.size,
+                uploaded_at: new Date().toISOString()
+            };
+            const data = await store.installments.setInvoice(req.params.id, meta);
+            if (!data) return res.status(404).json({ status: 'error', message: 'ไม่พบงวดนี้' });
+            res.json({ status: 'success', data });
+        } catch (e) { next(e); }
+    });
+});
+
+// GET /api/payments/installments/:id/invoice — เปิดใบแจ้งหนี้ของงวด
+router.get('/installments/:id/invoice', async (req, res, next) => {
+    try {
+        const it = await store.installments.get(req.params.id);
+        if (!it || !it.invoice) return res.status(404).json({ status: 'error', message: 'ยังไม่ได้แนบใบแจ้งหนี้' });
+        const filePath = path.join(UPLOAD_DIR, it.invoice.filename);
+        if (!fs.existsSync(filePath)) return res.status(404).json({ status: 'error', message: 'ไฟล์หายไป' });
+        res.sendFile(filePath);
     } catch (err) { next(err); }
 });
 

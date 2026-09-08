@@ -1753,6 +1753,7 @@ const installments = {
             amount: Number(x.amount) || 0,
             due_date: x.due_date || null,
             note: x.note || null,
+            invoice: null,          // ใบแจ้งหนี้ของงวดนี้ (ออกแยกใบต่องวด)
             status: 'pending',
             batch_id: null,
             created_at: now(), updated_at: now()
@@ -1773,6 +1774,19 @@ const installments = {
         it.updated_at = now();
         persist();
         return { data: decorateInstallment(it) };
+    },
+    // แนบใบแจ้งหนี้ของงวด — งวดที่จ่ายแล้วก็ยังแนบ/เปลี่ยนได้ เพราะเอกสารมักตามมาทีหลัง
+    async setInvoice(id, meta) {
+        const it = db.installments.find(i => i.id === Number(id));
+        if (!it) return null;
+        it.invoice = meta;
+        it.updated_at = now();
+        persist();
+        return decorateInstallment(it);
+    },
+    async get(id) {
+        const it = db.installments.find(i => i.id === Number(id));
+        return it ? decorateInstallment(it) : null;
     },
     async removeByProject(projectId) {
         const before = db.installments.length;

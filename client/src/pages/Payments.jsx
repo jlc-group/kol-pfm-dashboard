@@ -10,7 +10,7 @@ import { BRANDS } from '../data/brands.js';
 const baht = n => '฿' + Number(n || 0).toLocaleString('th-TH');
 
 // ช่องอัปโหลด/ดูไฟล์ (ใบเสนอราคา หรือ ใบแจ้งหนี้ — อยู่ที่แคมเปญ ออกทีเดียวทั้งงาน)
-function FileSlot({ label, projectId, type, meta, onUploaded }) {
+function FileSlot({ label, uploadPath, viewPath, meta, onUploaded, compact }) {
     const inputRef = useRef(null);
     const [busy, setBusy] = useState(false);
 
@@ -19,20 +19,20 @@ function FileSlot({ label, projectId, type, meta, onUploaded }) {
         if (!file) return;
         setBusy(true);
         try {
-            const res = await uploadFile(`/payments/${projectId}/upload/${type}`, file);
+            const res = await uploadFile(uploadPath, file);
             onUploaded(res.data);
         } catch (err) { alert(err.message); }
         finally { setBusy(false); e.target.value = ''; }
     }
 
     async function view() {
-        try { await openFile(`/payments/${projectId}/file/${type}`); }
+        try { await openFile(viewPath); }
         catch (err) { alert(err.message); }
     }
 
     return (
-        <div className="file-slot">
-            <div className="file-slot-label">{label}</div>
+        <div className={'file-slot' + (compact ? ' compact' : '')}>
+            {label && <div className="file-slot-label">{label}</div>}
             {meta ? (
                 <div className="file-has">
                     <button className="file-view" onClick={view} title="เปิดดูไฟล์">
@@ -111,6 +111,10 @@ function PendingTab({ items, picked, setPicked, onMakeBatch }) {
                                     <span className="inst-amt">{baht(i.amount)}</span>
                                     <span className="inst-due">
                                         {i.due_date ? '📅 ' + fmtDate(i.due_date) : <span className="muted">ไม่กำหนดวัน</span>}
+                                        <span className={'inv-chip ' + (i.invoice ? 'ok' : 'no')}
+                                            title={i.invoice ? 'แนบใบแจ้งหนี้แล้ว: ' + i.invoice.original : 'ยังไม่ได้แนบใบแจ้งหนี้ของงวดนี้'}>
+                                            🧾 {i.invoice ? 'มีแล้ว' : 'ยังไม่มี'}
+                                        </span>
                                     </span>
                                 </label>
                             ))}
@@ -274,6 +278,8 @@ function CampaignCard({ row, onOpen }) {
     const paid = Number(row.paid_amount) || 0;
     const pct = planned > 0 ? Math.round((paid / planned) * 100) : 0;
     const state = planned === 0 ? 'none' : paid >= planned ? 'done' : 'part';
+    const invTotal = (row.installments || []).length;
+    const invDone = (row.installments || []).filter(i => i.invoice).length;
     return (
         <div className="pcard" onClick={onOpen}>
             <div className={'pcard-accent payacc-' + (state === 'done' ? 'pay-done' : 'pay-wait')} />
@@ -301,7 +307,9 @@ function CampaignCard({ row, onOpen }) {
                     </div>
                     <div className="pay-docs">
                         <span className={row.quotation ? 'doc-ok' : 'doc-no'}>📄 เสนอราคา</span>
-                        <span className={row.invoice ? 'doc-ok' : 'doc-no'}>📄 แจ้งหนี้</span>
+                        <span className={invTotal > 0 && invDone === invTotal ? 'doc-ok' : 'doc-no'}>
+                            🧾 แจ้งหนี้ {invTotal > 0 ? invDone + "/" + invTotal : ""}
+                        </span>
                     </div>
                 </div>
             </div>
@@ -326,6 +334,8 @@ function PlanModal({ row, onClose, onSaved }) {
     const [saving, setSaving] = useState(false);
 
     const locked = (row.installments || []).some(i => i.agency === agency && i.status === 'paid');
+    // แถวในตารางด้านบนยังเป็นแค่ร่าง — ใบแจ้งหนี้ต้องผูกกับงวดที่บันทึกแล้วเท่านั้น
+    const saved = (row.installments || []).filter(i => i.agency === agency).sort((a, b) => a.no - b.no);
 
     function pickAgency(name) { setAgency(name); setPlan(planOf(name)); }
 
@@ -414,10 +424,27 @@ function PlanModal({ row, onClose, onSaved }) {
                 </div>
 
                 <div className="pay-files">
-                    <FileSlot label="ใบเสนอราคา" projectId={row.project_id} type="quotation" meta={row.quotation}
-                        onUploaded={onSaved} />
-                    <FileSlot label="ใบแจ้งหนี้" projectId={row.project_id} type="invoice" meta={row.invoice}
-                        onUploaded={onSaved} />
+                    <FileSlot label="ใบเสนอราคา (ทั้งแคมเปญ)"
+                        uploadPath={`/payments/${row.project_id}/upload/quotation`}
+                        viewPath={`/payments/${row.project_id}/file/quotation`}
+                        meta={row.quotation} onUploaded={onSaved} />
+                </div>
+
+                {/* ใบแจ้งหนี้ออกแยกใบต่องวด — แนบได้เฉพาะงวดที่บันทึกแผนแล้ว */}
+                <div className="inv-block">
+                    <div className="file-slot-label">ใบแจ้งหนี้ (แยกตามงวด)</div>
+                    {saved.length === 0 ? (
+                        <p className="alp-hint">บันทึกแผนการจ่ายก่อน แล้วช่องแนบใบแจ้งหนี้ของแต่ละงวดจะขึ้นตรงนี้</p>
+                    ) : saved.map(i => (
+                        <div className="inv-row" key={i.id}>
+                            <span className="plan-no">งวด {i.no}/{i.of}</span>
+                            <span className="inv-amt">{baht(i.amount)}</span>
+                            <FileSlot compact
+                                uploadPath={`/payments/installments/${i.id}/invoice`}
+                                viewPath={`/payments/installments/${i.id}/invoice`}
+                                meta={i.invoice} onUploaded={onSaved} />
+                        </div>
+                    ))}
                 </div>
 
                 <div className="modal-actions">
