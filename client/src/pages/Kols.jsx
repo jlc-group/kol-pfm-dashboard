@@ -69,7 +69,13 @@ function StampBadge({ row }) {
             return <span className="perf-pill wait" title={`ค่ายิงแอดถึงเกณฑ์แล้ว แต่ยังไม่มียอดวิวให้ตัดสิน
 ระบบจะสแตมป์ให้เองทันทีที่ข้อมูลผลงานเข้ามา`}>รอข้อมูลผลงาน</span>;
         }
-        return <span className="perf-pill none" title="ยังไม่ถึงเกณฑ์ — จะสแตมป์อัตโนมัติเมื่อค่ายิงแอดสะสมถึง 10,000 บาท">ยังไม่ถึงเกณฑ์</span>;
+        // ยังไม่ถึงเกณฑ์ = ยังไม่มีค่าที่ล็อก โชว์ผลปัจจุบันไปก่อน พร้อมบอกว่ายังไม่ล็อก
+        return (
+            <span className="perf-live" title="ยังไม่ถึงเกณฑ์ — ค่านี้ยังขยับได้เรื่อย ๆ จะล็อกเมื่อค่ายิงแอดสะสมถึง 10,000 บาท">
+                <LiveBadge row={row} />
+                <span className="perf-tmp">ยังไม่ล็อก</span>
+            </span>
+        );
     }
     const when = fmtD(String(st.at).slice(0, 10));
     const cost = st.cpm != null
@@ -324,11 +330,10 @@ export default function Kols() {
                                         title={sort === 'perf-best' ? 'เรียง: ผ่านเกณฑ์ขึ้นก่อน — กดอีกครั้งเพื่อสลับเป็นไม่ผ่านขึ้นก่อน'
                                             : sort === 'perf-worst' ? 'เรียง: ไม่ผ่านเกณฑ์ขึ้นก่อน — กดอีกครั้งเพื่อกลับไปเรียงตามเดือน'
                                                 : 'กดเพื่อเรียงตาม Performance'}>
-                                        Performance ตอนนี้
+                                        Performance
                                         <span className="ka-sort-ico">{sort === 'perf-best' ? '▲' : sort === 'perf-worst' ? '▼' : '⇅'}</span>
                                     </button>
                                 </th>
-                                <th title="ผลที่ระบบล็อกไว้ตอนค่ายิงแอดสะสมถึง 10,000 บาท — แก้ไม่ได้">Performance @10K 🔒</th>
                                 <th>วันที่ลงงาน</th><th>วันที่เริ่ม Gen</th><th>Days</th>
                                 <th className="ka-sort-th">
                                     <button type="button" className={'ka-sort' + (sort.startsWith('left-') ? ' on' : '')} onClick={sortByLeft}
@@ -364,7 +369,6 @@ export default function Kols() {
                                     <td className="num">{N(r.cost)}</td>
                                     <td className="num">{r.cpm ? '฿' + N(r.cpm) : '—'}</td>
                                     <td className="num">{r.cpe ? '฿' + N(r.cpe) : '—'}</td>
-                                    <td><LiveBadge row={r} /></td>
                                     <td><StampBadge row={r} /></td>
                                     <td>{fmtD(r.post_date)}</td>
                                     <td>{fmtD(r.gen_date)}</td>

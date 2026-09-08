@@ -1,7 +1,24 @@
 const express = require('express');
 const store = require('../store');
 const { authenticate } = require('../middleware/auth');
-const { allowedBrands, canSeeBrand } = require('../data/roles');
+const { allowedBrands, canSeeBrand, canSeeCostMetrics } = require('../data/roles');
+
+// ค่ายิงแอดเป็นข้อมูลลับ — คนที่ไม่ใช่ admin/manager ไม่ได้รับตัวเลขไปเลย
+// (CPM ถอดกลับเป็นค่าแอดได้ จึงต้องปิดด้วย) แต่ยังเห็นผล Pass/Fail ตามปกติ
+function maskCost(data, user) {
+    if (canSeeCostMetrics(user)) return data;
+    (data.rows || []).forEach(r => {
+        r.ad_spend = null; r.cpm = null; r.content_cpm = null; r.content_cpe = null;
+        if (r.perf_stamp) r.perf_stamp = { ...r.perf_stamp, ad_spend: null, cpm: null, cpe: null, total_cost: null };
+    });
+    if (data.summary) {
+        const s = data.summary;
+        s.total_spend = null; s.cpm = null; s.cpe = null;
+        (s.by_brand || []).forEach(b => { b.spend = null; b.cpm = null; });
+        (s.by_month || []).forEach(m => { m.spend = null; m.cpm = null; });
+    }
+    return data;
+}
 
 const router = express.Router();
 router.use(authenticate);
@@ -20,7 +37,7 @@ router.get('/', async (req, res, next) => {
             from: from || undefined,
             to: to || undefined
         });
-        res.json({ status: 'success', data });
+        res.json({ status: 'success', data: maskCost(data, req.account || req.user) });
     } catch (err) { next(err); }
 });
 

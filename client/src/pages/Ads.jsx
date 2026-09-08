@@ -15,6 +15,60 @@ const splitCsv = v => (v ? String(v).split(',').map(x => x.trim()).filter(Boolea
 const STATUSES = ['ยังไม่ยิง', 'ยิงแล้ว'];
 
 const fmtMoney = n => '฿' + (Number(n) || 0).toLocaleString('th-TH');
+
+// เกณฑ์ผ่าน/ไม่ผ่าน — ต้องตรงกับฝั่ง server (jsonStore.js)
+const GOOD_CPM = 28;
+const GOOD_CPE = 1.5;
+
+// ผลที่ระบบล็อกไว้ตอนค่าแอดสะสมถึง 10,000 — แก้ไม่ได้ ล้างไม่ได้
+function StampCell({ row }) {
+    const st = row.perf_stamp;
+    if (!st) {
+        if (row.stamp_waiting) {
+            return <span className="perf-pill wait" title="ค่ายิงแอดถึงเกณฑ์แล้ว แต่ยังไม่มียอดวิวให้ตัดสิน — ระบบจะสแตมป์ให้เองทันทีที่ข้อมูลผลงานเข้ามา">รอข้อมูลผลงาน</span>;
+        }
+        return <span className="perf-pill none" title="จะสแตมป์อัตโนมัติเมื่อค่ายิงแอดสะสมถึง 10,000 บาท">ยังไม่ถึงเกณฑ์</span>;
+    }
+    const money = st.cpm != null
+        ? 'CPM ฿' + fmtNum(st.cpm) + ' (เกณฑ์ ≤ ' + GOOD_CPM + ')  ·  CPE ฿' + fmtNum(st.cpe) + ' (เกณฑ์ ≤ ' + GOOD_CPE + ')'
+        : 'CPM/CPE ดูได้เฉพาะผู้ดูแลระบบและ Manager';
+    const tip = [
+        '🔒 ล็อกไว้ตั้งแต่ ' + fmtDate(String(st.at).slice(0, 10)) + ' — แก้ไม่ได้',
+        money,
+        'ยอดวิว ' + fmtNum(st.views) + ' · Engagement ' + fmtNum(st.engagement) + ' (ER ' + st.er + '%)'
+    ].join(String.fromCharCode(10));
+    return st.verdict === 'Pass'
+        ? <span className="perf-pill good locked" title={tip}>🔒 ✓ Pass</span>
+        : <span className="perf-pill bad locked" title={tip}>🔒 ✕ Fail</span>;
+}
+
+// ผลตอนนี้ + ลูกศรเทียบกับตอนสแตมป์ (ใช้ตัดสินว่าควรยิงต่อหรือหยุด)
+function LiveCell({ row }) {
+    if (!row.performance) {
+        return <span className="perf-pill none" title="ยังไม่มียอดวิว/engagement ให้ตัดสิน">Not rated</span>;
+    }
+    const now = row.performance === 'Good' ? 'Pass' : 'Fail';
+    const st = row.perf_stamp;
+    let move = null;
+    if (st && st.verdict !== now) {
+        move = st.verdict === 'Fail'
+            ? { ico: '↑', cls: 'up', why: 'ดีขึ้นจากตอนสแตมป์ (ตอนนั้นไม่ผ่าน)' }
+            : { ico: '↓', cls: 'down', why: 'แย่ลงจากตอนสแตมป์ (ตอนนั้นผ่าน) — ยิงต่ออาจไม่คุ้ม' };
+    }
+    const money = row.content_cpm != null
+        ? 'CPM ฿' + fmtNum(row.content_cpm) + '  ·  CPE ฿' + fmtNum(row.content_cpe)
+        : 'CPM/CPE ดูได้เฉพาะผู้ดูแลระบบและ Manager';
+    const tip = [money, 'ยอดวิว ' + fmtNum(row.views) + ' · Engagement ' + fmtNum(row.engagement)].join(String.fromCharCode(10));
+    return (
+        <span className="perf-live">
+            <span className={'perf-pill ' + (now === 'Pass' ? 'good' : 'bad')} title={tip}>
+                {now === 'Pass' ? '✓ Pass' : '✕ Fail'}
+            </span>
+            {move && <span className={'perf-move ' + move.cls} title={move.why}>{move.ico}</span>}
+        </span>
+    );
+}
+
 const fmtNum = n => {
     const v = Number(n) || 0;
     if (v >= 1000000) return (v / 1000000).toFixed(1) + 'M';
@@ -207,6 +261,8 @@ function AdRow({ row, onSaved }) {
                         ? <span className="late-chip ontime" title="ยิงแอดในวันเดียวกับที่ลงคลิป">ตรงเวลา</span>
                         : <span className={'late-chip ' + lateLevel(lateDays)} title={`ยิงแอดช้ากว่าวันลงคลิป ${lateDays} วัน`}>ช้า {lateDays} วัน</span>}
             </div>
+            <div className="ads-cell"><StampCell row={row} /></div>
+            <div className="ads-cell"><LiveCell row={row} /></div>
             <div className="ads-cell ads-note">
                 <input value={note} onChange={e => setNote(e.target.value)} onBlur={saveNote}
                     placeholder="เช่น Gencode ใช้ไม่ได้ / ยิงไม่ได้" title={note || 'หมายเหตุจากทีมยิงแอด'} />
@@ -387,6 +443,8 @@ export default function Ads() {
                                         options={[{ value: '', label: 'ทั้งหมด', count: countIf('late', () => true) },
                                         ...LATE_OPTS.map(([v, l]) => ({ value: v, label: l, dot: v, count: countIf('late', r => lateBucket(r) === v) }))]} />
                                 </span>
+                                <span title="ผลที่ระบบล็อกไว้ตอนค่ายิงแอดสะสมถึง 10,000 บาท — แก้ไม่ได้">PERF @10K 🔒</span>
+                                <span title="ผลตอนนี้ คำนวณสดจากข้อมูลล่าสุด — ใช้ตัดสินว่าควรยิงต่อหรือหยุด">PERF ตอนนี้</span>
                                 <span>หมายเหตุ</span>
                             </div>
                             {rows.map(r => <AdRow key={r.sub_id} row={r} onSaved={load} />)}

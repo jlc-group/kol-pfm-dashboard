@@ -1069,7 +1069,7 @@ a { text-decoration: none; color: inherit; }
 
 /* ตารางยิงแอด (แถวแนวนอน) */
 .ads-tbl-scroll { overflow-x: auto; }
-.ads-tbl { min-width: 1560px; }
+.ads-tbl { min-width: 1860px; }
 /* ปุ่มกรองเล็กบนหัวคอลัมน์ (แบบตาราง Excel) */
 .colf { position: relative; display: inline-flex; vertical-align: middle; }
 .colf-btn {
@@ -1110,8 +1110,8 @@ a { text-decoration: none; color: inherit; }
 .colf-dot.none { background: #c3cdc8; }
 .ads-tbl-head, .ads-row {
     display: grid;
-    /* KOL แคมเปญ PRODUCT TARGET CONTENT_TYPE CONTENT_FORMAT โพสต์ GENCODE ID_POST PostDate สถานะ วันยิงแอด ยิงช้า หมายเหตุ */
-    grid-template-columns: 1.3fr 1.15fr 0.72fr 1.05fr 0.62fr 1.05fr 0.5fr 1.05fr 0.95fr 0.82fr 0.9fr 1fr 0.85fr 1.3fr;
+    /* KOL แคมเปญ PRODUCT TARGET CONTENT_TYPE CONTENT_FORMAT โพสต์ GENCODE ID_POST PostDate สถานะ วันยิงแอด ยิงช้า PERF@10K PERFตอนนี้ หมายเหตุ */
+    grid-template-columns: 1.3fr 1.15fr 0.72fr 1.05fr 0.62fr 1.05fr 0.5fr 1.05fr 0.95fr 0.82fr 0.9fr 1fr 0.85fr 1fr 1fr 1.3fr;
     gap: 10px; align-items: center;
 }
 .ads-note input { width: 100%; }
@@ -2593,3 +2593,5 @@ a { text-decoration: none; color: inherit; }
 .perf-move { font-weight: 800; font-size: 13px; }
 .perf-move.up { color: var(--mint); }
 .perf-move.down { color: var(--danger); }
+
+.perf-tmp { font-size: 10px; color: #7d938d; }

@@ -1517,7 +1517,41 @@ const ads = {
                     ad_start: s.ad_start || null,
                     ad_end: s.ad_end || null,
                     ad_note: s.ad_note || null,
-                    cpm: adCpm(spend, reach)
+                    cpm: adCpm(spend, reach),
+                    // Performance ของคอนเทนต์ — ใช้ตัดสินว่าควรยิงต่อหรือหยุด
+                    ...(() => {
+                        const views = Number(s.views) || 0;
+                        const eng = engagementOf(s);
+                        const totalCost = (Number(s.budget) || 0) + spend;
+                        const cCpm = views > 0 ? Number((totalCost / (views / 1000)).toFixed(2)) : 0;
+                        const cCpe = eng > 0 ? Number((totalCost / eng).toFixed(2)) : 0;
+                        return {
+                            views, engagement: eng,
+                            content_cpm: cCpm, content_cpe: cCpe,
+                            performance: views > 0
+                                ? ((cCpm > 0 && cCpm <= GOOD_CPM && cCpe > 0 && cCpe <= GOOD_CPE) ? 'Good' : 'Improve')
+                                : null,
+                            perf_stamp: s.perf_stamp ? clone(s.perf_stamp) : null,
+                            stamp_waiting: !s.perf_stamp && spend >= AD_STAMP_AT && views <= 0
+                        };
+                    })(),
+                    // Performance ของคอนเทนต์ — ใช้ตัดสินว่าควรยิงต่อหรือหยุด
+                    ...(() => {
+                        const views = Number(s.views) || 0;
+                        const eng = engagementOf(s);
+                        const totalCost = (Number(s.budget) || 0) + spend;
+                        const cCpm = views > 0 ? Number((totalCost / (views / 1000)).toFixed(2)) : 0;
+                        const cCpe = eng > 0 ? Number((totalCost / eng).toFixed(2)) : 0;
+                        return {
+                            views, engagement: eng,
+                            content_cpm: cCpm, content_cpe: cCpe,
+                            performance: views > 0
+                                ? ((cCpm > 0 && cCpm <= GOOD_CPM && cCpe > 0 && cCpe <= GOOD_CPE) ? 'Good' : 'Improve')
+                                : null,
+                            perf_stamp: s.perf_stamp ? clone(s.perf_stamp) : null,
+                            stamp_waiting: !s.perf_stamp && spend >= AD_STAMP_AT && views <= 0
+                        };
+                    })()
                 };
             });
 
