@@ -430,6 +430,14 @@ function enrichProject(p) {
 // id ของไฟล์ report — สั้นแต่เดาไม่ได้ ใช้อ้างอิงตอนเปิด/ลบ
 const genReportId = () => 'r' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 
+// Platform ของกลุ่ม — รองรับทั้ง platforms[] แบบใหม่ และ platform เดี่ยว/ที่ติดอยู่กับ allocation แบบเดิม
+function linkGroupPlatforms(g) {
+    const set = new Set();
+    (g.platforms || []).forEach(p => { if (p) set.add(p); });
+    if (g.platform) set.add(g.platform);
+    (g.allocations || []).forEach(a => { if (a.platform) set.add(a.platform); });
+    return [...set];
+}
 const projects = {
     // scopeBrands = null (เห็นทุกแบรนด์) หรือ array ชื่อแบรนด์
     async list(scopeBrands = null) {
@@ -536,6 +544,7 @@ const projects = {
         const link = {
             token,
             name: (name && String(name).trim()) || `เอเจนซี่ ${p.agency_links.length + 1}`,
+            groups: Array.isArray(opts.groups) ? opts.groups.filter(Boolean) : [],   // กลุ่มที่รับผิดชอบ (ว่าง = ใช้ Platform/สินค้ากรองแทน)
             products: Array.isArray(opts.products) ? opts.products : [],   // สินค้าที่รับผิดชอบ
             platforms: Array.isArray(opts.platforms) ? opts.platforms : [], // Platform ที่รับผิดชอบ
             kol_count: Number(opts.kol_count) || 0,                         // จำนวน KOL ที่ต้องส่ง
@@ -700,6 +709,7 @@ const projects = {
         const link = p.agency_links.find(l => l.token === token);
         if (!link) return null;
         if (fields.name !== undefined && String(fields.name).trim()) link.name = String(fields.name).trim();
+        if (Array.isArray(fields.groups)) link.groups = fields.groups.filter(Boolean);
         if (Array.isArray(fields.products)) link.products = fields.products.filter(Boolean);
         if (Array.isArray(fields.platforms)) link.platforms = fields.platforms.filter(Boolean);
         if (fields.kol_count !== undefined) link.kol_count = Number(fields.kol_count) || 0;
@@ -720,7 +730,24 @@ const projects = {
         for (const p of db.projects) {
             if (Array.isArray(p.agency_links)) {
                 const link = p.agency_links.find(l => l.token === token);
-                if (link) return { project: clone(p), link: { token: link.token, name: link.name, products: link.products || [], platforms: link.platforms || [], kol_count: link.kol_count || 0, reports: clone(link.reports || []), scoped: true } };
+                if (link) {
+                    const picked = (link.groups || []).filter(Boolean);
+                    // เลือกกลุ่มไว้แล้ว = ขอบเขตยึดตามกลุ่ม ถ้าไม่ได้ระบุ Platform/สินค้าเองก็เติมจากกลุ่มให้
+                    const gs = picked.length ? (p.ad_groups || []).filter(g => picked.includes(g.key)) : [];
+                    const gPlats = [...new Set(gs.flatMap(g => linkGroupPlatforms(g)))];
+                    const gProds = [...new Set(gs.flatMap(g => g.products || []))];
+                    return {
+                        project: clone(p),
+                        link: {
+                            token: link.token, name: link.name,
+                            groups: picked,
+                            products: (link.products && link.products.length) ? link.products : gProds,
+                            platforms: (link.platforms && link.platforms.length) ? link.platforms : gPlats,
+                            kol_count: link.kol_count || 0,
+                            reports: clone(link.reports || []), scoped: true
+                        }
+                    };
+                }
             }
         }
         const p = db.projects.find(p => p.share_token === token);   // ลิงก์รวมเดิม → เห็นทั้งหมด (backward compat)

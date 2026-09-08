@@ -331,7 +331,7 @@ router.post('/:id/agency-links', async (req, res, next) => {
     try {
         const check = await canEditProject(req, req.params.id);
         if (!check.ok) return res.status(check.code).json({ status: 'error', message: check.message });
-        const { name, products, platforms, kol_count, agency_user_id, new_agency_username } = req.body;
+        const { name, products, platforms, kol_count, groups, agency_user_id, new_agency_username } = req.body;
 
         // --- ตรวจให้ครบก่อนสร้างลิงก์ ไม่งั้นพลาดตรงบัญชีแล้วจะเหลือลิงก์ค้างที่ไม่มีใครเข้าได้ ---
         let account = null;                       // บัญชีเดิมที่จะผูกลิงก์ให้
@@ -354,7 +354,7 @@ router.post('/:id/agency-links', async (req, res, next) => {
         }
 
         const linkName = newName || (account && account.username) || name;
-        const link = await store.projects.addAgencyLink(req.params.id, linkName, crypto.randomBytes(9).toString('hex'), { products, platforms, kol_count });
+        const link = await store.projects.addAgencyLink(req.params.id, linkName, crypto.randomBytes(9).toString('hex'), { products, platforms, kol_count, groups });
         if (!link) return res.status(404).json({ status: 'error', message: 'ไม่พบ Project' });
 
         // --- ผูกลิงก์เข้าบัญชี เพื่อไม่ต้องไปติ๊กเองที่หน้าผู้ใช้งาน ---
@@ -386,7 +386,7 @@ router.put('/:id/agency-links/:token', async (req, res, next) => {
     try {
         const check = await canEditProject(req, req.params.id);
         if (!check.ok) return res.status(check.code).json({ status: 'error', message: check.message });
-        const { name, products, platforms, kol_count, agency_user_id } = req.body;
+        const { name, products, platforms, kol_count, groups, agency_user_id } = req.body;
 
         // เปลี่ยนบัญชีที่ผูก: ถอนของเดิมออกก่อนแล้วค่อยผูกใหม่ ไม่งั้นเจ้าเก่ายังเข้าได้อยู่
         if (agency_user_id !== undefined) {
@@ -402,7 +402,7 @@ router.put('/:id/agency-links/:token', async (req, res, next) => {
             }
         }
 
-        const link = await store.projects.updateAgencyLink(req.params.id, req.params.token, { name, products, platforms, kol_count });
+        const link = await store.projects.updateAgencyLink(req.params.id, req.params.token, { name, products, platforms, kol_count, groups });
         if (!link) return res.status(404).json({ status: 'error', message: 'ไม่พบลิงก์นี้' });
         await record(req, req.params.id, 'agency_link', 'แก้ไขลิงก์เอเจนซี่: ' + link.name);
         res.json({ status: 'success', data: link });

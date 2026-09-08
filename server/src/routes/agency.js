@@ -116,6 +116,10 @@ function groupPlatforms(g) {
 function scopedAdGroups(project, link) {
     const groups = project.ad_groups || [];
     if (!link.scoped) return groups;   // ลิงก์รวมเดิม = เห็นทุกกลุ่ม
+    // เลือกกลุ่มไว้ชัดเจนแล้วก็ใช้อันนั้นเลย — สองกลุ่มที่ Platform/สินค้าซ้ำกันจะแยกกันได้ก็ตรงนี้
+    if (Array.isArray(link.groups) && link.groups.length) {
+        return groups.filter(g => link.groups.includes(g.key));
+    }
     return groups.filter(g => {
         const gPlats = groupPlatforms(g);
         const platOk = !link.platforms.length || gPlats.length === 0 || gPlats.some(p => link.platforms.includes(p));

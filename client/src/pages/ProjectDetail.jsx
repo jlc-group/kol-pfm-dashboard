@@ -248,6 +248,7 @@ function AgencyLinkRow({ l, url, copied, onCopy, onEdit, onDelete, onChat, unrea
                     ? <span className="alp-bound ok" title={'บัญชี ' + boundTo + ' เข้าลิงก์นี้ได้'}>🔗 {boundTo}</span>
                     : <span className="alp-bound none" title="ยังไม่มีบัญชีเอเจนซี่ผูกกับลิงก์นี้ — เปิดลิงก์แล้วจะเข้าไม่ได้">⚠ ยังไม่ผูกบัญชี</span>}
                 <div className="alp-summary">
+                    {(l.groups || []).length > 0 && <span className="alp-sv-chip grp">🗂 {(l.groups || []).length} กลุ่ม</span>}
                     {l.kol_count > 0 && <span className="alp-sv-chip kol">⭐ {l.kol_count} KOL</span>}
                     <span className="alp-sv-chip prod">{prods.length ? `${prods.length} สินค้า` : 'ทุกสินค้า'}</span>
                     {plats.length ? plats.map(p => <span className="alp-sv-chip plat" key={p}>{p}</span>) : <span className="alp-sv-chip plat">ทุก Platform</span>}
@@ -335,6 +336,7 @@ export default function ProjectDetail() {
     const [newLinkName, setNewLinkName] = useState('');
     // ต้องโหลดตั้งแต่เปิดแผงลิงก์ เพราะป้าย "ผูกบัญชีแล้ว/ยัง" ใช้ข้อมูลนี้
     useEffect(() => { if (showLinks) loadAgencyAccounts(); }, [showLinks, showCreate]);
+    const [newLinkGroups, setNewLinkGroups] = useState([]);   // key ของกลุ่มที่เอเจนซี่เจ้านี้รับผิดชอบ
     const [newLinkProducts, setNewLinkProducts] = useState([]);
     const [newLinkPlatforms, setNewLinkPlatforms] = useState([]);
     const [newLinkKol, setNewLinkKol] = useState('');
@@ -382,7 +384,7 @@ export default function ProjectDetail() {
     }
     async function createLink() {
         // แปลงตัวเลือกใน dropdown เป็นข้อมูลที่ server เข้าใจ
-        const body = { products: newLinkProducts, platforms: newLinkPlatforms, kol_count: Number(newLinkKol) || 0 };
+        const body = { products: newLinkProducts, platforms: newLinkPlatforms, kol_count: Number(newLinkKol) || 0, groups: newLinkGroups };
         if (linkPick === '__NEW__') {
             if (!newLinkName.trim()) { alert('กรุณาใส่ชื่อบัญชีเอเจนซี่'); return; }
             body.new_agency_username = newLinkName.trim();
@@ -398,19 +400,36 @@ export default function ProjectDetail() {
                 setNewAccount({ username: res.data.agency_account.username, password: res.data.temp_password });
                 setPwCopied(false);
             }
-            setNewLinkName(''); setNewLinkProducts([]); setNewLinkPlatforms([]); setNewLinkKol(''); setLinkPick('');
+            setNewLinkName(''); setNewLinkGroups([]); setNewLinkProducts([]); setNewLinkPlatforms([]); setNewLinkKol(''); setLinkPick('');
             setShowCreate(false);
             loadLinks();
             loadAgencyAccounts();
         } catch (err) { alert(err.message); }
     }
     // สินค้าของ Platform ที่เลือก (ตามที่เจ้าของโปรเจคผูกไว้ในกลุ่มโฆษณา) — ถ้ายังไม่เลือก Platform = ว่าง
+    // ติ๊กกลุ่ม = ได้ Platform/สินค้า/จำนวน KOL ของกลุ่มนั้นมาทั้งชุด ไม่ต้องไล่เลือกเอง
+    function toggleNewGroup(key) {
+        const next = newLinkGroups.includes(key) ? newLinkGroups.filter(k => k !== key) : [...newLinkGroups, key];
+        setNewLinkGroups(next);
+        const picked = (project?.ad_groups || []).filter(g => next.includes(g.key));
+        setNewLinkKol(picked.length ? String(picked.reduce((s, g) => s + (Number(g.kol_count) || 0), 0)) : '');
+        // Platform/สินค้าที่เลือกไว้ ต้องไม่หลุดขอบเขตกลุ่มใหม่
+        if (picked.length) {
+            const gp = [...new Set(picked.flatMap(g => groupPlatforms(g)))];
+            const gc = [...new Set(picked.flatMap(g => g.products || []))];
+            setNewLinkPlatforms(cur => cur.filter(p => gp.includes(p)));
+            setNewLinkProducts(cur => cur.filter(c => gc.includes(c)));
+        }
+    }
     const productsForPlatforms = plats => {
         if (!plats.length) return [];
         const set = new Set();
         // เทียบกับทุก Platform ของกลุ่ม ไม่ใช่แค่ g.platform ตัวเดียว
         // ไม่งั้นกลุ่มที่ลง TikTok+Instagram จะไม่มีสินค้าขึ้นตอนเลือก Instagram
-        (project?.ad_groups || []).forEach(g => {
+        const pool = newLinkGroups.length
+            ? (project?.ad_groups || []).filter(g => newLinkGroups.includes(g.key))
+            : (project?.ad_groups || []);
+        pool.forEach(g => {
             if (groupPlatforms(g).some(pf => plats.includes(pf))) (g.products || []).forEach(c => set.add(c));
         });
         return [...set];
@@ -429,6 +448,7 @@ export default function ProjectDetail() {
         setEditToken(l.token);
         setLinkPick(bound ? 'u' + bound.id : '__FREE__');
         setNewLinkName(l.name || '');
+        setNewLinkGroups([...(l.groups || [])]);
         setNewLinkProducts([...(l.products || [])]);
         setNewLinkPlatforms([...(l.platforms || [])]);
         setNewLinkKol(l.kol_count ? String(l.kol_count) : '');
@@ -436,12 +456,13 @@ export default function ProjectDetail() {
     }
     function resetLinkForm() {
         setShowCreate(false); setEditToken(null); setLinkPick('');
-        setNewLinkName(''); setNewLinkProducts([]); setNewLinkPlatforms([]); setNewLinkKol('');
+        setNewLinkName(''); setNewLinkGroups([]); setNewLinkProducts([]); setNewLinkPlatforms([]); setNewLinkKol('');
     }
     async function saveLinkEdit() {
         const body = {
             name: newLinkName.trim() || undefined,
             products: newLinkProducts, platforms: newLinkPlatforms,
+            groups: newLinkGroups,
             kol_count: Number(newLinkKol) || 0
         };
         // เปลี่ยนบัญชีที่ผูก: พิมพ์ชื่อเอง = ถอดบัญชีออกจากลิงก์นี้
@@ -505,7 +526,11 @@ export default function ProjectDetail() {
     // สินค้าที่เลือกได้ = เฉพาะสินค้าของ Platform ที่รับผิดชอบ (เลือก Platform ก่อน)
     const availProducts = productsForPlatforms(newLinkPlatforms);
     // Platform ที่โปรเจคนี้มี (ให้เลือกได้เฉพาะที่เจ้าของโปรเจคตั้งไว้)
-    const projectPlatforms = [...new Set((project.ad_groups || []).flatMap(g => groupPlatforms(g)))];
+    const linkGroups = project.ad_groups || [];
+    const pickedGroups = linkGroups.filter(g => newLinkGroups.includes(g.key));
+    // เลือกกลุ่มไว้แล้ว ตัวเลือก Platform/สินค้าเหลือเฉพาะของกลุ่มนั้น
+    const scopeGroups = pickedGroups.length ? pickedGroups : linkGroups;
+    const projectPlatforms = [...new Set(scopeGroups.flatMap(g => groupPlatforms(g)))];
 
     // แถวในตารางรายชื่อ KOL (action ต่างกันตามกลุ่ม)
     const subRow = (s, i) => (
@@ -866,7 +891,7 @@ export default function ProjectDetail() {
                         )}
                     {/* ปุ่มเปิดฟอร์มเพิ่มเอเจนซี่ (ซ่อนฟอร์มไว้ก่อน) */}
                     {!showCreate && (
-                        <button type="button" className="alp-add-agency" onClick={() => { setEditToken(null); setLinkPick(''); setNewLinkName(''); setNewLinkProducts([]); setNewLinkPlatforms([]); setNewLinkKol(''); setShowCreate(true); }}>
+                        <button type="button" className="alp-add-agency" onClick={() => { setEditToken(null); setLinkPick(''); setNewLinkName(''); setNewLinkGroups([]); setNewLinkProducts([]); setNewLinkPlatforms([]); setNewLinkKol(''); setShowCreate(true); }}>
                             <Icon name="plus" size={16} /> เพิ่มเอเจนซี่
                         </button>
                     )}
@@ -894,6 +919,24 @@ export default function ProjectDetail() {
                         )}
                         {linkPick === '__FREE__' && !editToken && (
                             <p className="alp-hint">ลิงก์จะใช้งานได้ก็ต่อเมื่อมีบัญชีเอเจนซี่ผูกไว้ — สร้างบัญชีให้ทีหลังได้ที่หน้าผู้ใช้งาน</p>
+                        )}
+                        {linkGroups.length > 0 && (
+                            <div className="alp-groups">
+                                <span className="alp-sc-lbl">กลุ่มที่รับผิดชอบ <span className="alp-hint">ติ๊กกลุ่มแล้ว Platform/สินค้า/จำนวน KOL จะตามมาเอง · ไม่ติ๊กเลย = ใช้ Platform+สินค้าด้านล่างกรองแทน</span></span>
+                                <div className="alp-group-list">
+                                    {linkGroups.map((g, gi) => (
+                                        <label key={g.key} className={"alp-group-pick" + (newLinkGroups.includes(g.key) ? " on" : "")}>
+                                            <input type="checkbox" checked={newLinkGroups.includes(g.key)} onChange={() => toggleNewGroup(g.key)} />
+                                            <span className="alp-group-no">กลุ่มที่ {gi + 1}</span>
+                                            {g.concept && <span className="alp-group-concept">{g.concept}</span>}
+                                            <span className="alp-group-meta">
+                                                {groupPlatforms(g).join(" · ") || "ไม่ระบุ Platform"}
+                                                {g.kol_count > 0 ? " · " + g.kol_count + " KOL" : ""}
+                                            </span>
+                                        </label>
+                                    ))}
+                                </div>
+                            </div>
                         )}
                         <div className="alp-create-scope">
                             <div className="alp-sc-col">
