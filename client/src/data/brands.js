@@ -3,7 +3,7 @@
 export const BRANDS = ["Jula's Herb", 'Code Lab', 'Jdent', 'Jarvit', 'Beauterry', 'Jernis', 'Dermiq', 'Minimii', 'Any Skin'];
 
 // ป้ายบทบาท — ต้องตรงกับ server/src/data/roles.js
-export const ROLE_LABEL = { admin: 'ผู้ดูแลระบบ', manager: 'Manager', member: 'Member' };
+export const ROLE_LABEL = { admin: 'ผู้ดูแลระบบ', manager: 'Manager', member: 'Member', agency: 'Agency' };
 export const seesAllBrands = user => !!user && (user.role === 'admin' || user.role === 'manager');
 
 // แบรนด์ที่ผู้ใช้คนนี้เห็นได้ — admin/manager เห็นทุกแบรนด์

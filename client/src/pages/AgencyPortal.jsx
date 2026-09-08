@@ -2,7 +2,7 @@ import { useEffect, useState, useRef } from 'react';
 import ProductMultiSelect from '../components/ProductMultiSelect.jsx';
 import AgencyReports from '../components/AgencyReports.jsx';
 import ChatDock from '../components/ChatDock.jsx';
-import { useParams } from 'react-router-dom';
+import { useParams, useNavigate } from 'react-router-dom';
 import { api } from '../api/client.js';
 import Icon from '../components/Icon.jsx';
 import Avatar from '../components/Avatar.jsx';
@@ -13,6 +13,9 @@ import { productLabel } from '../data/products.js';
 import { groupPlatforms } from '../data/adGroups.js';
 import { groupClips, clipCount, collapseByPerson, countPeople } from '../data/clips.js';
 import { tabBadges, markSeen, seedDraftsSeen } from '../utils/tabUpdates.js';
+import { useAuth } from '../auth/AuthContext.jsx';
+import ChangePasswordModal from '../components/ChangePasswordModal.jsx';
+import { ROLE_LABEL } from '../data/brands.js';
 
 // ค่าที่เก็บเป็นสตริงคั่นด้วย , (เช่น content_format) → แยกเป็นรายตัว
 const splitCsv = v => (v ? String(v).split(',').map(x => x.trim()).filter(Boolean) : []);
@@ -359,6 +362,9 @@ function GroupSection({ token, group, gi, subs, onReload, onEdit, onDelete, onNo
 
 export default function AgencyPortal() {
     const { token } = useParams();
+    const { user, logout } = useAuth();
+    const navigate = useNavigate();
+    const [showPw, setShowPw] = useState(false);   // โมดัลเปลี่ยนรหัสผ่านของตัวเอง
     const [info, setInfo] = useState(null);
     const [error, setError] = useState('');
     const [entries, setEntries] = useState([emptyEntry()]);
@@ -526,6 +532,25 @@ export default function AgencyPortal() {
                 </div>
             )}
             <div className="agency-wrap wide">
+                {/* แถบบัญชีที่ล็อกอินอยู่ — หน้านี้ไม่มีเมนูด้านข้าง ปุ่มพวกนี้เลยต้องอยู่ตรงนี้ */}
+                {user && (
+                    <div className="ag-account">
+                        <div className="ag-account-who">
+                            <Icon name="users" size={15} />
+                            <span className="ag-account-name">{user.username}</span>
+                            <span className="ag-account-role">{ROLE_LABEL[user.role] || user.role}</span>
+                        </div>
+                        <div className="ag-account-btns">
+                            <button type="button" className="btn-changepw" onClick={() => setShowPw(true)}>
+                                <Icon name="edit" size={14} /> เปลี่ยนรหัสผ่าน
+                            </button>
+                            <button type="button" className="btn-logout" onClick={() => { logout(); navigate("/login"); }}>
+                                <Icon name="logout" size={15} /> ออกจากระบบ
+                            </button>
+                        </div>
+                    </div>
+                )}
+                {showPw && <ChangePasswordModal onClose={() => setShowPw(false)} />}
                 {/* หัวเรื่อง */}
                 <div className="agency-hero">
                     <div className="agency-hero-badge"><Icon name="star" size={22} /></div>
