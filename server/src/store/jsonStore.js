@@ -11,8 +11,10 @@ const DATA_DIR = path.join(__dirname, '..', '..', 'data');
 const DATA_FILE = path.join(DATA_DIR, 'db.json');
 
 const EMPTY = {
-    _seq: { teams: 0, users: 0, kols: 0, projects: 0, project_kols: 0, payments: 0, activity_logs: 0, submissions: 0, rate_requests: 0 },
-    teams: [], users: [], kols: [], projects: [], project_kols: [], payments: [], activity_logs: [], submissions: [], rate_requests: []
+    _seq: { teams: 0, users: 0, kols: 0, projects: 0, project_kols: 0, payments: 0, activity_logs: 0, submissions: 0, rate_requests: 0, installments: 0, pay_batches: 0 },
+    teams: [], users: [], kols: [], projects: [], project_kols: [], payments: [], activity_logs: [], submissions: [], rate_requests: [],
+    // งวดการจ่ายของแต่ละแคมเปญ+เอเจนซี่ · รอบทำจ่าย (สลิป 1 ใบ = 1 รอบ ครอบได้หลายงวดหลายแคมเปญ)
+    installments: [], pay_batches: []
 };
 
 function load() {
@@ -522,6 +524,11 @@ const projects = {
         if (idx === -1) return false;
         db.projects.splice(idx, 1);
         db.project_kols = db.project_kols.filter(pk => pk.project_id !== Number(id));
+        // งวดการจ่ายกับข้อมูลการจ่ายต้องหายตามไปด้วย ไม่งั้นจะค้างเป็นงวดกำพร้าในหน้ารอบทำจ่าย
+        db.installments = db.installments.filter(i => i.project_id !== Number(id));
+        db.payments = db.payments.filter(x => x.project_id !== Number(id));
+        // รอบทำจ่ายที่ไม่เหลืองวดอยู่เลย ก็ไม่มีความหมายแล้ว
+        db.pay_batches = db.pay_batches.filter(b => db.installments.some(i => i.batch_id === b.id));
         persist();
         return true;
     },
@@ -1038,6 +1045,10 @@ const payments = {
             .map(p => {
                 const team = db.teams.find(t => t.id === p.team_id);
                 const pay = findPayment(p.id) || {};
+                // สรุปงวดของแคมเปญนี้ — สถานะการจ่ายมาจากงวด ไม่ได้ตั้งมือแล้ว
+                const its = db.installments.filter(i => i.project_id === p.id);
+                const paidAmt = its.filter(i => i.status === 'paid').reduce((s, i) => s + (Number(i.amount) || 0), 0);
+                const planAmt = its.reduce((s, i) => s + (Number(i.amount) || 0), 0);
                 return clone({
                     project_id: p.id,
                     project_name: p.name,
@@ -1050,6 +1061,10 @@ const payments = {
                     quotation: pay.quotation || null,
                     invoice: pay.invoice || null,
                     notes: pay.notes || null,
+                    agencies: projectAgencies(p),          // เอเจนซี่ของแคมเปญนี้ (จากบัญชีที่ผูกกับลิงก์)
+                    installments: its.map(decorateInstallment),
+                    planned_amount: planAmt,
+                    paid_amount: paidAmt,
                     updated_at: pay.updated_at || null
                 });
             });
@@ -1675,6 +1690,169 @@ const meta = {
     reload() { db = load(); }
 };
 
+// ============================ งวดการจ่าย + รอบทำจ่าย ============================
+// installment = 1 งวดของแคมเปญหนึ่ง ให้เอเจนซี่เจ้าหนึ่ง (เช่น งวด 1/2 · 50% · 400,000)
+// pay_batch   = 1 รอบทำจ่าย = สลิป 1 ใบ = เอเจนซี่ 1 เจ้า + วันที่ 1 วัน แต่รวมได้หลายงวดหลายแคมเปญ
+
+// เอเจนซี่ของแคมเปญ — เอาจากบัญชีที่ผูกกับลิงก์ ถ้าไม่มีค่อยใช้ชื่อบนลิงก์
+function projectAgencies(p) {
+    const out = [];
+    for (const l of (p.agency_links || [])) {
+        const acc = db.users.find(u => u.role === 'agency' && (u.agency_tokens || []).includes(l.token));
+        const name = (acc && acc.username) || l.name;
+        if (name && !out.includes(name)) out.push(name);
+    }
+    return out;
+}
+
+function decorateInstallment(it) {
+    const p = db.projects.find(x => x.id === it.project_id);
+    const batch = it.batch_id ? db.pay_batches.find(b => b.id === it.batch_id) : null;
+    return clone({
+        ...it,
+        project_name: p ? p.name : null,
+        brand: p ? p.brand : null,
+        project_budget: p ? p.budget : null,
+        batch_date: batch ? batch.pay_date : null
+    });
+}
+
+const installments = {
+    // งวดของแคมเปญหนึ่ง (ทุกเอเจนซี่) เรียงตามเจ้าแล้วตามเลขงวด
+    async listByProject(projectId) {
+        return db.installments
+            .filter(i => i.project_id === Number(projectId))
+            .sort((a, b) => (a.agency || '').localeCompare(b.agency || '', 'th') || a.no - b.no)
+            .map(decorateInstallment);
+    },
+    // ทุกงวดในระบบ (ไว้ทำหน้ารอบทำจ่าย) — pending = ยังไม่เข้ารอบไหน
+    async list({ status } = {}) {
+        let rows = db.installments.slice();
+        if (status) rows = rows.filter(i => (i.status || 'pending') === status);
+        return rows
+            .sort((a, b) => (a.due_date || '9999').localeCompare(b.due_date || '9999') || a.id - b.id)
+            .map(decorateInstallment);
+    },
+    // ตั้ง/แก้แผนการจ่ายของ (แคมเปญ + เอเจนซี่) — แทนที่ของเดิมทั้งชุด
+    // งวดที่จ่ายไปแล้วห้ามยุ่ง ไม่งั้นยอดในสลิปที่ออกไปแล้วจะเพี้ยน
+    async setPlan(projectId, agency, plan) {
+        const p = db.projects.find(x => x.id === Number(projectId));
+        if (!p) return { error: 'ไม่พบแคมเปญ' };
+        const mine = db.installments.filter(i => i.project_id === p.id && i.agency === agency);
+        if (mine.some(i => i.status === 'paid')) {
+            return { error: 'มีงวดที่ทำจ่ายไปแล้ว แก้แผนไม่ได้ ต้องยกเลิกรอบทำจ่ายนั้นก่อน' };
+        }
+        db.installments = db.installments.filter(i => !(i.project_id === p.id && i.agency === agency));
+        const rows = plan.map((x, idx) => ({
+            id: nextId('installments'),
+            project_id: p.id,
+            agency,
+            no: idx + 1,
+            of: plan.length,
+            percent: Number(x.percent) || 0,
+            amount: Number(x.amount) || 0,
+            due_date: x.due_date || null,
+            note: x.note || null,
+            status: 'pending',
+            batch_id: null,
+            created_at: now(), updated_at: now()
+        }));
+        db.installments.push(...rows);
+        persist();
+        return { data: rows.map(decorateInstallment) };
+    },
+    // แก้ยอด/วันครบกำหนดของงวดเดียว (งวดที่จ่ายแล้วแก้ไม่ได้)
+    async update(id, fields) {
+        const it = db.installments.find(i => i.id === Number(id));
+        if (!it) return { error: 'ไม่พบงวดนี้' };
+        if (it.status === 'paid') return { error: 'งวดนี้ทำจ่ายไปแล้ว แก้ไม่ได้' };
+        if (fields.amount !== undefined) it.amount = Number(fields.amount) || 0;
+        if (fields.percent !== undefined) it.percent = Number(fields.percent) || 0;
+        if (fields.due_date !== undefined) it.due_date = fields.due_date || null;
+        if (fields.note !== undefined) it.note = fields.note || null;
+        it.updated_at = now();
+        persist();
+        return { data: decorateInstallment(it) };
+    },
+    async removeByProject(projectId) {
+        const before = db.installments.length;
+        db.installments = db.installments.filter(i => i.project_id !== Number(projectId));
+        if (before !== db.installments.length) persist();
+        return before - db.installments.length;
+    }
+};
+
+function decorateBatch(b) {
+    const items = db.installments.filter(i => i.batch_id === b.id).map(decorateInstallment);
+    return clone({ ...b, items, item_count: items.length });
+}
+
+const payBatches = {
+    async list() {
+        return db.pay_batches
+            .slice()
+            .sort((a, b) => (b.pay_date || '').localeCompare(a.pay_date || '') || b.id - a.id)
+            .map(decorateBatch);
+    },
+    async get(id) {
+        const b = db.pay_batches.find(x => x.id === Number(id));
+        return b ? decorateBatch(b) : null;
+    },
+    // สร้างรอบทำจ่าย = จับงวดหลายงวดมัดเป็นสลิปใบเดียว
+    async create({ agency, pay_date, installment_ids, note, created_by }) {
+        const ids = (installment_ids || []).map(Number);
+        const rows = db.installments.filter(i => ids.includes(i.id));
+        if (!rows.length) return { error: 'ยังไม่ได้เลือกงวดที่จะจ่าย' };
+        if (rows.length !== ids.length) return { error: 'มีงวดที่หาไม่เจอในระบบ' };
+        if (rows.some(i => i.status === 'paid')) return { error: 'มีงวดที่ถูกรวมในรอบอื่นไปแล้ว' };
+        // สลิปใบเดียวโอนให้เจ้าเดียว — ปนเจ้าไม่ได้
+        const names = [...new Set(rows.map(i => i.agency))];
+        if (names.length > 1) return { error: 'รวมงวดข้ามเอเจนซี่ในสลิปใบเดียวไม่ได้' };
+        const b = {
+            id: nextId('pay_batches'),
+            agency: agency || names[0] || null,
+            pay_date: pay_date || null,
+            total: rows.reduce((s, i) => s + (Number(i.amount) || 0), 0),
+            slip: null,
+            note: note || null,
+            created_by: created_by || null,
+            created_at: now(), updated_at: now()
+        };
+        db.pay_batches.push(b);
+        rows.forEach(i => { i.status = 'paid'; i.batch_id = b.id; i.updated_at = now(); });
+        persist();
+        return { data: decorateBatch(b) };
+    },
+    async update(id, fields) {
+        const b = db.pay_batches.find(x => x.id === Number(id));
+        if (!b) return null;
+        if (fields.pay_date !== undefined) b.pay_date = fields.pay_date || null;
+        if (fields.note !== undefined) b.note = fields.note || null;
+        b.updated_at = now();
+        persist();
+        return decorateBatch(b);
+    },
+    async setSlip(id, meta) {
+        const b = db.pay_batches.find(x => x.id === Number(id));
+        if (!b) return null;
+        b.slip = meta;
+        b.updated_at = now();
+        persist();
+        return decorateBatch(b);
+    },
+    // ยกเลิกรอบ — งวดข้างในกลับไปเป็นค้างจ่ายเหมือนเดิม ไม่ได้หายไปไหน
+    async remove(id) {
+        const idx = db.pay_batches.findIndex(x => x.id === Number(id));
+        if (idx === -1) return false;
+        db.installments.forEach(i => {
+            if (i.batch_id === Number(id)) { i.status = 'pending'; i.batch_id = null; i.updated_at = now(); }
+        });
+        db.pay_batches.splice(idx, 1);
+        persist();
+        return true;
+    }
+};
+
 // ============================ rate requests (สอบถาม Rate Card) ============================
 const rateRequests = {
     async create(fields) {
@@ -1705,4 +1883,4 @@ const rateRequests = {
     }
 };
 
-module.exports = { teams, users, kols, projects, projectKols, dashboard, payments, budget, activity, submissions, ads, reports, rateRequests, meta, _duplicateError: duplicateError };
+module.exports = { teams, users, kols, projects, projectKols, dashboard, payments, installments, payBatches, budget, activity, submissions, ads, reports, rateRequests, meta, _duplicateError: duplicateError };
