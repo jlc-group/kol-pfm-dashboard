@@ -19,6 +19,29 @@ const fmtMoney = n => '฿' + (Number(n) || 0).toLocaleString('th-TH');
 const GOOD_CPM = 28;
 const GOOD_CPE = 1.5;
 
+// ตัวเลข CPM/CPE พร้อมสีบอกผ่าน/ไม่ผ่าน — ใช้ร่วมกันทั้งช่องที่ล็อกและช่องปัจจุบัน
+// member ไม่ได้รับตัวเลขมา (เป็นข้อมูลลับ) จะเห็นเป็นป้าย Pass/Fail แทน
+function PerfNums({ cpm, cpe, pass, tip, lock }) {
+    if (cpm == null) {
+        return (
+            <span className={'perf-pill ' + (pass ? 'good' : 'bad') + (lock ? ' locked' : '')} title={tip}>
+                {lock ? '🔒 ' : ''}{pass ? '✓ Pass' : '✕ Fail'}
+            </span>
+        );
+    }
+    return (
+        <span className={'perf-nums ' + (pass ? 'good' : 'bad')} title={tip}>
+            <span className="perf-num-row">
+                {lock && <span className="perf-lock">🔒</span>}
+                <b>{fmtNum(cpm)}</b><span className="perf-num-lbl">CPM</span>
+            </span>
+            <span className="perf-num-row">
+                <b>{fmtNum(cpe)}</b><span className="perf-num-lbl">CPE</span>
+            </span>
+        </span>
+    );
+}
+
 // ผลที่ระบบล็อกไว้ตอนค่าแอดสะสมถึง 10,000 — แก้ไม่ได้ ล้างไม่ได้
 function StampCell({ row }) {
     const st = row.perf_stamp;
@@ -28,17 +51,15 @@ function StampCell({ row }) {
         }
         return <span className="perf-pill none" title="จะสแตมป์อัตโนมัติเมื่อค่ายิงแอดสะสมถึง 10,000 บาท">Not stamped</span>;
     }
-    const money = st.cpm != null
-        ? 'CPM ฿' + fmtNum(st.cpm) + ' (เกณฑ์ ≤ ' + GOOD_CPM + ')  ·  CPE ฿' + fmtNum(st.cpe) + ' (เกณฑ์ ≤ ' + GOOD_CPE + ')'
-        : 'CPM/CPE ดูได้เฉพาะผู้ดูแลระบบและ Manager';
     const tip = [
         '🔒 ล็อกไว้ตั้งแต่ ' + fmtDate(String(st.at).slice(0, 10)) + ' — แก้ไม่ได้',
-        money,
-        'ยอดวิว ' + fmtNum(st.views) + ' · Engagement ' + fmtNum(st.engagement) + ' (ER ' + st.er + '%)'
+        st.cpm != null
+            ? 'CPM ฿' + fmtNum(st.cpm) + ' (เกณฑ์ ≤ ' + GOOD_CPM + ')  ·  CPE ฿' + fmtNum(st.cpe) + ' (เกณฑ์ ≤ ' + GOOD_CPE + ')'
+            : 'CPM/CPE ดูได้เฉพาะผู้ดูแลระบบและ Manager',
+        'ยอดวิว ' + fmtNum(st.views) + ' · Engagement ' + fmtNum(st.engagement) + ' (ER ' + st.er + '%)',
+        'ผลตัดสิน: ' + (st.verdict === 'Pass' ? 'ผ่านเกณฑ์' : 'ไม่ผ่านเกณฑ์')
     ].join(String.fromCharCode(10));
-    return st.verdict === 'Pass'
-        ? <span className="perf-pill good locked" title={tip}>🔒 ✓ Pass</span>
-        : <span className="perf-pill bad locked" title={tip}>🔒 ✕ Fail</span>;
+    return <PerfNums cpm={st.cpm} cpe={st.cpe} pass={st.verdict === 'Pass'} tip={tip} lock />;
 }
 
 // ผลตอนนี้ + ลูกศรเทียบกับตอนสแตมป์ (ใช้ตัดสินว่าควรยิงต่อหรือหยุด)
@@ -46,23 +67,32 @@ function LiveCell({ row }) {
     if (!row.performance) {
         return <span className="perf-pill none" title="ยังไม่มียอดวิว/engagement ให้ตัดสิน">Not rated</span>;
     }
-    const now = row.performance === 'Good' ? 'Pass' : 'Fail';
+    const pass = row.performance === 'Good';
     const st = row.perf_stamp;
     let move = null;
-    if (st && st.verdict !== now) {
-        move = st.verdict === 'Fail'
-            ? { ico: '↑', cls: 'up', why: 'ดีขึ้นจากตอนสแตมป์ (ตอนนั้นไม่ผ่าน)' }
-            : { ico: '↓', cls: 'down', why: 'แย่ลงจากตอนสแตมป์ (ตอนนั้นผ่าน) — ยิงต่ออาจไม่คุ้ม' };
+    if (st) {
+        const now = pass ? 'Pass' : 'Fail';
+        if (st.verdict !== now) {
+            move = st.verdict === 'Fail'
+                ? { ico: '↑', cls: 'up', why: 'ดีขึ้นจากตอนสแตมป์ (ตอนนั้นไม่ผ่าน)' }
+                : { ico: '↓', cls: 'down', why: 'แย่ลงจากตอนสแตมป์ (ตอนนั้นผ่าน) — ยิงต่ออาจไม่คุ้ม' };
+        } else if (st.cpm != null && row.content_cpm != null && st.cpm !== row.content_cpm) {
+            // ผลเท่าเดิมแต่ตัวเลขขยับ — CPM ต่ำลง = ดีขึ้น
+            move = row.content_cpm < st.cpm
+                ? { ico: '↑', cls: 'up', why: 'CPM ถูกลงจากตอนสแตมป์ (฿' + fmtNum(st.cpm) + ' → ฿' + fmtNum(row.content_cpm) + ')' }
+                : { ico: '↓', cls: 'down', why: 'CPM แพงขึ้นจากตอนสแตมป์ (฿' + fmtNum(st.cpm) + ' → ฿' + fmtNum(row.content_cpm) + ')' };
+        }
     }
-    const money = row.content_cpm != null
-        ? 'CPM ฿' + fmtNum(row.content_cpm) + '  ·  CPE ฿' + fmtNum(row.content_cpe)
-        : 'CPM/CPE ดูได้เฉพาะผู้ดูแลระบบและ Manager';
-    const tip = [money, 'ยอดวิว ' + fmtNum(row.views) + ' · Engagement ' + fmtNum(row.engagement)].join(String.fromCharCode(10));
+    const tip = [
+        row.content_cpm != null
+            ? 'CPM ฿' + fmtNum(row.content_cpm) + ' (เกณฑ์ ≤ ' + GOOD_CPM + ')  ·  CPE ฿' + fmtNum(row.content_cpe) + ' (เกณฑ์ ≤ ' + GOOD_CPE + ')'
+            : 'CPM/CPE ดูได้เฉพาะผู้ดูแลระบบและ Manager',
+        'ยอดวิว ' + fmtNum(row.views) + ' · Engagement ' + fmtNum(row.engagement),
+        'ผลตอนนี้: ' + (pass ? 'ผ่านเกณฑ์' : 'ไม่ผ่านเกณฑ์')
+    ].join(String.fromCharCode(10));
     return (
         <span className="perf-live">
-            <span className={'perf-pill ' + (now === 'Pass' ? 'good' : 'bad')} title={tip}>
-                {now === 'Pass' ? '✓ Pass' : '✕ Fail'}
-            </span>
+            <PerfNums cpm={row.content_cpm} cpe={row.content_cpe} pass={pass} tip={tip} />
             {move && <span className={'perf-move ' + move.cls} title={move.why}>{move.ico}</span>}
         </span>
     );

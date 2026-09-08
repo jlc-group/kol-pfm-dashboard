@@ -2595,3 +2595,12 @@ a { text-decoration: none; color: inherit; }
 .perf-move.down { color: var(--danger); }
 
 .perf-tmp { font-size: 10px; color: #7d938d; }
+
+/* ตัวเลข CPM/CPE ในคอลัมน์ Performance */
+.perf-nums { display: inline-flex; flex-direction: column; gap: 1px; line-height: 1.25; }
+.perf-num-row { display: flex; align-items: baseline; gap: 4px; }
+.perf-num-row b { font-size: 13px; font-variant-numeric: tabular-nums; }
+.perf-num-lbl { font-size: 9.5px; color: #7d938d; letter-spacing: .3px; }
+.perf-nums.good b { color: #0f766e; }
+.perf-nums.bad b { color: var(--danger); }
+.perf-lock { font-size: 10px; }
