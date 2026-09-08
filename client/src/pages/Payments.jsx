@@ -10,7 +10,7 @@ import { BRANDS } from '../data/brands.js';
 const baht = n => '฿' + Number(n || 0).toLocaleString('th-TH');
 
 // ช่องอัปโหลด/ดูไฟล์ (ใบเสนอราคา หรือ ใบแจ้งหนี้ — อยู่ที่แคมเปญ ออกทีเดียวทั้งงาน)
-function FileSlot({ label, uploadPath, viewPath, meta, onUploaded, compact, link, onSaveLink }) {
+function FileSlot({ label, uploadPath, viewPath, meta, onUploaded, compact, link, onSaveLink, onUploadFile }) {
     const inputRef = useRef(null);
     const [busy, setBusy] = useState(false);
     const [url, setUrl] = useState(link || '');
@@ -29,8 +29,12 @@ function FileSlot({ label, uploadPath, viewPath, meta, onUploaded, compact, link
         if (!file) return;
         setBusy(true);
         try {
-            const res = await uploadFile(uploadPath, file);
-            onUploaded(res.data);
+            // onUploadFile = พ่อแม่จัดการเอง (เช่น ต้องสร้างงวดก่อนถึงจะรู้ปลายทาง)
+            if (onUploadFile) await onUploadFile(file);
+            else {
+                const res = await uploadFile(uploadPath, file);
+                onUploaded(res.data);
+            }
         } catch (err) { alert(err.message); }
         finally { setBusy(false); e.target.value = ''; }
     }
@@ -347,7 +351,7 @@ function CampaignCard({ row, onOpen }) {
 }
 
 // ตัวแก้แผนงวด
-function PlanModal({ row, onClose, onSaved }) {
+function PlanModal({ row, onClose, onSaved, onReload }) {
     const groups = row.ad_groups || [];
     // แผนการจ่ายแยกตาม (เอเจนซี่ + กลุ่ม) — ฐานคิด % คืองบของกลุ่มนั้น ไม่ใช่งบทั้งแคมเปญ
     const [groupKey, setGroupKey] = useState(groups.length === 1 ? groups[0].key : '');
@@ -407,6 +411,28 @@ function PlanModal({ row, onClose, onSaved }) {
 
     const sumPct = plan.reduce((s, x) => s + (Number(x.percent) || 0), 0);
     const sumAmt = plan.reduce((s, x) => s + (Number(x.amount) || 0), 0);
+
+    // แนบใบแจ้งหนี้ก่อนกดบันทึกแผนได้ — ถ้ายังไม่มีงวดจริง บันทึกแผนให้เงียบ ๆ ก่อนแล้วค่อยแนบ
+    async function ensureInstallment(idx) {
+        if (saved[idx]) return saved[idx];
+        if (!agency) throw new Error('ยังไม่มีเอเจนซี่ — เลือกเอเจนซี่ก่อนถึงจะแนบเอกสารได้');
+        const res = await api(`/payments/${row.project_id}/plan`, {
+            method: 'PUT', body: { agency, group_key: groupKey || null, plan }
+        });
+        const it = (res.data || [])[idx];
+        if (!it) throw new Error('บันทึกแผนไม่สำเร็จ');
+        return it;
+    }
+    async function attachInvoiceFile(idx, file) {
+        const it = await ensureInstallment(idx);
+        await uploadFile(`/payments/installments/${it.id}/invoice`, file);
+        if (onReload) await onReload();
+    }
+    async function attachInvoiceLink(idx, v) {
+        const it = await ensureInstallment(idx);
+        await api(`/payments/installments/${it.id}/invoice-link`, { method: 'PUT', body: { link: v || null } });
+        if (onReload) await onReload();
+    }
 
     async function save() {
         if (!agency) { alert('ยังไม่มีเอเจนซี่ในแคมเปญนี้ — สร้างลิงก์เอเจนซี่ในหน้าแคมเปญก่อน'); return; }
@@ -499,34 +525,33 @@ function PlanModal({ row, onClose, onSaved }) {
                     <FileSlot label="ใบเสนอราคา (ทั้งแคมเปญ)"
                         uploadPath={`/payments/${row.project_id}/upload/quotation`}
                         viewPath={`/payments/${row.project_id}/file/quotation`}
-                        meta={row.quotation} onUploaded={onSaved}
+                        meta={row.quotation} onUploaded={() => onReload && onReload()}
                         link={row.quotation_link}
                         onSaveLink={async v => {
                             await api(`/payments/${row.project_id}`, { method: 'PUT', body: { quotation_link: v || null } });
-                            onSaved();
+                            if (onReload) await onReload();
                         }} />
                 </div>
 
                 {/* ใบแจ้งหนี้ออกแยกใบต่องวด — แนบได้เฉพาะงวดที่บันทึกแผนแล้ว */}
                 <div className="inv-block">
                     <div className="file-slot-label">ใบแจ้งหนี้ (แยกตามงวด)</div>
-                    {saved.length === 0 ? (
-                        <p className="alp-hint">บันทึกแผนการจ่ายก่อน แล้วช่องแนบใบแจ้งหนี้ของแต่ละงวดจะขึ้นตรงนี้</p>
-                    ) : saved.map(i => (
-                        <div className="inv-row" key={i.id}>
-                            <span className="plan-no">งวด {i.no}/{i.of}</span>
-                            <span className="inv-amt">{baht(i.amount)}</span>
-                            <FileSlot compact
-                                uploadPath={`/payments/installments/${i.id}/invoice`}
-                                viewPath={`/payments/installments/${i.id}/invoice`}
-                                meta={i.invoice} onUploaded={onSaved}
-                                link={i.invoice_link}
-                                onSaveLink={async v => {
-                                    await api(`/payments/installments/${i.id}/invoice-link`, { method: 'PUT', body: { link: v || null } });
-                                    onSaved();
-                                }} />
-                        </div>
-                    ))}
+                    {plan.map((x, idx) => {
+                        const it = saved[idx] || null;
+                        return (
+                            <div className="inv-row" key={idx}>
+                                <span className="plan-no">งวด {idx + 1}/{plan.length}</span>
+                                <span className="inv-amt">{baht(x.amount)}</span>
+                                <FileSlot compact
+                                    viewPath={it ? `/payments/installments/${it.id}/invoice` : null}
+                                    meta={it && it.invoice}
+                                    link={it && it.invoice_link}
+                                    onUploadFile={file => attachInvoiceFile(idx, file)}
+                                    onSaveLink={v => attachInvoiceLink(idx, v)} />
+                            </div>
+                        );
+                    })}
+                    <p className="alp-hint">แนบก่อนกดบันทึกแผนได้ — ระบบจะบันทึกแผนให้อัตโนมัติตอนแนบไฟล์แรก</p>
                 </div>
 
                 <div className="modal-actions">
@@ -678,7 +703,7 @@ export default function Payments() {
 
             {openId != null && (
                 <PlanModal row={rows.find(r => r.project_id === openId)}
-                    onClose={() => setOpenId(null)} onSaved={refresh} />
+                    onClose={() => setOpenId(null)} onSaved={refresh} onReload={loadAll} />
             )}
         </div>
     );
