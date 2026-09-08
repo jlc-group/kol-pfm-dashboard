@@ -696,14 +696,14 @@ export default function Payments() {
             </header>
 
             <div className="pay-tabs">
+                <button className={'pay-tab' + (tab === 'campaigns' ? ' active' : '')} onClick={() => setTab('campaigns')}>
+                    แคมเปญ / ตั้งงวด <span className="pay-tab-n">{shownRows.length}</span>
+                </button>
                 <button className={'pay-tab' + (tab === 'pending' ? ' active' : '')} onClick={() => setTab('pending')}>
                     รอทำจ่าย <span className="pay-tab-n">{shownPending.length}</span>
                 </button>
                 <button className={'pay-tab' + (tab === 'batches' ? ' active' : '')} onClick={() => setTab('batches')}>
                     รอบที่จ่ายแล้ว <span className="pay-tab-n">{shownBatches.length}</span>
-                </button>
-                <button className={'pay-tab' + (tab === 'campaigns' ? ' active' : '')} onClick={() => setTab('campaigns')}>
-                    แคมเปญ / ตั้งงวด <span className="pay-tab-n">{shownRows.length}</span>
                 </button>
             </div>
 
