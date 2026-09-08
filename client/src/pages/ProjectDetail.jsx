@@ -527,6 +527,8 @@ export default function ProjectDetail() {
     const availProducts = productsForPlatforms(newLinkPlatforms);
     // Platform ที่โปรเจคนี้มี (ให้เลือกได้เฉพาะที่เจ้าของโปรเจคตั้งไว้)
     const linkGroups = project.ad_groups || [];
+    // แคมเปญที่มีกลุ่มแล้ว ต้องติ๊กอย่างน้อย 1 กลุ่มก่อนถึงจะบันทึกได้
+    const needGroup = linkGroups.length > 0 && newLinkGroups.length === 0;
     const pickedGroups = linkGroups.filter(g => newLinkGroups.includes(g.key));
     // เลือกกลุ่มไว้แล้ว ตัวเลือก Platform/สินค้าเหลือเฉพาะของกลุ่มนั้น
     const scopeGroups = pickedGroups.length ? pickedGroups : linkGroups;
@@ -922,7 +924,8 @@ export default function ProjectDetail() {
                         )}
                         {linkGroups.length > 0 && (
                             <div className="alp-groups">
-                                <span className="alp-sc-lbl">กลุ่มที่รับผิดชอบ <span className="alp-hint">ติ๊กกลุ่มแล้ว Platform/สินค้า/จำนวน KOL จะตามมาเอง · ไม่ติ๊กเลย = ใช้ Platform+สินค้าด้านล่างกรองแทน</span></span>
+                                <span className="alp-sc-lbl">กลุ่มที่รับผิดชอบ * <span className="alp-hint">ติ๊กกลุ่มแล้ว Platform/สินค้า/จำนวน KOL จะตามมาเอง · เลือกได้มากกว่า 1 กลุ่ม</span></span>
+                                {needGroup && <div className="alp-need-group">⚠ ต้องเลือกอย่างน้อย 1 กลุ่ม ไม่งั้นเอเจนซี่จะเห็นงานของทุกกลุ่มในแคมเปญนี้</div>}
                                 <div className="alp-group-list">
                                     {linkGroups.map((g, gi) => (
                                         <label key={g.key} className={"alp-group-pick" + (newLinkGroups.includes(g.key) ? " on" : "")}>
@@ -992,8 +995,8 @@ export default function ProjectDetail() {
                         <div className="alp-create-actions">
                             <button type="button" className="btn-ghost" onClick={resetLinkForm}>ยกเลิก</button>
                             {editToken
-                                ? <button className="btn-primary alp-create-btn" onClick={saveLinkEdit}><Icon name="check" size={15} /> บันทึกการแก้ไข</button>
-                                : <button className="btn-primary alp-create-btn" onClick={createLink}><Icon name="plus" size={15} /> สร้างลิงก์</button>}
+                                ? <button className="btn-primary alp-create-btn" onClick={saveLinkEdit} disabled={needGroup} title={needGroup ? "เลือกกลุ่มที่รับผิดชอบก่อน" : undefined}><Icon name="check" size={15} /> บันทึกการแก้ไข</button>
+                                : <button className="btn-primary alp-create-btn" onClick={createLink} disabled={needGroup} title={needGroup ? "เลือกกลุ่มที่รับผิดชอบก่อน" : undefined}><Icon name="plus" size={15} /> สร้างลิงก์</button>}
                         </div>
                     </div>
                     )}

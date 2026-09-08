@@ -325,6 +325,19 @@ router.get('/:id/agency-links', async (req, res, next) => {
     } catch (err) { next(err); }
 });
 
+// แคมเปญที่ตั้งกลุ่มไว้แล้ว ลิงก์ต้องระบุกลุ่มเสมอ — ไม่งั้นเอเจนซี่จะเห็นทุกกลุ่มแบบเงียบ ๆ
+// (แคมเปญที่ยังไม่ได้ตั้งกลุ่มยังออกลิงก์ได้ตามเดิม)
+async function requireGroups(projectId, groups) {
+    const proj = await store.projects.findByIdFull(projectId);
+    const has = (proj && proj.ad_groups || []).length > 0;
+    if (!has) return null;
+    const picked = Array.isArray(groups) ? groups.filter(Boolean) : [];
+    if (!picked.length) return 'กรุณาเลือกกลุ่มที่เอเจนซี่เจ้านี้รับผิดชอบอย่างน้อย 1 กลุ่ม';
+    const keys = new Set(proj.ad_groups.map(g => g.key));
+    if (picked.some(k => !keys.has(k))) return 'มีกลุ่มที่ไม่ได้อยู่ในแคมเปญนี้';
+    return null;
+}
+
 // POST /api/projects/:id/agency-links — สร้างลิงก์ให้เอเจนซี่เจ้าใหม่
 // body: agency_user_id = ผูกกับบัญชีเอเจนซี่ที่มีอยู่ · new_agency_username = สร้างบัญชีใหม่ (admin เท่านั้น)
 router.post('/:id/agency-links', async (req, res, next) => {
@@ -332,6 +345,8 @@ router.post('/:id/agency-links', async (req, res, next) => {
         const check = await canEditProject(req, req.params.id);
         if (!check.ok) return res.status(check.code).json({ status: 'error', message: check.message });
         const { name, products, platforms, kol_count, groups, agency_user_id, new_agency_username } = req.body;
+        const gErr = await requireGroups(req.params.id, groups);
+        if (gErr) return res.status(400).json({ status: 'error', message: gErr });
 
         // --- ตรวจให้ครบก่อนสร้างลิงก์ ไม่งั้นพลาดตรงบัญชีแล้วจะเหลือลิงก์ค้างที่ไม่มีใครเข้าได้ ---
         let account = null;                       // บัญชีเดิมที่จะผูกลิงก์ให้
@@ -387,6 +402,10 @@ router.put('/:id/agency-links/:token', async (req, res, next) => {
         const check = await canEditProject(req, req.params.id);
         if (!check.ok) return res.status(check.code).json({ status: 'error', message: check.message });
         const { name, products, platforms, kol_count, groups, agency_user_id } = req.body;
+        if (groups !== undefined) {
+            const gErr = await requireGroups(req.params.id, groups);
+            if (gErr) return res.status(400).json({ status: 'error', message: gErr });
+        }
 
         // เปลี่ยนบัญชีที่ผูก: ถอนของเดิมออกก่อนแล้วค่อยผูกใหม่ ไม่งั้นเจ้าเก่ายังเข้าได้อยู่
         if (agency_user_id !== undefined) {
