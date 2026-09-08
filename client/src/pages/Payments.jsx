@@ -356,12 +356,26 @@ function PlanModal({ row, onClose, onSaved }) {
     const agencyOpts = curGroup
         ? (curGroup.agencies || [])
         : (row.agencies || []);
-    const blank = n => Array.from({ length: n }, () => ({
-        percent: Math.round(100 / n), amount: Math.round(budget / n), due_date: ''
-    }));
+    // งบของกลุ่มที่ระบุ (ไม่ระบุ = งบทั้งแคมเปญ)
+    const budgetOf = gk => {
+        const g = groups.find(x => x.key === gk);
+        return g ? (Number(g.budget) || 0) : (Number(row.budget) || 0);
+    };
+    // ต้องรับฐานงบเข้ามาตรง ๆ — ตอนสลับกลุ่ม state ยังเป็นค่าเก่า ถ้าอ่านจาก budget จะคิดผิดกลุ่ม
+    // เศษที่หารไม่ลงตัวยกไปงวดสุดท้าย ไม่งั้น 3 งวดจะรวมได้ 399,999 แทนที่จะเป็น 400,000
+    const blankFor = (n, base) => {
+        const pct = Math.floor(100 / n);
+        const amt = Math.floor(base / n);
+        return Array.from({ length: n }, (_, i) => (i === n - 1
+            ? { percent: 100 - pct * (n - 1), amount: base - amt * (n - 1), due_date: '' }
+            : { percent: pct, amount: amt, due_date: '' }));
+    };
+    const blank = n => blankFor(n, budget);
     const planOf = (name, gk) => {
         const its = (row.installments || []).filter(i => i.agency === name && (i.group_key || '') === (gk || ''));
-        return its.length ? its.map(i => ({ percent: i.percent, amount: i.amount, due_date: i.due_date || '' })) : blank(2);
+        return its.length
+            ? its.map(i => ({ percent: i.percent, amount: i.amount, due_date: i.due_date || '' }))
+            : blankFor(2, budgetOf(gk));
     };
 
     const [agency, setAgency] = useState(agencyOpts[0] || '');
