@@ -61,6 +61,38 @@ router.get('/', async (req, res, next) => {
     } catch (err) { next(err); }
 });
 
+// ===================== รายการจ่ายนอกแคมเปญ =====================
+
+// GET /api/payments/manual — รายการจ่ายที่ตั้งเองทั้งหมด
+router.get('/manual', async (req, res, next) => {
+    try {
+        res.json({ status: 'success', data: await store.installments.listManual() });
+    } catch (err) { next(err); }
+});
+
+// PUT /api/payments/manual — สร้าง/แก้รายการจ่ายนอกแคมเปญ
+router.put('/manual', async (req, res, next) => {
+    try {
+        const { manual_id, title, agency, plan } = req.body || {};
+        if (!String(title || '').trim()) return res.status(400).json({ status: 'error', message: 'กรุณาระบุชื่อรายการ' });
+        if (!agency) return res.status(400).json({ status: 'error', message: 'กรุณาระบุเอเจนซี่' });
+        if (!Array.isArray(plan) || !plan.length) return res.status(400).json({ status: 'error', message: 'กรุณาระบุงวดอย่างน้อย 1 งวด' });
+        if (plan.length > 12) return res.status(400).json({ status: 'error', message: 'แบ่งได้สูงสุด 12 งวด' });
+        const r = await store.installments.setManualPlan({ manual_id, title, agency, plan });
+        if (r.error) return res.status(400).json({ status: 'error', message: r.error });
+        res.json({ status: 'success', data: r.data });
+    } catch (err) { next(err); }
+});
+
+// DELETE /api/payments/manual/:manualId
+router.delete('/manual/:manualId', async (req, res, next) => {
+    try {
+        const r = await store.installments.removeManual(req.params.manualId);
+        if (r.error) return res.status(400).json({ status: 'error', message: r.error });
+        res.json({ status: 'success', data: r.data });
+    } catch (err) { next(err); }
+});
+
 // ===================== งวดการจ่าย =====================
 // ประกาศไว้ก่อน /:projectId เพื่อไม่ให้ชนกัน
 

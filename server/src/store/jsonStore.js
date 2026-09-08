@@ -1722,7 +1722,9 @@ function decorateInstallment(it) {
         ...it,
         group_no: gi >= 0 ? gi + 1 : null,
         group_concept: g ? g.concept : null,
-        project_name: p ? p.name : null,
+        // รายการนอกแคมเปญ (ตั้งเอง) ใช้ชื่อที่พิมพ์ไว้แทนชื่อแคมเปญ
+        manual: !it.project_id,
+        project_name: p ? p.name : (it.title || null),
         brand: p ? p.brand : null,
         project_budget: p ? p.budget : null,
         batch_date: batch ? batch.pay_date : null
@@ -1808,6 +1810,74 @@ const installments = {
         it.updated_at = now();
         persist();
         return { data: decorateInstallment(it) };
+    },
+    // ===== รายการจ่ายนอกแคมเปญ (ตั้งเอง ไม่ผูกกับ project) =====
+    // ทั้งชุดอ้างอิงด้วย manual_id เดียวกัน แก้/ลบทีเดียวทั้งชุด
+    async listManual() {
+        const byId = {};
+        for (const i of db.installments) {
+            if (i.project_id || !i.manual_id) continue;
+            (byId[i.manual_id] = byId[i.manual_id] || []).push(i);
+        }
+        return Object.keys(byId).map(id => {
+            const rows = byId[id].slice().sort((a, b) => a.no - b.no);
+            const paid = rows.filter(r => r.status === 'paid').reduce((s, r) => s + (Number(r.amount) || 0), 0);
+            return clone({
+                manual_id: id,
+                title: rows[0].title || null,
+                agency: rows[0].agency || null,
+                planned_amount: rows.reduce((s, r) => s + (Number(r.amount) || 0), 0),
+                paid_amount: paid,
+                installments: rows.map(decorateInstallment)
+            });
+        }).sort((a, b) => (a.title || '').localeCompare(b.title || '', 'th'));
+    },
+    // สร้าง/แก้ทั้งชุด — ส่ง manual_id มาด้วยคือแก้ของเดิม ไม่ส่งคือสร้างใหม่
+    async setManualPlan({ manual_id, title, agency, plan }) {
+        const id = manual_id || 'm' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+        const same = i => !i.project_id && i.manual_id === id;
+        const old = db.installments.filter(same).sort((a, b) => a.no - b.no);
+        if (old.some(i => i.status === 'paid')) {
+            return { error: 'มีงวดที่ทำจ่ายไปแล้ว แก้ไม่ได้ ต้องยกเลิกรอบทำจ่ายนั้นก่อน' };
+        }
+        db.installments = db.installments.filter(i => !same(i));
+        const rows = plan.map((x, idx) => {
+            const prev = old[idx] || null;
+            return {
+                id: prev ? prev.id : nextId('installments'),
+                project_id: null,
+                manual_id: id,
+                title: String(title || '').trim() || 'รายการจ่าย',
+                agency,
+                group_key: null,
+                no: idx + 1,
+                of: plan.length,
+                percent: Number(x.percent) || 0,
+                amount: Number(x.amount) || 0,
+                due_date: x.due_date || null,
+                note: x.note || null,
+                invoice: prev ? prev.invoice : null,
+                invoice_link: prev ? prev.invoice_link : null,
+                status: 'pending',
+                batch_id: null,
+                created_at: prev ? prev.created_at : now(),
+                updated_at: now()
+            };
+        });
+        db.installments.push(...rows);
+        persist();
+        return { data: { manual_id: id, installments: rows.map(decorateInstallment) } };
+    },
+    async removeManual(manualId) {
+        const same = i => !i.project_id && i.manual_id === manualId;
+        const mine = db.installments.filter(same);
+        if (!mine.length) return { error: 'ไม่พบรายการนี้' };
+        if (mine.some(i => i.status === 'paid')) {
+            return { error: 'มีงวดที่ทำจ่ายไปแล้ว ลบไม่ได้ ต้องยกเลิกรอบทำจ่ายนั้นก่อน' };
+        }
+        db.installments = db.installments.filter(i => !same(i));
+        persist();
+        return { data: { removed: mine.length } };
     },
     // ลบแผนของ (แคมเปญ + เอเจนซี่ + กลุ่ม) ทั้งชุด — งวดที่จ่ายแล้วลบไม่ได้
     async removePlan(projectId, agency, groupKey) {

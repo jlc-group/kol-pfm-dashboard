@@ -708,11 +708,239 @@ function PlanModal({ row, onClose, onSaved, onReload }) {
     );
 }
 
+
+// ===================== รายการจ่ายนอกแคมเปญ (ตั้งงวดเอง) =====================
+// ใช้ตอนมีงานที่ไม่ได้เปิดเป็นแคมเปญในระบบ แต่ยังต้องทำจ่ายให้เอเจนซี่
+function ManualModal({ item, agencies, onClose, onSaved, onReload }) {
+    const saved0 = (item && item.installments) || [];
+    const [title, setTitle] = useState((item && item.title) || '');
+    const [agency, setAgency] = useState((item && item.agency) || agencies[0] || '');
+    const [freeAgency, setFreeAgency] = useState(!!(item && item.agency && !agencies.includes(item.agency)));
+    const [total, setTotal] = useState(item ? String(item.planned_amount || '') : '');
+    const [plan, setPlan] = useState(saved0.length
+        ? saved0.map(i => ({ percent: i.percent, amount: i.amount, due_date: i.due_date || '' }))
+        : [{ percent: 100, amount: '', due_date: '' }]);
+    const [saving, setSaving] = useState(false);
+    const [manualId, setManualId] = useState((item && item.manual_id) || null);
+
+    const locked = saved0.some(i => i.status === 'paid');
+    const saved = saved0.slice().sort((a, b) => a.no - b.no);
+
+    // แบ่งงวดจากยอดรวมที่กรอก — เศษยกไปงวดสุดท้าย
+    const splitBy = n => {
+        const base = Number(String(total).replace(/[^0-9]/g, '')) || 0;
+        const pct = Math.floor(100 / n);
+        const amt = Math.floor(base / n);
+        setPlan(Array.from({ length: n }, (_, i) => (i === n - 1
+            ? { percent: 100 - pct * (n - 1), amount: base - amt * (n - 1), due_date: '' }
+            : { percent: pct, amount: amt, due_date: '' })));
+    };
+    const setRow = (idx, k, v) => setPlan(p => p.map((x, i) => {
+        if (i !== idx) return x;
+        if (k === 'percent') {
+            const base = Number(String(total).replace(/[^0-9]/g, '')) || 0;
+            return { ...x, percent: v, amount: Math.round(base * (Number(v) || 0) / 100) };
+        }
+        return { ...x, [k]: v };
+    }));
+
+    const sumAmt = plan.reduce((s, x) => s + (Number(x.amount) || 0), 0);
+    const canSave = title.trim() && agency && plan.length > 0 && !locked;
+
+    async function persist() {
+        const res = await api('/payments/manual', {
+            method: 'PUT',
+            body: { manual_id: manualId, title: title.trim(), agency, plan }
+        });
+        setManualId(res.data.manual_id);
+        return res.data.installments;
+    }
+    async function save() {
+        if (!canSave) return;
+        setSaving(true);
+        try { await persist(); onSaved(); }
+        catch (err) { alert(err.message); setSaving(false); }
+    }
+    // แนบเอกสารก่อนกดบันทึกได้ — บันทึกให้เงียบ ๆ ก่อนแล้วค่อยแนบ
+    async function ensure(idx) {
+        if (saved[idx]) return saved[idx];
+        if (!title.trim() || !agency) throw new Error('ใส่ชื่อรายการกับเอเจนซี่ก่อนถึงจะแนบเอกสารได้');
+        const rows = await persist();
+        if (!rows[idx]) throw new Error('บันทึกไม่สำเร็จ');
+        return rows[idx];
+    }
+    async function attachFile(idx, file) {
+        const it = await ensure(idx);
+        await uploadFile(`/payments/installments/${it.id}/invoice`, file);
+        if (onReload) await onReload();
+    }
+    async function attachLink(idx, v) {
+        const it = await ensure(idx);
+        await api(`/payments/installments/${it.id}/invoice-link`, { method: 'PUT', body: { link: v || null } });
+        if (onReload) await onReload();
+    }
+
+    return (
+        <div className="modal-backdrop" onClick={onClose}>
+            <div className="modal wide" onClick={e => e.stopPropagation()}>
+                <div className="draft-head">
+                    <div className="draft-name">🧾 {item ? 'แก้ไขรายการจ่ายนอกแคมเปญ' : 'ตั้งงวดเอง (ไม่ผูกกับแคมเปญ)'}</div>
+                </div>
+
+                <div className="plan-box">
+                    <div className="field">
+                        <label>ชื่อรายการ *</label>
+                        <input value={title} onChange={e => setTitle(e.target.value)} disabled={locked}
+                            placeholder="เช่น ค่าโปรดักชันงาน Event ก.ย." autoFocus />
+                    </div>
+                    <div className="field-row">
+                        <div className="field">
+                            <label>เอเจนซี่ *</label>
+                            {freeAgency || !agencies.length ? (
+                                <input value={agency} onChange={e => setAgency(e.target.value)} disabled={locked}
+                                    placeholder="พิมพ์ชื่อเอเจนซี่" />
+                            ) : (
+                                <select value={agency} onChange={e => {
+                                    if (e.target.value === '__FREE__') { setFreeAgency(true); setAgency(''); }
+                                    else setAgency(e.target.value);
+                                }} disabled={locked}>
+                                    {agencies.map(a => <option key={a} value={a}>{a}</option>)}
+                                    <option value="__FREE__">พิมพ์ชื่อเอง...</option>
+                                </select>
+                            )}
+                        </div>
+                        <div className="field">
+                            <label>ยอดรวม (฿)</label>
+                            <input type="number" min="0" value={total} disabled={locked}
+                                onChange={e => setTotal(e.target.value)} placeholder="เช่น 500000" />
+                        </div>
+                        <div className="field">
+                            <label>แบ่งเป็นกี่งวด</label>
+                            <select value={plan.length} onChange={e => splitBy(Number(e.target.value))} disabled={locked}>
+                                {[1, 2, 3, 4, 5, 6].map(n => <option key={n} value={n}>{n} งวด</option>)}
+                            </select>
+                        </div>
+                    </div>
+
+                    {locked && (
+                        <div className="alert-error" style={{ marginTop: 4 }}>
+                            รายการนี้มีงวดที่ทำจ่ายไปแล้ว แก้ไม่ได้ — ต้องยกเลิกรอบทำจ่ายนั้นก่อน
+                        </div>
+                    )}
+
+                    <div className="plan-cards">
+                        {plan.map((x, i) => {
+                            const it = saved[i] || null;
+                            return (
+                                <div className="plan-card" key={i}>
+                                    <div className="plan-card-head">
+                                        <span className="plan-no">งวด {i + 1}/{plan.length}</span>
+                                        <label className="plan-f">
+                                            <span>%</span>
+                                            <input type="number" min="0" max="100" value={x.percent} disabled={locked}
+                                                onChange={e => setRow(i, 'percent', e.target.value)} />
+                                        </label>
+                                        <label className="plan-f wide">
+                                            <span>ยอด (฿)</span>
+                                            <input type="number" min="0" value={x.amount} disabled={locked}
+                                                onChange={e => setRow(i, 'amount', e.target.value)} />
+                                        </label>
+                                    </div>
+                                    <div className="plan-card-row">
+                                        <span className="plan-card-lbl">ใบแจ้งหนี้</span>
+                                        <FileSlot compact
+                                            viewPath={it ? `/payments/installments/${it.id}/invoice` : null}
+                                            meta={it && it.invoice}
+                                            link={it && it.invoice_link}
+                                            onUploadFile={file => attachFile(i, file)}
+                                            onSaveLink={v => attachLink(i, v)}
+                                            onDeleteFile={it ? async () => {
+                                                await api(`/payments/installments/${it.id}/invoice`, { method: 'DELETE' });
+                                                if (onReload) await onReload();
+                                            } : null} />
+                                    </div>
+                                    <div className="plan-card-row">
+                                        <span className="plan-card-lbl">วันที่ทำจ่าย</span>
+                                        <DatePicker value={x.due_date} onChange={v => setRow(i, 'due_date', v)} />
+                                    </div>
+                                </div>
+                            );
+                        })}
+                        <div className="plan-sum">
+                            <span>รวมทุกงวด</span>
+                            <span>{baht(sumAmt)}</span>
+                        </div>
+                    </div>
+                    <p className="alp-hint">รายการนี้จะไปโผล่ในแท็บรอทำจ่ายเหมือนงวดของแคมเปญ รวมสลิปใบเดียวกับงานอื่นของเอเจนซี่เจ้าเดียวกันได้</p>
+                </div>
+
+                <div className="modal-actions">
+                    {item && !locked && (
+                        <button type="button" className="btn-ghost danger" onClick={async () => {
+                            if (!confirm('ลบรายการ "' + item.title + '" ทั้งหมด ' + saved.length + ' งวด?')) return;
+                            try { await api(`/payments/manual/${item.manual_id}`, { method: 'DELETE' }); onSaved(); }
+                            catch (err) { alert(err.message); }
+                        }}>
+                            <Icon name="trash" size={15} /> ลบรายการนี้
+                        </button>
+                    )}
+                    <button className="btn-ghost" onClick={onClose}>ปิด</button>
+                    <button className="btn-primary" onClick={save} disabled={!canSave || saving}>
+                        <Icon name="check" size={16} /> {saving ? 'กำลังบันทึก...' : 'บันทึกรายการ'}
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+}
+
+// การ์ดรายการนอกแคมเปญ
+function ManualCard({ item, onOpen }) {
+    const planned = Number(item.planned_amount) || 0;
+    const paid = Number(item.paid_amount) || 0;
+    const pct = planned > 0 ? Math.round((paid / planned) * 100) : 0;
+    const done = planned > 0 && paid >= planned;
+    const invTotal = item.installments.length;
+    const invDone = item.installments.filter(i => i.invoice || i.invoice_link).length;
+    return (
+        <div className="pcard" onClick={onOpen}>
+            <div className={'pcard-accent payacc-' + (done ? 'pay-done' : 'pay-wait')} />
+            <div className="pcard-body">
+                <div className="pcard-head">
+                    <span className={'status ' + (done ? 'pay-done' : 'pay-wait')}>
+                        {done ? 'จ่ายครบแล้ว' : 'จ่ายแล้ว ' + pct + '%'}
+                    </span>
+                    <span className="cat-chip">นอกแคมเปญ</span>
+                </div>
+                <h3 className="pcard-name">{item.title}</h3>
+                <div className="pcard-sub"><span>🏢 {item.agency}</span></div>
+                <div className="pay-progress">
+                    <div className="pay-progress-bar"><div style={{ width: pct + '%' }} /></div>
+                    <div className="pay-progress-txt">{baht(paid)} / {baht(planned)}</div>
+                </div>
+                <div className="pcard-foot">
+                    <div>
+                        <div className="pcard-budget-val">{baht(planned)}</div>
+                        <div className="pcard-budget-lbl">ยอดรวม · {invTotal} งวด</div>
+                    </div>
+                    <div className="pay-docs">
+                        <span className={invTotal > 0 && invDone === invTotal ? 'doc-ok' : 'doc-no'}>
+                            🧾 แจ้งหนี้ {invDone}/{invTotal}
+                        </span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+}
+
 // ===================== หน้าหลัก =====================
 export default function Payments() {
     const [rows, setRows] = useState([]);        // แคมเปญ + สรุปงวด
     const [pending, setPending] = useState([]);  // งวดค้างจ่าย
     const [batches, setBatches] = useState([]);  // รอบที่จ่ายแล้ว
+    const [manuals, setManuals] = useState([]);  // รายการจ่ายนอกแคมเปญ
+    const [manualOpen, setManualOpen] = useState(null); // null = ปิด · 'new' = สร้างใหม่ · object = แก้ไข
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
     const [tab, setTab] = useState('pending');   // pending | batches | campaigns
@@ -726,16 +954,17 @@ export default function Payments() {
         return Promise.all([
             api('/payments'),
             api('/payments/installments?status=pending'),
-            api('/payments/batches')
-        ]).then(([a, b, c]) => {
-            setRows(a.data); setPending(b.data); setBatches(c.data);
+            api('/payments/batches'),
+            api('/payments/manual')
+        ]).then(([a, b, c, d]) => {
+            setRows(a.data); setPending(b.data); setBatches(c.data); setManuals(d.data);
         }).catch(err => setError(err.message))
             .finally(() => setLoading(false));
     }
     useEffect(() => { loadAll(); }, []);
 
     function refresh() {
-        setPicked([]); setShowBatch(false); setOpenId(null);
+        setPicked([]); setShowBatch(false); setOpenId(null); setManualOpen(null);
         loadAll();
     }
 
@@ -789,6 +1018,11 @@ export default function Payments() {
                 ))}
             </div>
 
+            {tab === 'campaigns' && (
+                <button type="button" className="alp-add-agency" onClick={() => setManualOpen('new')}>
+                    <Icon name="plus" size={16} /> ตั้งงวดเอง (งานที่ไม่ได้เปิดเป็นแคมเปญ)
+                </button>
+            )}
             <div className="pay-summary">
                 {tab === 'batches' ? (
                     <>
@@ -834,9 +1068,12 @@ export default function Payments() {
                         <p>ไม่มีแคมเปญตามตัวกรองที่เลือก</p>
                     </div>
                 ) : (
-                    <div className="card-grid">
-                        {shownRows.map(r => <CampaignCard key={r.project_id} row={r} onOpen={() => setOpenId(r.project_id)} />)}
-                    </div>
+                    <>
+                        <div className="card-grid">
+                            {shownRows.map(r => <CampaignCard key={r.project_id} row={r} onOpen={() => setOpenId(r.project_id)} />)}
+                            {manuals.map(m => <ManualCard key={m.manual_id} item={m} onOpen={() => setManualOpen(m)} />)}
+                        </div>
+                    </>
                 )
             )}
 
@@ -844,6 +1081,13 @@ export default function Payments() {
                 <BatchModal agency={pickedItems[0].agency} items={pickedItems}
                     cycle={cycle} batches={batches}
                     onClose={() => setShowBatch(false)} onDone={refresh} />
+            )}
+
+            {manualOpen && (
+                <ManualModal
+                    item={manualOpen === 'new' ? null : manualOpen}
+                    agencies={[...new Set(rows.flatMap(r => r.agencies || []))].sort((a, b) => a.localeCompare(b, 'th'))}
+                    onClose={() => setManualOpen(null)} onSaved={refresh} onReload={loadAll} />
             )}
 
             {openId != null && (
