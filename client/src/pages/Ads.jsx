@@ -24,9 +24,9 @@ function StampCell({ row }) {
     const st = row.perf_stamp;
     if (!st) {
         if (row.stamp_waiting) {
-            return <span className="perf-pill wait" title="ค่ายิงแอดถึงเกณฑ์แล้ว แต่ยังไม่มียอดวิวให้ตัดสิน — ระบบจะสแตมป์ให้เองทันทีที่ข้อมูลผลงานเข้ามา">รอข้อมูลผลงาน</span>;
+            return <span className="perf-pill wait" title="ค่ายิงแอดถึงเกณฑ์แล้ว แต่ยังไม่มียอดวิวเข้ามา — ปกติสองอย่างนี้ควรมาพร้อมกันจากการซิงก์ ถ้าเห็นป้ายนี้ควรเช็คท่อซิงก์ · ระบบจะสแตมป์ให้เองทันทีที่ข้อมูลผลงานเข้ามา">Awaiting data</span>;
         }
-        return <span className="perf-pill none" title="จะสแตมป์อัตโนมัติเมื่อค่ายิงแอดสะสมถึง 10,000 บาท">ยังไม่ถึงเกณฑ์</span>;
+        return <span className="perf-pill none" title="จะสแตมป์อัตโนมัติเมื่อค่ายิงแอดสะสมถึง 10,000 บาท">Not stamped</span>;
     }
     const money = st.cpm != null
         ? 'CPM ฿' + fmtNum(st.cpm) + ' (เกณฑ์ ≤ ' + GOOD_CPM + ')  ·  CPE ฿' + fmtNum(st.cpe) + ' (เกณฑ์ ≤ ' + GOOD_CPE + ')'

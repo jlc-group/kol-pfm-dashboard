@@ -67,13 +67,13 @@ function StampBadge({ row }) {
     if (!st) {
         if (row.stamp_waiting) {
             return <span className="perf-pill wait" title={`ค่ายิงแอดถึงเกณฑ์แล้ว แต่ยังไม่มียอดวิวให้ตัดสิน
-ระบบจะสแตมป์ให้เองทันทีที่ข้อมูลผลงานเข้ามา`}>รอข้อมูลผลงาน</span>;
+ระบบจะสแตมป์ให้เองทันทีที่ข้อมูลผลงานเข้ามา`}>Awaiting data</span>;
         }
         // ยังไม่ถึงเกณฑ์ = ยังไม่มีค่าที่ล็อก โชว์ผลปัจจุบันไปก่อน พร้อมบอกว่ายังไม่ล็อก
         return (
             <span className="perf-live" title="ยังไม่ถึงเกณฑ์ — ค่านี้ยังขยับได้เรื่อย ๆ จะล็อกเมื่อค่ายิงแอดสะสมถึง 10,000 บาท">
                 <LiveBadge row={row} />
-                <span className="perf-tmp">ยังไม่ล็อก</span>
+                <span className="perf-tmp">not stamped</span>
             </span>
         );
     }
