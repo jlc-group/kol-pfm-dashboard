@@ -443,8 +443,8 @@ export default function Ads() {
                                         options={[{ value: '', label: 'ทั้งหมด', count: countIf('late', () => true) },
                                         ...LATE_OPTS.map(([v, l]) => ({ value: v, label: l, dot: v, count: countIf('late', r => lateBucket(r) === v) }))]} />
                                 </span>
-                                <span title="ผลที่ระบบล็อกไว้ตอนค่ายิงแอดสะสมถึง 10,000 บาท — แก้ไม่ได้">STAMPED @10K 🔒</span>
-                                <span title="ผลตอนนี้ คำนวณสดจากข้อมูลล่าสุด — ใช้ตัดสินว่าควรยิงต่อหรือหยุด">LIVE PERF</span>
+                                <span title="ผลที่ระบบล็อกไว้ตอนค่ายิงแอดสะสมถึง 10,000 บาท — แก้ไม่ได้">STAMPED PFM 🔒</span>
+                                <span title="ผลตอนนี้ คำนวณสดจากข้อมูลล่าสุด — ใช้ตัดสินว่าควรยิงต่อหรือหยุด">LIVE PFM</span>
                                 <span>หมายเหตุ</span>
                             </div>
                             {rows.map(r => <AdRow key={r.sub_id} row={r} onSaved={load} />)}
