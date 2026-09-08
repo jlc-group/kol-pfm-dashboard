@@ -2,7 +2,6 @@ import { useEffect, useState, useCallback } from 'react';
 import ColumnFilter from '../components/ColumnFilter.jsx';
 import { api } from '../api/client.js';
 import Icon from '../components/Icon.jsx';
-import Avatar from '../components/Avatar.jsx';
 import { productLabel, asTargetArray } from '../data/products.js';
 import { ProductSummary } from '../components/ProductChips.jsx';
 import { fmtDate } from '../utils/date.js';
@@ -186,7 +185,6 @@ function AdRow({ row, onSaved }) {
     return (
         <div className="ads-row">
             <div className="ads-name">
-                <Avatar name={row.account_name || '?'} size={36} />
                 <div className="ads-name-meta">
                     <span className="ads-acc">{row.account_name}</span>
                     <span className="ads-plat">{row.platform || '—'}</span>
