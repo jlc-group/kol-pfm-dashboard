@@ -1755,6 +1755,14 @@ const installments = {
         if (gk && !(p.ad_groups || []).some(g => g.key === gk)) return { error: 'ไม่พบกลุ่มนี้ในแคมเปญ' };
         // แผนแยกกันตาม (แคมเปญ + เอเจนซี่ + กลุ่ม) — คนละกลุ่มไม่ทับกัน
         const same = i => i.project_id === p.id && i.agency === agency && (i.group_key || null) === gk;
+        // ห้ามมีทั้ง "ทั้งแคมเปญ" และ "รายกลุ่ม" ของเจ้าเดียวกันพร้อมกัน ยอดจะถูกนับซ้ำ
+        const others = db.installments.filter(i => i.project_id === p.id && i.agency === agency && !same(i));
+        if (gk && others.some(i => !i.group_key)) {
+            return { error: 'เจ้านี้มีแผนแบบ "ทั้งแคมเปญ" อยู่แล้ว — ลบแผนนั้นก่อนถึงจะตั้งแยกรายกลุ่มได้ ไม่งั้นยอดจะนับซ้ำ' };
+        }
+        if (!gk && others.some(i => i.group_key)) {
+            return { error: 'เจ้านี้ตั้งแผนแยกรายกลุ่มไว้แล้ว — ลบแผนรายกลุ่มก่อนถึงจะตั้งแบบทั้งแคมเปญได้ ไม่งั้นยอดจะนับซ้ำ' };
+        }
         const mine = db.installments.filter(same);
         if (mine.some(i => i.status === 'paid')) {
             return { error: 'มีงวดที่ทำจ่ายไปแล้ว แก้แผนไม่ได้ ต้องยกเลิกรอบทำจ่ายนั้นก่อน' };
@@ -1793,6 +1801,19 @@ const installments = {
         it.updated_at = now();
         persist();
         return { data: decorateInstallment(it) };
+    },
+    // ลบแผนของ (แคมเปญ + เอเจนซี่ + กลุ่ม) ทั้งชุด — งวดที่จ่ายแล้วลบไม่ได้
+    async removePlan(projectId, agency, groupKey) {
+        const gk = groupKey || null;
+        const same = i => i.project_id === Number(projectId) && i.agency === agency && (i.group_key || null) === gk;
+        const mine = db.installments.filter(same);
+        if (!mine.length) return { error: 'ไม่พบแผนนี้' };
+        if (mine.some(i => i.status === 'paid')) {
+            return { error: 'มีงวดที่ทำจ่ายไปแล้ว ลบแผนไม่ได้ ต้องยกเลิกรอบทำจ่ายนั้นก่อน' };
+        }
+        db.installments = db.installments.filter(i => !same(i));
+        persist();
+        return { data: { removed: mine.length } };
     },
     // แนบใบแจ้งหนี้ของงวด — งวดที่จ่ายแล้วก็ยังแนบ/เปลี่ยนได้ เพราะเอกสารมักตามมาทีหลัง
     async setInvoice(id, meta) {

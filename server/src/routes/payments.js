@@ -139,6 +139,18 @@ router.put('/installments/:id', async (req, res, next) => {
     } catch (err) { next(err); }
 });
 
+// DELETE /api/payments/:projectId/plan — ลบแผนของเอเจนซี่+กลุ่มนั้นทั้งชุด
+router.delete('/:projectId/plan', async (req, res, next) => {
+    try {
+        const agency = req.query.agency || (req.body && req.body.agency);
+        const groupKey = req.query.group_key || (req.body && req.body.group_key) || null;
+        if (!agency) return res.status(400).json({ status: 'error', message: 'กรุณาระบุเอเจนซี่' });
+        const r = await store.installments.removePlan(req.params.projectId, agency, groupKey);
+        if (r.error) return res.status(400).json({ status: 'error', message: r.error });
+        res.json({ status: 'success', data: r.data });
+    } catch (err) { next(err); }
+});
+
 // PUT /api/payments/:projectId/plan — ตั้งแผนแบ่งงวดของแคมเปญ+เอเจนซี่
 // body: { agency, plan: [{ percent, amount, due_date, note }] }
 router.put('/:projectId/plan', async (req, res, next) => {

@@ -403,6 +403,8 @@ function CampaignCard({ row, onOpen }) {
     const state = planned === 0 ? 'none' : paid >= planned ? 'done' : 'part';
     const invTotal = (row.installments || []).length;
     const invDone = (row.installments || []).filter(i => i.invoice || i.invoice_link).length;
+    // แผนรวมมากกว่างบ = สัญญาณว่ามีแผนซ้อนกัน (ทั้งแคมเปญ + รายกลุ่ม)
+    const overPlan = planned > 0 && Number(row.budget) > 0 && planned > Number(row.budget);
     return (
         <div className="pcard" onClick={onOpen}>
             <div className={'pcard-accent payacc-' + (state === 'done' ? 'pay-done' : 'pay-wait')} />
@@ -411,6 +413,11 @@ function CampaignCard({ row, onOpen }) {
                     <span className={'status ' + (state === 'done' ? 'pay-done' : 'pay-wait')}>
                         {state === 'none' ? 'ยังไม่ตั้งงวด' : state === 'done' ? 'จ่ายครบแล้ว' : 'จ่ายแล้ว ' + pct + '%'}
                     </span>
+                    {overPlan && (
+                        <span className="status pay-pending" title="ผลรวมของแผนมากกว่างบแคมเปญ — อาจตั้งแผนทั้งแคมเปญซ้อนกับรายกลุ่ม">
+                            ⚠ แผนเกินงบ
+                        </span>
+                    )}
                 </div>
                 {row.brand && <span className="pcard-brand">{row.brand}</span>}
                 <h3 className="pcard-name">{row.project_name}</h3>
@@ -671,6 +678,17 @@ function PlanModal({ row, onClose, onSaved, onReload }) {
                 </div>
 
                 <div className="modal-actions">
+                    {saved.length > 0 && !locked && (
+                        <button type="button" className="btn-ghost danger" onClick={async () => {
+                            if (!confirm('ลบแผนการจ่ายชุดนี้ทั้งหมด ' + saved.length + ' งวด?')) return;
+                            try {
+                                await api(`/payments/${row.project_id}/plan?agency=${encodeURIComponent(agency)}&group_key=${encodeURIComponent(asKey(groupKey))}`, { method: 'DELETE' });
+                                onSaved();
+                            } catch (err) { alert(err.message); }
+                        }}>
+                            <Icon name="trash" size={15} /> ลบแผนนี้
+                        </button>
+                    )}
                     <button className="btn-ghost" onClick={onClose}>ปิด</button>
                     <button className="btn-primary" onClick={save} disabled={saving || locked || !agency || noGroupPicked}
                         title={noGroupPicked ? 'เลือกกลุ่มที่จะทำจ่ายก่อน' : undefined}>
