@@ -2407,3 +2407,6 @@ a { text-decoration: none; color: inherit; }
 .alp-newacc-foot { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .alp-newacc-foot .btn-primary { padding: 7px 16px; font-size: 12.5px; }
 .alp-newacc-foot .alp-hint { margin: 0; }
+
+.alp-edit-head { font-size: 12.5px; color: #45605a; margin-bottom: 10px; padding-bottom: 8px; border-bottom: 1px dashed var(--border); }
+.alp-edit-head .alp-hint { display: inline; margin-left: 8px; }

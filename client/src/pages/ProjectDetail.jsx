@@ -234,7 +234,7 @@ function ScopeProducts({ codes, limit = 6 }) {
 }
 
 // แถบลิงก์เอเจนซี่ 1 อัน — ย่อเป็นบรรทัดเดียว (ชื่อ + สรุปขอบเขต + ปุ่ม) กด ▾ เพื่อดู URL + สินค้าเต็ม
-function AgencyLinkRow({ l, url, copied, onCopy, onDelete, onChat, unread = 0, projectId, boundTo }) {
+function AgencyLinkRow({ l, url, copied, onCopy, onEdit, onDelete, onChat, unread = 0, projectId, boundTo }) {
     const reports = l.reports || [];
     const [open, setOpen] = useState(false);
     const prods = l.products || [];
@@ -258,6 +258,7 @@ function AgencyLinkRow({ l, url, copied, onCopy, onDelete, onChat, unread = 0, p
                 <button type="button" className="alp-chat" onClick={onChat} title="คุยกับเอเจนซี่เจ้านี้">
                     💬 คุย{unread > 0 && <span className="alp-chat-n">{unread}</span>}
                 </button>
+                <button className="btn-ghost" onClick={onEdit} title="แก้ไขขอบเขตงาน/บัญชีที่ผูกไว้"><Icon name="edit" size={14} /> แก้ไข</button>
                 <button className="btn-ghost" onClick={onCopy}>{copied ? '✓ คัดลอกแล้ว' : 'คัดลอก'}</button>
                 <a className="btn-ghost" href={url} target="_blank" rel="noreferrer">เปิดดู</a>
                 <button className="alp-del" title="ลบลิงก์" onClick={onDelete}><Icon name="trash" size={15} /></button>
@@ -330,6 +331,7 @@ export default function ProjectDetail() {
     const [linkPick, setLinkPick] = useState('');          // '' | 'u<id>' | '__NEW__' | '__FREE__'
     const [newAccount, setNewAccount] = useState(null);    // บัญชี+รหัสชั่วคราวที่เพิ่งสร้าง (โชว์ครั้งเดียว)
     const [pwCopied, setPwCopied] = useState(false);
+    const [editToken, setEditToken] = useState(null);      // null = กำลังสร้างใหม่ · มีค่า = กำลังแก้ลิงก์นั้น
     const [newLinkName, setNewLinkName] = useState('');
     // ต้องโหลดตั้งแต่เปิดแผงลิงก์ เพราะป้าย "ผูกบัญชีแล้ว/ยัง" ใช้ข้อมูลนี้
     useEffect(() => { if (showLinks) loadAgencyAccounts(); }, [showLinks, showCreate]);
@@ -421,6 +423,37 @@ export default function ProjectDetail() {
         const valid = new Set(productsForPlatforms(next));
         setNewLinkProducts(prods => prods.filter(c => valid.has(c)));
     };
+    // แก้ลิงก์เดิม — ใช้ฟอร์มเดียวกับตอนสร้าง แค่เติมค่าเดิมเข้าไปก่อน
+    function startEdit(l) {
+        const bound = agencyAccounts.find(a => (a.agency_tokens || []).includes(l.token));
+        setEditToken(l.token);
+        setLinkPick(bound ? 'u' + bound.id : '__FREE__');
+        setNewLinkName(l.name || '');
+        setNewLinkProducts([...(l.products || [])]);
+        setNewLinkPlatforms([...(l.platforms || [])]);
+        setNewLinkKol(l.kol_count ? String(l.kol_count) : '');
+        setShowCreate(true);
+    }
+    function resetLinkForm() {
+        setShowCreate(false); setEditToken(null); setLinkPick('');
+        setNewLinkName(''); setNewLinkProducts([]); setNewLinkPlatforms([]); setNewLinkKol('');
+    }
+    async function saveLinkEdit() {
+        const body = {
+            name: newLinkName.trim() || undefined,
+            products: newLinkProducts, platforms: newLinkPlatforms,
+            kol_count: Number(newLinkKol) || 0
+        };
+        // เปลี่ยนบัญชีที่ผูก: พิมพ์ชื่อเอง = ถอดบัญชีออกจากลิงก์นี้
+        if (linkPick === '__FREE__') body.agency_user_id = null;
+        else if (linkPick && linkPick !== '__NEW__') body.agency_user_id = Number(linkPick.slice(1));
+        try {
+            await api(`/projects/${id}/agency-links/${editToken}`, { method: 'PUT', body });
+            resetLinkForm();
+            loadLinks();
+            loadAgencyAccounts();
+        } catch (err) { alert(err.message); }
+    }
     async function deleteLink(token) {
         if (!confirm('ลบลิงก์นี้?\nรายชื่อ KOL ทั้งหมดที่ส่งเข้ามาผ่านลิงก์นี้จะถูกลบไปด้วย และกู้คืนไม่ได้')) return;
         try { await api(`/projects/${id}/agency-links/${token}`, { method: 'DELETE' }); loadLinks(); }
@@ -819,6 +852,7 @@ export default function ProjectDetail() {
                                         url={linkUrl(l.token)}
                                         copied={copiedToken === l.token}
                                         onCopy={() => copyLink(l.token)}
+                                        onEdit={() => startEdit(l)}
                                         onDelete={() => deleteLink(l.token)}
                                         projectId={id}
                                         unread={chatUnread[l.token] || 0}
@@ -832,32 +866,33 @@ export default function ProjectDetail() {
                         )}
                     {/* ปุ่มเปิดฟอร์มเพิ่มเอเจนซี่ (ซ่อนฟอร์มไว้ก่อน) */}
                     {!showCreate && (
-                        <button type="button" className="alp-add-agency" onClick={() => setShowCreate(true)}>
+                        <button type="button" className="alp-add-agency" onClick={() => { setEditToken(null); setLinkPick(''); setNewLinkName(''); setNewLinkProducts([]); setNewLinkPlatforms([]); setNewLinkKol(''); setShowCreate(true); }}>
                             <Icon name="plus" size={16} /> เพิ่มเอเจนซี่
                         </button>
                     )}
                     {/* ฟอร์มสร้างลิงก์ + กำหนดขอบเขตงานของเอเจนซี่ */}
                     {showCreate && (
                     <div className="alp-create">
+                        {editToken && <div className="alp-edit-head">✏️ กำลังแก้ไขลิงก์นี้ <span className="alp-hint">URL เดิมไม่เปลี่ยน ลิงก์ที่ส่งไปแล้วยังใช้ได้</span></div>}
                         <div className="alp-create-row">
                             <select className="alp-agency-pick" value={linkPick} onChange={e => { setLinkPick(e.target.value); setNewLinkName(''); }}>
                                 <option value="">— เลือกเอเจนซี่ —</option>
                                 {agencyAccounts.map(a => (
                                     <option key={a.id} value={'u' + a.id}>{a.username}</option>
                                 ))}
-                                {user?.role === 'admin' && <option value="__NEW__">＋ เอเจนซี่ใหม่ (สร้างบัญชี + รหัสให้เลย)</option>}
+                                {user?.role === 'admin' && !editToken && <option value="__NEW__">＋ เอเจนซี่ใหม่ (สร้างบัญชี + รหัสให้เลย)</option>}
                                 <option value="__FREE__">พิมพ์ชื่อเอง (ยังไม่สร้างบัญชี)</option>
                             </select>
                             <input type="number" min="0" className="alp-kol-input" value={newLinkKol} onChange={e => setNewLinkKol(e.target.value)} placeholder="จำนวน KOL" />
                         </div>
-                        {(linkPick === '__NEW__' || linkPick === '__FREE__') && (
+                        {(editToken || linkPick === '__NEW__' || linkPick === '__FREE__') && (
                             <div className="alp-create-row">
                                 <input value={newLinkName} onChange={e => setNewLinkName(e.target.value)}
                                     placeholder={linkPick === '__NEW__' ? 'ชื่อบัญชีเอเจนซี่ (ใช้เข้าสู่ระบบ เช่น Mesaran House)' : 'ชื่อเอเจนซี่ (เช่น Agency A)'}
                                     onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); createLink(); } }} autoFocus />
                             </div>
                         )}
-                        {linkPick === '__FREE__' && (
+                        {linkPick === '__FREE__' && !editToken && (
                             <p className="alp-hint">ลิงก์จะใช้งานได้ก็ต่อเมื่อมีบัญชีเอเจนซี่ผูกไว้ — สร้างบัญชีให้ทีหลังได้ที่หน้าผู้ใช้งาน</p>
                         )}
                         <div className="alp-create-scope">
@@ -912,8 +947,10 @@ export default function ProjectDetail() {
                             </div>
                         </div>
                         <div className="alp-create-actions">
-                            <button type="button" className="btn-ghost" onClick={() => { setShowCreate(false); setNewLinkName(''); setNewLinkProducts([]); setNewLinkPlatforms([]); setNewLinkKol(''); }}>ยกเลิก</button>
-                            <button className="btn-primary alp-create-btn" onClick={createLink}><Icon name="plus" size={15} /> สร้างลิงก์</button>
+                            <button type="button" className="btn-ghost" onClick={resetLinkForm}>ยกเลิก</button>
+                            {editToken
+                                ? <button className="btn-primary alp-create-btn" onClick={saveLinkEdit}><Icon name="check" size={15} /> บันทึกการแก้ไข</button>
+                                : <button className="btn-primary alp-create-btn" onClick={createLink}><Icon name="plus" size={15} /> สร้างลิงก์</button>}
                         </div>
                     </div>
                     )}

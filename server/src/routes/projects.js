@@ -381,6 +381,34 @@ router.post('/:id/agency-links', async (req, res, next) => {
     }
 });
 
+// PUT /api/projects/:id/agency-links/:token — แก้ขอบเขตงาน + เปลี่ยนบัญชีที่ผูกไว้
+router.put('/:id/agency-links/:token', async (req, res, next) => {
+    try {
+        const check = await canEditProject(req, req.params.id);
+        if (!check.ok) return res.status(check.code).json({ status: 'error', message: check.message });
+        const { name, products, platforms, kol_count, agency_user_id } = req.body;
+
+        // เปลี่ยนบัญชีที่ผูก: ถอนของเดิมออกก่อนแล้วค่อยผูกใหม่ ไม่งั้นเจ้าเก่ายังเข้าได้อยู่
+        if (agency_user_id !== undefined) {
+            if (agency_user_id) {
+                const acc = await store.users.findById(agency_user_id);
+                if (!acc || acc.role !== 'agency') {
+                    return res.status(404).json({ status: 'error', message: 'ไม่พบบัญชีเอเจนซี่ที่เลือก' });
+                }
+                await store.users.unbindAgencyToken(req.params.token);
+                await store.users.bindAgencyToken(acc.id, req.params.token);
+            } else {
+                await store.users.unbindAgencyToken(req.params.token);
+            }
+        }
+
+        const link = await store.projects.updateAgencyLink(req.params.id, req.params.token, { name, products, platforms, kol_count });
+        if (!link) return res.status(404).json({ status: 'error', message: 'ไม่พบลิงก์นี้' });
+        await record(req, req.params.id, 'agency_link', 'แก้ไขลิงก์เอเจนซี่: ' + link.name);
+        res.json({ status: 'success', data: link });
+    } catch (err) { next(err); }
+});
+
 // DELETE /api/projects/:id/agency-links/:token — ลบลิงก์เอเจนซี่
 router.delete('/:id/agency-links/:token', async (req, res, next) => {
     try {

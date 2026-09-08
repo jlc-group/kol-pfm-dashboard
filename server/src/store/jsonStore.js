@@ -693,6 +693,20 @@ const projects = {
         const p = db.projects.find(p => p.id === Number(id));
         return p && Array.isArray(p.agency_links) ? p.agency_links.map(clone) : [];
     },
+    // แก้ขอบเขตงานของลิงก์ (ชื่อ/สินค้า/Platform/จำนวน KOL) — token เดิมไม่เปลี่ยน ลิงก์ที่ส่งไปแล้วยังใช้ได้
+    async updateAgencyLink(id, token, fields) {
+        const p = db.projects.find(p => p.id === Number(id));
+        if (!p || !Array.isArray(p.agency_links)) return null;
+        const link = p.agency_links.find(l => l.token === token);
+        if (!link) return null;
+        if (fields.name !== undefined && String(fields.name).trim()) link.name = String(fields.name).trim();
+        if (Array.isArray(fields.products)) link.products = fields.products.filter(Boolean);
+        if (Array.isArray(fields.platforms)) link.platforms = fields.platforms.filter(Boolean);
+        if (fields.kol_count !== undefined) link.kol_count = Number(fields.kol_count) || 0;
+        link.updated_at = now();
+        persist();
+        return clone(link);
+    },
     async removeAgencyLink(id, token) {
         const p = db.projects.find(p => p.id === Number(id));
         if (!p || !Array.isArray(p.agency_links)) return false;
