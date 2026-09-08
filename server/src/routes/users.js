@@ -22,6 +22,14 @@ router.get('/options', async (req, res, next) => {
     } catch (err) { next(err); }
 });
 
+// GET /api/users/agency-options — บัญชีเอเจนซี่ทั้งหมด (ไว้เลือกตอนสร้างลิงก์ในหน้าแคมเปญ)
+// คนในทีมที่สร้างลิงก์ได้ต้องเรียกได้ด้วย ไม่ใช่แค่ admin — ส่งไปแค่ id/ชื่อ/ลิงก์ที่ถืออยู่
+router.get('/agency-options', async (req, res, next) => {
+    try {
+        res.json({ status: 'success', data: await store.users.listAgencies() });
+    } catch (err) { next(err); }
+});
+
 // GET /api/users/pending-count — จำนวนคนที่รออนุมัติ (ไว้ทำตัวเลขแจ้งเตือนบนเมนู)
 router.get('/pending-count', requireRole('admin'), async (req, res, next) => {
     try {

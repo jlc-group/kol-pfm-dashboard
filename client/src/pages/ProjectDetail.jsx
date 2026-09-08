@@ -14,6 +14,7 @@ import { clipCount, collapseByPerson, countPeople } from '../data/clips.js';
 import StageCards from '../components/StageCards.jsx';
 import { tabBadges, markSeen, seedDraftsSeen } from '../utils/tabUpdates.js';
 import { fmtRange } from '../utils/date.js';
+import { useAuth } from '../auth/AuthContext.jsx';
 
 // ค่าที่เก็บเป็นสตริงคั่นด้วย , (เช่น content_format) → แยกเป็นรายตัว
 const splitCsv = v => (v ? String(v).split(',').map(x => x.trim()).filter(Boolean) : []);
@@ -227,7 +228,7 @@ function ScopeProducts({ codes, limit = 6 }) {
 }
 
 // แถบลิงก์เอเจนซี่ 1 อัน — ย่อเป็นบรรทัดเดียว (ชื่อ + สรุปขอบเขต + ปุ่ม) กด ▾ เพื่อดู URL + สินค้าเต็ม
-function AgencyLinkRow({ l, url, copied, onCopy, onDelete, onChat, unread = 0, projectId }) {
+function AgencyLinkRow({ l, url, copied, onCopy, onDelete, onChat, unread = 0, projectId, boundTo }) {
     const reports = l.reports || [];
     const [open, setOpen] = useState(false);
     const prods = l.products || [];
@@ -237,6 +238,9 @@ function AgencyLinkRow({ l, url, copied, onCopy, onDelete, onChat, unread = 0, p
             <div className="alp-item-top">
                 <button type="button" className="alp-toggle" onClick={() => setOpen(o => !o)} title={open ? 'ย่อ' : 'ดูรายละเอียด'}>{open ? '▾' : '▸'}</button>
                 <span className="alp-name"><Icon name="users" size={14} /> {l.name}</span>
+                {boundTo
+                    ? <span className="alp-bound ok" title={'บัญชี ' + boundTo + ' เข้าลิงก์นี้ได้'}>🔓 {boundTo}</span>
+                    : <span className="alp-bound none" title="ยังไม่มีบัญชีเอเจนซี่ผูกกับลิงก์นี้ — เปิดลิงก์แล้วจะเข้าไม่ได้">⚠ ยังไม่ผูกบัญชี</span>}
                 <div className="alp-summary">
                     {l.kol_count > 0 && <span className="alp-sv-chip kol">⭐ {l.kol_count} KOL</span>}
                     <span className="alp-sv-chip prod">{prods.length ? `${prods.length} สินค้า` : 'ทุกสินค้า'}</span>
@@ -312,9 +316,17 @@ export default function ProjectDetail() {
         const t = setInterval(loadChatUnread, 30000);
         return () => clearInterval(t);
     }, [loadChatUnread]);
+    const { user } = useAuth();                 // ปุ่มสร้างบัญชีเอเจนซี่ขึ้นเฉพาะ admin
     const [showLinks, setShowLinks] = useState(false);
     const [showCreate, setShowCreate] = useState(false);
+    // ตอนสร้างลิงก์: เลือกบัญชีเอเจนซี่ที่มีอยู่ / สร้างบัญชีใหม่ / พิมพ์ชื่อเปล่า ๆ
+    const [agencyAccounts, setAgencyAccounts] = useState([]);
+    const [linkPick, setLinkPick] = useState('');          // '' | 'u<id>' | '__NEW__' | '__FREE__'
+    const [newAccount, setNewAccount] = useState(null);    // บัญชี+รหัสชั่วคราวที่เพิ่งสร้าง (โชว์ครั้งเดียว)
+    const [pwCopied, setPwCopied] = useState(false);
     const [newLinkName, setNewLinkName] = useState('');
+    // ต้องโหลดตั้งแต่เปิดแผงลิงก์ เพราะป้าย "ผูกบัญชีแล้ว/ยัง" ใช้ข้อมูลนี้
+    useEffect(() => { if (showLinks) loadAgencyAccounts(); }, [showLinks, showCreate]);
     const [newLinkProducts, setNewLinkProducts] = useState([]);
     const [newLinkPlatforms, setNewLinkPlatforms] = useState([]);
     const [newLinkKol, setNewLinkKol] = useState('');
@@ -356,15 +368,32 @@ export default function ProjectDetail() {
     function loadLinks() {
         api(`/projects/${id}/agency-links`).then(res => setAgencyLinks(res.data)).catch(() => {});
     }
+    // รายชื่อบัญชีเอเจนซี่ ไว้ให้เลือกตอนสร้างลิงก์ (เจ้าเดิมใช้รหัสเดิมได้เลย ไม่ต้องออกใหม่)
+    function loadAgencyAccounts() {
+        api('/users/agency-options').then(res => setAgencyAccounts(res.data || [])).catch(() => {});
+    }
     async function createLink() {
+        // แปลงตัวเลือกใน dropdown เป็นข้อมูลที่ server เข้าใจ
+        const body = { products: newLinkProducts, platforms: newLinkPlatforms, kol_count: Number(newLinkKol) || 0 };
+        if (linkPick === '__NEW__') {
+            if (!newLinkName.trim()) { alert('กรุณาใส่ชื่อบัญชีเอเจนซี่'); return; }
+            body.new_agency_username = newLinkName.trim();
+        } else if (linkPick === '__FREE__' || !linkPick) {
+            body.name = newLinkName.trim() || null;
+        } else {
+            body.agency_user_id = Number(linkPick.slice(1));
+        }
         try {
-            await api(`/projects/${id}/agency-links`, {
-                method: 'POST',
-                body: { name: newLinkName.trim() || null, products: newLinkProducts, platforms: newLinkPlatforms, kol_count: Number(newLinkKol) || 0 }
-            });
-            setNewLinkName(''); setNewLinkProducts([]); setNewLinkPlatforms([]); setNewLinkKol('');
+            const res = await api(`/projects/${id}/agency-links`, { method: 'POST', body });
+            // รหัสชั่วคราวส่งกลับมาครั้งเดียว ไม่ได้เก็บไว้ที่ไหน — ต้องโชว์ให้ก๊อปทันที
+            if (res.data && res.data.temp_password) {
+                setNewAccount({ username: res.data.agency_account.username, password: res.data.temp_password });
+                setPwCopied(false);
+            }
+            setNewLinkName(''); setNewLinkProducts([]); setNewLinkPlatforms([]); setNewLinkKol(''); setLinkPick('');
             setShowCreate(false);
             loadLinks();
+            loadAgencyAccounts();
         } catch (err) { alert(err.message); }
     }
     // สินค้าของ Platform ที่เลือก (ตามที่เจ้าของโปรเจคผูกไว้ในกลุ่มโฆษณา) — ถ้ายังไม่เลือก Platform = ว่าง
@@ -745,6 +774,27 @@ export default function ProjectDetail() {
 
             {showLinks && (
                 <div className="agency-links-panel">
+                    {newAccount && (
+                        <div className="alp-newacc">
+                            <div className="alp-newacc-head">
+                                <span>🔑 สร้างบัญชีให้เรียบร้อย — ส่งข้อมูลนี้ให้เอเจนซี่</span>
+                                <button type="button" onClick={() => setNewAccount(null)} title="ปิด">×</button>
+                            </div>
+                            <div className="alp-newacc-body">
+                                <div><span className="alp-newacc-k">Username</span><code>{newAccount.username}</code></div>
+                                <div><span className="alp-newacc-k">รหัสชั่วคราว</span><code>{newAccount.password}</code></div>
+                            </div>
+                            <div className="alp-newacc-foot">
+                                <button type="button" className="btn-primary" onClick={() => {
+                                    navigator.clipboard.writeText('Username: ' + newAccount.username + String.fromCharCode(10) + 'Password: ' + newAccount.password);
+                                    setPwCopied(true);
+                                }}>
+                                    <Icon name={pwCopied ? 'check' : 'copy'} size={15} /> {pwCopied ? 'คัดลอกแล้ว' : 'คัดลอก'}
+                                </button>
+                                <span className="alp-hint">ปิดกล่องนี้แล้วจะดูรหัสอีกไม่ได้ · ให้เอเจนซี่กด "เปลี่ยนรหัสผ่าน" ตั้งของตัวเองตอนเข้าครั้งแรก</span>
+                            </div>
+                        </div>
+                    )}
                     <div className="alp-head">
                         <span>ลิงก์แยกต่อเอเจนซี่ <span className="dash-section-sub">แต่ละเจ้าเห็นเฉพาะ KOL ที่ตัวเองส่ง</span></span>
                     </div>
@@ -762,6 +812,7 @@ export default function ProjectDetail() {
                                         onDelete={() => deleteLink(l.token)}
                                         projectId={id}
                                         unread={chatUnread[l.token] || 0}
+                                        boundTo={(agencyAccounts.find(a => (a.agency_tokens || []).includes(l.token)) || {}).username}
                                         onChat={() => window.dispatchEvent(new CustomEvent('kol:open-chat', {
                                             detail: { project_id: id, project_name: project.name, token: l.token, agency_name: l.name }
                                         }))}
@@ -779,10 +830,26 @@ export default function ProjectDetail() {
                     {showCreate && (
                     <div className="alp-create">
                         <div className="alp-create-row">
-                            <input value={newLinkName} onChange={e => setNewLinkName(e.target.value)} placeholder="ชื่อเอเจนซี่ (เช่น Agency A)"
-                                onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); createLink(); } }} />
+                            <select className="alp-agency-pick" value={linkPick} onChange={e => { setLinkPick(e.target.value); setNewLinkName(''); }}>
+                                <option value="">— เลือกเอเจนซี่ —</option>
+                                {agencyAccounts.map(a => (
+                                    <option key={a.id} value={'u' + a.id}>{a.username}</option>
+                                ))}
+                                {user?.role === 'admin' && <option value="__NEW__">＋ เอเจนซี่ใหม่ (สร้างบัญชี + รหัสให้เลย)</option>}
+                                <option value="__FREE__">พิมพ์ชื่อเอง (ยังไม่สร้างบัญชี)</option>
+                            </select>
                             <input type="number" min="0" className="alp-kol-input" value={newLinkKol} onChange={e => setNewLinkKol(e.target.value)} placeholder="จำนวน KOL" />
                         </div>
+                        {(linkPick === '__NEW__' || linkPick === '__FREE__') && (
+                            <div className="alp-create-row">
+                                <input value={newLinkName} onChange={e => setNewLinkName(e.target.value)}
+                                    placeholder={linkPick === '__NEW__' ? 'ชื่อบัญชีเอเจนซี่ (ใช้เข้าสู่ระบบ เช่น Mesaran House)' : 'ชื่อเอเจนซี่ (เช่น Agency A)'}
+                                    onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); createLink(); } }} autoFocus />
+                            </div>
+                        )}
+                        {linkPick === '__FREE__' && (
+                            <p className="alp-hint">ลิงก์จะใช้งานได้ก็ต่อเมื่อมีบัญชีเอเจนซี่ผูกไว้ — สร้างบัญชีให้ทีหลังได้ที่หน้าผู้ใช้งาน</p>
+                        )}
                         <div className="alp-create-scope">
                             <div className="alp-sc-col">
                                 <span className="alp-sc-lbl">1. Platform ที่รับผิดชอบ</span>

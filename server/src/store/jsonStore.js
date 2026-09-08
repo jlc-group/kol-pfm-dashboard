@@ -180,6 +180,38 @@ const users = {
         const { password_hash, ...safe } = u;
         return clone(safe);
     },
+    // บัญชีเอเจนซี่ทั้งหมด — ไว้ทำ dropdown ตอนสร้างลิงก์ในหน้าแคมเปญ
+    async listAgencies() {
+        return db.users
+            .filter(u => u.role === 'agency' && u.is_active !== false)
+            .map(u => ({ id: u.id, username: u.username, agency_tokens: (u.agency_tokens || []).slice() }))
+            .sort((a, b) => a.username.localeCompare(b.username, 'th'));
+    },
+    // ผูกลิงก์งานเข้ากับบัญชีเอเจนซี่ (1 บัญชีถือได้หลายลิงก์ = หลายแคมเปญ)
+    async bindAgencyToken(id, token) {
+        const u = db.users.find(u => u.id === Number(id) && u.role === 'agency');
+        if (!u || !token) return false;
+        if (!Array.isArray(u.agency_tokens)) u.agency_tokens = [];
+        if (!u.agency_tokens.includes(token)) {
+            u.agency_tokens.push(token);
+            u.updated_at = now();
+            persist();
+        }
+        return true;
+    },
+    // ถอนลิงก์ออกจากทุกบัญชี — ใช้ตอนลบลิงก์ ไม่งั้นจะเหลือ token ตายค้างในบัญชี
+    async unbindAgencyToken(token) {
+        let n = 0;
+        for (const u of db.users) {
+            if (Array.isArray(u.agency_tokens) && u.agency_tokens.includes(token)) {
+                u.agency_tokens = u.agency_tokens.filter(t => t !== token);
+                u.updated_at = now();
+                n++;
+            }
+        }
+        if (n) persist();
+        return n;
+    },
     async countPending() {
         return db.users.filter(u => (u.status || 'active') === 'pending').length;
     },

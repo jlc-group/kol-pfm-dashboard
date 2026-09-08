@@ -283,6 +283,26 @@ router.get('/:id/platform-brief/:platform/file', async (req, res, next) => {
 
 // ---------- Agency Submissions (คัดเลือก KOL จากเอเจนซี่) ----------
 const crypto = require('crypto');
+const bcrypt = require('bcryptjs');
+
+// รหัสชั่วคราวสำหรับบัญชีเอเจนซี่ที่เพิ่งสร้าง — ตัดตัวที่อ่านสับสนออก (0/O, 1/l/I)
+// เพราะรหัสนี้ต้องก๊อปไปส่งทางแชท/ไลน์ แล้วเอเจนซี่พิมพ์เอง
+function tempPassword() {
+    const LOW = 'abcdefghijkmnopqrstuvwxyz';
+    const UP  = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
+    const NUM = '23456789';
+    const SYM = '!@#$%&';
+    const pick = set => set[crypto.randomInt(set.length)];
+    // การันตีว่ามีครบทุกประเภทอย่างน้อยอย่างละตัว แล้วสลับตำแหน่ง
+    const chars = [pick(LOW), pick(UP), pick(NUM), pick(SYM)];
+    const all = LOW + UP + NUM + SYM;
+    while (chars.length < 12) chars.push(pick(all));
+    for (let i = chars.length - 1; i > 0; i--) {
+        const j = crypto.randomInt(i + 1);
+        [chars[i], chars[j]] = [chars[j], chars[i]];
+    }
+    return chars.join('');
+}
 const { allowedBrands, seesAllBrands, canSeeBrand } = require('../data/roles');
 
 // POST /api/projects/:id/share — สร้าง/ดึงลิงก์แชร์ให้ Agency (ลิงก์รวมเดิม)
@@ -306,16 +326,59 @@ router.get('/:id/agency-links', async (req, res, next) => {
 });
 
 // POST /api/projects/:id/agency-links — สร้างลิงก์ให้เอเจนซี่เจ้าใหม่
+// body: agency_user_id = ผูกกับบัญชีเอเจนซี่ที่มีอยู่ · new_agency_username = สร้างบัญชีใหม่ (admin เท่านั้น)
 router.post('/:id/agency-links', async (req, res, next) => {
     try {
         const check = await canEditProject(req, req.params.id);
         if (!check.ok) return res.status(check.code).json({ status: 'error', message: check.message });
-        const { name, products, platforms, kol_count } = req.body;
-        const link = await store.projects.addAgencyLink(req.params.id, name, crypto.randomBytes(9).toString('hex'), { products, platforms, kol_count });
+        const { name, products, platforms, kol_count, agency_user_id, new_agency_username } = req.body;
+
+        // --- ตรวจให้ครบก่อนสร้างลิงก์ ไม่งั้นพลาดตรงบัญชีแล้วจะเหลือลิงก์ค้างที่ไม่มีใครเข้าได้ ---
+        let account = null;                       // บัญชีเดิมที่จะผูกลิงก์ให้
+        let newName = null;                       // ชื่อบัญชีใหม่ที่จะสร้าง
+        if (new_agency_username) {
+            // ออกรหัสผ่าน = ให้สิทธิ์เข้าถึงข้อมูลแคมเปญ จำกัดไว้ที่ admin เท่านั้น
+            if ((req.account || req.user).role !== 'admin') {
+                return res.status(403).json({ status: 'error', message: 'เฉพาะผู้ดูแลระบบเท่านั้นที่สร้างบัญชีเอเจนซี่ได้' });
+            }
+            newName = String(new_agency_username).trim();
+            if (!newName) return res.status(400).json({ status: 'error', message: 'กรุณาระบุชื่อบัญชีเอเจนซี่' });
+            if (await store.users.findByUsername(newName)) {
+                return res.status(409).json({ status: 'error', message: 'มีบัญชีชื่อนี้อยู่แล้ว — เลือกจากรายการแทน' });
+            }
+        } else if (agency_user_id) {
+            account = await store.users.findById(agency_user_id);
+            if (!account || account.role !== 'agency') {
+                return res.status(404).json({ status: 'error', message: 'ไม่พบบัญชีเอเจนซี่ที่เลือก' });
+            }
+        }
+
+        const linkName = newName || (account && account.username) || name;
+        const link = await store.projects.addAgencyLink(req.params.id, linkName, crypto.randomBytes(9).toString('hex'), { products, platforms, kol_count });
         if (!link) return res.status(404).json({ status: 'error', message: 'ไม่พบ Project' });
-        await record(req, req.params.id, 'agency_link', `สร้างลิงก์เอเจนซี่: ${link.name}`);
-        res.status(201).json({ status: 'success', data: link });
-    } catch (err) { next(err); }
+
+        // --- ผูกลิงก์เข้าบัญชี เพื่อไม่ต้องไปติ๊กเองที่หน้าผู้ใช้งาน ---
+        let temp_password = null;
+        let agency_account = null;
+        if (newName) {
+            temp_password = tempPassword();
+            agency_account = await store.users.create({
+                username: newName,
+                password_hash: await bcrypt.hash(temp_password, 10),
+                role: 'agency', brands: [], agency_tokens: [link.token], status: 'active'
+            });
+            await record(req, req.params.id, 'agency_link', 'สร้างบัญชีเอเจนซี่: ' + newName);
+        } else if (account) {
+            await store.users.bindAgencyToken(account.id, link.token);
+            agency_account = { id: account.id, username: account.username };
+        }
+
+        await record(req, req.params.id, 'agency_link', 'สร้างลิงก์เอเจนซี่: ' + link.name);
+        res.status(201).json({ status: 'success', data: { ...link, agency_account, temp_password } });
+    } catch (err) {
+        if (err.code === '23505') return res.status(409).json({ status: 'error', message: err.message });
+        next(err);
+    }
 });
 
 // DELETE /api/projects/:id/agency-links/:token — ลบลิงก์เอเจนซี่
@@ -327,6 +390,8 @@ router.delete('/:id/agency-links/:token', async (req, res, next) => {
         // รายชื่อกำพร้า — หายจากหน้าแคมเปญ แต่ยังไปโผล่ใน Dashboard/Report
         const removed = await store.submissions.removeByAgencyToken(req.params.token, req.params.id);
         const ok = await store.projects.removeAgencyLink(req.params.id, req.params.token);
+        // ถอนลิงก์ออกจากบัญชีเอเจนซี่ด้วย ไม่งั้นบัญชีจะเหลือ token ตายค้างอยู่
+        if (ok) await store.users.unbindAgencyToken(req.params.token);
         if (ok) await record(req, req.params.id, 'remove_agency_link', `ลบลิงก์เอเจนซี่ (รายชื่อที่ส่งผ่านลิงก์นี้ถูกลบ ${removed} คน)`);
         res.json({ status: ok ? 'success' : 'error', data: { removed_submissions: removed } });
     } catch (err) { next(err); }
