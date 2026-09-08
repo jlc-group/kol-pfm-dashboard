@@ -377,8 +377,15 @@ function CampaignCard({ row, onOpen }) {
 function PlanModal({ row, onClose, onSaved, onReload }) {
     const groups = row.ad_groups || [];
     // แผนการจ่ายแยกตาม (เอเจนซี่ + กลุ่ม) — ฐานคิด % คืองบของกลุ่มนั้น ไม่ใช่งบทั้งแคมเปญ
-    const [groupKey, setGroupKey] = useState(groups.length === 1 ? groups[0].key : '');
+    // '' = ยังไม่เลือก · ALL = ทั้งแคมเปญ · อื่น ๆ = key ของกลุ่ม
+    const ALL = '__ALL__';
+    const hasWholePlan = (row.installments || []).some(i => !i.group_key);
+    const firstGroup = groups.length === 0
+        ? ALL
+        : (groups.length === 1 ? groups[0].key : (hasWholePlan ? ALL : ''));
+    const [groupKey, setGroupKey] = useState(firstGroup);
     const curGroup = groups.find(g => g.key === groupKey) || null;
+    const noGroupPicked = groupKey === '';        // ยังไม่เลือก = ยังตั้งแผนไม่ได้
     const budget = curGroup ? (Number(curGroup.budget) || 0) : (Number(row.budget) || 0);
     const agencyOpts = curGroup
         ? (curGroup.agencies || [])
@@ -388,6 +395,8 @@ function PlanModal({ row, onClose, onSaved, onReload }) {
         const g = groups.find(x => x.key === gk);
         return g ? (Number(g.budget) || 0) : (Number(row.budget) || 0);
     };
+    // แปลงค่าใน dropdown -> group_key ที่เก็บจริง (ALL/ว่าง = null คือทั้งแคมเปญ)
+    const asKey = gk => (gk && gk !== ALL ? gk : '');
     // ต้องรับฐานงบเข้ามาตรง ๆ — ตอนสลับกลุ่ม state ยังเป็นค่าเก่า ถ้าอ่านจาก budget จะคิดผิดกลุ่ม
     // เศษที่หารไม่ลงตัวยกไปงวดสุดท้าย ไม่งั้น 3 งวดจะรวมได้ 399,999 แทนที่จะเป็น 400,000
     const blankFor = (n, base) => {
@@ -399,17 +408,17 @@ function PlanModal({ row, onClose, onSaved, onReload }) {
     };
     const blank = n => blankFor(n, budget);
     const planOf = (name, gk) => {
-        const its = (row.installments || []).filter(i => i.agency === name && (i.group_key || '') === (gk || ''));
+        const its = (row.installments || []).filter(i => i.agency === name && (i.group_key || '') === asKey(gk));
         return its.length
             ? its.map(i => ({ percent: i.percent, amount: i.amount, due_date: i.due_date || '' }))
-            : blankFor(2, budgetOf(gk));
+            : blankFor(2, budgetOf(asKey(gk)));
     };
 
     const [agency, setAgency] = useState(agencyOpts[0] || '');
-    const [plan, setPlan] = useState(planOf(agencyOpts[0] || '', groups.length === 1 ? groups[0].key : ''));
+    const [plan, setPlan] = useState(planOf(agencyOpts[0] || '', firstGroup));
     const [saving, setSaving] = useState(false);
 
-    const mineHere = i => i.agency === agency && (i.group_key || '') === (groupKey || '');
+    const mineHere = i => i.agency === agency && (i.group_key || '') === asKey(groupKey);
     const locked = (row.installments || []).some(i => mineHere(i) && i.status === 'paid');
     // แถวในตารางด้านบนยังเป็นแค่ร่าง — ใบแจ้งหนี้ต้องผูกกับงวดที่บันทึกแล้วเท่านั้น
     const saved = (row.installments || []).filter(mineHere).sort((a, b) => a.no - b.no);
@@ -438,9 +447,10 @@ function PlanModal({ row, onClose, onSaved, onReload }) {
     // แนบใบแจ้งหนี้ก่อนกดบันทึกแผนได้ — ถ้ายังไม่มีงวดจริง บันทึกแผนให้เงียบ ๆ ก่อนแล้วค่อยแนบ
     async function ensureInstallment(idx) {
         if (saved[idx]) return saved[idx];
+        if (noGroupPicked) throw new Error('เลือกกลุ่มที่จะทำจ่ายก่อน');
         if (!agency) throw new Error('ยังไม่มีเอเจนซี่ — เลือกเอเจนซี่ก่อนถึงจะแนบเอกสารได้');
         const res = await api(`/payments/${row.project_id}/plan`, {
-            method: 'PUT', body: { agency, group_key: groupKey || null, plan }
+            method: 'PUT', body: { agency, group_key: asKey(groupKey) || null, plan }
         });
         const it = (res.data || [])[idx];
         if (!it) throw new Error('บันทึกแผนไม่สำเร็จ');
@@ -461,7 +471,7 @@ function PlanModal({ row, onClose, onSaved, onReload }) {
         if (!agency) { alert('ยังไม่มีเอเจนซี่ในแคมเปญนี้ — สร้างลิงก์เอเจนซี่ในหน้าแคมเปญก่อน'); return; }
         setSaving(true);
         try {
-            await api(`/payments/${row.project_id}/plan`, { method: 'PUT', body: { agency, group_key: groupKey || null, plan } });
+            await api(`/payments/${row.project_id}/plan`, { method: 'PUT', body: { agency, group_key: asKey(groupKey) || null, plan } });
             onSaved();
         } catch (err) { alert(err.message); setSaving(false); }
     }
@@ -488,13 +498,15 @@ function PlanModal({ row, onClose, onSaved, onReload }) {
                         <div className="field">
                             <label>กลุ่มที่จะทำจ่าย</label>
                             <select value={groupKey} onChange={e => pickGroup(e.target.value)}>
-                                <option value="">ทั้งแคมเปญ · งบ {baht(Number(row.budget) || 0)}</option>
+                                <option value="">— เลือกกลุ่มทำจ่าย —</option>
+                                <option value={ALL}>ทั้งแคมเปญ · งบ {baht(Number(row.budget) || 0)}</option>
                                 {groups.map((g, i) => (
                                     <option key={g.key} value={g.key}>
                                         กลุ่มที่ {i + 1}{g.concept ? " · " + g.concept : ""} · งบ {baht(g.budget)}
                                     </option>
                                 ))}
                             </select>
+                            {noGroupPicked && <p className="alp-hint">เลือกก่อนว่าจะตั้งแผนของกลุ่มไหน หรือจ่ายรวมทั้งแคมเปญ</p>}
                         </div>
                     )}
                     <div className="field-row">
@@ -587,7 +599,8 @@ function PlanModal({ row, onClose, onSaved, onReload }) {
 
                 <div className="modal-actions">
                     <button className="btn-ghost" onClick={onClose}>ปิด</button>
-                    <button className="btn-primary" onClick={save} disabled={saving || locked || !agency}>
+                    <button className="btn-primary" onClick={save} disabled={saving || locked || !agency || noGroupPicked}
+                        title={noGroupPicked ? 'เลือกกลุ่มที่จะทำจ่ายก่อน' : undefined}>
                         <Icon name="check" size={16} /> {saving ? 'กำลังบันทึก...' : 'บันทึกแผนการจ่าย'}
                     </button>
                 </div>
