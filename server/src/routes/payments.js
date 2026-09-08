@@ -239,12 +239,28 @@ router.put('/batches/:id', async (req, res, next) => {
     } catch (err) { next(err); }
 });
 
-// DELETE /api/payments/batches/:id — ยกเลิกรอบ งวดข้างในกลับไปค้างจ่าย
+// DELETE /api/payments/batches/:id — ยกเลิกรอบ งวดข้างในกลับไปรอทำจ่าย
+// ต้องระบุเหตุผล เพราะเป็นการย้อนรายการเงินที่บันทึกว่าจ่ายไปแล้ว
 router.delete('/batches/:id', async (req, res, next) => {
     try {
-        const ok = await store.payBatches.remove(req.params.id);
-        if (!ok) return res.status(404).json({ status: 'error', message: 'ไม่พบรอบทำจ่ายนี้' });
-        res.json({ status: 'success', data: { removed: true } });
+        const reason = String((req.query.reason || (req.body && req.body.reason) || '')).trim();
+        if (!reason) return res.status(400).json({ status: 'error', message: 'กรุณาใส่หมายเหตุว่ายกเลิกเพราะอะไร' });
+        const gone = await store.payBatches.remove(req.params.id);
+        if (!gone) return res.status(404).json({ status: 'error', message: 'ไม่พบรอบทำจ่ายนี้' });
+        // เก็บประวัติไว้ ไม่งั้นรอบที่ยกเลิกไปแล้วจะไม่เหลือร่องรอยเลย
+        const names = [...new Set((gone.items || []).map(i => i.project_name).filter(Boolean))];
+        await store.activity.log({
+            user_id: req.user && req.user.id,
+            action: 'cancel_pay_batch',
+            project_id: null,
+            project_name: 'รอบทำจ่าย',
+            summary: 'ยกเลิกรอบทำจ่าย ' + (gone.agency || '-')
+                + (gone.pay_date ? ' วันที่ ' + gone.pay_date : '')
+                + ' ยอด ' + Number(gone.total || 0).toLocaleString('th-TH') + ' บาท'
+                + ' (' + (gone.item_count || 0) + ' งวด: ' + names.join(', ') + ')'
+                + ' — เหตุผล: ' + reason
+        });
+        res.json({ status: 'success', data: { removed: true, reason } });
     } catch (err) { next(err); }
 });
 

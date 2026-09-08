@@ -1997,16 +1997,18 @@ const payBatches = {
         persist();
         return decorateBatch(b);
     },
-    // ยกเลิกรอบ — งวดข้างในกลับไปเป็นค้างจ่ายเหมือนเดิม ไม่ได้หายไปไหน
+    // ยกเลิกรอบ — งวดข้างในกลับไปเป็นรอทำจ่ายเหมือนเดิม ไม่ได้หายไปไหน
+    // คืนข้อมูลรอบที่ลบออกไปด้วย เพื่อให้ route เอาไปบันทึกประวัติพร้อมเหตุผล
     async remove(id) {
         const idx = db.pay_batches.findIndex(x => x.id === Number(id));
-        if (idx === -1) return false;
+        if (idx === -1) return null;
+        const gone = decorateBatch(db.pay_batches[idx]);
         db.installments.forEach(i => {
             if (i.batch_id === Number(id)) { i.status = 'pending'; i.batch_id = null; i.updated_at = now(); }
         });
         db.pay_batches.splice(idx, 1);
         persist();
-        return true;
+        return gone;
     }
 };
 

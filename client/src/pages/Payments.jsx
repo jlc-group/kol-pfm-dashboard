@@ -324,6 +324,48 @@ function BatchModal({ agency, items, cycle, batches, onClose, onDone }) {
     );
 }
 
+// ยกเลิกรอบ = ย้อนรายการเงิน ต้องบอกเหตุผลไว้ในประวัติเสมอ
+function CancelBatchModal({ b, onClose, onDone }) {
+    const [reason, setReason] = useState('');
+    const [saving, setSaving] = useState(false);
+    async function go() {
+        if (!reason.trim()) return;
+        setSaving(true);
+        try {
+            await api(`/payments/batches/${b.id}?reason=${encodeURIComponent(reason.trim())}`, { method: 'DELETE' });
+            onDone();
+        } catch (err) { alert(err.message); setSaving(false); }
+    }
+    return (
+        <div className="modal-backdrop" onClick={onClose}>
+            <div className="modal" onClick={e => e.stopPropagation()}>
+                <div className="draft-head"><div className="draft-name">↩ ยกเลิกรอบทำจ่าย</div></div>
+                <div className="batch-items">
+                    <div className="batch-item"><span>เอเจนซี่</span><b>{b.agency || '-'}</b></div>
+                    <div className="batch-item"><span>วันที่จ่าย</span><b>{b.pay_date ? fmtDateTh(b.pay_date) : '-'}</b></div>
+                    <div className="batch-item total"><span>ยอดที่จะย้อนกลับ</span><b>{baht(b.total)}</b></div>
+                </div>
+                <p className="dash-section-sub" style={{ margin: '12px 0' }}>
+                    งวดทั้ง {b.item_count} งวดจะกลับไปเป็นรอทำจ่ายเหมือนเดิม ไม่หายไปไหน
+                    {b.slip ? ' · สลิปที่แนบไว้จะถูกลบไปพร้อมรอบนี้' : ''}
+                </p>
+                <div className="field">
+                    <label>หมายเหตุ: ยกเลิกเพราะอะไร *</label>
+                    <input value={reason} onChange={e => setReason(e.target.value)} autoFocus
+                        placeholder="เช่น โอนผิดยอด / เลื่อนรอบจ่าย / เอเจนซี่ขอแก้ใบแจ้งหนี้" />
+                    <span className="cpw-hint">บันทึกไว้ในประวัติการแก้ไข ตรวจย้อนหลังได้</span>
+                </div>
+                <div className="modal-actions">
+                    <button className="btn-ghost" onClick={onClose} disabled={saving}>ไม่ยกเลิกแล้ว</button>
+                    <button className="btn-primary" onClick={go} disabled={!reason.trim() || saving}>
+                        <Icon name="check" size={16} /> {saving ? 'กำลังยกเลิก...' : 'ยืนยันยกเลิกรอบ'}
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+}
+
 // ===================== แท็บ 2: รอบที่จ่ายแล้ว =====================
 function BatchCard({ b, onChanged }) {
     const [open, setOpen] = useState(false);
@@ -339,11 +381,7 @@ function BatchCard({ b, onChanged }) {
         finally { setBusy(false); e.target.value = ''; }
     }
 
-    async function cancel() {
-        if (!confirm(`ยกเลิกรอบทำจ่ายนี้?\nงวดทั้ง ${b.item_count} งวดจะกลับไปเป็นรอทำจ่ายเหมือนเดิม`)) return;
-        try { await api(`/payments/batches/${b.id}`, { method: 'DELETE' }); onChanged(); }
-        catch (err) { alert(err.message); }
-    }
+    const [asking, setAsking] = useState(false);   // เปิดหน้าถามเหตุผลก่อนยกเลิก
 
     return (
         <div className="batch-card">
@@ -371,10 +409,12 @@ function BatchCard({ b, onChanged }) {
                 )}
                 <div className="batch-btns">
                     <button className="btn-ghost" onClick={() => setOpen(o => !o)}>{open ? 'ย่อ' : 'ดูงวดในรอบนี้'}</button>
-                    <button className="alp-del" title="ยกเลิกรอบ" onClick={cancel}><Icon name="trash" size={15} /></button>
+                    <button className="alp-del" title="ยกเลิกรอบ" onClick={() => setAsking(true)}><Icon name="trash" size={15} /></button>
                 </div>
                 <input ref={inputRef} type="file" accept=".pdf,.png,.jpg,.jpeg,.webp" hidden onChange={handleSlip} />
             </div>
+
+            {asking && <CancelBatchModal b={b} onClose={() => setAsking(false)} onDone={onChanged} />}
 
             {open && (
                 <div className="batch-items">
