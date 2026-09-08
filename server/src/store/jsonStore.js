@@ -1767,24 +1767,31 @@ const installments = {
         if (mine.some(i => i.status === 'paid')) {
             return { error: 'มีงวดที่ทำจ่ายไปแล้ว แก้แผนไม่ได้ ต้องยกเลิกรอบทำจ่ายนั้นก่อน' };
         }
+        // บันทึกแผนซ้ำต้องไม่ทำใบแจ้งหนี้ที่แนบไว้แล้วหาย — ยกของงวดเดิมตำแหน่งเดียวกันมาใช้ต่อ
+        const old = mine.slice().sort((a, b) => a.no - b.no);
         db.installments = db.installments.filter(i => !same(i));
-        const rows = plan.map((x, idx) => ({
-            id: nextId('installments'),
-            project_id: p.id,
-            agency,
-            group_key: gk,
-            no: idx + 1,
-            of: plan.length,
-            percent: Number(x.percent) || 0,
-            amount: Number(x.amount) || 0,
-            due_date: x.due_date || null,
-            note: x.note || null,
-            invoice: null,          // ใบแจ้งหนี้ของงวดนี้ (ออกแยกใบต่องวด)
-            invoice_link: null,     // หรือจะใส่เป็นลิงก์แทนไฟล์ก็ได้
-            status: 'pending',
-            batch_id: null,
-            created_at: now(), updated_at: now()
-        }));
+        const rows = plan.map((x, idx) => {
+            const prev = old[idx] || null;
+            return {
+                id: prev ? prev.id : nextId('installments'),
+                project_id: p.id,
+                agency,
+                group_key: gk,
+                no: idx + 1,
+                of: plan.length,
+                percent: Number(x.percent) || 0,
+                amount: Number(x.amount) || 0,
+                due_date: x.due_date || null,
+                note: x.note || null,
+                // เอกสารของงวดเดิมยังใช้ได้ ไม่ต้องแนบใหม่
+                invoice: prev ? prev.invoice : null,
+                invoice_link: prev ? prev.invoice_link : null,
+                status: 'pending',
+                batch_id: null,
+                created_at: prev ? prev.created_at : now(),
+                updated_at: now()
+            };
+        });
         db.installments.push(...rows);
         persist();
         return { data: rows.map(decorateInstallment) };
