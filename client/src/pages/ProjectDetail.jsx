@@ -717,7 +717,31 @@ export default function ProjectDetail() {
                             <p className="pd-block-text">{project.objective}</p>
                         </div>
                     )}
-                    {/* บรีฟตาม Platform เลิกใช้แล้ว — ซ้ำกับบรีฟหลักของแคมเปญ ใช้บรีฟหลัก + บรีฟต่อกลุ่มแทน */}
+                    {/* บรีฟหลักของแคมเปญ — เดิมหน้านี้ไม่เคยแสดงเลย เห็นแต่บรีฟตาม Platform ที่ตอนนี้เลิกใช้แล้ว */}
+                    {(project.brief_link || project.brief_file) && (
+                        <div className="pd-block">
+                            <div className="pd-block-title"><Icon name="file" size={15} /> บรีฟหลักของแคมเปญ</div>
+                            <div className="pd-pf-briefs">
+                                {project.brief_link && (
+                                    <a className="brief-link" href={project.brief_link} target="_blank" rel="noreferrer">
+                                        <Icon name="eye" size={14} /> เปิดลิงก์บรีฟ
+                                    </a>
+                                )}
+                                {project.brief_file && (
+                                    <button type="button" className="file-view" style={{ flex: 'none' }}
+                                        onClick={() => openFile(`/projects/${id}/brief/file`).catch(e => alert(e.message))}>
+                                        <Icon name="file" size={14} /> <span className="file-name">{project.brief_file.original}</span>
+                                    </button>
+                                )}
+                            </div>
+                        </div>
+                    )}
+                    {project.brief_note && (
+                        <div className="pd-block">
+                            <div className="pd-block-title"><Icon name="file" size={15} /> บรีฟหลัก (ข้อความ)</div>
+                            <p className="pd-block-text">{project.brief_note}</p>
+                        </div>
+                    )}
                     {(() => {
                         const pb = Object.entries(project.platform_budgets || {}).filter(([, v]) => Number(v) > 0);
                         if (pb.length === 0) return null;
