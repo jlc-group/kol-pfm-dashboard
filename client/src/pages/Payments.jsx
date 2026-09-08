@@ -983,7 +983,8 @@ export default function Payments() {
     const [manualOpen, setManualOpen] = useState(null); // null = ปิด · 'new' = สร้างใหม่ · object = แก้ไข
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
-    const [tab, setTab] = useState('pending');   // pending | batches | campaigns
+    // เปิดมาที่แท็บตั้งงวดก่อน เพราะเป็นจุดเริ่มของงาน (ตั้งงวด -> รอทำจ่าย -> จ่ายแล้ว)
+    const [tab, setTab] = useState('campaigns');   // campaigns | pending | batches
     const [brand, setBrand] = useState('');
     const [cycle, setCycle] = useState('');
     const [picked, setPicked] = useState([]);
