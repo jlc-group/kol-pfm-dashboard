@@ -100,6 +100,24 @@ router.put('/installments/:id/invoice-link', async (req, res, next) => {
     } catch (err) { next(err); }
 });
 
+// ลบไฟล์ออกจากดิสก์ด้วย ไม่งั้นจะเหลือไฟล์กำพร้าสะสมในโฟลเดอร์ uploads
+function dropFile(meta) {
+    if (!meta || !meta.filename) return;
+    const f = path.join(UPLOAD_DIR, meta.filename);
+    try { if (fs.existsSync(f)) fs.unlinkSync(f); } catch { /* ลบไฟล์ไม่ได้ก็ไม่ต้องขวางการลบข้อมูล */ }
+}
+
+// DELETE /api/payments/installments/:id/invoice — ลบใบแจ้งหนี้ของงวด (เผื่อใส่ผิดใบ)
+router.delete('/installments/:id/invoice', async (req, res, next) => {
+    try {
+        const it = await store.installments.get(req.params.id);
+        if (!it) return res.status(404).json({ status: 'error', message: 'ไม่พบงวดนี้' });
+        dropFile(it.invoice);
+        const data = await store.installments.setInvoice(req.params.id, null);
+        res.json({ status: 'success', data });
+    } catch (err) { next(err); }
+});
+
 // GET /api/payments/installments/:id/invoice — เปิดใบแจ้งหนี้ของงวด
 router.get('/installments/:id/invoice', async (req, res, next) => {
     try {
@@ -238,6 +256,21 @@ router.post('/:projectId/upload/:type', (req, res, next) => {
             res.json({ status: 'success', data });
         } catch (e) { next(e); }
     });
+});
+
+// DELETE /api/payments/:projectId/file/:type — ลบเอกสารของแคมเปญ
+router.delete('/:projectId/file/:type', async (req, res, next) => {
+    try {
+        const { type } = req.params;
+        if (!['quotation', 'invoice'].includes(type)) {
+            return res.status(400).json({ status: 'error', message: 'ประเภทไฟล์ไม่ถูกต้อง' });
+        }
+        const pay = await store.payments.get(req.params.projectId);
+        dropFile(pay && pay[type]);
+        const data = await store.payments.setFile(req.params.projectId, type, null);
+        if (!data) return res.status(404).json({ status: 'error', message: 'ไม่พบ Project' });
+        res.json({ status: 'success', data });
+    } catch (err) { next(err); }
 });
 
 // GET /api/payments/:projectId/file/:type — ดาวน์โหลด/เปิดไฟล์

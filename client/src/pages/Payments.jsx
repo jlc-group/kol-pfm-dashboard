@@ -10,7 +10,7 @@ import { BRANDS } from '../data/brands.js';
 const baht = n => '฿' + Number(n || 0).toLocaleString('th-TH');
 
 // ช่องอัปโหลด/ดูไฟล์ (ใบเสนอราคา หรือ ใบแจ้งหนี้ — อยู่ที่แคมเปญ ออกทีเดียวทั้งงาน)
-function FileSlot({ label, uploadPath, viewPath, meta, onUploaded, compact, link, onSaveLink, onUploadFile }) {
+function FileSlot({ label, uploadPath, viewPath, meta, onUploaded, compact, link, onSaveLink, onUploadFile, onDeleteFile }) {
     const inputRef = useRef(null);
     const [busy, setBusy] = useState(false);
     const [url, setUrl] = useState(link || '');
@@ -56,6 +56,17 @@ function FileSlot({ label, uploadPath, viewPath, meta, onUploaded, compact, link
                         <button className="icon-btn" title="เปลี่ยนไฟล์" onClick={() => inputRef.current.click()} disabled={busy}>
                             <Icon name="upload" size={15} />
                         </button>
+                        {onDeleteFile && (
+                            <button className="icon-btn danger" title="ลบไฟล์นี้" disabled={busy}
+                                onClick={async () => {
+                                    if (!confirm('ลบไฟล์นี้ออกจากระบบ?' + String.fromCharCode(10) + meta.original)) return;
+                                    setBusy(true);
+                                    try { await onDeleteFile(); } catch (err) { alert(err.message); }
+                                    finally { setBusy(false); }
+                                }}>
+                                <Icon name="trash" size={15} />
+                            </button>
+                        )}
                     </div>
                 ) : (
                     <button className="file-upload-btn" onClick={() => inputRef.current.click()} disabled={busy}>
@@ -72,7 +83,19 @@ function FileSlot({ label, uploadPath, viewPath, meta, onUploaded, compact, link
                         )}
                         {done && <span className="fs-link-ok">✓</span>}
                         {link && url === link && (
-                            <a className="brief-link" href={link} target="_blank" rel="noreferrer"><Icon name="eye" size={14} /> เปิด</a>
+                            <>
+                                <a className="brief-link" href={link} target="_blank" rel="noreferrer"><Icon name="eye" size={14} /> เปิด</a>
+                                <button className="icon-btn danger" title="ลบลิงก์นี้" disabled={busy}
+                                    onClick={async () => {
+                                        if (!confirm('ลบลิงก์นี้ออก?')) return;
+                                        setBusy(true);
+                                        try { await onSaveLink(''); setUrl(''); }
+                                        catch (err) { alert(err.message); }
+                                        finally { setBusy(false); }
+                                    }}>
+                                    <Icon name="trash" size={14} />
+                                </button>
+                            </>
                         )}
                     </div>
                 )}
@@ -526,6 +549,10 @@ function PlanModal({ row, onClose, onSaved, onReload }) {
                         uploadPath={`/payments/${row.project_id}/upload/quotation`}
                         viewPath={`/payments/${row.project_id}/file/quotation`}
                         meta={row.quotation} onUploaded={() => onReload && onReload()}
+                        onDeleteFile={async () => {
+                            await api(`/payments/${row.project_id}/file/quotation`, { method: 'DELETE' });
+                            if (onReload) await onReload();
+                        }}
                         link={row.quotation_link}
                         onSaveLink={async v => {
                             await api(`/payments/${row.project_id}`, { method: 'PUT', body: { quotation_link: v || null } });
@@ -547,7 +574,11 @@ function PlanModal({ row, onClose, onSaved, onReload }) {
                                     meta={it && it.invoice}
                                     link={it && it.invoice_link}
                                     onUploadFile={file => attachInvoiceFile(idx, file)}
-                                    onSaveLink={v => attachInvoiceLink(idx, v)} />
+                                    onSaveLink={v => attachInvoiceLink(idx, v)}
+                                    onDeleteFile={it ? async () => {
+                                        await api(`/payments/installments/${it.id}/invoice`, { method: 'DELETE' });
+                                        if (onReload) await onReload();
+                                    } : null} />
                             </div>
                         );
                     })}
