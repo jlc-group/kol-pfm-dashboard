@@ -239,7 +239,7 @@ function AgencyLinkRow({ l, url, copied, onCopy, onDelete, onChat, unread = 0, p
                 <button type="button" className="alp-toggle" onClick={() => setOpen(o => !o)} title={open ? 'ย่อ' : 'ดูรายละเอียด'}>{open ? '▾' : '▸'}</button>
                 <span className="alp-name"><Icon name="users" size={14} /> {l.name}</span>
                 {boundTo
-                    ? <span className="alp-bound ok" title={'บัญชี ' + boundTo + ' เข้าลิงก์นี้ได้'}>🔓 {boundTo}</span>
+                    ? <span className="alp-bound ok" title={'บัญชี ' + boundTo + ' เข้าลิงก์นี้ได้'}>🔗 {boundTo}</span>
                     : <span className="alp-bound none" title="ยังไม่มีบัญชีเอเจนซี่ผูกกับลิงก์นี้ — เปิดลิงก์แล้วจะเข้าไม่ได้">⚠ ยังไม่ผูกบัญชี</span>}
                 <div className="alp-summary">
                     {l.kol_count > 0 && <span className="alp-sv-chip kol">⭐ {l.kol_count} KOL</span>}
