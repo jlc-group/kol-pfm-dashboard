@@ -90,6 +90,7 @@ function AddSubmissionModal({ projectId, products = [], groups = [], onClose, on
     // มีกลุ่มเดียวก็เลือกให้เลย ไม่ต้องกดซ้ำ
     const [f, setF] = useState({ group_key: groups.length === 1 ? groups[0].key : '', account_name: '', platform: groups.length === 1 ? (groupPlatforms(groups[0])[0] || 'TikTok') : 'TikTok', product: '', agency: '', budget: '', link_account: '' });
     const g = groups.find(x => x.key === f.group_key) || null;
+    const gPlats = g ? groupPlatforms(g) : [];
     // สินค้าให้เลือกเฉพาะของกลุ่มที่เลือก — ถ้ายังไม่เลือกกลุ่มค่อยใช้สินค้าทั้งแคมเปญ
     const productOpts = (g && (g.products || []).length) ? g.products : products;
     // เลือกกลุ่มแล้วดึง Platform ของกลุ่มมาให้
@@ -102,7 +103,11 @@ function AddSubmissionModal({ projectId, products = [], groups = [], onClose, on
             return {
                 ...st,
                 group_key: key,
-                platform: (grp && groupPlatforms(grp)[0]) || st.platform,
+                platform: (() => {
+                    const ps = grp ? groupPlatforms(grp) : [];
+                    if (!ps.length) return st.platform;
+                    return ps.includes(st.platform) ? st.platform : ps[0];
+                })(),
                 product: allow ? cur.filter(c => allow.includes(c)).join(',') : st.product
             };
         });
@@ -170,11 +175,12 @@ function AddSubmissionModal({ projectId, products = [], groups = [], onClose, on
                     <div className="field-row">
                         <div className="field">
                             <label>Platform</label>
-                            {g && g.platform ? (
-                                <div className="perf-readonly" title="กำหนดไว้ที่กลุ่มนี้ตอนตั้งแคมเปญ">{g.platform}</div>
+                            {gPlats.length === 1 ? (
+                                <div className="perf-readonly" title="กำหนดไว้ที่กลุ่มนี้ตอนตั้งแคมเปญ">{gPlats[0]}</div>
                             ) : (
+                                // กลุ่มลงได้หลาย Platform → ให้เลือกเฉพาะที่กลุ่มนี้มี
                                 <select value={f.platform} onChange={e => up('platform', e.target.value)}>
-                                    {SUB_PLATFORMS.map(p => <option key={p} value={p}>{p}</option>)}
+                                    {(gPlats.length ? gPlats : SUB_PLATFORMS).map(p => <option key={p} value={p}>{p}</option>)}
                                 </select>
                             )}
                         </div>
@@ -693,7 +699,7 @@ export default function ProjectDetail() {
                                         <div className="adg-card" key={i}>
                                             <div className="adg-card-head">
                                                 <span className="adg-badge">กลุ่มที่ {i + 1}</span>
-                                                {(() => { const gp = g.platform || (g.allocations && g.allocations[0] && g.allocations[0].platform) || null; return gp ? <span className="adg-plat">📱 {gp}</span> : null; })()}
+                                                {groupPlatforms(g).map(pf => <span className="adg-plat" key={pf}>📱 {pf}</span>)}
                                                 {g.concept && <span className="adg-concept">📝 Concept: {g.concept}</span>}
                                                 {g.kol_count > 0 && <span className="adg-kol">⭐ {g.kol_count} KOL</span>}
                                                 {Number(g.budget) > 0 && <span className="adg-budget">💰 ฿{Number(g.budget).toLocaleString('th-TH')}</span>}
@@ -733,10 +739,10 @@ export default function ProjectDetail() {
                                                 )}
                                                 {(g.allocations || []).length > 0 && (
                                                     <div className="adg-field">
-                                                        <span className="adg-label">แพลตฟอร์ม / Tier / จำนวน</span>
+                                                        <span className="adg-label">Tier / จำนวน</span>
                                                         <div className="adg-val">
                                                             {g.allocations.map((a, ai) => (
-                                                                <span className="adg-alloc" key={ai}><b>{a.platform}</b> · {a.tier} · {a.kols} คน</span>
+                                                                <span className="adg-alloc" key={ai}><b>{a.tier}</b> · {a.kols} คน</span>
                                                             ))}
                                                         </div>
                                                     </div>

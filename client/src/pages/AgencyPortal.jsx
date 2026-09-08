@@ -220,7 +220,7 @@ function GroupSection({ token, group, gi, subs, onReload, onEdit, onDelete, onNo
     const [divided, setDivided] = useState(() => { try { return localStorage.getItem(divKey) === '1'; } catch { return false; } });
     const autoBudget = (divided && perHead > 0) ? String(perHead) : '';
 
-    const blank = () => ({ account_name: '', platform: groupPlatforms[0] || 'TikTok', followers: '', product: '', agency: '', budget: autoBudget, link_account: '', saving: false });
+    const blank = () => ({ account_name: '', platform: groupPlats[0] || 'TikTok', followers: '', product: '', agency: '', budget: autoBudget, link_account: '', saving: false });
     const [rows, setRows] = useState([blank()]);
     const [err, setErr] = useState('');
     const upRow = (i, k, v) => setRows(rs => rs.map((x, idx) => idx === i ? { ...x, [k]: v } : x));
