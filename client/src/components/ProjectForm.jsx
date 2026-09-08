@@ -128,10 +128,7 @@ export default function ProjectForm({ editing, onClose, onSaved }) {
     const [pbFiles, setPbFiles] = useState({}); // code -> File (รออัปโหลดหลังบันทึก)
     const setPbLink = (code, link) => { setProductBriefs(m => ({ ...m, [code]: { ...(m[code] || {}), link } })); setPbFiles(f => { const n = { ...f }; delete n[code]; return n; }); };
     const setPbFile = (code, file) => { setPbFiles(f => ({ ...f, [code]: file })); setProductBriefs(m => ({ ...m, [code]: { ...(m[code] || {}), link: '' } })); };
-    // บรีฟหลักต่อ Platform
-    // ไม่มีช่องให้กรอกบรีฟต่อ Platform แล้ว (ใช้บรีฟเฉพาะกลุ่มแทน)
-    // แต่ยังอ่านค่าเดิมมาส่งกลับตอนบันทึก แคมเปญเก่าจะได้ไม่เสียลิงก์บรีฟที่เคยใส่ไว้
-    const platformBriefs = editing?.platform_briefs || {};
+    // บรีฟต่อ Platform เลิกใช้แล้วทั้งหมด (ซ้ำกับบรีฟหลักของแคมเปญ) ไม่อ่านและไม่เขียนต่อ
     const briefInputRef = useRef(null);
     const [error, setError] = useState('');
     const [saving, setSaving] = useState(false);
@@ -212,12 +209,9 @@ export default function ProjectForm({ editing, onClose, onSaved }) {
                 const cur = productBriefs[code] || {};
                 product_briefs[code] = { link: (cur.link && cur.link.trim()) ? cur.link.trim() : null, file: cur.file || null };
             });
-            // บรีฟหลักต่อ Platform (เฉพาะ Platform ที่ใช้อยู่)
+            // บรีฟหลักต่อ Platform เลิกใช้แล้ว (ซ้ำกับบรีฟหลักของแคมเปญ)
+            // ส่งค่าว่างไป ของเก่าที่ค้างอยู่จะถูกล้างตอนบันทึกแคมเปญครั้งถัดไป
             const platform_briefs = {};
-            platforms.forEach(pf => {
-                const cur = platformBriefs[pf] || {};
-                platform_briefs[pf] = { link: (cur.link && cur.link.trim()) ? cur.link.trim() : null, file: cur.file || null };
-            });
             // งบต่อ Platform = ผลรวมงบของกลุ่มใน Platform นั้น (ไว้ให้หน้าอื่นที่ยังดูแบบต่อ Platform ใช้)
             const platform_budgets = {};
             groups.forEach(g => {

@@ -506,9 +506,8 @@ export default function AgencyPortal() {
     // บรีฟต่อสินค้า เฉพาะของเจ้านี้
     const briefEntries = Object.entries(info.product_briefs || {}).filter(([, b]) => b && (b.link || b.file));
     const openBriefFile = code => window.open(`/api/agency/${token}/product-brief/${encodeURIComponent(code)}/file`, '_blank');
-    const platformBriefEntries = Object.entries(info.platform_briefs || {}).filter(([, b]) => b && (b.link || b.file));
+    // บรีฟตาม Platform เลิกใช้แล้ว (ซ้ำกับบรีฟหลักของแคมเปญ) เหลือบรีฟหลัก + บรีฟต่อสินค้า
     const mainBrief = info.brief_link || null;   // บรีฟหลักของแคมเปญ (ทั้งแคมเปญ ไม่แยก Platform/สินค้า)
-    const openPlatformBriefFile = pf => window.open(`/api/agency/${token}/platform-brief/${encodeURIComponent(pf)}/file`, '_blank');
     const isAgencyLink = !!info.agency_name;                 // ลิงก์แยกต่อเจ้า (ไม่ใช่ลิงก์รวมเดิม)
     const platformBudgets = info.platform_budgets || {};     // งบต่อ Platform เฉพาะที่รับผิดชอบ
     const budgetEntries = Object.entries(platformBudgets).filter(([, v]) => Number(v) > 0);
@@ -597,32 +596,18 @@ export default function AgencyPortal() {
                     </div>
                 </div>
 
-                {/* บรีฟของเจ้านี้ — บรีฟหลักต่อ Platform + บรีฟต่อสินค้า */}
-                {(mainBrief || platformBriefEntries.length > 0 || briefEntries.length > 0) && (
+                {/* บรีฟของเจ้านี้ — บรีฟหลักของแคมเปญ + บรีฟต่อสินค้า */}
+                {(mainBrief || briefEntries.length > 0) && (
                     <div className="agency-card">
-                        <h3>📄 บรีฟงานของคุณ <span className="dash-section-sub">บรีฟตาม Platform / สินค้าที่คุณรับผิดชอบ</span></h3>
+                        <h3>📄 บรีฟงานของคุณ <span className="dash-section-sub">บรีฟหลักของแคมเปญ และบรีฟของสินค้าที่คุณรับผิดชอบ</span></h3>
                         {mainBrief && (
                             <>
                                 <div className="pbrief-group-lbl">บรีฟหลักของแคมเปญ</div>
-                                <div className="pbrief-view-list" style={{ marginBottom: (platformBriefEntries.length || briefEntries.length) ? 16 : 0 }}>
+                                <div className="pbrief-view-list" style={{ marginBottom: briefEntries.length ? 16 : 0 }}>
                                     <div className="pbrief-view">
                                         <span className="pbrief-view-name">📋 ทั้งแคมเปญ</span>
                                         <a className="brief-link" href={mainBrief} target="_blank" rel="noreferrer"><Icon name="eye" size={14} /> เปิดลิงก์บรีฟ</a>
                                     </div>
-                                </div>
-                            </>
-                        )}
-                        {platformBriefEntries.length > 0 && (
-                            <>
-                                <div className="pbrief-group-lbl">บรีฟหลัก (ตาม Platform)</div>
-                                <div className="pbrief-view-list" style={{ marginBottom: briefEntries.length ? 16 : 0 }}>
-                                    {platformBriefEntries.map(([pf, b]) => (
-                                        <div className="pbrief-view" key={pf}>
-                                            <span className="pbrief-view-name">📱 {pf}</span>
-                                            {b.link && <a className="brief-link" href={b.link} target="_blank" rel="noreferrer"><Icon name="eye" size={14} /> เปิดลิงก์บรีฟ</a>}
-                                            {b.file && <button type="button" className="brief-link pbrief-file-open" onClick={() => openPlatformBriefFile(pf)}><Icon name="file" size={14} /> {b.file.original}</button>}
-                                        </div>
-                                    ))}
                                 </div>
                             </>
                         )}
