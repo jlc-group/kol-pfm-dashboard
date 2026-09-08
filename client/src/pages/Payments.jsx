@@ -453,9 +453,14 @@ function PlanModal({ row, onClose, onSaved, onReload }) {
     // แผนการจ่ายแยกตาม (เอเจนซี่ + กลุ่ม) — ฐานคิด % คืองบของกลุ่มนั้น ไม่ใช่งบทั้งแคมเปญ
     // '' = ยังไม่เลือก · ALL = ทั้งแคมเปญ · อื่น ๆ = key ของกลุ่ม
     const ALL = '__ALL__';
-    // แคมเปญที่มีกลุ่ม -> เริ่มที่ตัวเลือกว่างเสมอ ให้คนกดเลือกเองว่าจะตั้งของกลุ่มไหน
-    // (เดิมเลือกให้ล่วงหน้า เลยดูเหมือนไม่ต้องเลือกอะไร แล้วเผลอตั้งผิดก้อน)
-    const firstGroup = groups.length === 0 ? ALL : '';
+    const saved0 = row.installments || [];
+    const hasPlan = gk => saved0.some(i => (i.group_key || '') === gk);
+    // ตั้งแผนไว้แล้วก็เปิดชุดนั้นขึ้นมาเลย (เรียงตามลำดับใน dropdown)
+    // ยังไม่เคยตั้ง -> ค่าว่าง ให้เลือกเองว่าจะตั้งของก้อนไหน จะได้ไม่เผลอตั้งผิด
+    const plannedGroup = groups.find(g => hasPlan(g.key));
+    const firstGroup = groups.length === 0
+        ? ALL
+        : (hasPlan('') ? ALL : (plannedGroup ? plannedGroup.key : ''));
     const [groupKey, setGroupKey] = useState(firstGroup);
     const curGroup = groups.find(g => g.key === groupKey) || null;
     const noGroupPicked = groupKey === '';        // ยังไม่เลือก = ยังตั้งแผนไม่ได้
@@ -487,8 +492,11 @@ function PlanModal({ row, onClose, onSaved, onReload }) {
             : blankFor(2, budgetOf(asKey(gk)));
     };
 
-    const [agency, setAgency] = useState(agencyOpts[0] || '');
-    const [plan, setPlan] = useState(planOf(agencyOpts[0] || '', firstGroup));
+    // เจ้าของแผนที่เปิดอยู่ ถ้ายังไม่มีแผนค่อยใช้เจ้าแรกในรายการ
+    const firstAgency = (saved0.find(i => (i.group_key || '') === asKey(firstGroup)) || {}).agency
+        || agencyOpts[0] || '';
+    const [agency, setAgency] = useState(firstAgency);
+    const [plan, setPlan] = useState(planOf(firstAgency, firstGroup));
     const [saving, setSaving] = useState(false);
 
     const mineHere = i => i.agency === agency && (i.group_key || '') === asKey(groupKey);
@@ -572,10 +580,10 @@ function PlanModal({ row, onClose, onSaved, onReload }) {
                             <label>กลุ่มที่จะทำจ่าย</label>
                             <select value={groupKey} onChange={e => pickGroup(e.target.value)}>
                                 <option value="">— เลือกกลุ่มทำจ่าย —</option>
-                                <option value={ALL}>ทั้งแคมเปญ · งบ {baht(Number(row.budget) || 0)}</option>
+                                <option value={ALL}>{hasPlan('') ? '✓ ' : ''}ทั้งแคมเปญ · งบ {baht(Number(row.budget) || 0)}</option>
                                 {groups.map((g, i) => (
                                     <option key={g.key} value={g.key}>
-                                        กลุ่มที่ {i + 1}{g.concept ? " · " + g.concept : ""} · งบ {baht(g.budget)}
+                                        {hasPlan(g.key) ? '✓ ' : ''}กลุ่มที่ {i + 1}{g.concept ? " · " + g.concept : ""} · งบ {baht(g.budget)}
                                     </option>
                                 ))}
                             </select>
