@@ -446,6 +446,14 @@ function linkGroupPlatforms(g) {
     return [...set];
 }
 // Content Type/Photo-VDO/Format ของกลุ่ม — โครงใหม่เก็บแยกต่อ Platform ใน allocations
+// Content ที่ 1 คนต้องทำ — ตั้งแยกต่อ Platform ได้ (TikTok 2 คลิป / Facebook 1 ก็ได้)
+// ห้ามใช้ grp.clips ตรง ๆ เพราะนั่นคือค่าของ Platform แรกเท่านั้น
+function resolveGroupClips(g, platform) {
+    if (!g) return [];
+    const b = (g.blocks || []).find(x => x.platform === platform);
+    const list = (b && (b.clips || []).length) ? b.clips : (g.clips || []);
+    return list.map(c => String(c || '').trim()).filter(Boolean);
+}
 function resolveGroupCtype(g, platform) {
     if (!g) return null;
     const hit = (g.allocations || []).find(a => a.content_type && (!platform || !a.platform || a.platform === platform));
@@ -2174,4 +2182,5 @@ const rateRequests = {
     }
 };
 
-module.exports = { teams, users, kols, projects, projectKols, dashboard, payments, installments, payBatches, budget, activity, submissions, ads, adsSync, reports, rateRequests, meta, _duplicateError: duplicateError };
+module.exports = {
+    resolveGroupClips, teams, users, kols, projects, projectKols, dashboard, payments, installments, payBatches, budget, activity, submissions, ads, adsSync, reports, rateRequests, meta, _duplicateError: duplicateError };

@@ -10,7 +10,10 @@ import OnProcessTable from '../components/OnProcessTable.jsx';
 import StageCards from '../components/StageCards.jsx';
 import ProductChips, { ProductSummary } from '../components/ProductChips.jsx';
 import { productLabel } from '../data/products.js';
-import { groupPlatforms, allocsInScope, contentTypesOf, mediaFor } from '../data/adGroups.js';
+import {
+    groupPlatforms, allocsInScope, contentTypesOf, mediaFor,
+    tiersOf, productsFor, budgetFor, clipCountFor, quotaOf
+} from '../data/adGroups.js';
 import { groupClips, clipCount, collapseByPerson, countPeople } from '../data/clips.js';
 import { tabBadges, markSeen, seedDraftsSeen } from '../utils/tabUpdates.js';
 import { useAuth } from '../auth/AuthContext.jsx';
@@ -146,6 +149,7 @@ function SavedGridRow({ s, n, group, agencyName, onEdit, onDelete, onNote }) {
                             {fmt && <span className="proc-ctype-chip fmt">{fmt}</span>}</>
                         : <span className="ctype-none">— ยังไม่ระบุ —</span>}
                 </span>
+                <span className="ag-saved-cell" title={s.tier || ""}>{s.tier || <span className="ctype-none">—</span>}</span>
                 <span className="ag-saved-cell">{Number(s.followers) > 0 ? Number(s.followers).toLocaleString('en-US') : '—'}</span>
                 <span className="ag-saved-cell"><ProductSummary value={s.product} max={2} /></span>
                 {!agencyName && <span className="ag-saved-cell">{s.agency || '—'}</span>}
@@ -200,27 +204,33 @@ function SubItem({ s, onEdit }) {
 
 // section 1 กลุ่มสินค้า — โชว์ความต้องการ (Platform/Tier/จำนวน) + ฟอร์มใส่ชื่อ + ลิสต์ของกลุ่ม
 function GroupSection({ token, group, gi, subs, onReload, onEdit, onDelete, onNote, agencyName, platformBudgets = {}, scopePlatforms = [], platFilter = 'all' }) {
-    const groupProducts = group.products || [];
     const groupPlats = groupPlatforms(group);
+    // Platform ที่กำลังดูอยู่ — งบ / จำนวนคน / Content ต่อคน ต้องคิดเฉพาะขอบเขตนี้
+    const scopePlats = platFilter !== 'all' ? [platFilter]
+        : (scopePlatforms.length ? scopePlatforms.filter(p => groupPlats.includes(p)) : groupPlats);
+    const groupProducts = scopePlats.length
+        ? [...new Set(scopePlats.flatMap(p => productsFor(group, p)))]
+        : (group.products || []);
     // เห็นแค่แถวของ Platform ที่เจ้านี้รับผิดชอบ ไม่ใช่ทั้งกลุ่ม
     const myAllocs = allocsInScope(group, platFilter === 'all' ? scopePlatforms : [platFilter]);
-    const groupTiers = [...new Set(myAllocs.map(a => a.tier).filter(Boolean))];
     const myKol = myAllocs.reduce((s, a) => s + (Number(a.kols) || 0), 0);
     // API ส่งมาแบบใหม่สุดขึ้นก่อน — กลับด้านให้คนที่บันทึกทีหลังต่อท้ายลงมาเรื่อย ๆ
     const groupRows = subs.filter(s => s.group_key === group.key && (platFilter === 'all' || s.platform === platFilter))
         .slice().sort((a, b) => (a.submitted_at || '').localeCompare(b.submitted_at || '') || (a.id - b.id));
     // หน้านี้ = หน้าคัดเลือก "คน" จึงยุบแถวพี่น้อง (คนเดียวกันหลายคลิป) ให้เหลือคนละแถว
     const groupSubs = collapseByPerson(groupRows);
-    const perClip = clipCount(group);              // กลุ่มนี้ 1 คนส่งกี่คลิป
+    // 1 คนทำกี่ Content ขึ้นกับ Platform — ต่าง Platform ตั้งไม่เท่ากันได้ (0 = ไม่เท่ากัน)
+    const clipsPerHead = [...new Set(scopePlats.map(p => clipCountFor(group, p)))];
+    const perClip = clipsPerHead.length === 1 ? clipsPerHead[0] : (clipsPerHead.length ? 0 : clipCount(group));
     const clipNames = groupClips(group);
     const total = myKol || group.kol_count || 0;
 
     // Budget ของกลุ่มนี้ (สำหรับปุ่มหารเฉลี่ยแบบเหมาราคา) — ใช้งบต่อกลุ่ม, ถ้าข้อมูลเดิมไม่มีค่อย fallback งบต่อ Platform
-    const groupPlatform = groupPlats[0] || null;
-    const totalClips = (Number(group.kol_count) || 0) * perClip;   // เป้าจำนวนคลิปทั้งกลุ่ม
-    const groupBudget = (group.budget != null && group.budget !== '')
-        ? (Number(group.budget) || 0)
-        : (groupPlatform ? (Number(platformBudgets[groupPlatform]) || 0) : 0);
+    // เป้าจำนวน Content = ผลรวมของ (คนที่ต้องการ × Content ต่อคน) ของแต่ละ Platform ในขอบเขต
+    const totalClips = scopePlats.reduce((s, p) => s + quotaOf(group, p) * clipCountFor(group, p), 0) || total;
+    const groupBudget = scopePlats.reduce((s, p) => s + budgetFor(group, p), 0)
+        || ((group.budget != null && group.budget !== '') ? (Number(group.budget) || 0) : 0)
+        || scopePlats.reduce((s, p) => s + (Number(platformBudgets[p]) || 0), 0);
     // งบเป็นต่อคลิป เพราะเวลายิงแอดคิดจากงบของคลิปนั้น ๆ
     const perHead = (groupBudget > 0 && totalClips > 0) ? Math.round(groupBudget / totalClips) : 0;
     const perUnit = perClip > 1 ? 'คลิป' : 'คน';
@@ -232,10 +242,17 @@ function GroupSection({ token, group, gi, subs, onReload, onEdit, onDelete, onNo
     const autoBudget = (divided && perHead > 0) ? String(perHead) : '';
 
     // ไม่เลือก Platform ให้ล่วงหน้า — กันกรอกผิดช่องทางโดยไม่ทันสังเกต
-    const blank = () => ({ account_name: '', platform: '', content_type: '', followers: '', product: '', agency: '', budget: autoBudget, link_account: '', saving: false });
+    const blank = () => ({ account_name: '', platform: '', content_type: '', tier: '', followers: '', product: '', agency: '', budget: autoBudget, link_account: '', saving: false });
     const [rows, setRows] = useState([blank()]);
     const [err, setErr] = useState('');
     const upRow = (i, k, v) => setRows(rs => rs.map((x, idx) => idx === i ? { ...x, [k]: v } : x));
+    // เปลี่ยน Platform = Content Type / Tier / สินค้า ของเดิมใช้ไม่ได้แล้ว ต้องล้างทิ้ง
+    const pickPlatform = (i, p) => setRows(rs => rs.map((x, idx) => {
+        if (idx !== i) return x;
+        const allow = p ? productsFor(group, p) : [];
+        const keep = String(x.product || '').split(',').map(c => c.trim()).filter(c => allow.includes(c));
+        return { ...x, platform: p, content_type: '', tier: '', product: keep.join(',') };
+    }));
     const addRow = () => setRows(rs => [...rs, blank()]);
     const removeRow = i => setRows(rs => rs.length === 1 ? [blank()] : rs.filter((_, idx) => idx !== i));
     // เหมาราคา: หารงบกลุ่มเท่าๆ กัน แล้ว "จำ" ไว้ทั้งกลุ่ม — ทับทุกคน (ทั้งแถวที่กรอก + คนที่บันทึกแล้ว) ให้เท่ากันหมด
@@ -278,6 +295,10 @@ function GroupSection({ token, group, gi, subs, onReload, onEdit, onDelete, onNo
         if (!en.account_name.trim()) { setErr('กรุณากรอกชื่อ Account'); return; }
         if (!en.platform) { setErr('กรุณาเลือก Platform'); return; }
         if (contentTypesOf(group, en.platform).length > 0 && !en.content_type) { setErr('กรุณาเลือก Content Type'); return; }
+        const tierOpts = tiersOf(group, en.platform, en.content_type);
+        // มี Tier เดียวก็เติมให้เอง ไม่ต้องให้กด
+        const tier = tierOpts.length === 1 ? tierOpts[0] : en.tier;
+        if (tierOpts.length > 1 && !tier) { setErr('กรุณาเลือก Tier'); return; }
         setErr(''); upRow(i, 'saving', true);
         try {
             await api(`/agency/${token}`, {
@@ -285,6 +306,7 @@ function GroupSection({ token, group, gi, subs, onReload, onEdit, onDelete, onNo
                 body: {
                     account_name: en.account_name.trim(), platform: en.platform, followers: Number(en.followers) || 0,
                     content_type: en.content_type || null,
+                    tier: tier || null,
                     product: en.product || null, agency: agencyName || en.agency || null, budget: Number(en.budget) || 0,
                     link_account: en.link_account || null, group_key: group.key
                 }
@@ -353,12 +375,12 @@ function GroupSection({ token, group, gi, subs, onReload, onEdit, onDelete, onNo
             )}
             <div className="ag-add-scroll">
                 <div className={'ag-add-grid' + (agencyName ? ' no-agency' : '')}>
-                    <div className="ag-add-head"><span>NAME</span><span>PLATFORM</span><span>CONTENT TYPE</span><span>FOLLOWER</span><span>PRODUCT</span>{!agencyName && <span>AGENCY</span>}<span>BUDGET</span><span>LINK ACCOUNT</span><span /></div>
+                    <div className="ag-add-head"><span>NAME</span><span>PLATFORM</span><span>CONTENT TYPE</span><span>TIER</span><span>FOLLOWER</span><span>PRODUCT</span>{!agencyName && <span>AGENCY</span>}<span>BUDGET</span><span>LINK ACCOUNT</span><span /></div>
                     {groupSubs.map((s, si) => <SavedGridRow key={s.id} s={s} n={si + 1} group={group} agencyName={agencyName} onEdit={onEdit} onDelete={onDelete} onNote={onNote} />)}
                     {rows.map((en, i) => (
                         <div className="ag-add-row" key={i}>
                             <div className="atr-name"><span className="atr-num">{groupSubs.length + i + 1}</span><input value={en.account_name} onChange={e => upRow(i, 'account_name', e.target.value)} placeholder="ชื่อ Account" onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); saveRow(i); } }} /></div>
-                            <select value={en.platform} onChange={e => { upRow(i, 'platform', e.target.value); upRow(i, 'content_type', ''); }}>
+                            <select value={en.platform} onChange={e => pickPlatform(i, e.target.value)}>
                                 <option value="">— เลือก —</option>
                                 {(groupPlats.length ? groupPlats : PLATFORMS).map(p => <option key={p} value={p}>{p}</option>)}
                             </select>
@@ -367,15 +389,30 @@ function GroupSection({ token, group, gi, subs, onReload, onEdit, onDelete, onNo
                                 const opts = en.platform ? contentTypesOf(group, en.platform) : [];
                                 return (
                                     <select value={en.content_type} disabled={!en.platform || opts.length === 0}
-                                        onChange={e => upRow(i, 'content_type', e.target.value)}
+                                        onChange={e => { upRow(i, 'content_type', e.target.value); upRow(i, 'tier', ''); }}
                                         title={en.platform ? '' : 'เลือก Platform ก่อน'}>
                                         <option value="">{!en.platform ? '— เลือก Platform ก่อน —' : (opts.length ? '— เลือก —' : '— ไม่มีให้เลือก —')}</option>
                                         {opts.map(c => <option key={c} value={c}>{c}</option>)}
                                     </select>
                                 );
                             })()}
+                            {/* Tier ให้เลือกเฉพาะที่กลุ่มนี้เปิดรับใน Platform + Content Type นั้น */}
+                            {(() => {
+                                const opts = en.platform ? tiersOf(group, en.platform, en.content_type) : [];
+                                if (opts.length === 1) return <div className="ag-fixed-cell" title={opts[0] + " (กลุ่มนี้เปิดรับ Tier เดียว)"}>{opts[0]}</div>;
+                                return (
+                                    <select value={en.tier} disabled={opts.length === 0}
+                                        onChange={e => upRow(i, 'tier', e.target.value)}>
+                                        <option value="">{opts.length ? '— เลือก —' : (en.platform ? '— ไม่ได้ระบุ Tier —' : '— เลือก Platform ก่อน —')}</option>
+                                        {opts.map(t => <option key={t} value={t}>{t}</option>)}
+                                    </select>
+                                );
+                            })()}
                             <input type="number" min="0" value={en.followers} onChange={e => upRow(i, 'followers', e.target.value)} placeholder="ยอดฟอล" />
-                            <ProductMultiSelect value={en.product} options={groupProducts} onChange={v => upRow(i, 'product', v)} />
+                            {/* สินค้าให้เลือกเฉพาะของ Platform ที่เลือก ไม่ปนของ Platform อื่นในกลุ่มเดียวกัน */}
+                            <ProductMultiSelect value={en.product}
+                                options={en.platform ? productsFor(group, en.platform) : groupProducts}
+                                onChange={v => upRow(i, 'product', v)} />
                             {/* ลิงก์นี้ผูกเอเจนซี่ไว้แล้ว ไม่ต้องมีช่องให้กรอกซ้ำทุกแถว */}
                             {!agencyName && <input value={en.agency} onChange={e => upRow(i, 'agency', e.target.value)} placeholder="Contact" />}
                             <input type="number" min="0" value={en.budget} onChange={e => upRow(i, 'budget', e.target.value)} placeholder="฿" />

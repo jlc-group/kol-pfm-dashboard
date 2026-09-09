@@ -243,3 +243,26 @@ export function quotaOf(g, platform, contentType) {
         .filter(a => (!platform || a.platform === platform) && (!contentType || a.content_type === contentType))
         .reduce((n, a) => n + (Number(a.kols) || 0), 0);
 }
+
+// Tier ที่ (Platform + Content Type) นี้เปิดรับ — ไว้จำกัดตัวเลือกให้เอเจนซี่
+// ไม่ระบุ Content Type = ทุก Tier ของ Platform นั้น
+export function tiersOf(g, platform, contentType) {
+    const out = [];
+    (g.allocations || []).forEach(a => {
+        if (platform && a.platform && a.platform !== platform) return;
+        if (contentType && a.content_type && a.content_type !== contentType) return;
+        if (a.tier && !out.includes(a.tier)) out.push(a.tier);
+    });
+    return out;
+}
+
+// งบของ Platform หนึ่งในกลุ่ม — ข้อมูลเก่าที่ยังไม่มีงบรายบล็อกจะถูก toBlocks เกลี่ยให้ตามสัดส่วนคน
+export function budgetFor(g, platform) {
+    const b = toBlocks(g).find(x => x.platform === platform);
+    return b ? num(b.budget) : 0;
+}
+
+// 1 คนของ Platform นี้ต้องทำกี่ Content (อย่างน้อย 1 เสมอ)
+export function clipCountFor(g, platform) {
+    return Math.max(1, clipsFor(g, platform).map(c => String(c || '').trim()).filter(Boolean).length);
+}

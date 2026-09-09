@@ -182,7 +182,8 @@ router.post('/:token', async (req, res, next) => {
             content_type: content_type || null,
             code_expire: grp ? (Number(grp.code_expire) || 60) : 60,
             agency_token: link.scoped ? link.token : null   // ติดตราเจ้าของ (เฉพาะลิงก์แยกต่อเจ้า)
-        }, (grp && grp.clips) || []);
+            // จำนวน Content ต่อคนตั้งแยกต่อ Platform ได้ ต้องดูจาก Platform ของ KOL คนนี้ ไม่ใช่ของกลุ่ม
+        }, store.resolveGroupClips(grp, platform || null));
         res.status(201).json({ status: 'success', data: rows[0], data_all: rows });
     } catch (err) { next(err); }
 });
@@ -275,8 +276,10 @@ router.post('/:token/batch', async (req, res, next) => {
                 budget: Number(it.budget) || 0,
                 agency: link.name || null,
                 agency_token: link.scoped ? link.token : null,
-                group_key: it.group_key || null
-            }, (grp && grp.clips) || []);
+                group_key: it.group_key || null,
+                tier: it.tier || null,
+                content_type: it.content_type || null
+            }, store.resolveGroupClips(grp, it.platform || null));
             added.push(...rows);
         }
         res.status(201).json({ status: 'success', count: added.length, data: added });

@@ -459,7 +459,8 @@ router.post('/:id/submissions', async (req, res, next) => {
             budget: Number(budget) || 0, link_account: link_account || null, followers: Number(followers) || 0,
             group_key: group_key || null,  // กลุ่มโฆษณาที่สังกัด — พา Target/Photo-VDO/Content Format มาด้วย
             content_type: content_type || null   // 1 Platform อาจมีหลาย Content Type ในกลุ่มเดียว ต้องระบุว่าคนนี้ทำอันไหน
-        }, (grp && grp.clips) || []);
+            // Content ต่อคนตั้งแยกต่อ Platform ได้ จึงต้องอ่านตาม Platform ของคนนี้
+        }, store.resolveGroupClips(grp, platform || null));
         const data = rows[0];
         await record(req, req.params.id, 'add_kol', `เพิ่ม KOL: ${account_name}` + (rows.length > 1 ? ` (${rows.length} คลิป)` : ''));
         res.status(201).json({ status: 'success', data, data_all: rows });
