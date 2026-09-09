@@ -13,7 +13,20 @@ const BRANDS = ["Jula's Herb", 'Code Lab', 'Jdent', 'Jarvit', 'Beauterry', 'Jern
 // รายชื่อคนดูแล/คนสร้าง ดึงจากผู้ใช้จริงที่อนุมัติแล้ว (เดิมเป็นรายชื่อตายตัวในโค้ด
 // คนเข้าใหม่เลยไม่โผล่ ต้องมาแก้โค้ดทุกครั้ง)
 // กลุ่ม Target สำหรับการยิงแอด (ตามช่วงอายุ)
+// Content Type ต่างกันตาม Platform — Facebook ใช้ชุดของแอด ไม่ใช่ Review/Sale เหมือนช่องทางอื่น
 const CONTENT_TYPES = ['Review', 'Sale'];
+const CONTENT_TYPES_BY_PLATFORM = { Facebook: ['Awareness', 'Engagement', 'Reels'] };
+// กลุ่มลงได้หลาย Platform -> รวมตัวเลือกของทุก Platform ที่เลือกไว้
+// (ค่าที่เคยบันทึกไว้ก็ต้องคงอยู่ในลิสต์ ไม่งั้น dropdown จะเด้งกลับเป็นค่าว่าง)
+function contentTypesFor(platformCsv, current) {
+    const plats = splitCsv(platformCsv);
+    const out = [];
+    (plats.length ? plats : ['']).forEach(p => {
+        (CONTENT_TYPES_BY_PLATFORM[p] || CONTENT_TYPES).forEach(c => { if (!out.includes(c)) out.push(c); });
+    });
+    if (current && !out.includes(current)) out.push(current);
+    return out;
+}
 // รูปแบบสื่อที่ต้องการจาก KOL กลุ่มนี้
 const MEDIA_TYPES = ['Photo', 'VDO'];
 const CODE_EXPIRE_OPTS = [7, 30, 60, 180, 365]; // จำนวนวัน Gencode ให้เลือก
@@ -344,6 +357,7 @@ export default function ProjectForm({ editing, onClose, onSaved }) {
                                 const gTargets = targetsForProducts(g.products);
                                 const gTargetSel = asTargetArray(g.target);
                                 const targetOpts = [...new Set([...gTargets, ...gTargetSel])];
+                                const ctypeOpts = contentTypesFor(g.platform, g.content_type);
                                 return (
                                 <div className="adgroup-block" key={g.key || i}>
                                     <div className="adgroup-head">
@@ -400,7 +414,7 @@ export default function ProjectForm({ editing, onClose, onSaved }) {
                                     <div className="target-multi ctype-row">
                                         <select className="target-add" value={g.content_type} onChange={e => setGroupField(i, 'content_type', e.target.value)}>
                                             <option value="">— Content Type —</option>
-                                            {CONTENT_TYPES.map(c => <option key={c} value={c}>{c}</option>)}
+                                            {ctypeOpts.map(c => <option key={c} value={c}>{c}</option>)}
                                         </select>
                                         <select className="target-add" value={g.media_type} onChange={e => setGroupField(i, 'media_type', e.target.value)}>
                                             <option value="">— Photo / VDO —</option>
