@@ -11,7 +11,8 @@ import ChatDock from '../components/ChatDock.jsx';
 import { productLabel, asTargetArray } from '../data/products.js';
 import {
     groupPlatforms, kolInScope, contentTypesOf, mediaFor, quotaOf,
-    toBlocks, blockKol, blocksKol, blocksBudget, num, needTarget
+    toBlocks, blockKol, blocksKol, blocksBudget, num, needTarget,
+    contentCells, cellKeyOf, cellKey
 } from '../data/adGroups.js';
 import { clipCount, collapseByPerson, countPeople } from '../data/clips.js';
 import StageCards from '../components/StageCards.jsx';
@@ -672,6 +673,52 @@ export default function ProjectDetail() {
             </div>
         );
     };
+    // หัวกล่องของ 1 ช่อง = Platform + Content Type (ตรงกับที่เอเจนซี่กรอก)
+    const cellHead = (g, c, rows) => {
+        const m = mediaFor(g, c.platform, c.contentType);
+        const quota = quotaOf(g, c.platform, c.contentType || null);
+        return (
+            <div className="ag-tb-head list-tb-head">
+                <span className="adg-plat">📱 {c.platform}</span>
+                {c.contentType
+                    ? <span className="proc-ctype-chip">{c.contentType}</span>
+                    : <span className="ctype-none">— ยังไม่ได้ตั้ง Content Type —</span>}
+                {m.media_type && <span className="proc-ctype-chip media">{m.media_type}</span>}
+                {splitCsv(m.content_format).map(x => <span className="proc-ctype-chip fmt" key={x}>{x}</span>)}
+                <span className="ag-tb-count">{countPeople(rows)}<span>/{quota || '—'}</span> คน</span>
+            </div>
+        );
+    };
+    // แบ่งรายชื่อในกลุ่มเป็นกล่องตาม Platform + Content Type แทนที่จะกองรวมกัน
+    const cellBlocks = (g, rows) => {
+        const plats = listPlat === 'all' ? [] : [listPlat];
+        const cells = contentCells(g, plats)
+            .filter(c => listCtype === 'all' || c.contentType === listCtype);
+        const known = new Set(cells.map(cellKey));
+        const leftover = rows.filter(r => !known.has(cellKeyOf(g, r)));
+        return <>
+            {cells.map(c => {
+                const mine = rows.filter(r => cellKeyOf(g, r) === cellKey(c));
+                return (
+                    <div className="list-typebox" key={cellKey(c)}>
+                        {cellHead(g, c, mine)}
+                        {mine.length === 0
+                            ? <div className="proc-group-empty">ยังไม่มีรายชื่อในช่องนี้</div>
+                            : statusBlocks(mine, g)}
+                    </div>
+                );
+            })}
+            {leftover.length > 0 && (
+                <div className="list-typebox list-typebox-left">
+                    <div className="ag-tb-head list-tb-head">
+                        <span className="ctype-none">— ยังไม่ระบุ Content Type ({countPeople(leftover)} คน) —</span>
+                        <span className="ag-tb-note">ส่งเข้ามาก่อนมีการแยกช่อง</span>
+                    </div>
+                    {statusBlocks(leftover, g)}
+                </div>
+            )}
+        </>;
+    };
     // ทั้ง 3 สถานะของชุด subs ที่ให้มา (รอคัดเลือก / คัดเลือกแล้ว / ไม่เลือก)
     const statusBlocks = (list, grp = null) => {
         // แท็บนี้คือหน้าคัดเลือก "คน" — ยุบแถวพี่น้อง (คนเดียวกันหลายคลิป) ให้เหลือคนละแถว
@@ -1143,7 +1190,7 @@ export default function ProjectDetail() {
                                     {teamGroupBar(g, gi, gsubs)}
                                     {gsubs.length === 0
                                         ? <div className="proc-group-empty">ยังไม่มีรายชื่อในกลุ่มนี้</div>
-                                        : statusBlocks(gsubs, g)}
+                                        : cellBlocks(g, gsubs)}
                                 </div>
                             );
                         })}

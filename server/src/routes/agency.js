@@ -203,6 +203,7 @@ router.put('/:token/submissions/:subId', async (req, res, next) => {
         }
         const {
             account_name, followers, platform, product, agency, budget, link_account, agency_note,
+            content_type, tier,   // ระบุย้อนหลังได้ สำหรับรายชื่อที่ส่งมาก่อนมีการแยกช่อง
             draft_link, draft_link2, draft_link3, draft_link4, draft_link5,
             gencode, feedback, feedback2, feedback3, feedback4, feedback5,
             approved, draft_status, post_url, post_date, id_post, code_expire,
@@ -213,13 +214,13 @@ router.put('/:token/submissions/:subId', async (req, res, next) => {
         }
         // ช่อง "ตัวคน" (ชื่อ/ยอดฟอล/Platform/สินค้า/ลิงก์ช่อง/ผู้ติดต่อ) แก้ทีเดียวให้ครบทุกคลิป
         // ช่อง "ตัวงาน" (งบ/Gencode/ดราฟ/โพสต์/ยอดวิว) เป็นของแต่ละคลิป จึงแก้เฉพาะแถวนั้น
-        const personFields = ['account_name', 'followers', 'platform', 'product', 'link_account', 'agency'];
+        const personFields = ['account_name', 'followers', 'platform', 'product', 'link_account', 'agency', 'content_type', 'tier'];
         const isPersonEdit = personFields.some(f => req.body[f] !== undefined);
         const writer = isPersonEdit ? store.submissions.updatePerson : store.submissions.update;
         const data = await writer.call(store.submissions, req.params.subId, project.id, {
             account_name: account_name !== undefined ? String(account_name).trim() : undefined,
             followers: followers !== undefined ? (Number(followers) || 0) : undefined,
-            platform, product, agency,
+            platform, product, agency, content_type, tier,
             budget: budget !== undefined ? (Number(budget) || 0) : undefined,
             link_account,
             agency_note: agency_note !== undefined ? ((agency_note && String(agency_note).trim()) ? String(agency_note).trim() : null) : undefined,

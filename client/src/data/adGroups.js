@@ -266,3 +266,25 @@ export function budgetFor(g, platform) {
 export function clipCountFor(g, platform) {
     return Math.max(1, clipsFor(g, platform).map(c => String(c || '').trim()).filter(Boolean).length);
 }
+
+// "ช่อง" ของกลุ่ม = Platform + Content Type หนึ่งคู่ — ใช้แยกกล่องกรอก/กล่องรายชื่อ
+// กลุ่มที่ Facebook เปิด Awareness 10 + Engagement 10 จะได้ 2 ช่อง ไม่ต้องให้ใครติ๊กเอง
+export function contentCells(g, platforms) {
+    const pf = (platforms || []).filter(Boolean);
+    const plats = pf.length ? pf : groupPlatforms(g);
+    const out = [];
+    plats.forEach(p => {
+        const cts = contentTypesOf(g, p);
+        if (cts.length) cts.forEach(ct => out.push({ platform: p, contentType: ct }));
+        else out.push({ platform: p, contentType: '' });
+    });
+    return out;
+}
+// KOL แถวนี้อยู่ช่องไหน — Platform ที่เปิด Content Type ไว้อย่างเดียว
+// ให้แถวเก่าที่ยังไม่ระบุตกเข้าช่องนั้นเลย จะได้ไม่มีกล่อง "ยังไม่ระบุ" โดยไม่จำเป็น
+export function cellKeyOf(g, sub) {
+    const cts = contentTypesOf(g, sub.platform);
+    const ct = sub.content_type || (cts.length === 1 ? cts[0] : '');
+    return (sub.platform || '') + '::' + ct;
+}
+export const cellKey = c => c.platform + '::' + c.contentType;

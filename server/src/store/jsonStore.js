@@ -1436,7 +1436,7 @@ const submissions = {
         });
 
         // ปรับ timestamp ตามหมวดของข้อมูลที่แก้ (ใช้ทำแจ้งเตือนแท็บ)
-        const LIST_F = ['account_name', 'followers', 'platform', 'product', 'agency', 'budget', 'link_account', 'tier', 'group_key', 'status'];
+        const LIST_F = ['account_name', 'followers', 'platform', 'product', 'agency', 'budget', 'link_account', 'tier', 'content_type', 'group_key', 'status'];
         const WORK_F = ['draft_link', 'draft_link2', 'draft_link3', 'draft_link4', 'draft_link5', 'draft_status', 'feedback', 'feedback2', 'feedback3', 'feedback4', 'feedback5', 'gencode', 'post_url', 'post_date', 'id_post', 'code_expire', 'approved', 'concept', 'gen_date'];
         const DRAFT_F = ['draft_link', 'draft_link2', 'draft_link3', 'draft_link4', 'draft_link5', 'draft_status', 'feedback', 'feedback2', 'feedback3', 'feedback4', 'feedback5'];
         const keys = Object.keys(fields).filter(k => fields[k] !== undefined); // นับเฉพาะ field ที่ส่งมาจริง
