@@ -5,6 +5,7 @@ import { useAuth } from '../auth/AuthContext.jsx';
 import Icon from '../components/Icon.jsx';
 import ProjectForm from '../components/ProjectForm.jsx';
 import { visibleBrands } from '../data/brands.js';
+import { groupPlatforms, quotaOf, clipCountFor } from '../data/adGroups.js';
 
 const STATUS_LABEL = {
     Draft: 'ร่าง', Active: 'กำลังทำ', Completed: 'เสร็จสิ้น', Cancelled: 'ยกเลิก'
@@ -135,7 +136,15 @@ export default function Projects() {
                         <div className="pcard-budget-val">฿{Number(p.budget).toLocaleString('th-TH')}</div>
                         <div className="pcard-budget-lbl">งบประมาณ</div>
                     </div>
-                    <span className="kol-badge">⭐ {p.sub_count > 0 ? p.sub_confirmed : (p.kol_count || 0)}{p.kol_target ? `/${p.kol_target}` : ''} KOL</span>
+                    {/* 1 แถว = 1 Clip อยู่แล้ว เป้าจึงต้องเป็นจำนวน Clip ไม่ใช่จำนวนคน
+                        (คน × Content ต่อคน ของแต่ละ Platform) — ของเก่าที่ไม่มีกลุ่มค่อยถอยไปใช้เป้าคน */}
+                    {(() => {
+                        const gs = p.ad_groups || [];
+                        const target = gs.reduce((n, g) => n + groupPlatforms(g)
+                            .reduce((m, pf) => m + quotaOf(g, pf) * clipCountFor(g, pf), 0), 0) || p.kol_target || 0;
+                        const done = p.sub_count > 0 ? p.sub_confirmed : (p.kol_count || 0);
+                        return <span className="kol-badge">⭐ {done}{target ? `/${target}` : ''} Clip</span>;
+                    })()}
                 </div>
             </div>
         </div>
