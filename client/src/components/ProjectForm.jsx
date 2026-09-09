@@ -546,22 +546,22 @@ export default function ProjectForm({ editing, onClose, onSaved }) {
                                             {/* คลิปต่อคนของ Platform นี้ — ไม่ตั้ง = 1 คน 1 คลิป */}
                                             <div className="clips-box">
                                                 <div className="clips-head">
-                                                    <span className="clips-title">🎬 คลิปต่อคน</span>
-                                                    <span className="clips-count">{Math.max(1, (b.clips || []).length)} คลิป / คน</span>
+                                                    <span className="clips-title">🎬 Content / คน</span>
+                                                    <span className="clips-count">{Math.max(1, (b.clips || []).length)} Content / คน</span>
                                                 </div>
                                                 {(b.clips || []).map((c, ci) => (
                                                     <div className="clip-row" key={ci}>
                                                         <span className="clip-no">{ci + 1}</span>
-                                                        <input value={c} placeholder={`ชื่อคลิปที่ ${ci + 1} เช่น คลิปงาน Event`}
+                                                        <input value={c} placeholder={`ชื่อ Content ที่ ${ci + 1} เช่น คลิปงาน Event`}
                                                             onChange={e => setBlockClip(i, bi, ci, e.target.value)} />
-                                                        <button type="button" className="clip-rm" title="ลบคลิปนี้" onClick={() => removeBlockClip(i, bi, ci)}>×</button>
+                                                        <button type="button" className="clip-rm" title="ลบ Content นี้" onClick={() => removeBlockClip(i, bi, ci)}>×</button>
                                                     </div>
                                                 ))}
                                                 <button type="button" className="clip-add" onClick={() => addBlockClip(i, bi)}>
-                                                    <Icon name="plus" size={14} /> เพิ่มคลิป
+                                                    <Icon name="plus" size={14} /> เพิ่ม Content
                                                 </button>
                                                 {(b.clips || []).length === 0 && (
-                                                    <p className="clips-hint">ยังไม่ได้ตั้ง = 1 คนส่ง 1 คลิป</p>
+                                                    <p className="clips-hint">ยังไม่ได้ตั้ง = 1 คนส่ง 1 Content</p>
                                                 )}
                                             </div>
                                         </div>
