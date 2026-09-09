@@ -45,7 +45,7 @@ export function contentTypesFor(platformCsv, current) {
 
 export const emptyTier = () => ({ tier: '', kols: '' });
 export const emptySet = (over = {}) => ({ content_type: '', media_type: '', content_format: '', tiers: [emptyTier()], ...over });
-export const emptyBlock = platform => ({ platform, target: [], budget: '', sets: [emptySet()] });
+export const emptyBlock = platform => ({ platform, target: [], budget: '', products: [], clips: [], sets: [emptySet()] });
 
 export const setKol = s => (s.tiers || []).reduce((n, t) => n + (Number(t.kols) || 0), 0);
 export const blockKol = b => (b.sets || []).reduce((n, s) => n + setKol(s), 0);
@@ -94,6 +94,8 @@ export function toBlocks(g, platformCsv) {
                 platform: p,
                 target: asArr(b.target),
                 budget: b.budget != null ? b.budget : '',
+                products: [...(b.products || [])],
+                clips: [...(b.clips || [])],
                 sets: (b.sets && b.sets.length ? b.sets : [emptySet()]).map(s => ({
                     content_type: s.content_type || '',
                     media_type: s.media_type || '',
@@ -104,7 +106,13 @@ export function toBlocks(g, platformCsv) {
             };
         });
         // บล็อกที่บันทึกไว้ก่อนมีช่องงบ -> เกลี่ยงบของกลุ่มลงไปให้ ไม่ให้กลายเป็น 0
-        return blocksBudget(kept) > 0 ? kept : spreadBudget(kept, g.budget);
+        // บล็อกที่บันทึกก่อนมีช่องสินค้า/คลิป -> ยกของกลุ่มลงไปให้
+        const filled = kept.map(b => ({
+            ...b,
+            products: b.products.length ? b.products : [...(g.products || [])],
+            clips: b.clips.length ? b.clips : [...(g.clips || [])]
+        }));
+        return blocksBudget(filled) > 0 ? filled : spreadBudget(filled, g.budget);
     }
     const oldTiers = (g.allocations || []).length
         ? g.allocations.map(a => ({ tier: a.tier || '', kols: a.kols ?? '' }))
@@ -112,6 +120,9 @@ export function toBlocks(g, platformCsv) {
     const legacy = plats.map((p, idx) => ({
         platform: p,
         target: needTarget(p) ? asArr(g.target) : [],
+        // ของเก่าสินค้า/คลิปเป็นของกลุ่ม = ทุก Platform ใช้ชุดเดียวกันอยู่แล้ว ยกลงให้ครบทุกบล็อก
+        products: [...(g.products || [])],
+        clips: [...(g.clips || [])],
         sets: [emptySet({
             content_type: g.content_type || '',
             media_type: g.media_type || '',
@@ -184,4 +195,21 @@ export function kolInScope(groups, groupKeys, platforms) {
 export function allocsInScope(g, platforms) {
     const pf = (platforms || []).filter(Boolean);
     return (g.allocations || []).filter(a => !pf.length || !a.platform || pf.includes(a.platform));
+}
+
+// สินค้าทั้งหมดของกลุ่ม = รวมของทุก Platform (ไว้ให้หน้าที่ยังอ่านแบบเดิมใช้)
+export function blocksProducts(blocks) {
+    const out = [];
+    (blocks || []).forEach(b => (b.products || []).forEach(c => { if (!out.includes(c)) out.push(c); }));
+    return out;
+}
+
+// สินค้า / คลิป ของ Platform หนึ่งในกลุ่ม — ไม่เจอก็ถอยไปใช้ค่าของกลุ่มแบบเดิม
+export function productsFor(g, platform) {
+    const b = (g.blocks || []).find(x => x.platform === platform);
+    return (b && (b.products || []).length) ? b.products : (g.products || []);
+}
+export function clipsFor(g, platform) {
+    const b = (g.blocks || []).find(x => x.platform === platform);
+    return (b && (b.clips || []).length) ? b.clips : (g.clips || []);
 }
