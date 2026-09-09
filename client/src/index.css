@@ -575,13 +575,13 @@ a { text-decoration: none; color: inherit; }
 .ag-budget-chip { font-size: 12px; padding: 4px 11px; border-radius: 8px; background: #eef7f2; border: 1px solid var(--border); color: var(--text); }
 .ag-budget-chip b { color: var(--mint-dark); font-weight: 800; }
 /* Platform ย้ายไปเป็นหัวกล่อง · Content Type ยังอยู่ในตารางแต่ล็อกตามกล่อง
-   NAME C_TYPE TIER FOLLOWER PRODUCT AGENCY BUDGET LINK จัดการ */
-.ag-add-grid { min-width: 880px; }
-.ag-add-head, .ag-add-row { display: grid; grid-template-columns: minmax(140px,2.3fr) minmax(96px,1fr) minmax(100px,1.05fr) minmax(62px,0.62fr) minmax(80px,0.9fr) minmax(86px,0.85fr) minmax(58px,0.6fr) minmax(84px,1fr) 56px; gap: 7px; align-items: center; }
+   NAME C_TYPE FORMAT TIER FOLLOWER PRODUCT AGENCY BUDGET LINK จัดการ */
+.ag-add-grid { min-width: 930px; }
+.ag-add-head, .ag-add-row { display: grid; grid-template-columns: minmax(124px,2.4fr) minmax(82px,0.9fr) minmax(82px,0.9fr) minmax(88px,0.95fr) minmax(54px,0.56fr) minmax(70px,0.84fr) minmax(78px,0.8fr) minmax(64px,0.62fr) minmax(72px,0.9fr) 54px; gap: 6px; align-items: center; }
 /* เข้าจากลิงก์เอเจนซี่ = ไม่มีคอลัมน์ AGENCY ตารางจึงพอดีจอ ไม่ต้องเลื่อนซ้าย-ขวา */
 .ag-add-grid.no-agency { min-width: 0; }
 .ag-add-grid.no-agency .ag-add-head, .ag-add-grid.no-agency .ag-add-row {
-    grid-template-columns: minmax(140px,2.3fr) minmax(96px,1fr) minmax(100px,1.05fr) minmax(62px,0.62fr) minmax(80px,0.9fr) minmax(58px,0.6fr) minmax(84px,1fr) 56px;
+    grid-template-columns: minmax(124px,2.4fr) minmax(82px,0.9fr) minmax(82px,0.9fr) minmax(88px,0.95fr) minmax(54px,0.56fr) minmax(70px,0.84fr) minmax(64px,0.62fr) minmax(72px,0.9fr) 54px;
 }
 /* 1 กล่อง = 1 ช่อง Platform + Content Type — กรอกในกล่องไหนก็เป็นของช่องนั้น */
 .ag-typebox { border: 1px solid var(--border); border-radius: 12px; background: #fff; padding: 10px 12px; margin-top: 10px; }
@@ -593,6 +593,7 @@ a { text-decoration: none; color: inherit; }
 .ag-saved-meta { font-size: 11px; font-weight: 700; color: var(--mint-dark); background: var(--bg-soft); padding: 2px 8px; border-radius: 8px; }
 .ag-clip-names { margin: 6px 0 2px; font-size: 12px; font-weight: 700; color: #6d3fc0; }
 /* ช่องที่ระบบเติมให้เอง (มีตัวเลือกเดียว) — หน้าตาเหมือนช่องกรอกแต่กดไม่ได้ */
+.ag-fixed-cell.fmt { color: #b45309; background: #fff8f0; }
 .ag-fixed-cell { padding: 9px 8px; border: 1px dashed var(--border); border-radius: 9px; background: #f4faf7; font-size: 12px; font-weight: 700; color: var(--mint-dark); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ag-add-row .atr-action { display: flex; gap: 5px; justify-content: center; }
 .ag-add-head { font-size: 10.5px; font-weight: 700; color: var(--muted); letter-spacing: .3px; padding: 0 4px 9px; }
