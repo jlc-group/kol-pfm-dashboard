@@ -9,7 +9,7 @@ import ProductMultiSelect from '../components/ProductMultiSelect.jsx';
 import { unreadCount } from '../components/MessageBox.jsx';
 import ChatDock from '../components/ChatDock.jsx';
 import { productLabel, asTargetArray } from '../data/products.js';
-import { groupPlatforms } from '../data/adGroups.js';
+import { groupPlatforms, kolInScope } from '../data/adGroups.js';
 import { clipCount, collapseByPerson, countPeople } from '../data/clips.js';
 import StageCards from '../components/StageCards.jsx';
 import { tabBadges, markSeen, seedDraftsSeen } from '../utils/tabUpdates.js';
@@ -412,14 +412,17 @@ export default function ProjectDetail() {
         const next = newLinkGroups.includes(key) ? newLinkGroups.filter(k => k !== key) : [...newLinkGroups, key];
         setNewLinkGroups(next);
         const picked = (project?.ad_groups || []).filter(g => next.includes(g.key));
-        setNewLinkKol(picked.length ? String(picked.reduce((s, g) => s + (Number(g.kol_count) || 0), 0)) : '');
         // Platform/สินค้าที่เลือกไว้ ต้องไม่หลุดขอบเขตกลุ่มใหม่
+        let plats = newLinkPlatforms;
         if (picked.length) {
             const gp = [...new Set(picked.flatMap(g => groupPlatforms(g)))];
             const gc = [...new Set(picked.flatMap(g => g.products || []))];
-            setNewLinkPlatforms(cur => cur.filter(p => gp.includes(p)));
+            plats = newLinkPlatforms.filter(p => gp.includes(p));
+            setNewLinkPlatforms(plats);
             setNewLinkProducts(cur => cur.filter(c => gc.includes(c)));
         }
+        // นับเฉพาะจำนวนคนของ Platform ที่เจ้านี้รับผิดชอบ ไม่ใช่ยอดทั้งกลุ่ม
+        setNewLinkKol(next.length ? String(kolInScope(project?.ad_groups, next, plats)) : '');
     }
     const productsForPlatforms = plats => {
         if (!plats.length) return [];
@@ -438,6 +441,8 @@ export default function ProjectDetail() {
     const toggleNewPlatform = p => {
         const next = newLinkPlatforms.includes(p) ? newLinkPlatforms.filter(x => x !== p) : [...newLinkPlatforms, p];
         setNewLinkPlatforms(next);
+        // ตัด/เพิ่ม Platform แล้วจำนวนคนที่เจ้านี้รับผิดชอบก็เปลี่ยนตาม
+        if (newLinkGroups.length) setNewLinkKol(String(kolInScope(project?.ad_groups, newLinkGroups, next)));
         // เอาสินค้าที่ไม่อยู่ใน Platform ที่เหลือออก
         const valid = new Set(productsForPlatforms(next));
         setNewLinkProducts(prods => prods.filter(c => valid.has(c)));

@@ -7,7 +7,8 @@ import { CONTENT_FORMATS } from '../data/contentFormats.js';
 import MultiSelect from './MultiSelect.jsx';
 import {
     groupPlatforms, splitCsv, needTarget, contentTypesFor,
-    emptyTier, emptySet, emptyBlock, blockKol, blocksKol, toBlocks, flattenBlocks
+    emptyTier, emptySet, emptyBlock, blockKol, blocksKol, toBlocks, flattenBlocks,
+    num, blocksBudget, platformBudgets
 } from '../data/adGroups.js';
 
 const BRANDS = ["Jula's Herb", 'Code Lab', 'Jdent', 'Jarvit', 'Beauterry', 'Jernis', 'Dermiq', 'Minimii', 'Any Skin'];
@@ -182,6 +183,7 @@ export default function ProjectForm({ editing, onClose, onSaved }) {
         return { ...b, sets: [...b.sets, emptySet({ media_type: last.media_type || '', content_format: last.content_format || '' })] };
     });
     const removeSet = (i, bi, si) => mapBlock(i, bi, b => ({ ...b, sets: b.sets.length > 1 ? b.sets.filter((_, j) => j !== si) : b.sets }));
+    const setBlockBudget = (i, bi, v) => mapBlock(i, bi, b => ({ ...b, budget: v.replace(/[^0-9]/g, '') }));
     const setSetField = (i, bi, si, k, v) => mapBlock(i, bi, b => ({
         ...b, sets: b.sets.map((s, j) => j !== si ? s : ({ ...s, [k]: v }))
     }));
@@ -236,7 +238,10 @@ export default function ProjectForm({ editing, onClose, onSaved }) {
         });
         if (!groupsOk) m.push('กลุ่มสินค้า (Platform/สินค้า/Target ของ TikTok/Content Type + ทุกแถว Tier กับจำนวน KOL ให้ครบ)');
         if (!form.owner) m.push('Project Owner');
-        if (!(adGroups.length > 0 && adGroups.every(g => Number(String(g.budget).replace(/\D/g, '')) > 0))) m.push('Budget ของแต่ละกลุ่มสินค้า');
+        // งบกรอกที่ชั้น Platform — ต้องมีทุกบล็อก
+        const budgetOk = adGroups.length > 0 && adGroups.every(g => (g.blocks || []).length > 0
+            && g.blocks.every(b => num(b.budget) > 0));
+        if (!budgetOk) m.push('Budget ของแต่ละ Platform ในกลุ่มสินค้า');
         if (!form.start_date) m.push('วันเริ่ม (Start)');
         if (!form.end_date) m.push('วันสิ้นสุด (End)');
         return m;
@@ -260,7 +265,7 @@ export default function ProjectForm({ editing, onClose, onSaved }) {
                 // ค่าระดับกลุ่มแบบเดิม — เอาจากบล็อก/ชุดแรก เพื่อความเข้ากันได้ย้อนหลัง
                 const b0 = blocks[0] || null;
                 const s0 = (b0 && b0.sets && b0.sets[0]) || null;
-                return { key: g.key || genKey(), platform: plats[0] || null, platforms: plats, blocks, concept: g.concept || null, target: b0 ? asTargetArray(b0.target) : [], content_type: s0 ? (s0.content_type || null) : null, media_type: s0 ? (s0.media_type || null) : null, content_format: s0 ? (s0.content_format || null) : null, clips: (g.clips || []).map(c => String(c || '').trim()).filter(Boolean), brief: (g.brief && g.brief.trim()) ? g.brief.trim() : null, products: g.products, allocations, kol_count: allocations.reduce((s, a) => s + a.kols, 0), budget: Number(String(g.budget).replace(/\D/g, '')) || 0, code_expire: Number(g.code_expire) || 60 };
+                return { key: g.key || genKey(), platform: plats[0] || null, platforms: plats, blocks, concept: g.concept || null, target: b0 ? asTargetArray(b0.target) : [], content_type: s0 ? (s0.content_type || null) : null, media_type: s0 ? (s0.media_type || null) : null, content_format: s0 ? (s0.content_format || null) : null, clips: (g.clips || []).map(c => String(c || '').trim()).filter(Boolean), brief: (g.brief && g.brief.trim()) ? g.brief.trim() : null, products: g.products, allocations, kol_count: allocations.reduce((s, a) => s + a.kols, 0), budget: blocksBudget(blocks), code_expire: Number(g.code_expire) || 60 };
             });
             const flatProducts = groups.flatMap(g => g.products);
             const totalKol = groups.reduce((s, g) => s + g.kol_count, 0); // KOL เป้าหมายรวม = ผลรวมทุกกลุ่ม
@@ -275,13 +280,8 @@ export default function ProjectForm({ editing, onClose, onSaved }) {
             // ส่งค่าว่างไป ของเก่าที่ค้างอยู่จะถูกล้างตอนบันทึกแคมเปญครั้งถัดไป
             const platform_briefs = {};
             // งบต่อ Platform = ผลรวมงบของกลุ่มใน Platform นั้น (ไว้ให้หน้าอื่นที่ยังดูแบบต่อ Platform ใช้)
-            const platform_budgets = {};
-            groups.forEach(g => {
-                const plats = g.platforms.length ? g.platforms : [g.platform].filter(Boolean);
-                if (!plats.length) return;
-                const share = (Number(g.budget) || 0) / plats.length;   // ลงหลาย Platform = หารเท่า ๆ กัน
-                plats.forEach(pf => { platform_budgets[pf] = (platform_budgets[pf] || 0) + share; });
-            });
+            // งบต่อ Platform = ยอดที่กรอกไว้ในบล็อกของ Platform นั้นจริง ๆ (ไม่ใช่หารเท่า ๆ กันแบบเดิม)
+            const platform_budgets = platformBudgets(groups);
             const totalBudget = groups.reduce((s, g) => s + (Number(g.budget) || 0), 0); // งบรวม = ผลรวมทุกกลุ่ม
             const body = {
                 name: form.name,
@@ -474,15 +474,6 @@ export default function ProjectForm({ editing, onClose, onSaved }) {
                                         <input className="target-add" type="url" value={g.brief} onChange={e => setGroupField(i, 'brief', e.target.value)}
                                             placeholder="📄 บรีฟเฉพาะกลุ่มนี้ (ลิงก์ https://...) — เว้นว่างได้ถ้าใช้บรีฟหลัก" />
                                     </div>
-                                    {/* งบของกลุ่มสินค้านี้ */}
-                                    <label className="platform-budget platform-budget-row">
-                                        <span>💰 Budget กลุ่มนี้</span>
-                                        <input type="text" inputMode="numeric"
-                                            value={(g.budget != null && g.budget !== '') ? Number(String(g.budget).replace(/\D/g, '') || 0).toLocaleString('en-US') : ''}
-                                            onChange={e => setGroupField(i, 'budget', e.target.value.replace(/\D/g, ''))}
-                                            placeholder="0" />
-                                        <span className="pb-baht">฿</span>
-                                    </label>
 
                                     {/* แบ่งงานในกลุ่ม: Platform -> Content Type -> Tier
                                         จำนวน KOL กรอกที่ชั้น Tier ที่เดียว ยอดรวมคิดขึ้นมาให้เอง */}
@@ -494,12 +485,16 @@ export default function ProjectForm({ editing, onClose, onSaved }) {
                                         const bTargetOpts = [...new Set([...gTargets, ...bTargetSel])];
                                         return (
                                         <div className={'plat-blk' + (single ? ' single' : '')} key={b.platform}>
-                                            {!single && (
-                                                <div className="plat-blk-head">
-                                                    <span className="plat-blk-name">📱 {b.platform}</span>
-                                                    <span className="plat-blk-sum">รวม {blockKol(b)} คน</span>
-                                                </div>
-                                            )}
+                                            <div className="plat-blk-head">
+                                                <span className="plat-blk-name">{single ? '💰 งบ / จำนวนคน' : '📱 ' + b.platform}</span>
+                                                <span className="plat-blk-sum">รวม {blockKol(b)} คน</span>
+                                                <label className="plat-blk-budget">
+                                                    <input type="text" inputMode="numeric" placeholder="0"
+                                                        value={b.budget ? num(b.budget).toLocaleString('en-US') : ''}
+                                                        onChange={e => setBlockBudget(i, bi, e.target.value)} />
+                                                    <span className="pb-baht">฿</span>
+                                                </label>
+                                            </div>
                                             {/* Target ใช้เฉพาะบาง Platform (ตอนนี้ TikTok) — Platform อื่นไม่มีช่องนี้เลย */}
                                             {needTarget(b.platform) && (
                                                 <div className="target-multi">
@@ -572,7 +567,10 @@ export default function ProjectForm({ editing, onClose, onSaved }) {
                                         </div>
                                         );
                                     })}
-                                    <div className="grp-kol-sum">รวมทั้งกลุ่ม <b>{groupTotalKol(g)}</b> คน</div>
+                                    <div className="grp-kol-sum">
+                                        รวมทั้งกลุ่ม <b>{groupTotalKol(g)}</b> คน · งบ <b>฿{blocksBudget(g.blocks).toLocaleString('en-US')}</b>
+                                        <span className="grp-kol-note">(คิดจากที่กรอกในแต่ละ Platform)</span>
+                                    </div>
                                 </div>
                                 );
                             })}

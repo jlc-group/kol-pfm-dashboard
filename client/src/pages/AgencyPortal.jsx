@@ -10,7 +10,7 @@ import OnProcessTable from '../components/OnProcessTable.jsx';
 import StageCards from '../components/StageCards.jsx';
 import ProductChips, { ProductSummary } from '../components/ProductChips.jsx';
 import { productLabel } from '../data/products.js';
-import { groupPlatforms } from '../data/adGroups.js';
+import { groupPlatforms, allocsInScope } from '../data/adGroups.js';
 import { groupClips, clipCount, collapseByPerson, countPeople } from '../data/clips.js';
 import { tabBadges, markSeen, seedDraftsSeen } from '../utils/tabUpdates.js';
 import { useAuth } from '../auth/AuthContext.jsx';
@@ -191,10 +191,13 @@ function SubItem({ s, onEdit }) {
 }
 
 // section 1 กลุ่มสินค้า — โชว์ความต้องการ (Platform/Tier/จำนวน) + ฟอร์มใส่ชื่อ + ลิสต์ของกลุ่ม
-function GroupSection({ token, group, gi, subs, onReload, onEdit, onDelete, onNote, agencyName, platformBudgets = {} }) {
+function GroupSection({ token, group, gi, subs, onReload, onEdit, onDelete, onNote, agencyName, platformBudgets = {}, scopePlatforms = [] }) {
     const groupProducts = group.products || [];
     const groupPlats = groupPlatforms(group);
-    const groupTiers = [...new Set((group.allocations || []).map(a => a.tier).filter(Boolean))];
+    // เห็นแค่แถวของ Platform ที่เจ้านี้รับผิดชอบ ไม่ใช่ทั้งกลุ่ม
+    const myAllocs = allocsInScope(group, scopePlatforms);
+    const groupTiers = [...new Set(myAllocs.map(a => a.tier).filter(Boolean))];
+    const myKol = myAllocs.reduce((s, a) => s + (Number(a.kols) || 0), 0);
     // API ส่งมาแบบใหม่สุดขึ้นก่อน — กลับด้านให้คนที่บันทึกทีหลังต่อท้ายลงมาเรื่อย ๆ
     const groupRows = subs.filter(s => s.group_key === group.key)
         .slice().sort((a, b) => (a.submitted_at || '').localeCompare(b.submitted_at || '') || (a.id - b.id));
@@ -202,7 +205,7 @@ function GroupSection({ token, group, gi, subs, onReload, onEdit, onDelete, onNo
     const groupSubs = collapseByPerson(groupRows);
     const perClip = clipCount(group);              // กลุ่มนี้ 1 คนส่งกี่คลิป
     const clipNames = groupClips(group);
-    const total = group.kol_count || 0;
+    const total = myKol || group.kol_count || 0;
 
     // Budget ของกลุ่มนี้ (สำหรับปุ่มหารเฉลี่ยแบบเหมาราคา) — ใช้งบต่อกลุ่ม, ถ้าข้อมูลเดิมไม่มีค่อย fallback งบต่อ Platform
     const groupPlatform = groupPlats[0] || null;
@@ -304,9 +307,13 @@ function GroupSection({ token, group, gi, subs, onReload, onEdit, onDelete, onNo
             </div>
 
             {group.brief && <a className="brief-link ag-group-brief" href={group.brief} target="_blank" rel="noreferrer"><Icon name="eye" size={14} /> เปิดบรีฟกลุ่มนี้</a>}
-            {(group.allocations || []).length > 0 && (
+            {myAllocs.length > 0 && (
                 <div className="ag-group-allocs">
-                    {group.allocations.map((a, ai) => <span className="chip-alloc" key={ai}>{a.tier} · {a.kols} คน</span>)}
+                    {myAllocs.map((a, ai) => (
+                        <span className="chip-alloc" key={ai}>
+                            {a.content_type ? a.content_type + ' · ' : ''}{a.tier} · {a.kols} คน
+                        </span>
+                    ))}
                 </div>
             )}
 
@@ -647,7 +654,7 @@ export default function AgencyPortal() {
                     {adGroups.length > 0 ? (
                         <>
                             {adGroups.map((g, gi) => (
-                                <GroupSection key={g.key || gi} token={token} group={g} gi={gi} subs={subs} onReload={load} onEdit={setEditSub} onDelete={deleteSub} onNote={saveNote} agencyName={info.agency_name} platformBudgets={platformBudgets} />
+                                <GroupSection key={g.key || gi} token={token} group={g} gi={gi} subs={subs} onReload={load} onEdit={setEditSub} onDelete={deleteSub} onNote={saveNote} agencyName={info.agency_name} platformBudgets={platformBudgets} scopePlatforms={scopePlatforms} />
                             ))}
                             {ungrouped.length > 0 && (
                                 <div className="agency-card">
