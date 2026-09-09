@@ -1,5 +1,8 @@
 node_modules/
 .env
+# ไฟล์สำรอง .env / db อาจมีรหัสผ่านและคีย์ติดไปด้วย ห้าม commit เด็ดขาด
+*.bak
+*.parity-backup
 dist/
 *.log
 

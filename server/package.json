@@ -8,7 +8,9 @@
     "start": "node src/index.js",
     "dev": "nodemon src/index.js",
     "setup-db": "node src/scripts/setupDatabase.js",
-    "seed": "node src/scripts/seed.js"
+    "seed": "node src/scripts/seed.js",
+    "migrate": "node src/scripts/migrateToPostgres.js",
+    "parity": "node src/scripts/parityCheck.js"
   },
   "keywords": [
     "kol",

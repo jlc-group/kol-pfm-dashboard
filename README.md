@@ -3,14 +3,25 @@
 Dashboard กลางสำหรับหลายทีม — สร้างใหม่ ไม่ต่อยอดจากของเดิม
 
 ## สถานะปัจจุบัน
-- ✅ **Phase 1: Backend + Auth** (เสร็จ) — API + Login/Role + Project แยกตามทีม
-- ⏳ **Phase 2: Frontend** (React + Vite) — ยังไม่เริ่ม
-- ⏳ **Phase 3: Deploy**
+- ✅ **Phase 1: Backend + Auth** — API + Login/Role + Project แยกตามทีม
+- ✅ **Phase 2: Frontend** (React 18 + Vite)
+- ✅ **Phase 3: PostgreSQL** — ข้อมูลทั้งหมดอยู่ในฐานข้อมูลจริงแล้ว
+- ⏳ **Phase 4: Deploy**
 
 ## ที่เก็บข้อมูล (Data Driver)
-ตอนนี้ยังไม่ขึ้น PostgreSQL — ใช้ **ไฟล์ JSON** ชั่วคราว (`server/data/db.json`)
-สลับได้ที่ `server/.env` → `DATA_DRIVER=json` หรือ `postgres`
-ทุก route เรียกผ่าน `src/store/` เวลาสลับไป PostgreSQL จะไม่ต้องแก้ route
+ข้อมูลจริงเก็บใน **PostgreSQL** ฐานข้อมูล `kol_dashboard` (14 ตาราง)
+
+ตั้งค่าที่ `server/.env`:
+```
+DATA_DRIVER=postgres
+DB_HOST=...   DB_PORT=5432   DB_NAME=kol_dashboard
+DB_USER=...   DB_PASSWORD=...
+```
+
+ยังมีไดรเวอร์ `json` (`server/data/db.json`) เหลือไว้ — ไม่ใช่ที่เก็บจริงแล้ว
+ใช้เป็น **ตัวเทียบผล** ตอนรัน `npm run parity` เพื่อพิสูจน์ว่า PostgreSQL ให้ผลเหมือนเดิมทุกประการ
+
+ทุก route (102 เส้น) เรียกผ่าน `src/store/` ตัวเดียว จึงสลับไดรเวอร์ได้โดยไม่ต้องแก้ route
 
 ## โครงสร้าง
 ```
@@ -20,20 +31,33 @@ dashboard-v2/
 │   │   ├── index.js        # entry + /api/health, /api/stats/overview
 │   │   ├── middleware/auth.js   # ตรวจ JWT + role
 │   │   ├── routes/         # auth, teams, users, kols, projects
-│   │   ├── store/          # ชั้นเก็บข้อมูล (jsonStore ตอนนี้ / pgStore ภายหลัง)
-│   │   ├── models/schema.sql    # schema สำหรับ PostgreSQL (ใช้ตอนขึ้น DB)
-│   │   └── scripts/        # setupDatabase.js, seed.js
-│   └── data/db.json        # ข้อมูล dev (gitignored)
-└── client/                 # Frontend (React + Vite) — Phase 2
+│   │   ├── store/
+│   │   │   ├── index.js    # เลือกไดรเวอร์ตาม DATA_DRIVER
+│   │   │   ├── pgStore.js  # ★ ไดรเวอร์จริง — รวมโมดูลใน pg/
+│   │   │   ├── pg/         # pgStore แยกตามโดเมน + _base.js (type parser) + _snapshot.js
+│   │   │   ├── logic.js    # ตรรกะบริสุทธิ์ที่สองไดรเวอร์ใช้ร่วมกัน (CPM/CPE/การจัดกลุ่ม)
+│   │   │   └── jsonStore.js# ไดรเวอร์ไฟล์ — ใช้เป็นตัวเทียบผลเท่านั้น
+│   │   ├── models/schema.sql    # schema PostgreSQL (14 ตาราง)
+│   │   └── scripts/        # setupDatabase.js, migrateToPostgres.js, parityCheck.js, seed.js
+│   └── data/db.json        # ข้อมูลของไดรเวอร์ json (gitignored)
+└── client/                 # Frontend (React 18 + Vite)
 ```
 
 ## วิธีรัน (Backend)
 ```bash
 cd server
 npm install
-npm run seed     # สร้าง admin + ข้อมูลตัวอย่าง (ครั้งแรก)
-npm run dev      # เปิด server ที่ http://localhost:4000
+npm run setup-db   # สร้างตารางใน PostgreSQL (ครั้งแรก)
+npm run seed       # สร้าง admin + ข้อมูลตัวอย่าง (ครั้งแรก)
+npm run dev        # เปิด server ที่ http://localhost:4000
 ```
+
+### คำสั่งเกี่ยวกับฐานข้อมูล
+| คำสั่ง | หน้าที่ |
+|--------|---------|
+| `npm run setup-db` | สร้าง/อัปเดตตารางตาม `schema.sql` |
+| `npm run migrate`  | ย้ายข้อมูลจาก `data/db.json` เข้า PostgreSQL (ทั้งหมดใน transaction เดียว · `--force` = ทับของเดิม) |
+| `npm run parity`   | เทียบผลลัพธ์ทุก method ระหว่าง jsonStore กับ pgStore |
 
 ## บัญชีเริ่มต้น (หลัง seed)
 | role   | username | password                              | ทีม        |
