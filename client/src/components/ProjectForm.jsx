@@ -399,8 +399,7 @@ export default function ProjectForm({ editing, onClose, onSaved }) {
                                 <p className="dash-section-sub" style={{ padding: '4px 2px' }}>ยังไม่มีกลุ่มสินค้า — กดปุ่มด้านล่างเพื่อเริ่ม</p>
                             )}
                             {adGroups.map((g, i) => {
-                                const gTargetSel = asTargetArray(g.target);
-                                const targetOpts = [...new Set([...gTargets, ...gTargetSel])];
+                                // Target ย้ายไปอยู่ในบล็อกของแต่ละ Platform แล้ว ระดับกลุ่มไม่ต้องคิดอะไร
                                 return (
                                 <div className="adgroup-block" key={g.key || i}>
                                     <div className="adgroup-head">
