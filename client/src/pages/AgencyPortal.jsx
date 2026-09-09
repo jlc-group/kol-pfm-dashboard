@@ -124,7 +124,7 @@ function EditSubmissionModal({ token, sub, products = [], onClose, onSaved, agen
 
 // รายการ submission 1 อัน (ใช้ในลิสต์ของกลุ่ม/ไม่ระบุกลุ่ม)
 // แถวที่บันทึกแล้ว — แสดงในตารางเดิม (ล็อกอ่านอย่างเดียว) ไม่เด้งไปลิสต์ด้านล่าง
-function SavedGridRow({ s, n, group, onEdit, onDelete, onNote }) {
+function SavedGridRow({ s, n, group, agencyName, onEdit, onDelete, onNote }) {
     // Format ไม่ได้เก็บในแถว — อ่านจากที่ตั้งไว้ในกลุ่มตาม Platform + Content Type
     const fmt = mediaFor(group, s.platform, s.content_type).content_format;
     const st = STATUS[s.status] || STATUS.submitted;
@@ -148,7 +148,7 @@ function SavedGridRow({ s, n, group, onEdit, onDelete, onNote }) {
                 </span>
                 <span className="ag-saved-cell">{Number(s.followers) > 0 ? Number(s.followers).toLocaleString('en-US') : '—'}</span>
                 <span className="ag-saved-cell"><ProductSummary value={s.product} max={2} /></span>
-                <span className="ag-saved-cell">{s.agency || '—'}</span>
+                {!agencyName && <span className="ag-saved-cell">{s.agency || '—'}</span>}
                 <span className="ag-saved-cell">
                     ฿{Number(s.budget || 0).toLocaleString('th-TH')}
                     {clips.length > 1 && <small className="ag-budget-split">฿{perClipBudget.toLocaleString('th-TH')} × {clips.length}</small>}
@@ -352,9 +352,9 @@ function GroupSection({ token, group, gi, subs, onReload, onEdit, onDelete, onNo
                 </div>
             )}
             <div className="ag-add-scroll">
-                <div className="ag-add-grid">
-                    <div className="ag-add-head"><span>NAME</span><span>PLATFORM</span><span>CONTENT TYPE</span><span>FOLLOWER</span><span>PRODUCT</span><span>AGENCY</span><span>BUDGET</span><span>LINK ACCOUNT</span><span /></div>
-                    {groupSubs.map((s, si) => <SavedGridRow key={s.id} s={s} n={si + 1} group={group} onEdit={onEdit} onDelete={onDelete} onNote={onNote} />)}
+                <div className={'ag-add-grid' + (agencyName ? ' no-agency' : '')}>
+                    <div className="ag-add-head"><span>NAME</span><span>PLATFORM</span><span>CONTENT TYPE</span><span>FOLLOWER</span><span>PRODUCT</span>{!agencyName && <span>AGENCY</span>}<span>BUDGET</span><span>LINK ACCOUNT</span><span /></div>
+                    {groupSubs.map((s, si) => <SavedGridRow key={s.id} s={s} n={si + 1} group={group} agencyName={agencyName} onEdit={onEdit} onDelete={onDelete} onNote={onNote} />)}
                     {rows.map((en, i) => (
                         <div className="ag-add-row" key={i}>
                             <div className="atr-name"><span className="atr-num">{groupSubs.length + i + 1}</span><input value={en.account_name} onChange={e => upRow(i, 'account_name', e.target.value)} placeholder="ชื่อ Account" onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); saveRow(i); } }} /></div>
@@ -376,9 +376,8 @@ function GroupSection({ token, group, gi, subs, onReload, onEdit, onDelete, onNo
                             })()}
                             <input type="number" min="0" value={en.followers} onChange={e => upRow(i, 'followers', e.target.value)} placeholder="ยอดฟอล" />
                             <ProductMultiSelect value={en.product} options={groupProducts} onChange={v => upRow(i, 'product', v)} />
-                            {agencyName
-                                ? <input value={agencyName} readOnly className="agency-locked" title="ชื่อเอเจนซี่ (จากลิงก์)" />
-                                : <input value={en.agency} onChange={e => upRow(i, 'agency', e.target.value)} placeholder="Contact" />}
+                            {/* ลิงก์นี้ผูกเอเจนซี่ไว้แล้ว ไม่ต้องมีช่องให้กรอกซ้ำทุกแถว */}
+                            {!agencyName && <input value={en.agency} onChange={e => upRow(i, 'agency', e.target.value)} placeholder="Contact" />}
                             <input type="number" min="0" value={en.budget} onChange={e => upRow(i, 'budget', e.target.value)} placeholder="฿" />
                             <input type="url" value={en.link_account} onChange={e => upRow(i, 'link_account', e.target.value)} placeholder="https://..." />
                             <div className="atr-action">
