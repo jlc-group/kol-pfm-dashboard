@@ -9,7 +9,10 @@ import ProductMultiSelect from '../components/ProductMultiSelect.jsx';
 import { unreadCount } from '../components/MessageBox.jsx';
 import ChatDock from '../components/ChatDock.jsx';
 import { productLabel, asTargetArray } from '../data/products.js';
-import { groupPlatforms, kolInScope, contentTypesOf, mediaFor, quotaOf } from '../data/adGroups.js';
+import {
+    groupPlatforms, kolInScope, contentTypesOf, mediaFor, quotaOf,
+    toBlocks, blockKol, blocksKol, blocksBudget, num, needTarget
+} from '../data/adGroups.js';
 import { clipCount, collapseByPerson, countPeople } from '../data/clips.js';
 import StageCards from '../components/StageCards.jsx';
 import { tabBadges, markSeen, seedDraftsSeen } from '../utils/tabUpdates.js';
@@ -681,6 +684,10 @@ export default function ProjectDetail() {
             {statusBlock('rejected', 'ไม่เลือก', rej, 'จัดการ', 'grp-rejected', grp)}
         </>;
     };
+    // โควตาคนของกลุ่ม ตามขอบเขตที่กำลังกรองดูอยู่
+    const groupQuota = g => (listPlat === 'all')
+        ? blocksKol(toBlocks(g))
+        : quotaOf(g, listPlat, listCtype === 'all' ? null : listCtype);
     // แถบหัวกลุ่มสินค้า (ฝั่งทีม)
     const teamGroupBar = (g, gi, gsubs) => {
         const conf = countPeople(gsubs.filter(s => s.status === 'confirmed'));
@@ -692,8 +699,9 @@ export default function ProjectDetail() {
                     {g.concept && <span className="grp-concept">📝 Concept: {g.concept}</span>}
                 </div>
                 <span className="grp-count grp-count-under">
-                    {conf}/{g.kol_count || countPeople(gsubs)} คน คัดเลือก
-                    {clipCount(g) > 1 && <span className="grp-count-clip"> · {gsubs.filter(s => s.status === 'confirmed').length}/{(Number(g.kol_count) || 0) * clipCount(g)} คลิป</span>}
+                    {/* กรอง Platform/Content Type อยู่ ตัวหารต้องเป็นโควตาเฉพาะที่กรอง ไม่ใช่ยอดรวมทั้งกลุ่ม */}
+                    {conf}/{groupQuota(g) || countPeople(gsubs)} คน คัดเลือก
+                    {clipCount(g) > 1 && <span className="grp-count-clip"> · {gsubs.filter(s => s.status === 'confirmed').length}/{groupQuota(g) * clipCount(g)} คลิป</span>}
                 </span>
             </div>
         );
@@ -820,61 +828,78 @@ export default function ProjectDetail() {
                             <div className="pd-block-title"><Icon name="tag" size={15} /> สินค้า &amp; กลุ่มโฆษณา</div>
                             {project.ad_groups?.length > 0 ? (
                                 <div className="adg-cards">
-                                    {project.ad_groups.map((g, i) => (
+                                    {project.ad_groups.map((g, i) => {
+                                        // โครงใหม่ กลุ่ม > Platform > Content Type > Tier — ค่าทุกอย่างอ่านต่อ Platform
+                                        const blocks = toBlocks(g);
+                                        return (
                                         <div className="adg-card" key={i}>
                                             <div className="adg-card-head">
                                                 <span className="adg-badge">กลุ่มที่ {i + 1}</span>
-                                                {groupPlatforms(g).map(pf => <span className="adg-plat" key={pf}>📱 {pf}</span>)}
                                                 {g.concept && <span className="adg-concept">📝 Concept: {g.concept}</span>}
-                                                {g.kol_count > 0 && <span className="adg-kol">⭐ {g.kol_count} KOL</span>}
-                                                {Number(g.budget) > 0 && <span className="adg-budget">💰 ฿{Number(g.budget).toLocaleString('th-TH')}</span>}
+                                                {blocksKol(blocks) > 0 && <span className="adg-kol">⭐ รวม {blocksKol(blocks)} KOL</span>}
+                                                {blocksBudget(blocks) > 0 && <span className="adg-budget">💰 รวม ฿{blocksBudget(blocks).toLocaleString('th-TH')}</span>}
                                             </div>
-                                            <div className="adg-fields">
-                                                <div className="adg-field">
-                                                    <span className="adg-label">สินค้า <span className="adg-count">({(g.products || []).length})</span></span>
-                                                    <div className="adg-val">
-                                                        <ProductChips products={g.products || []} />
-                                                    </div>
-                                                </div>
-                                                <div className="adg-field">
-                                                    <span className="adg-label">กลุ่มเป้าหมาย (Target)</span>
-                                                    <div className="adg-val">
-                                                        {asTargetArray(g.target).length > 0
-                                                            ? asTargetArray(g.target).map(t => <span className="chip-target" key={t}>🎯 {t}</span>)
-                                                            : <span className="muted">ไม่ระบุ</span>}
-                                                    </div>
-                                                </div>
-                                                <div className="adg-field">
-                                                    <span className="adg-label">ประเภทคอนเทนต์</span>
-                                                    <div className="adg-val">{g.content_type ? <span className="chip-ctype">{g.content_type}</span> : <span className="muted">—</span>}</div>
-                                                </div>
-                                                <div className="adg-field">
-                                                    <span className="adg-label">Photo / VDO</span>
-                                                    <div className="adg-val">{g.media_type ? <span className="chip-ctype">{g.media_type}</span> : <span className="muted">—</span>}</div>
-                                                </div>
-                                                <div className="adg-field">
-                                                    <span className="adg-label">Content Format</span>
-                                                    <div className="adg-val">{g.content_format ? splitCsv(g.content_format).map(x => <span className="chip-ctype" key={x}>{x}</span>) : <span className="muted">—</span>}</div>
-                                                </div>
-                                                {g.brief && (
-                                                    <div className="adg-field">
-                                                        <span className="adg-label">บรีฟกลุ่มนี้</span>
-                                                        <div className="adg-val"><a className="brief-link" href={g.brief} target="_blank" rel="noreferrer"><Icon name="eye" size={14} /> เปิดบรีฟ</a></div>
-                                                    </div>
-                                                )}
-                                                {(g.allocations || []).length > 0 && (
-                                                    <div className="adg-field">
-                                                        <span className="adg-label">Tier / จำนวน</span>
-                                                        <div className="adg-val">
-                                                            {g.allocations.map((a, ai) => (
-                                                                <span className="adg-alloc" key={ai}><b>{a.tier}</b> · {a.kols} คน</span>
+                                            {g.brief && (
+                                                <a className="brief-link adg-brief" href={g.brief} target="_blank" rel="noreferrer">
+                                                    <Icon name="eye" size={13} /> เปิดบรีฟกลุ่มนี้
+                                                </a>
+                                            )}
+                                            {blocks.length === 0 && <div className="muted" style={{ fontSize: 12 }}>กลุ่มนี้ยังไม่ได้เลือก Platform</div>}
+                                            <div className="adg-plats">
+                                                {blocks.map((b, bi) => (
+                                                    <div className="adg-plat-block" key={bi}>
+                                                        <div className="adg-pb-head">
+                                                            <span className="adg-plat">📱 {b.platform}</span>
+                                                            {blockKol(b) > 0 && <span className="adg-pb-kol">⭐ {blockKol(b)} คน</span>}
+                                                            {num(b.budget) > 0 && <span className="adg-pb-budget">฿{num(b.budget).toLocaleString('th-TH')}</span>}
+                                                            {(b.clips || []).length > 1 && <span className="adg-pb-clip">🎬 {b.clips.length} Content / คน</span>}
+                                                        </div>
+                                                        <div className="adg-fields">
+                                                            <div className="adg-field">
+                                                                <span className="adg-label">สินค้า <span className="adg-count">({(b.products || []).length})</span></span>
+                                                                <div className="adg-val">
+                                                                    {(b.products || []).length > 0
+                                                                        ? <ProductChips products={b.products} />
+                                                                        : <span className="muted">ไม่ระบุ</span>}
+                                                                </div>
+                                                            </div>
+                                                            {/* Target มีเฉพาะ Platform ที่ใช้ยิงแอด (TikTok) */}
+                                                            {needTarget(b.platform) && (
+                                                                <div className="adg-field">
+                                                                    <span className="adg-label">กลุ่มเป้าหมาย (Target)</span>
+                                                                    <div className="adg-val">
+                                                                        {b.target.length > 0
+                                                                            ? b.target.map(t => <span className="chip-target" key={t}>🎯 {t}</span>)
+                                                                            : <span className="muted">ไม่ระบุ</span>}
+                                                                    </div>
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                        {/* 1 Platform มีได้หลาย Content Type แต่ละอันมี Tier ของตัวเอง */}
+                                                        <div className="adg-sets">
+                                                            {b.sets.map((s, si) => (
+                                                                <div className="adg-set" key={si}>
+                                                                    <div className="adg-set-chips">
+                                                                        {s.content_type
+                                                                            ? <span className="chip-ctype">{s.content_type}</span>
+                                                                            : <span className="muted">ยังไม่ตั้ง Content Type</span>}
+                                                                        {s.media_type && <span className="chip-ctype media">{s.media_type}</span>}
+                                                                        {splitCsv(s.content_format).map(x => <span className="chip-ctype fmt" key={x}>{x}</span>)}
+                                                                    </div>
+                                                                    <div className="adg-set-tiers">
+                                                                        {(s.tiers || []).filter(t => t.tier || num(t.kols)).map((t, ti) => (
+                                                                            <span className="adg-alloc" key={ti}><b>{t.tier || '—'}</b> · {num(t.kols)} คน</span>
+                                                                        ))}
+                                                                    </div>
+                                                                </div>
                                                             ))}
                                                         </div>
                                                     </div>
-                                                )}
+                                                ))}
                                             </div>
                                         </div>
-                                    ))}
+                                        );
+                                    })}
                                 </div>
                             ) : (
                                 <div className="chip-list">
