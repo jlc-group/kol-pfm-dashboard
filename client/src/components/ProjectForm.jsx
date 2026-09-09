@@ -5,7 +5,10 @@ import DatePicker from './DatePicker.jsx';
 import { productsByBrand, productLabel, targetsForProducts, asTargetArray } from '../data/products.js';
 import { CONTENT_FORMATS } from '../data/contentFormats.js';
 import MultiSelect from './MultiSelect.jsx';
-import { groupPlatforms, splitCsv } from '../data/adGroups.js';
+import {
+    groupPlatforms, splitCsv, needTarget, contentTypesFor,
+    emptyTier, emptySet, emptyBlock, blockKol, blocksKol, toBlocks, flattenBlocks
+} from '../data/adGroups.js';
 
 const BRANDS = ["Jula's Herb", 'Code Lab', 'Jdent', 'Jarvit', 'Beauterry', 'Jernis', 'Dermiq', 'Minimii', 'Any Skin'];
 // รายชื่อทีมงานที่รับเป็น Owner ของแคมเปญ — แก้/เพิ่มชื่อตรงนี้ได้เลย
@@ -14,26 +17,16 @@ const BRANDS = ["Jula's Herb", 'Code Lab', 'Jdent', 'Jarvit', 'Beauterry', 'Jern
 // คนเข้าใหม่เลยไม่โผล่ ต้องมาแก้โค้ดทุกครั้ง)
 // กลุ่ม Target สำหรับการยิงแอด (ตามช่วงอายุ)
 // Content Type ต่างกันตาม Platform — Facebook ใช้ชุดของแอด ไม่ใช่ Review/Sale เหมือนช่องทางอื่น
-const CONTENT_TYPES = ['Review', 'Sale'];
-const CONTENT_TYPES_BY_PLATFORM = { Facebook: ['Awareness', 'Engagement', 'Reels'] };
-// กลุ่มลงได้หลาย Platform -> รวมตัวเลือกของทุก Platform ที่เลือกไว้
-// (ค่าที่เคยบันทึกไว้ก็ต้องคงอยู่ในลิสต์ ไม่งั้น dropdown จะเด้งกลับเป็นค่าว่าง)
-function contentTypesFor(platformCsv, current) {
-    const plats = splitCsv(platformCsv);
-    const out = [];
-    (plats.length ? plats : ['']).forEach(p => {
-        (CONTENT_TYPES_BY_PLATFORM[p] || CONTENT_TYPES).forEach(c => { if (!out.includes(c)) out.push(c); });
-    });
-    if (current && !out.includes(current)) out.push(current);
-    return out;
-}
+// Content Type / Target / โครงการแบ่งงาน 3 ชั้น อยู่ที่ data/adGroups.js (ใช้ร่วมกับหน้าอื่น)
 // รูปแบบสื่อที่ต้องการจาก KOL กลุ่มนี้
 const MEDIA_TYPES = ['Photo', 'VDO'];
 const CODE_EXPIRE_OPTS = [7, 30, 60, 180, 365]; // จำนวนวัน Gencode ให้เลือก
 const GROUP_PLATFORMS = ['TikTok', 'Instagram', 'Facebook', 'Lemon8', 'X', 'YouTube'];
 const TIERS = ['Nano 1k - 10k', 'Micro 10k - 100k', 'Macro 100k - 1M', 'Mega 1M+'];
 // จำนวน KOL รวมของกลุ่ม = ผลรวมทุกแถว allocation (Platform/Tier/จำนวน)
-const groupTotalKol = g => (g.allocations || []).reduce((s, a) => s + (Number(a.kols) || 0), 0);
+const groupTotalKol = g => ((g.blocks && g.blocks.length)
+    ? blocksKol(g.blocks)
+    : (g.allocations || []).reduce((s, a) => s + (Number(a.kols) || 0), 0));
 // สร้าง "กลุ่มโฆษณา" เริ่มต้นจากข้อมูลเดิม (รองรับ ad_groups / products[{name,target}] / products[string])
 // เลือกแบบ checkbox ติ๊กได้หลายตัวพร้อมกัน (ใช้ทั้งสินค้าและกลุ่ม Target)
 // options = [{ value, label }]
@@ -74,9 +67,14 @@ function CheckMultiSelect({ options, selected, onToggle, disabled, disabledText,
     );
 }
 
-const emptyAlloc = () => ({ tier: '', kols: '' });   // Platform ย้ายไปอยู่ระดับกลุ่มแล้ว (allocation เหลือแค่ Tier/จำนวน)
+// โครงการแบ่งงานในกลุ่ม 3 ชั้น:
+//   บล็อก Platform (มี Target ของ Platform นั้น)
+//     -> ชุด Content Type (Content Type / Photo-VDO / Format)
+//        -> แถว Tier (Tier / จำนวน KOL)  <- จำนวนคนอยู่ชั้นนี้ที่เดียว
+const emptyAlloc = () => ({ tier: '', kols: '' });
+   // Platform ย้ายไปอยู่ระดับกลุ่มแล้ว (allocation เหลือแค่ Tier/จำนวน)
 const genKey = () => 'g' + Math.random().toString(36).slice(2, 9);
-const newGroup = (over = {}) => ({ key: genKey(), platform: '', concept: '', clips: [], target: [], content_type: '', media_type: '', content_format: '', products: [], allocations: [emptyAlloc()], brief: '', draft: '', budget: '', code_expire: 60, ...over });
+const newGroup = (over = {}) => ({ key: genKey(), platform: '', concept: '', clips: [], target: [], content_type: '', media_type: '', content_format: '', products: [], allocations: [emptyAlloc()], blocks: [], brief: '', draft: '', budget: '', code_expire: 60, ...over });
 // แปลงข้อมูลเดิม → allocations แบบใหม่ (เหลือ tier/kols) + คืน platform ของกลุ่ม
 function migAllocations(g) {
     if (Array.isArray(g.allocations) && g.allocations.length) return g.allocations.map(a => ({ tier: a.tier || '', kols: a.kols ?? '' }));
@@ -88,6 +86,7 @@ function migAllocations(g) {
     return [emptyAlloc()];
 }
 // Platform ของกลุ่ม — ในฟอร์มเก็บเป็นสตริงคั่นคอมมา (MultiSelect ใช้รูปแบบนี้)
+
 const migPlatform = g => groupPlatforms(g).join(',');
 function initGroups(editing) {
     if (Array.isArray(editing?.ad_groups) && editing.ad_groups.length) {
@@ -98,7 +97,7 @@ function initGroups(editing) {
         return editing.ad_groups.map(g => {
             const plat = migPlatform(g);
             const seededBudget = (g.budget != null && g.budget !== '') ? g.budget : ((groupsPerPlat[plat] === 1 && Number(pb[plat]) > 0) ? pb[plat] : '');
-            return newGroup({ key: g.key || genKey(), platform: plat, concept: g.concept || '', clips: [...(g.clips || [])], target: asTargetArray(g.target), content_type: g.content_type || '', media_type: g.media_type || '', content_format: g.content_format || '', brief: g.brief || '', products: [...(g.products || [])], allocations: migAllocations(g), budget: seededBudget, code_expire: Number(g.code_expire) || 60 });
+            return newGroup({ key: g.key || genKey(), platform: plat, concept: g.concept || '', clips: [...(g.clips || [])], target: asTargetArray(g.target), content_type: g.content_type || '', media_type: g.media_type || '', content_format: g.content_format || '', brief: g.brief || '', products: [...(g.products || [])], allocations: migAllocations(g), blocks: toBlocks(g, plat), budget: seededBudget, code_expire: Number(g.code_expire) || 60 });
         });
     }
     const prods = editing?.products || [];
@@ -156,14 +155,51 @@ export default function ProjectForm({ editing, onClose, onSaved }) {
     function update(k, v) { setForm(f => ({ ...f, [k]: v })); }
     // เริ่มจากกลุ่มสินค้า แล้วค่อยเลือก Platform ในหัวกลุ่ม
     const addGroup = () => setAdGroups(g => [...g, newGroup()]);
-    const addAllocation = i => setAdGroups(g => g.map((x, idx) => idx === i ? { ...x, allocations: [...x.allocations, emptyAlloc()] } : x));
-    const removeAllocation = (i, ai) => setAdGroups(g => g.map((x, idx) => idx === i ? { ...x, allocations: x.allocations.length > 1 ? x.allocations.filter((_, j) => j !== ai) : x.allocations } : x));
-    const setAllocation = (i, ai, k, v) => setAdGroups(g => g.map((x, idx) => idx === i ? { ...x, allocations: x.allocations.map((a, j) => j === ai ? { ...a, [k]: v } : a) } : x));
     const removeGroup = i => setAdGroups(g => g.filter((_, idx) => idx !== i));
     // คลิปต่อคนของกลุ่ม (ชื่อคลิป) — ว่าง = 1 คน 1 คลิป
     const addClip = i => setAdGroups(g => g.map((x, idx) => idx !== i ? x : ({ ...x, clips: [...(x.clips || []), ''] })));
     const removeClip = (i, ci) => setAdGroups(g => g.map((x, idx) => idx !== i ? x : ({ ...x, clips: (x.clips || []).filter((_, j) => j !== ci) })));
     const setClip = (i, ci, v) => setAdGroups(g => g.map((x, idx) => idx !== i ? x : ({ ...x, clips: (x.clips || []).map((c, j) => j === ci ? v : c) })));
+    // ---- แบ่งงานในกลุ่ม: บล็อก Platform -> ชุด Content Type -> แถว Tier ----
+    // เลือก/เอา Platform ออก แล้วให้บล็อกตามไปด้วย (ของที่กรอกไว้ของ Platform เดิมยังอยู่)
+    function setGroupPlatforms(i, csv) {
+        setAdGroups(gs => gs.map((x, idx) => {
+            if (idx !== i) return x;
+            const plats = splitCsv(csv);
+            const blocks = plats.map(p => (x.blocks || []).find(b => b.platform === p) || emptyBlock(p));
+            return { ...x, platform: csv, blocks };
+        }));
+    }
+    const mapBlock = (i, bi, fn) => setAdGroups(gs => gs.map((x, idx) =>
+        idx !== i ? x : ({ ...x, blocks: (x.blocks || []).map((b, j) => j !== bi ? b : fn(b)) })));
+    const toggleBlockTarget = (i, bi, t) => mapBlock(i, bi, b => ({
+        ...b, target: asTargetArray(b.target).includes(t) ? asTargetArray(b.target).filter(v => v !== t) : [...asTargetArray(b.target), t]
+    }));
+    const removeBlockTarget = (i, bi, t) => mapBlock(i, bi, b => ({ ...b, target: asTargetArray(b.target).filter(v => v !== t) }));
+    // เพิ่มชุด Content Type — ก๊อป Photo/VDO กับ Format ของชุดก่อนหน้ามาให้ กรอกน้อยลง
+    const addSet = (i, bi) => mapBlock(i, bi, b => {
+        const last = b.sets[b.sets.length - 1] || {};
+        return { ...b, sets: [...b.sets, emptySet({ media_type: last.media_type || '', content_format: last.content_format || '' })] };
+    });
+    const removeSet = (i, bi, si) => mapBlock(i, bi, b => ({ ...b, sets: b.sets.length > 1 ? b.sets.filter((_, j) => j !== si) : b.sets }));
+    const setSetField = (i, bi, si, k, v) => mapBlock(i, bi, b => ({
+        ...b, sets: b.sets.map((s, j) => j !== si ? s : ({ ...s, [k]: v }))
+    }));
+    // เพิ่มแถว Tier — เติม Tier ของแถวก่อนหน้ามาให้ (กลุ่มเดียวมักใช้ Tier เดิม)
+    const addTier = (i, bi, si) => mapBlock(i, bi, b => ({
+        ...b, sets: b.sets.map((s, j) => {
+            if (j !== si) return s;
+            const last = s.tiers[s.tiers.length - 1] || {};
+            return { ...s, tiers: [...s.tiers, { tier: last.tier || '', kols: '' }] };
+        })
+    }));
+    const removeTier = (i, bi, si, ti) => mapBlock(i, bi, b => ({
+        ...b, sets: b.sets.map((s, j) => j !== si ? s : ({ ...s, tiers: s.tiers.length > 1 ? s.tiers.filter((_, k) => k !== ti) : s.tiers }))
+    }));
+    const setTierField = (i, bi, si, ti, k, v) => mapBlock(i, bi, b => ({
+        ...b, sets: b.sets.map((s, j) => j !== si ? s : ({ ...s, tiers: s.tiers.map((t, k2) => k2 !== ti ? t : ({ ...t, [k]: v })) }))
+    }));
+
     const setGroupField = (i, k, v) => setAdGroups(g => g.map((x, idx) => idx === i ? { ...x, [k]: v } : x));
     function addProductToGroup(i, code) {
         if (!code) return;
@@ -176,9 +212,6 @@ export default function ProjectForm({ editing, onClose, onSaved }) {
     // ติ๊กเลือก/เอาออก สินค้าในกลุ่ม (สำหรับ checkbox หลายตัว)
     const toggleProductInGroup = (i, code) => setAdGroups(g => g.map((x, idx) => idx !== i ? x : ({ ...x, products: x.products.includes(code) ? x.products.filter(c => c !== code) : [...x.products, code] })));
     // เลือกกลุ่ม Target ได้หลายอัน (array)
-    const addTargetToGroup = (i, t) => { if (!t) return; setAdGroups(g => g.map((x, idx) => (idx === i && !asTargetArray(x.target).includes(t)) ? { ...x, target: [...asTargetArray(x.target), t] } : x)); };
-    const removeTargetFromGroup = (i, t) => setAdGroups(g => g.map((x, idx) => idx === i ? { ...x, target: asTargetArray(x.target).filter(v => v !== t) } : x));
-    const toggleTargetInGroup = (i, t) => setAdGroups(g => g.map((x, idx) => idx !== i ? x : ({ ...x, target: asTargetArray(x.target).includes(t) ? asTargetArray(x.target).filter(v => v !== t) : [...asTargetArray(x.target), t] })));
 
     // ตรวจว่ากรอกครบทุกช่องไหม (คืน list ช่องที่ยังไม่ครบ)
     function validate() {
@@ -186,11 +219,22 @@ export default function ProjectForm({ editing, onClose, onSaved }) {
         if (!form.name.trim()) m.push('ชื่อแคมเปญ');
         if (!form.brand) m.push('Brand');
         if (!form.objective.trim()) m.push('รายละเอียดแคมเปญ');
-        const groupsOk = adGroups.length > 0 && adGroups.every(g =>
-            g.platform && g.products.length && g.content_type &&
-            (targetsForProducts(g.products).length === 0 || asTargetArray(g.target).length > 0) &&
-            g.allocations.length > 0 && g.allocations.every(a => a.tier && (Number(a.kols) || 0) > 0));
-        if (!groupsOk) m.push('กลุ่มสินค้า (Platform/สินค้า/Target/Content Type + ทุกแถว Tier/จำนวน KOL ให้ครบ)');
+        // ตรวจทีละชั้น: กลุ่ม -> บล็อก Platform -> ชุด Content Type -> แถว Tier
+        const hasTargetOpts = targetsForProducts;
+        const groupsOk = adGroups.length > 0 && adGroups.every(g => {
+            if (!g.platform || !g.products.length) return false;
+            const blocks = g.blocks || [];
+            if (!blocks.length) return false;
+            return blocks.every(b => {
+                // Target บังคับเฉพาะ Platform ที่ใช้ Target และสินค้านั้นมี Target ให้เลือก
+                if (needTarget(b.platform) && hasTargetOpts(g.products).length > 0 && asTargetArray(b.target).length === 0) return false;
+                if (!(b.sets || []).length) return false;
+                return b.sets.every(s => s.content_type
+                    && (s.tiers || []).length > 0
+                    && s.tiers.every(t => t.tier && (Number(t.kols) || 0) > 0));
+            });
+        });
+        if (!groupsOk) m.push('กลุ่มสินค้า (Platform/สินค้า/Target ของ TikTok/Content Type + ทุกแถว Tier กับจำนวน KOL ให้ครบ)');
         if (!form.owner) m.push('Project Owner');
         if (!(adGroups.length > 0 && adGroups.every(g => Number(String(g.budget).replace(/\D/g, '')) > 0))) m.push('Budget ของแต่ละกลุ่มสินค้า');
         if (!form.start_date) m.push('วันเริ่ม (Start)');
@@ -209,9 +253,14 @@ export default function ProjectForm({ editing, onClose, onSaved }) {
             // เก็บเฉพาะกลุ่มที่มีสินค้า + ทำ products แบบ flat ไว้ให้หน้าอื่นใช้ (เช่น Agency)
             const groups = adGroups.filter(g => g.products.length && g.platform).map(g => {
                 const plats = splitCsv(g.platform);
-                // platform (เดี่ยว) คงไว้ให้โค้ดเก่าอ่านได้ ตัวจริงคือ platforms
-                const allocations = g.allocations.filter(a => a.tier).map(a => ({ platform: plats[0] || null, tier: a.tier, kols: Number(a.kols) || 0 }));
-                return { key: g.key || genKey(), platform: plats[0] || null, platforms: plats, concept: g.concept || null, target: asTargetArray(g.target), content_type: g.content_type || null, media_type: g.media_type || null, content_format: g.content_format || null, clips: (g.clips || []).map(c => String(c || '').trim()).filter(Boolean), brief: (g.brief && g.brief.trim()) ? g.brief.trim() : null, products: g.products, allocations, kol_count: allocations.reduce((s, a) => s + a.kols, 0), budget: Number(String(g.budget).replace(/\D/g, '')) || 0, code_expire: Number(g.code_expire) || 60 };
+                const blocks = (g.blocks || []).filter(b => plats.includes(b.platform));
+                // แบนโครง 3 ชั้นออกเป็น allocations — 1 แถว = Platform + Content Type + Tier
+                // หน้าอื่นที่ยังอ่านแบบเดิมจะยังทำงานได้ และมีข้อมูลพอให้แยกตาม Platform ได้ด้วย
+                const allocations = flattenBlocks(blocks);
+                // ค่าระดับกลุ่มแบบเดิม — เอาจากบล็อก/ชุดแรก เพื่อความเข้ากันได้ย้อนหลัง
+                const b0 = blocks[0] || null;
+                const s0 = (b0 && b0.sets && b0.sets[0]) || null;
+                return { key: g.key || genKey(), platform: plats[0] || null, platforms: plats, blocks, concept: g.concept || null, target: b0 ? asTargetArray(b0.target) : [], content_type: s0 ? (s0.content_type || null) : null, media_type: s0 ? (s0.media_type || null) : null, content_format: s0 ? (s0.content_format || null) : null, clips: (g.clips || []).map(c => String(c || '').trim()).filter(Boolean), brief: (g.brief && g.brief.trim()) ? g.brief.trim() : null, products: g.products, allocations, kol_count: allocations.reduce((s, a) => s + a.kols, 0), budget: Number(String(g.budget).replace(/\D/g, '')) || 0, code_expire: Number(g.code_expire) || 60 };
             });
             const flatProducts = groups.flatMap(g => g.products);
             const totalKol = groups.reduce((s, g) => s + g.kol_count, 0); // KOL เป้าหมายรวม = ผลรวมทุกกลุ่ม
@@ -357,14 +406,13 @@ export default function ProjectForm({ editing, onClose, onSaved }) {
                                 const gTargets = targetsForProducts(g.products);
                                 const gTargetSel = asTargetArray(g.target);
                                 const targetOpts = [...new Set([...gTargets, ...gTargetSel])];
-                                const ctypeOpts = contentTypesFor(g.platform, g.content_type);
                                 return (
                                 <div className="adgroup-block" key={g.key || i}>
                                     <div className="adgroup-head">
                                         <span className="adgroup-no">กลุ่มที่ {i + 1}</span>
                                         <div className={'adgroup-platform' + (g.platform ? '' : ' empty')}>
                                             <MultiSelect value={g.platform} options={GROUP_PLATFORMS}
-                                                onChange={v => setGroupField(i, 'platform', v)}
+                                                onChange={v => setGroupPlatforms(i, v)}
                                                 placeholder="— เลือก Platform —" itemName="Platform" />
                                         </div>
                                         <input className="adgroup-concept" value={g.concept} placeholder="Concept ของกลุ่ม..."
@@ -390,40 +438,8 @@ export default function ProjectForm({ editing, onClose, onSaved }) {
                                             ))}
                                         </div>
                                     )}
-                                    {/* กลุ่ม Target — เลือกได้หลายอัน (ชิปที่เลือกขึ้นด้านล่างช่องเลือก) */}
-                                    <div className="target-multi">
-                                        <CheckMultiSelect
-                                            disabled={g.products.length === 0 || targetOpts.length === 0}
-                                            disabledText={g.products.length === 0 ? '— เลือกสินค้าก่อน —' : '— สินค้านี้ยังไม่มี Target —'}
-                                            placeholder="+ เลือกกลุ่ม Target"
-                                            emptyText="สินค้านี้ยังไม่มี Target"
-                                            options={targetOpts.map(t => ({ value: t, label: t }))}
-                                            selected={gTargetSel}
-                                            onToggle={t => toggleTargetInGroup(i, t)}
-                                        />
-                                        {gTargetSel.length > 0 && (
-                                            <div className="chip-list target-chips">
-                                                {gTargetSel.map(t => (
-                                                    <span className="chip-target lg" key={t}>🎯 {t}
-                                                        <button type="button" onClick={() => removeTargetFromGroup(i, t)}>×</button>
-                                                    </span>
-                                                ))}
-                                            </div>
-                                        )}
-                                    </div>
-                                    <div className="target-multi ctype-row">
-                                        <select className="target-add" value={g.content_type} onChange={e => setGroupField(i, 'content_type', e.target.value)}>
-                                            <option value="">— Content Type —</option>
-                                            {ctypeOpts.map(c => <option key={c} value={c}>{c}</option>)}
-                                        </select>
-                                        <select className="target-add" value={g.media_type} onChange={e => setGroupField(i, 'media_type', e.target.value)}>
-                                            <option value="">— Photo / VDO —</option>
-                                            {MEDIA_TYPES.map(c => <option key={c} value={c}>{c}</option>)}
-                                        </select>
-                                        <MultiSelect value={g.content_format} options={CONTENT_FORMATS}
-                                            onChange={v => setGroupField(i, 'content_format', v)}
-                                            placeholder="— Content Format —" itemName="Content Format" />
-                                    </div>
+
+
                                     {/* คลิปต่อคน — KOL 1 คนในกลุ่มนี้ต้องส่งกี่คลิป ตั้งชื่อคลิปได้
                                         ไม่ตั้ง = 1 คน 1 คลิป (แบบเดิม) */}
                                     <div className="clips-box">
@@ -468,23 +484,95 @@ export default function ProjectForm({ editing, onClose, onSaved }) {
                                         <span className="pb-baht">฿</span>
                                     </label>
 
-                                    {/* Tier · จำนวน KOL (Platform มาจากด้านบนแล้ว) */}
-                                    <div className="alloc-section">
-                                        <div className="alloc-head alloc-head-2"><span>Tier</span><span>จำนวน KOL</span><span /></div>
-                                        {g.allocations.map((a, ai) => (
-                                            <div className="alloc-row alloc-row-2" key={ai}>
-                                                <select value={a.tier} onChange={e => setAllocation(i, ai, 'tier', e.target.value)}>
-                                                    <option value="">— Tier —</option>
-                                                    {TIERS.map(t => <option key={t} value={t}>{t}</option>)}
-                                                </select>
-                                                <input type="number" min="0" placeholder="0" value={a.kols} onChange={e => setAllocation(i, ai, 'kols', e.target.value)} />
-                                                <button type="button" className="alloc-rm" title="ลบแถว" onClick={() => removeAllocation(i, ai)}>×</button>
-                                            </div>
-                                        ))}
-                                        <button type="button" className="alloc-add" onClick={() => addAllocation(i)}>
-                                            <Icon name="plus" size={14} /> เพิ่ม Tier / จำนวน
-                                        </button>
-                                    </div>
+                                    {/* แบ่งงานในกลุ่ม: Platform -> Content Type -> Tier
+                                        จำนวน KOL กรอกที่ชั้น Tier ที่เดียว ยอดรวมคิดขึ้นมาให้เอง */}
+                                    {(g.blocks || []).length === 0 ? (
+                                        <p className="blk-empty">เลือก Platform ด้านบนก่อน แล้วช่องแบ่งงานจะขึ้นตรงนี้</p>
+                                    ) : (g.blocks || []).map((b, bi) => {
+                                        const single = (g.blocks || []).length === 1;
+                                        const bTargetSel = asTargetArray(b.target);
+                                        const bTargetOpts = [...new Set([...gTargets, ...bTargetSel])];
+                                        return (
+                                        <div className={'plat-blk' + (single ? ' single' : '')} key={b.platform}>
+                                            {!single && (
+                                                <div className="plat-blk-head">
+                                                    <span className="plat-blk-name">📱 {b.platform}</span>
+                                                    <span className="plat-blk-sum">รวม {blockKol(b)} คน</span>
+                                                </div>
+                                            )}
+                                            {/* Target ใช้เฉพาะบาง Platform (ตอนนี้ TikTok) — Platform อื่นไม่มีช่องนี้เลย */}
+                                            {needTarget(b.platform) && (
+                                                <div className="target-multi">
+                                                    <CheckMultiSelect
+                                                        disabled={g.products.length === 0 || bTargetOpts.length === 0}
+                                                        disabledText={g.products.length === 0 ? '— เลือกสินค้าก่อน —' : '— สินค้านี้ยังไม่มี Target —'}
+                                                        placeholder="🎯 + เลือกกลุ่ม Target"
+                                                        emptyText="สินค้านี้ยังไม่มี Target"
+                                                        options={bTargetOpts.map(t => ({ value: t, label: t }))}
+                                                        selected={bTargetSel}
+                                                        onToggle={t => toggleBlockTarget(i, bi, t)}
+                                                    />
+                                                    {bTargetSel.length > 0 && (
+                                                        <div className="chip-list target-chips">
+                                                            {bTargetSel.map(t => (
+                                                                <span className="chip-target lg" key={t}>🎯 {t}
+                                                                    <button type="button" onClick={() => removeBlockTarget(i, bi, t)}>×</button>
+                                                                </span>
+                                                            ))}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            )}
+                                            {(b.sets || []).map((s, si) => (
+                                                <div className="ctype-set" key={si}>
+                                                    <div className="ctype-set-row">
+                                                        <select className="target-add" value={s.content_type}
+                                                            onChange={e => setSetField(i, bi, si, 'content_type', e.target.value)}>
+                                                            <option value="">— Content Type —</option>
+                                                            {contentTypesFor(b.platform, s.content_type).map(c => <option key={c} value={c}>{c}</option>)}
+                                                        </select>
+                                                        <select className="target-add" value={s.media_type}
+                                                            onChange={e => setSetField(i, bi, si, 'media_type', e.target.value)}>
+                                                            <option value="">— Photo / VDO —</option>
+                                                            {MEDIA_TYPES.map(c => <option key={c} value={c}>{c}</option>)}
+                                                        </select>
+                                                        <MultiSelect value={s.content_format} options={CONTENT_FORMATS}
+                                                            onChange={v => setSetField(i, bi, si, 'content_format', v)}
+                                                            placeholder="— Content Format —" itemName="Content Format" />
+                                                        {(b.sets || []).length > 1 && (
+                                                            <button type="button" className="alloc-rm" title="ลบชุดนี้"
+                                                                onClick={() => removeSet(i, bi, si)}>×</button>
+                                                        )}
+                                                    </div>
+                                                    <div className="tier-rows">
+                                                        {(s.tiers || []).map((t, ti) => (
+                                                            <div className="tier-row" key={ti}>
+                                                                <select value={t.tier} onChange={e => setTierField(i, bi, si, ti, 'tier', e.target.value)}>
+                                                                    <option value="">— Tier —</option>
+                                                                    {TIERS.map(x => <option key={x} value={x}>{x}</option>)}
+                                                                </select>
+                                                                <input type="number" min="0" placeholder="0" value={t.kols}
+                                                                    onChange={e => setTierField(i, bi, si, ti, 'kols', e.target.value)} />
+                                                                <span className="tier-unit">คน</span>
+                                                                {(s.tiers || []).length > 1 && (
+                                                                    <button type="button" className="alloc-rm" title="ลบแถว Tier"
+                                                                        onClick={() => removeTier(i, bi, si, ti)}>×</button>
+                                                                )}
+                                                            </div>
+                                                        ))}
+                                                        <button type="button" className="tier-add" onClick={() => addTier(i, bi, si)}>
+                                                            <Icon name="plus" size={13} /> เพิ่ม Tier
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            ))}
+                                            <button type="button" className="alloc-add" onClick={() => addSet(i, bi)}>
+                                                <Icon name="plus" size={14} /> เพิ่ม Content Type
+                                            </button>
+                                        </div>
+                                        );
+                                    })}
+                                    <div className="grp-kol-sum">รวมทั้งกลุ่ม <b>{groupTotalKol(g)}</b> คน</div>
                                 </div>
                                 );
                             })}
