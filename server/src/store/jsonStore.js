@@ -445,6 +445,23 @@ function linkGroupPlatforms(g) {
     (g.allocations || []).forEach(a => { if (a.platform) set.add(a.platform); });
     return [...set];
 }
+// Content Type/Photo-VDO/Format ของกลุ่ม — โครงใหม่เก็บแยกต่อ Platform ใน allocations
+function resolveGroupCtype(g, platform) {
+    if (!g) return null;
+    const hit = (g.allocations || []).find(a => a.content_type && (!platform || !a.platform || a.platform === platform));
+    return hit ? hit.content_type : (g.content_type || null);
+}
+function resolveGroupMedia(g, platform, contentType) {
+    if (!g) return { media_type: null, content_format: null };
+    const rows = (g.allocations || []).filter(a =>
+        (!platform || !a.platform || a.platform === platform)
+        && (!contentType || !a.content_type || a.content_type === contentType));
+    const hit = rows.find(a => a.media_type || a.content_format);
+    return {
+        media_type: hit ? (hit.media_type || null) : (g.media_type || null),
+        content_format: hit ? (hit.content_format || null) : (g.content_format || null)
+    };
+}
 const projects = {
     // scopeBrands = null (เห็นทุกแบรนด์) หรือ array ชื่อแบรนด์
     async list(scopeBrands = null) {
@@ -1278,12 +1295,14 @@ const submissions = {
         const s = db.submissions.find(x => x.id === Number(subId));
         return s ? clone(s) : null;
     },
-    async add({ project_id, account_name, followers, platform, product, budget, agency, link_account, group_key, tier, agency_token, code_expire, person_key, clip_no, clip_name }) {
+    async add({ project_id, account_name, followers, platform, product, budget, agency, link_account, group_key, tier, content_type, agency_token, code_expire, person_key, clip_no, clip_name }) {
         const row = {
             id: nextId('submissions'),
             project_id: Number(project_id),
             account_name, followers: followers || 0, platform: platform || null,
             product: product || null, budget: budget || 0,
+            // Content Type ที่ KOL คนนี้รับผิดชอบ — 1 Platform อาจมีหลาย Content Type ในกลุ่มเดียว
+            content_type: content_type || null,
             agency: agency || null, link_account: link_account || null,
             group_key: group_key || null, tier: tier || null,
             // แถวพี่น้อง = คนเดียวกัน แต่คนละคลิป (ผูกกันด้วย person_key)
@@ -1376,7 +1395,7 @@ const submissions = {
         delete fields.perf_stamp;
         const before = {};
         STAMP_F.forEach(f => { before[f] = s[f]; });
-        for (const k of ['account_name', 'followers', 'platform', 'product', 'agency', 'budget', 'link_account', 'concept', 'gen_date', 'group_key', 'tier', 'clip_name', 'status', 'draft_link', 'draft_link2', 'draft_link3', 'draft_link4', 'draft_link5', 'gencode', 'feedback', 'feedback2', 'feedback3', 'feedback4', 'feedback5', 'approved', 'draft_status', 'post_url', 'post_date', 'id_post', 'code_expire', 'ad_status', 'ad_spend', 'ad_reach', 'ad_start', 'ad_end', 'ad_note', 'team_note', 'agency_note', 'views', 'likes', 'comments', 'saves', 'shares', 'reposts', 'content_format', 'perf_synced_at']) {
+        for (const k of ['account_name', 'followers', 'platform', 'product', 'agency', 'budget', 'link_account', 'concept', 'gen_date', 'group_key', 'tier', 'clip_name', 'status', 'draft_link', 'draft_link2', 'draft_link3', 'draft_link4', 'draft_link5', 'gencode', 'feedback', 'feedback2', 'feedback3', 'feedback4', 'feedback5', 'approved', 'draft_status', 'post_url', 'post_date', 'id_post', 'code_expire', 'ad_status', 'ad_spend', 'ad_reach', 'ad_start', 'ad_end', 'ad_note', 'team_note', 'agency_note', 'content_type', 'views', 'likes', 'comments', 'saves', 'shares', 'reposts', 'content_format', 'perf_synced_at']) {
             if (fields[k] !== undefined) s[k] = fields[k];
         }
         // บันทึกว่า "ใครแก้ล่าสุดเมื่อไหร่" ของลิงก์คลิป / Gencode / ID Post
@@ -1488,15 +1507,18 @@ const ads = {
                 const reach = Number(s.ad_reach) || 0;
                 // กลุ่มโฆษณาที่ KOL คนนี้สังกัด (ผูก Target/Content Type จาก Project อัตโนมัติ)
                 const grp = (p && Array.isArray(p.ad_groups)) ? p.ad_groups.find(g => g.key === s.group_key) : null;
+                // Content Type ผูกกับคน (1 Platform ในกลุ่มเดียวมีได้หลายอย่าง) แถวเก่าค่อยถอยไปใช้ของกลุ่ม
+                const ct = s.content_type || resolveGroupCtype(grp, s.platform);
+                const media = resolveGroupMedia(grp, s.platform, ct);
                 return {
                     sub_id: s.id,
                     account_name: s.account_name,
                     platform: s.platform || null,
                     product: s.product || (grp && grp.products && grp.products.length ? grp.products.join(', ') : null),
                     target: grp ? (grp.target || null) : null,
-                    content_type: grp ? (grp.content_type || null) : null,
-                    media_type: grp ? (grp.media_type || null) : null,
-                    group_format: grp ? (grp.content_format || null) : null,
+                    content_type: ct,
+                    media_type: media.media_type,
+                    group_format: media.content_format,
                     gencode: s.gencode || null,
                     id_post: s.id_post || null,
                     post_url: s.post_url,

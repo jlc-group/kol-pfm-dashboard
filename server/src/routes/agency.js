@@ -163,7 +163,7 @@ router.post('/:token', async (req, res, next) => {
         const resolved = await store.projects.resolveToken(req.params.token);
         if (!resolved) return res.status(404).json({ status: 'error', message: 'ลิงก์ไม่ถูกต้องหรือหมดอายุ' });
         const { project, link } = resolved;
-        const { account_name, followers, platform, product, budget, agency, link_account, group_key, tier } = req.body;
+        const { account_name, followers, platform, product, budget, agency, link_account, group_key, tier, content_type } = req.body;
         if (!account_name) return res.status(400).json({ status: 'error', message: 'กรุณาระบุชื่อ Account' });
         // จำนวนวัน Gencode เริ่มต้น = ตามที่ตั้งไว้ในกลุ่มสินค้านั้น (ถ้ามี)
         const grp = (project.ad_groups || []).find(g => g.key === group_key);
@@ -179,6 +179,7 @@ router.post('/:token', async (req, res, next) => {
             link_account: link_account || null,
             group_key: group_key || null,
             tier: tier || null,
+            content_type: content_type || null,
             code_expire: grp ? (Number(grp.code_expire) || 60) : 60,
             agency_token: link.scoped ? link.token : null   // ติดตราเจ้าของ (เฉพาะลิงก์แยกต่อเจ้า)
         }, (grp && grp.clips) || []);

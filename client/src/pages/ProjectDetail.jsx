@@ -9,7 +9,7 @@ import ProductMultiSelect from '../components/ProductMultiSelect.jsx';
 import { unreadCount } from '../components/MessageBox.jsx';
 import ChatDock from '../components/ChatDock.jsx';
 import { productLabel, asTargetArray } from '../data/products.js';
-import { groupPlatforms, kolInScope } from '../data/adGroups.js';
+import { groupPlatforms, kolInScope, contentTypesOf, mediaFor, quotaOf } from '../data/adGroups.js';
 import { clipCount, collapseByPerson, countPeople } from '../data/clips.js';
 import StageCards from '../components/StageCards.jsx';
 import { tabBadges, markSeen, seedDraftsSeen } from '../utils/tabUpdates.js';
@@ -88,7 +88,7 @@ const SUB_PLATFORMS = ['TikTok', 'Instagram', 'Facebook', 'Lemon8', 'YouTube', '
 // modal เพิ่ม KOL เข้าลิสต์เอง (ฝั่งทีม)
 function AddSubmissionModal({ projectId, products = [], groups = [], onClose, onAdded }) {
     // มีกลุ่มเดียวก็เลือกให้เลย ไม่ต้องกดซ้ำ
-    const [f, setF] = useState({ group_key: groups.length === 1 ? groups[0].key : '', account_name: '', platform: (groups.length === 1 && groupPlatforms(groups[0]).length === 1) ? groupPlatforms(groups[0])[0] : '', product: '', agency: '', budget: '', link_account: '' });
+    const [f, setF] = useState({ group_key: groups.length === 1 ? groups[0].key : '', account_name: '', platform: (groups.length === 1 && groupPlatforms(groups[0]).length === 1) ? groupPlatforms(groups[0])[0] : '', content_type: '', product: '', agency: '', budget: '', link_account: '' });
     const g = groups.find(x => x.key === f.group_key) || null;
     const gPlats = g ? groupPlatforms(g) : [];
     // สินค้าให้เลือกเฉพาะของกลุ่มที่เลือก — ถ้ายังไม่เลือกกลุ่มค่อยใช้สินค้าทั้งแคมเปญ
@@ -110,6 +110,7 @@ function AddSubmissionModal({ projectId, products = [], groups = [], onClose, on
                     // มี Platform เดียวก็เลือกให้เลย หลายอันให้คนเลือกเอง จะได้ไม่กรอกผิดช่องทาง
                     return ps.length === 1 ? ps[0] : '';
                 })(),
+                content_type: '',   // Content Type ผูกกับกลุ่ม เปลี่ยนกลุ่มต้องเลือกใหม่
                 product: allow ? cur.filter(c => allow.includes(c)).join(',') : st.product
             };
         });
@@ -121,11 +122,15 @@ function AddSubmissionModal({ projectId, products = [], groups = [], onClose, on
     async function submit(e) {
         e.preventDefault();
         if (!f.platform) { setError('กรุณาเลือก Platform'); return; }
+        const ctOpts = g ? contentTypesOf(g, f.platform) : [];
+        // มีให้เลือกอย่างเดียวก็เติมให้เอง ไม่ต้องบังคับกด
+        const ct = ctOpts.length === 1 ? ctOpts[0] : f.content_type;
+        if (ctOpts.length > 1 && !ct) { setError('กรุณาเลือก Content Type'); return; }
         setError(''); setSaving(true);
         try {
             await api(`/projects/${projectId}/submissions`, {
                 method: 'POST',
-                body: { ...f, group_key: f.group_key || null, budget: Number(f.budget) || 0 }
+                body: { ...f, group_key: f.group_key || null, content_type: ct || null, budget: Number(f.budget) || 0 }
             });
             onAdded();
         } catch (err) { setError(err.message); }
@@ -154,15 +159,23 @@ function AddSubmissionModal({ projectId, products = [], groups = [], onClose, on
                             {g ? (
                                 <div className="addsub-inherit">
                                     <span className="addsub-inherit-t">ติดมาจากกลุ่มนี้เอง ไม่ต้องกรอกซ้ำ</span>
-                                    <div className="ag-group-req">
-                                        {g.content_type && <span className="proc-ctype-chip">{g.content_type}</span>}
-                                        {g.media_type && <span className="proc-ctype-chip media">{g.media_type}</span>}
-                                        {g.content_format && <span className="proc-ctype-chip fmt">{g.content_format}</span>}
-                                        {asTargetArray(g.target).map(t => <span className="proc-ads-tgt" key={t}>🎯 {t}</span>)}
-                                        {!g.content_type && !g.media_type && !g.content_format && asTargetArray(g.target).length === 0 && (
-                                            <span className="muted">กลุ่มนี้ยังไม่ได้ตั้ง Content Type / Photo-VDO / Content Format</span>
-                                        )}
-                                    </div>
+                                    {(() => {
+                                        const plat = gPlats.length === 1 ? gPlats[0] : f.platform;
+                                        const opts = plat ? contentTypesOf(g, plat) : [];
+                                        const ct = opts.length === 1 ? opts[0] : f.content_type;
+                                        const m = mediaFor(g, plat, ct);
+                                        const tg = asTargetArray(g.target);
+                                        const empty = !ct && !m.media_type && !m.content_format && tg.length === 0;
+                                        return (
+                                            <div className="ag-group-req">
+                                                {ct && <span className="proc-ctype-chip">{ct}</span>}
+                                                {m.media_type && <span className="proc-ctype-chip media">{m.media_type}</span>}
+                                                {m.content_format && <span className="proc-ctype-chip fmt">{m.content_format}</span>}
+                                                {tg.map(t => <span className="proc-ads-tgt" key={t}>🎯 {t}</span>)}
+                                                {empty && <span className="muted">เลือก Platform กับ Content Type แล้วจะขึ้น Photo-VDO / Content Format ให้เอง</span>}
+                                            </div>
+                                        );
+                                    })()}
                                 </div>
                             ) : (
                                 <div className="addsub-warn">
@@ -182,11 +195,27 @@ function AddSubmissionModal({ projectId, products = [], groups = [], onClose, on
                                 <div className="perf-readonly" title="กำหนดไว้ที่กลุ่มนี้ตอนตั้งแคมเปญ">{gPlats[0]}</div>
                             ) : (
                                 // กลุ่มลงได้หลาย Platform → ให้เลือกเฉพาะที่กลุ่มนี้มี
-                                <select value={f.platform} onChange={e => up('platform', e.target.value)}>
+                                <select value={f.platform} onChange={e => { up('platform', e.target.value); up('content_type', ''); }}>
                                     <option value="">— เลือก —</option>
                                     {(gPlats.length ? gPlats : SUB_PLATFORMS).map(p => <option key={p} value={p}>{p}</option>)}
                                 </select>
                             )}
+                        </div>
+                        {/* Content Type — 1 Platform ในกลุ่มเดียวอาจมีหลายอย่าง (เช่น Facebook: Awareness / Engagement) */}
+                        <div className="field">
+                            <label>Content Type</label>
+                            {(() => {
+                                const plat = gPlats.length === 1 ? gPlats[0] : f.platform;
+                                const opts = g && plat ? contentTypesOf(g, plat) : [];
+                                if (opts.length === 1) return <div className="perf-readonly" title="กำหนดไว้ที่กลุ่มนี้ตอนตั้งแคมเปญ">{opts[0]}</div>;
+                                return (
+                                    <select value={f.content_type} disabled={opts.length === 0}
+                                        onChange={e => up('content_type', e.target.value)}>
+                                        <option value="">{opts.length ? '— เลือก —' : (plat ? '— ไม่มีให้เลือก —' : '— เลือก Platform ก่อน —')}</option>
+                                        {opts.map(c => <option key={c} value={c}>{c}</option>)}
+                                    </select>
+                                );
+                            })()}
                         </div>
                         <div className="field">
                             <label>Product</label>
@@ -348,7 +377,9 @@ export default function ProjectDetail() {
     const [stage, setStage] = useState('all');   // ตัวกรองขั้นงานจากการ์ดสรุป
     const [subTab, setSubTab] = useState('list');
     // กรองรายชื่อตาม Platform — โชว์เมื่อแคมเปญมีมากกว่า 1 Platform
-    const [listPlat, setListPlat] = useState('all'); // list | process
+    const [listPlat, setListPlat] = useState('all');
+    // กรองย่อยตาม Content Type ในแพลตฟอร์มนั้น (เช่น Facebook มี Awareness / Engagement)
+    const [listCtype, setListCtype] = useState('all');
     const [badges, setBadges] = useState({ listNew: false, processNew: false });
     const [subsLoaded, setSubsLoaded] = useState(false);
 
@@ -544,9 +575,16 @@ export default function ProjectDetail() {
     // เลือกกลุ่มไว้แล้ว ตัวเลือก Platform/สินค้าเหลือเฉพาะของกลุ่มนั้น
     const scopeGroups = pickedGroups.length ? pickedGroups : linkGroups;
     const projectPlatforms = [...new Set(scopeGroups.flatMap(g => groupPlatforms(g)))];
+    // ตัวกรองของแท็บรายชื่อ ต้องดูจากทุกกลุ่มในแคมเปญ ไม่ใช่กลุ่มที่ติ๊กไว้ในฟอร์มสร้างลิงก์
+    const listPlatforms = [...new Set(linkGroups.flatMap(g => groupPlatforms(g)))];
+    const ctypesOfPlat = p => [...new Set(linkGroups.flatMap(g => contentTypesOf(g, p)))];
+    const quotaFor = (p, ct) => linkGroups.reduce((n, g) => n + quotaOf(g, p, ct), 0);
+    const subCtypes = listPlat === 'all' ? [] : ctypesOfPlat(listPlat);
+    const matchListFilter = s => (listPlat === 'all' || s.platform === listPlat)
+        && (listCtype === 'all' || s.content_type === listCtype);
 
     // แถวในตารางรายชื่อ KOL (action ต่างกันตามกลุ่ม)
-    const subRow = (s, i) => (
+    const subRow = (s, i, grp) => (
         <tr key={s.id}>
             <td className="sub-no">{i + 1}</td>
             <td>
@@ -556,6 +594,16 @@ export default function ProjectDetail() {
                 )}
             </td>
             <td>{s.platform ? <span className="tag">{s.platform}</span> : '—'}</td>
+            {/* Content Type เก็บรายคน ส่วน Format อ่านจากที่ตั้งไว้ในกลุ่ม */}
+            <td className="sub-ctype">
+                {s.content_type ? <>
+                    <span className="proc-ctype-chip">{s.content_type}</span>
+                    {(() => {
+                        const fmt = grp ? mediaFor(grp, s.platform, s.content_type).content_format : null;
+                        return fmt ? <span className="proc-ctype-chip fmt">{fmt}</span> : null;
+                    })()}
+                </> : <span className="ctype-none">— ยังไม่ระบุ —</span>}
+            </td>
             <td className="muted"><ProductSummary value={s.product} /></td>
             <td className="muted">{s.agency || '—'}</td>
             <td className="num">
@@ -599,7 +647,7 @@ export default function ProjectDetail() {
         (a.submitted_at || '').localeCompare(b.submitted_at || '') || (a.id - b.id));
 
     // บล็อกสถานะ 1 อัน (คืน null ถ้าไม่มีรายการ)
-    const statusBlock = (dotClass, title, rows, actionLabel, extraCls = '') => {
+    const statusBlock = (dotClass, title, rows, actionLabel, extraCls = '', grp = null) => {
         if (rows.length === 0) return null;
         return (
             <div className={'sub-group ' + extraCls} key={title}>
@@ -611,26 +659,26 @@ export default function ProjectDetail() {
                 <div className={'panel no-pad ' + extraCls}>
                     <table className="data-table tight">
                         <thead><tr>
-                            <th className="sub-no">#</th><th>ชื่อ Account</th><th>Platform</th><th>Product</th><th>KOL Contact</th>
+                            <th className="sub-no">#</th><th>ชื่อ Account</th><th>Platform</th><th>Content Type</th><th>Product</th><th>KOL Contact</th>
                             <th className="num">Budget</th><th>ลิงก์</th><th>หมายเหตุ</th><th className="actions">{actionLabel}</th>
                             <th className="tbl-spacer" aria-hidden="true"></th>
                         </tr></thead>
-                        <tbody>{rows.map(subRow)}</tbody>
+                        <tbody>{rows.map((s, i) => subRow(s, i, grp))}</tbody>
                     </table>
                 </div>
             </div>
         );
     };
     // ทั้ง 3 สถานะของชุด subs ที่ให้มา (รอคัดเลือก / คัดเลือกแล้ว / ไม่เลือก)
-    const statusBlocks = (list) => {
+    const statusBlocks = (list, grp = null) => {
         // แท็บนี้คือหน้าคัดเลือก "คน" — ยุบแถวพี่น้อง (คนเดียวกันหลายคลิป) ให้เหลือคนละแถว
         const pend = oldestFirst(collapseByPerson(list.filter(s => s.status !== 'confirmed' && s.status !== 'rejected')));
         const conf = oldestFirst(collapseByPerson(list.filter(s => s.status === 'confirmed')));
         const rej = oldestFirst(collapseByPerson(list.filter(s => s.status === 'rejected')));
         return <>
-            {statusBlock('pending', 'รอคัดเลือก', pend, 'คัดเลือก')}
-            {statusBlock('confirmed', 'คัดเลือกแล้ว', conf, 'จัดการ', 'grp-confirmed')}
-            {statusBlock('rejected', 'ไม่เลือก', rej, 'จัดการ', 'grp-rejected')}
+            {statusBlock('pending', 'รอคัดเลือก', pend, 'คัดเลือก', '', grp)}
+            {statusBlock('confirmed', 'คัดเลือกแล้ว', conf, 'จัดการ', 'grp-confirmed', grp)}
+            {statusBlock('rejected', 'ไม่เลือก', rej, 'จัดการ', 'grp-rejected', grp)}
         </>;
     };
     // แถบหัวกลุ่มสินค้า (ฝั่งทีม)
@@ -1028,15 +1076,31 @@ export default function ProjectDetail() {
                 </button>
             </div>
 
-            {subTab === 'list' && projectPlatforms.length > 1 && submissions.length > 0 && (
+            {subTab === 'list' && listPlatforms.length > 1 && submissions.length > 0 && (
                 <div className="proc-platfilter">
                     <span className="proc-platfilter-lbl">แพลตฟอร์ม:</span>
                     <button type="button" className={'proc-plat-chip' + (listPlat === 'all' ? ' on' : '')}
-                        onClick={() => setListPlat('all')}>ทั้งหมด ({countPeople(submissions)})</button>
-                    {projectPlatforms.map(p => (
+                        onClick={() => { setListPlat('all'); setListCtype('all'); }}>ทั้งหมด ({countPeople(submissions)})</button>
+                    {listPlatforms.map(p => (
                         <button type="button" key={p} className={'proc-plat-chip' + (listPlat === p ? ' on' : '')}
-                            onClick={() => setListPlat(p)}>
-                            {p} ({countPeople(submissions.filter(s => s.platform === p))})
+                            onClick={() => { setListPlat(p); setListCtype('all'); }}>
+                            {p} ({countPeople(submissions.filter(s => s.platform === p))}/{quotaFor(p) || '—'})
+                        </button>
+                    ))}
+                </div>
+            )}
+            {/* แบ่งย่อยตาม Content Type ของแพลตฟอร์มที่เลือก — ส่งแล้ว/ที่ต้องการ */}
+            {subTab === 'list' && listPlat !== 'all' && subCtypes.length > 1 && submissions.length > 0 && (
+                <div className="proc-platfilter proc-ctypefilter">
+                    <span className="proc-platfilter-lbl">Content Type:</span>
+                    <button type="button" className={'proc-plat-chip' + (listCtype === 'all' ? ' on' : '')}
+                        onClick={() => setListCtype('all')}>
+                        ทั้งหมด ({countPeople(submissions.filter(s => s.platform === listPlat))}/{quotaFor(listPlat) || '—'})
+                    </button>
+                    {subCtypes.map(ct => (
+                        <button type="button" key={ct} className={'proc-plat-chip' + (listCtype === ct ? ' on' : '')}
+                            onClick={() => setListCtype(ct)}>
+                            {ct} ({countPeople(submissions.filter(s => s.platform === listPlat && s.content_type === ct))}/{quotaFor(listPlat, ct) || '—'})
                         </button>
                     ))}
                 </div>
@@ -1048,20 +1112,19 @@ export default function ProjectDetail() {
                     /* แบ่งตามกลุ่มสินค้า */
                     <>
                         {project.ad_groups.map((g, gi) => {
-                            const gsubs = submissions.filter(s => s.group_key === g.key
-                                && (listPlat === 'all' || s.platform === listPlat));
+                            const gsubs = submissions.filter(s => s.group_key === g.key && matchListFilter(s));
                             return (
                                 <div className="kol-group-card" key={g.key || gi}>
                                     {teamGroupBar(g, gi, gsubs)}
                                     {gsubs.length === 0
                                         ? <div className="proc-group-empty">ยังไม่มีรายชื่อในกลุ่มนี้</div>
-                                        : statusBlocks(gsubs)}
+                                        : statusBlocks(gsubs, g)}
                                 </div>
                             );
                         })}
                         {(() => {
                             const gkeys = new Set(project.ad_groups.map(g => g.key));
-                            const ung = submissions.filter(s => !s.group_key || !gkeys.has(s.group_key));
+                            const ung = submissions.filter(s => (!s.group_key || !gkeys.has(s.group_key)) && matchListFilter(s));
                             if (ung.length === 0) return null;
                             return (
                                 <div className="kol-group-card">
@@ -1073,7 +1136,7 @@ export default function ProjectDetail() {
                     </>
                 ) : (
                     /* ไม่มีกลุ่มสินค้า → รวมทั้งหมด */
-                    statusBlocks(submissions)
+                    statusBlocks(submissions.filter(matchListFilter))
                 ))
             )}
 

@@ -449,7 +449,7 @@ router.post('/:id/submissions', async (req, res, next) => {
     try {
         const check = await canEditProject(req, req.params.id);
         if (!check.ok) return res.status(check.code).json({ status: 'error', message: check.message });
-        const { account_name, platform, product, agency, budget, link_account, followers, group_key } = req.body;
+        const { account_name, platform, product, agency, budget, link_account, followers, group_key, content_type } = req.body;
         if (!account_name) return res.status(400).json({ status: 'error', message: 'กรุณาระบุชื่อ Account' });
         const proj = await store.projects.findByIdFull(req.params.id);
         const grp = ((proj && proj.ad_groups) || []).find(g => g.key === group_key);
@@ -457,7 +457,8 @@ router.post('/:id/submissions', async (req, res, next) => {
             project_id: req.params.id, account_name,
             platform: platform || null, product: product || null, agency: agency || null,
             budget: Number(budget) || 0, link_account: link_account || null, followers: Number(followers) || 0,
-            group_key: group_key || null   // กลุ่มโฆษณาที่สังกัด — พา Target/Content Type/Photo-VDO/Content Format มาด้วย
+            group_key: group_key || null,  // กลุ่มโฆษณาที่สังกัด — พา Target/Photo-VDO/Content Format มาด้วย
+            content_type: content_type || null   // 1 Platform อาจมีหลาย Content Type ในกลุ่มเดียว ต้องระบุว่าคนนี้ทำอันไหน
         }, (grp && grp.clips) || []);
         const data = rows[0];
         await record(req, req.params.id, 'add_kol', `เพิ่ม KOL: ${account_name}` + (rows.length > 1 ? ` (${rows.length} คลิป)` : ''));

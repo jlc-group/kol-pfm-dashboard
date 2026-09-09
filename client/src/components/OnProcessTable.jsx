@@ -5,6 +5,7 @@ import DatePicker from './DatePicker.jsx';
 import DraftModal from './DraftModal.jsx';
 import PerfModal from './PerfModal.jsx';
 import { asTargetArray } from '../data/products.js';
+import { mediaFor, contentTypesOf, quotaOf } from '../data/adGroups.js';
 import { ProductSummary } from './ProductChips.jsx';
 import { draftIsNew, markDraftSeen } from '../utils/tabUpdates.js';
 
@@ -37,6 +38,9 @@ function ProcessRow({ sub, putSubmission, reload, showAds = false, group = null,
     const [editing, setEditing] = useState(false); // false = ล็อก (อ่านอย่างเดียว), true = กำลังแก้ไข
     const unlocked = directEdit || editing; // directEdit (ฝั่งเอเจนซี่) = กรอกได้เลยไม่ต้องกดแก้ไข
     const noIdPost = NO_IDPOST.includes(sub.platform); // แพลตฟอร์มนี้ไม่ใช้ ID Post
+    // Content Type ผูกกับคน (1 Platform ในกลุ่มเดียวมีได้หลายอย่าง) — ของเก่าที่ยังไม่ระบุค่อยถอยไปใช้ของกลุ่ม
+    const ctype = sub.content_type || (group ? (contentTypesOf(group, sub.platform)[0] || null) : null);
+    const media = group ? mediaFor(group, sub.platform, ctype) : { media_type: null, content_format: null };
     // ยิงแอดไปแล้ว = ล็อก ลิงก์โพสต์ / Gencode / ID Post ห้ามแก้
     // เพราะเป็นข้อมูลที่แอดที่ยิงไปแล้วอ้างอิงอยู่ (ฝั่ง server ปฏิเสธซ้ำอีกชั้น)
     const adLocked = sub.ad_status === 'ยิงแล้ว';
@@ -99,23 +103,19 @@ function ProcessRow({ sub, putSubmission, reload, showAds = false, group = null,
                         : <span className="muted">—</span>}
                 </div>
             )}
-            {showAds && (
-                <div className="proc-cell">
-                    {group?.content_type
-                        ? <span className="proc-ctype-chip">{group.content_type}</span>
-                        : <span className="muted">—</span>}
-                </div>
-            )}
-            {showAds && (
-                <div className="proc-cell">
-                    {group?.media_type || group?.content_format ? (
-                        <>
-                            {group.media_type && <span className="proc-ctype-chip media">{group.media_type}</span>}
-                            {splitCsv(group.content_format).map(x => <span className="proc-ctype-chip fmt" key={x}>{x}</span>)}
-                        </>
-                    ) : <span className="muted">—</span>}
-                </div>
-            )}
+            <div className="proc-cell">
+                {ctype
+                    ? <span className="proc-ctype-chip">{ctype}</span>
+                    : <span className="ctype-none">— ยังไม่ระบุ —</span>}
+            </div>
+            <div className="proc-cell">
+                {media.media_type || media.content_format ? (
+                    <>
+                        {media.media_type && <span className="proc-ctype-chip media">{media.media_type}</span>}
+                        {splitCsv(media.content_format).map(x => <span className="proc-ctype-chip fmt" key={x}>{x}</span>)}
+                    </>
+                ) : <span className="muted">—</span>}
+            </div>
             <div className="proc-cell"><span className="proc-plat">{sub.platform || '—'}</span></div>
             <div className="proc-cell proc-draft-cell">
                 <button type="button" className={'proc-viewdraft' + (showDraftNew ? ' has-new' : '')} onClick={openDraft}>
@@ -187,8 +187,7 @@ const procHead = (showAds = false) => (
     <div className="proc-tbl-head">
         <span>KOL NAME</span><span>PRODUCT</span>
         {showAds && <span>TARGET</span>}
-        {showAds && <span>CONTENT TYPE</span>}
-        {showAds && <span>CONTENT FORMAT</span>}
+        <span>CONTENT TYPE</span><span>CONTENT FORMAT</span>
         <span>PLATFORM</span><span>CONTENT DRAFT</span>
         <span>POST</span><span>POST DATE</span><span>GENCODE</span>
         <span>ID POST</span><span>CODE EXPIRE IN</span><span className="ta-c">จัดการ</span>
@@ -215,6 +214,7 @@ function GroupBar({ group, gi, count }) {
  */
 export default function OnProcessTable({ subs = [], groups = [], showAds = false, scope = '', putSubmission, reload, directEdit = false, stage = 'all', onClearStage }) {
     const [platFilter, setPlatFilter] = useState('all');   // ตัวกรองตามแพลตฟอร์ม
+    const [ctypeFilter, setCtypeFilter] = useState('all'); // ตัวกรองย่อยตาม Content Type
     const [clipFilter, setClipFilter] = useState('all');   // ตัวกรองตามคลิป (กลุ่มที่ 1 คนส่งหลายคลิป)
     // เรียงเก่า -> ใหม่ ให้ตรงกับแท็บรายชื่อและฝั่งลิงก์เอเจนซี่ (API ส่งมาแบบใหม่สุดขึ้นก่อน)
     const confirmed = subs.filter(s => s.status === 'confirmed')
@@ -224,10 +224,15 @@ export default function OnProcessTable({ subs = [], groups = [], showAds = false
     }
     // แพลตฟอร์มที่มีจริงในลิสต์ (ทำเป็นปุ่มกรอง)
     const platforms = [...new Set(confirmed.map(s => s.platform).filter(Boolean))];
+    // Content Type ของแพลตฟอร์มที่เลือกอยู่ (เช่น Facebook: Awareness / Engagement)
+    const ctypesOfPlat = p => [...new Set(groups.flatMap(g => contentTypesOf(g, p)))];
+    const quotaFor = (p, ct) => groups.reduce((n, g) => n + quotaOf(g, p, ct), 0);
+    const subCtypes = platFilter === 'all' ? [] : ctypesOfPlat(platFilter);
     // ชื่อคลิปที่มีจริงในลิสต์ (กลุ่มที่ 1 คนส่ง 2 คลิปจะมีมากกว่า 1 ชื่อ)
     const clipNames = [...new Set(confirmed.map(s => s.clip_name).filter(Boolean))];
     const view = confirmed
         .filter(s => platFilter === 'all' || (s.platform || '') === platFilter)
+        .filter(s => ctypeFilter === 'all' || (s.content_type || '') === ctypeFilter)
         .filter(s => clipFilter === 'all' || (s.clip_name || '') === clipFilter)
         .filter(s => stage === 'all' || workStage(s) === stage);   // ตัวกรองจากการ์ดสรุปด้านบน
 
@@ -261,17 +266,39 @@ export default function OnProcessTable({ subs = [], groups = [], showAds = false
     ) : null;
 
     // แถบปุ่มกรองแพลตฟอร์ม (โชว์เมื่อมีมากกว่า 1 แพลตฟอร์ม)
-    const filterBar = platforms.length > 1 ? (
-        <div className="proc-platfilter">
-            <span className="proc-platfilter-lbl">แพลตฟอร์ม:</span>
-            <button type="button" className={'proc-plat-chip' + (platFilter === 'all' ? ' on' : '')} onClick={() => setPlatFilter('all')}>ทั้งหมด ({confirmed.length})</button>
-            {platforms.map(p => (
-                <button type="button" key={p} className={'proc-plat-chip' + (platFilter === p ? ' on' : '')} onClick={() => setPlatFilter(p)}>
-                    {p} ({confirmed.filter(s => s.platform === p).length})
-                </button>
-            ))}
-        </div>
-    ) : null;
+    const filterBar = (
+        <>
+            {platforms.length > 1 && (
+                <div className="proc-platfilter">
+                    <span className="proc-platfilter-lbl">แพลตฟอร์ม:</span>
+                    <button type="button" className={'proc-plat-chip' + (platFilter === 'all' ? ' on' : '')}
+                        onClick={() => { setPlatFilter('all'); setCtypeFilter('all'); }}>ทั้งหมด ({confirmed.length})</button>
+                    {platforms.map(p => (
+                        <button type="button" key={p} className={'proc-plat-chip' + (platFilter === p ? ' on' : '')}
+                            onClick={() => { setPlatFilter(p); setCtypeFilter('all'); }}>
+                            {p} ({confirmed.filter(s => s.platform === p).length}{quotaFor(p) ? '/' + quotaFor(p) : ''})
+                        </button>
+                    ))}
+                </div>
+            )}
+            {/* แบ่งย่อยตาม Content Type ของแพลตฟอร์มนั้น */}
+            {platFilter !== 'all' && subCtypes.length > 1 && (
+                <div className="proc-platfilter proc-ctypefilter">
+                    <span className="proc-platfilter-lbl">Content Type:</span>
+                    <button type="button" className={'proc-plat-chip' + (ctypeFilter === 'all' ? ' on' : '')}
+                        onClick={() => setCtypeFilter('all')}>
+                        ทั้งหมด ({confirmed.filter(s => s.platform === platFilter).length}{quotaFor(platFilter) ? '/' + quotaFor(platFilter) : ''})
+                    </button>
+                    {subCtypes.map(ct => (
+                        <button type="button" key={ct} className={'proc-plat-chip' + (ctypeFilter === ct ? ' on' : '')}
+                            onClick={() => setCtypeFilter(ct)}>
+                            {ct} ({confirmed.filter(s => s.platform === platFilter && s.content_type === ct).length}{quotaFor(platFilter, ct) ? '/' + quotaFor(platFilter, ct) : ''})
+                        </button>
+                    ))}
+                </div>
+            )}
+        </>
+    );
 
     // มีกลุ่มสินค้า → แบ่งเป็นกลุ่ม
     if (groups.length > 0) {

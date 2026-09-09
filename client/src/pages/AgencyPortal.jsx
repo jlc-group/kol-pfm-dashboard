@@ -10,7 +10,7 @@ import OnProcessTable from '../components/OnProcessTable.jsx';
 import StageCards from '../components/StageCards.jsx';
 import ProductChips, { ProductSummary } from '../components/ProductChips.jsx';
 import { productLabel } from '../data/products.js';
-import { groupPlatforms, allocsInScope } from '../data/adGroups.js';
+import { groupPlatforms, allocsInScope, contentTypesOf, mediaFor } from '../data/adGroups.js';
 import { groupClips, clipCount, collapseByPerson, countPeople } from '../data/clips.js';
 import { tabBadges, markSeen, seedDraftsSeen } from '../utils/tabUpdates.js';
 import { useAuth } from '../auth/AuthContext.jsx';
@@ -124,7 +124,9 @@ function EditSubmissionModal({ token, sub, products = [], onClose, onSaved, agen
 
 // รายการ submission 1 อัน (ใช้ในลิสต์ของกลุ่ม/ไม่ระบุกลุ่ม)
 // แถวที่บันทึกแล้ว — แสดงในตารางเดิม (ล็อกอ่านอย่างเดียว) ไม่เด้งไปลิสต์ด้านล่าง
-function SavedGridRow({ s, n, onEdit, onDelete, onNote }) {
+function SavedGridRow({ s, n, group, onEdit, onDelete, onNote }) {
+    // Format ไม่ได้เก็บในแถว — อ่านจากที่ตั้งไว้ในกลุ่มตาม Platform + Content Type
+    const fmt = mediaFor(group, s.platform, s.content_type).content_format;
     const st = STATUS[s.status] || STATUS.submitted;
     const clips = s._clips || [s];          // แถวนี้ยุบมาจากกี่คลิป
     const perClipBudget = Number(clips[0]?.budget) || 0;
@@ -138,6 +140,12 @@ function SavedGridRow({ s, n, onEdit, onDelete, onNote }) {
                     <span className={`status ${st.cls} ag-saved-status`}>{st.label}</span>
                 </div>
                 <span className="ag-saved-cell">{s.platform || '—'}</span>
+                <span className="ag-saved-cell ag-ctype-cell">
+                    {s.content_type
+                        ? <><span className="proc-ctype-chip">{s.content_type}</span>
+                            {fmt && <span className="proc-ctype-chip fmt">{fmt}</span>}</>
+                        : <span className="ctype-none">— ยังไม่ระบุ —</span>}
+                </span>
                 <span className="ag-saved-cell">{Number(s.followers) > 0 ? Number(s.followers).toLocaleString('en-US') : '—'}</span>
                 <span className="ag-saved-cell"><ProductSummary value={s.product} max={2} /></span>
                 <span className="ag-saved-cell">{s.agency || '—'}</span>
@@ -224,7 +232,7 @@ function GroupSection({ token, group, gi, subs, onReload, onEdit, onDelete, onNo
     const autoBudget = (divided && perHead > 0) ? String(perHead) : '';
 
     // ไม่เลือก Platform ให้ล่วงหน้า — กันกรอกผิดช่องทางโดยไม่ทันสังเกต
-    const blank = () => ({ account_name: '', platform: '', followers: '', product: '', agency: '', budget: autoBudget, link_account: '', saving: false });
+    const blank = () => ({ account_name: '', platform: '', content_type: '', followers: '', product: '', agency: '', budget: autoBudget, link_account: '', saving: false });
     const [rows, setRows] = useState([blank()]);
     const [err, setErr] = useState('');
     const upRow = (i, k, v) => setRows(rs => rs.map((x, idx) => idx === i ? { ...x, [k]: v } : x));
@@ -269,12 +277,14 @@ function GroupSection({ token, group, gi, subs, onReload, onEdit, onDelete, onNo
         const en = rows[i];
         if (!en.account_name.trim()) { setErr('กรุณากรอกชื่อ Account'); return; }
         if (!en.platform) { setErr('กรุณาเลือก Platform'); return; }
+        if (contentTypesOf(group, en.platform).length > 0 && !en.content_type) { setErr('กรุณาเลือก Content Type'); return; }
         setErr(''); upRow(i, 'saving', true);
         try {
             await api(`/agency/${token}`, {
                 method: 'POST',
                 body: {
                     account_name: en.account_name.trim(), platform: en.platform, followers: Number(en.followers) || 0,
+                    content_type: en.content_type || null,
                     product: en.product || null, agency: agencyName || en.agency || null, budget: Number(en.budget) || 0,
                     link_account: en.link_account || null, group_key: group.key
                 }
@@ -343,15 +353,27 @@ function GroupSection({ token, group, gi, subs, onReload, onEdit, onDelete, onNo
             )}
             <div className="ag-add-scroll">
                 <div className="ag-add-grid">
-                    <div className="ag-add-head"><span>NAME</span><span>PLATFORM</span><span>FOLLOWER</span><span>PRODUCT</span><span>AGENCY</span><span>BUDGET</span><span>LINK ACCOUNT</span><span /></div>
-                    {groupSubs.map((s, si) => <SavedGridRow key={s.id} s={s} n={si + 1} onEdit={onEdit} onDelete={onDelete} onNote={onNote} />)}
+                    <div className="ag-add-head"><span>NAME</span><span>PLATFORM</span><span>CONTENT TYPE</span><span>FOLLOWER</span><span>PRODUCT</span><span>AGENCY</span><span>BUDGET</span><span>LINK ACCOUNT</span><span /></div>
+                    {groupSubs.map((s, si) => <SavedGridRow key={s.id} s={s} n={si + 1} group={group} onEdit={onEdit} onDelete={onDelete} onNote={onNote} />)}
                     {rows.map((en, i) => (
                         <div className="ag-add-row" key={i}>
                             <div className="atr-name"><span className="atr-num">{groupSubs.length + i + 1}</span><input value={en.account_name} onChange={e => upRow(i, 'account_name', e.target.value)} placeholder="ชื่อ Account" onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); saveRow(i); } }} /></div>
-                            <select value={en.platform} onChange={e => upRow(i, 'platform', e.target.value)}>
+                            <select value={en.platform} onChange={e => { upRow(i, 'platform', e.target.value); upRow(i, 'content_type', ''); }}>
                                 <option value="">— เลือก —</option>
                                 {(groupPlats.length ? groupPlats : PLATFORMS).map(p => <option key={p} value={p}>{p}</option>)}
                             </select>
+                            {/* Content Type — 1 Platform อาจมีหลายอย่างในกลุ่มเดียว จึงต้องให้เลือกเอง */}
+                            {(() => {
+                                const opts = en.platform ? contentTypesOf(group, en.platform) : [];
+                                return (
+                                    <select value={en.content_type} disabled={!en.platform || opts.length === 0}
+                                        onChange={e => upRow(i, 'content_type', e.target.value)}
+                                        title={en.platform ? '' : 'เลือก Platform ก่อน'}>
+                                        <option value="">{!en.platform ? '— เลือก Platform ก่อน —' : (opts.length ? '— เลือก —' : '— ไม่มีให้เลือก —')}</option>
+                                        {opts.map(c => <option key={c} value={c}>{c}</option>)}
+                                    </select>
+                                );
+                            })()}
                             <input type="number" min="0" value={en.followers} onChange={e => upRow(i, 'followers', e.target.value)} placeholder="ยอดฟอล" />
                             <ProductMultiSelect value={en.product} options={groupProducts} onChange={v => upRow(i, 'product', v)} />
                             {agencyName

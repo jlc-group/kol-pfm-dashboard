@@ -213,3 +213,33 @@ export function clipsFor(g, platform) {
     const b = (g.blocks || []).find(x => x.platform === platform);
     return (b && (b.clips || []).length) ? b.clips : (g.clips || []);
 }
+
+// Content Type ที่ Platform หนึ่งในกลุ่มนี้เปิดไว้ (จาก allocations ที่แบนมาจาก blocks)
+export function contentTypesOf(g, platform) {
+    const out = [];
+    (g.allocations || []).forEach(a => {
+        if (platform && a.platform && a.platform !== platform) return;
+        if (a.content_type && !out.includes(a.content_type)) out.push(a.content_type);
+    });
+    if (!out.length && g.content_type) out.push(g.content_type);
+    return out;
+}
+
+// Photo/VDO + Content Format ของ (Platform + Content Type) — ไม่ต้องให้คนกรอกซ้ำ
+export function mediaFor(g, platform, contentType) {
+    const rows = (g.allocations || []).filter(a =>
+        (!platform || !a.platform || a.platform === platform)
+        && (!contentType || !a.content_type || a.content_type === contentType));
+    const hit = rows.find(a => a.media_type || a.content_format) || null;
+    return {
+        media_type: hit ? (hit.media_type || null) : (g.media_type || null),
+        content_format: hit ? (hit.content_format || null) : (g.content_format || null)
+    };
+}
+
+// จำนวนที่ต้องการของ (Platform + Content Type) — ไว้ทำตัวเลข "ส่งแล้ว / ต้องการ" ในตัวกรอง
+export function quotaOf(g, platform, contentType) {
+    return (g.allocations || [])
+        .filter(a => (!platform || a.platform === platform) && (!contentType || a.content_type === contentType))
+        .reduce((n, a) => n + (Number(a.kols) || 0), 0);
+}
