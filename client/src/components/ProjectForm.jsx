@@ -497,11 +497,17 @@ export default function ProjectForm({ editing, onClose, onSaved }) {
                                             </div>
                                             {/* Target ใช้เฉพาะบาง Platform (ตอนนี้ TikTok) — Platform อื่นไม่มีช่องนี้เลย */}
                                             {needTarget(b.platform) && (
-                                                <div className="target-multi">
+                                                <div className={'target-multi tgt-field' + (bTargetSel.length === 0 ? ' need' : '')}>
+                                                    <div className="tgt-label">
+                                                        <span>🎯 กลุ่ม Target <b className="tgt-req">*</b></span>
+                                                        {bTargetSel.length === 0
+                                                            ? <span className="tgt-hint">กดที่ช่องด้านล่างเพื่อเลือก — ต้องเลือกอย่างน้อย 1 กลุ่ม</span>
+                                                            : <span className="tgt-ok">✓ เลือกแล้ว {bTargetSel.length}</span>}
+                                                    </div>
                                                     <CheckMultiSelect
                                                         disabled={g.products.length === 0 || bTargetOpts.length === 0}
                                                         disabledText={g.products.length === 0 ? '— เลือกสินค้าก่อน —' : '— สินค้านี้ยังไม่มี Target —'}
-                                                        placeholder="🎯 + เลือกกลุ่ม Target"
+                                                        placeholder="▾ กดเลือกกลุ่ม Target"
                                                         emptyText="สินค้านี้ยังไม่มี Target"
                                                         options={bTargetOpts.map(t => ({ value: t, label: t }))}
                                                         selected={bTargetSel}
