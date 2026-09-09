@@ -5,7 +5,7 @@ import DatePicker from './DatePicker.jsx';
 import DraftModal from './DraftModal.jsx';
 import PerfModal from './PerfModal.jsx';
 import { asTargetArray } from '../data/products.js';
-import { mediaFor, contentTypesOf, quotaOf } from '../data/adGroups.js';
+import { mediaFor, contentTypesOf, quotaOf, targetFor } from '../data/adGroups.js';
 import { ProductSummary } from './ProductChips.jsx';
 import { draftIsNew, markDraftSeen } from '../utils/tabUpdates.js';
 
@@ -41,6 +41,7 @@ function ProcessRow({ sub, putSubmission, reload, showAds = false, group = null,
     // Content Type ผูกกับคน (1 Platform ในกลุ่มเดียวมีได้หลายอย่าง) — ของเก่าที่ยังไม่ระบุค่อยถอยไปใช้ของกลุ่ม
     const ctype = sub.content_type || (group ? (contentTypesOf(group, sub.platform)[0] || null) : null);
     const media = group ? mediaFor(group, sub.platform, ctype) : { media_type: null, content_format: null };
+    const tgt = group ? asTargetArray(targetFor(group, sub.platform)) : [];
     // ยิงแอดไปแล้ว = ล็อก ลิงก์โพสต์ / Gencode / ID Post ห้ามแก้
     // เพราะเป็นข้อมูลที่แอดที่ยิงไปแล้วอ้างอิงอยู่ (ฝั่ง server ปฏิเสธซ้ำอีกชั้น)
     const adLocked = sub.ad_status === 'ยิงแล้ว';
@@ -98,8 +99,9 @@ function ProcessRow({ sub, putSubmission, reload, showAds = false, group = null,
             </div>
             {showAds && (
                 <div className="proc-cell">
-                    {asTargetArray(group?.target).length > 0
-                        ? asTargetArray(group.target).map(t => <span className="proc-ads-tgt" key={t} title={t}>🎯 {t}</span>)
+                    {/* Target ตั้งต่อ Platform และมีเฉพาะ Platform ที่ใช้ยิงแอด */}
+                    {tgt.length > 0
+                        ? tgt.map(t => <span className="proc-ads-tgt" key={t} title={t}>🎯 {t}</span>)
                         : <span className="muted">—</span>}
                 </div>
             )}

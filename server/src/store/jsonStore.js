@@ -454,6 +454,21 @@ function resolveGroupClips(g, platform) {
     const list = (b && (b.clips || []).length) ? b.clips : (g.clips || []);
     return list.map(c => String(c || '').trim()).filter(Boolean);
 }
+const TARGET_PLATFORMS = ['TikTok'];
+// Target ตั้งแยกต่อ Platform และมีเฉพาะ Platform ที่ใช้ยิงแอด
+// กลุ่มที่ลง TikTok + Facebook จะมี Target แค่ฝั่ง TikTok เท่านั้น
+function resolveGroupTarget(g, platform) {
+    if (!g) return null;
+    const b = (g.blocks || []).find(x => x.platform === platform);
+    if (b) { const t = b.target; return (Array.isArray(t) ? t.length : !!t) ? t : null; }
+    return TARGET_PLATFORMS.includes(platform) ? (g.target || null) : null;
+}
+// สินค้าของ Platform นั้นในกลุ่ม — ไม่มีค่อยถอยไปใช้ของทั้งกลุ่ม
+function resolveGroupProducts(g, platform) {
+    if (!g) return [];
+    const b = (g.blocks || []).find(x => x.platform === platform);
+    return (b && (b.products || []).length) ? b.products : (g.products || []);
+}
 function resolveGroupCtype(g, platform) {
     if (!g) return null;
     const hit = (g.allocations || []).find(a => a.content_type && (!platform || !a.platform || a.platform === platform));
@@ -1522,8 +1537,8 @@ const ads = {
                     sub_id: s.id,
                     account_name: s.account_name,
                     platform: s.platform || null,
-                    product: s.product || (grp && grp.products && grp.products.length ? grp.products.join(', ') : null),
-                    target: grp ? (grp.target || null) : null,
+                    product: s.product || (resolveGroupProducts(grp, s.platform).join(', ') || null),
+                    target: resolveGroupTarget(grp, s.platform),
                     content_type: ct,
                     media_type: media.media_type,
                     group_format: media.content_format,
@@ -2183,4 +2198,4 @@ const rateRequests = {
 };
 
 module.exports = {
-    resolveGroupClips, teams, users, kols, projects, projectKols, dashboard, payments, installments, payBatches, budget, activity, submissions, ads, adsSync, reports, rateRequests, meta, _duplicateError: duplicateError };
+    resolveGroupClips, resolveGroupTarget, resolveGroupProducts, teams, users, kols, projects, projectKols, dashboard, payments, installments, payBatches, budget, activity, submissions, ads, adsSync, reports, rateRequests, meta, _duplicateError: duplicateError };
