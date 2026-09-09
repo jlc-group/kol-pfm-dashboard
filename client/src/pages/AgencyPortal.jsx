@@ -33,7 +33,7 @@ const fmtNum = n => {
     if (v >= 1000) return (v / 1000).toFixed(1) + 'K';
     return String(v);
 };
-const emptyEntry = () => ({ account_name: '', platform: 'TikTok', tier: '', product: '', agency: '', budget: '', link_account: '', saving: false });
+const emptyEntry = () => ({ account_name: '', platform: '', tier: '', product: '', agency: '', budget: '', link_account: '', saving: false });
 
 // เลือก Product ได้หลายอันต่อ KOL 1 คน — เก็บค่าเป็นสตริงคั่นคอมมา, มีตัวเลือก "เลือกทุก Product"
 // ใช้ native <select> (ไม่โดน overflow ของตารางบัง) + ชิปสินค้าที่เลือกไว้ (ลบได้)
@@ -223,7 +223,8 @@ function GroupSection({ token, group, gi, subs, onReload, onEdit, onDelete, onNo
     const [divided, setDivided] = useState(() => { try { return localStorage.getItem(divKey) === '1'; } catch { return false; } });
     const autoBudget = (divided && perHead > 0) ? String(perHead) : '';
 
-    const blank = () => ({ account_name: '', platform: groupPlats[0] || 'TikTok', followers: '', product: '', agency: '', budget: autoBudget, link_account: '', saving: false });
+    // ไม่เลือก Platform ให้ล่วงหน้า — กันกรอกผิดช่องทางโดยไม่ทันสังเกต
+    const blank = () => ({ account_name: '', platform: '', followers: '', product: '', agency: '', budget: autoBudget, link_account: '', saving: false });
     const [rows, setRows] = useState([blank()]);
     const [err, setErr] = useState('');
     const upRow = (i, k, v) => setRows(rs => rs.map((x, idx) => idx === i ? { ...x, [k]: v } : x));
@@ -267,6 +268,7 @@ function GroupSection({ token, group, gi, subs, onReload, onEdit, onDelete, onNo
     async function saveRow(i) {
         const en = rows[i];
         if (!en.account_name.trim()) { setErr('กรุณากรอกชื่อ Account'); return; }
+        if (!en.platform) { setErr('กรุณาเลือก Platform'); return; }
         setErr(''); upRow(i, 'saving', true);
         try {
             await api(`/agency/${token}`, {
@@ -346,7 +348,10 @@ function GroupSection({ token, group, gi, subs, onReload, onEdit, onDelete, onNo
                     {rows.map((en, i) => (
                         <div className="ag-add-row" key={i}>
                             <div className="atr-name"><span className="atr-num">{groupSubs.length + i + 1}</span><input value={en.account_name} onChange={e => upRow(i, 'account_name', e.target.value)} placeholder="ชื่อ Account" onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); saveRow(i); } }} /></div>
-                            <select value={en.platform} onChange={e => upRow(i, 'platform', e.target.value)}>{(groupPlats.length ? groupPlats : PLATFORMS).map(p => <option key={p} value={p}>{p}</option>)}</select>
+                            <select value={en.platform} onChange={e => upRow(i, 'platform', e.target.value)}>
+                                <option value="">— เลือก —</option>
+                                {(groupPlats.length ? groupPlats : PLATFORMS).map(p => <option key={p} value={p}>{p}</option>)}
+                            </select>
                             <input type="number" min="0" value={en.followers} onChange={e => upRow(i, 'followers', e.target.value)} placeholder="ยอดฟอล" />
                             <ProductMultiSelect value={en.product} options={groupProducts} onChange={v => upRow(i, 'product', v)} />
                             {agencyName
@@ -703,6 +708,7 @@ export default function AgencyPortal() {
                                                     <input value={en.account_name} onChange={e => updateEntry(i, 'account_name', e.target.value)} placeholder="ชื่อ Account" />
                                                 </div>
                                                 <select value={en.platform} onChange={e => updateEntry(i, 'platform', e.target.value)}>
+                                                    <option value="">— เลือก —</option>
                                                     {PLATFORMS.map(p => <option key={p} value={p}>{p}</option>)}
                                                 </select>
                                                 <select value={en.tier} onChange={e => updateEntry(i, 'tier', e.target.value)}>

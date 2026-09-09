@@ -88,7 +88,7 @@ const SUB_PLATFORMS = ['TikTok', 'Instagram', 'Facebook', 'Lemon8', 'YouTube', '
 // modal เพิ่ม KOL เข้าลิสต์เอง (ฝั่งทีม)
 function AddSubmissionModal({ projectId, products = [], groups = [], onClose, onAdded }) {
     // มีกลุ่มเดียวก็เลือกให้เลย ไม่ต้องกดซ้ำ
-    const [f, setF] = useState({ group_key: groups.length === 1 ? groups[0].key : '', account_name: '', platform: groups.length === 1 ? (groupPlatforms(groups[0])[0] || 'TikTok') : 'TikTok', product: '', agency: '', budget: '', link_account: '' });
+    const [f, setF] = useState({ group_key: groups.length === 1 ? groups[0].key : '', account_name: '', platform: (groups.length === 1 && groupPlatforms(groups[0]).length === 1) ? groupPlatforms(groups[0])[0] : '', product: '', agency: '', budget: '', link_account: '' });
     const g = groups.find(x => x.key === f.group_key) || null;
     const gPlats = g ? groupPlatforms(g) : [];
     // สินค้าให้เลือกเฉพาะของกลุ่มที่เลือก — ถ้ายังไม่เลือกกลุ่มค่อยใช้สินค้าทั้งแคมเปญ
@@ -106,7 +106,9 @@ function AddSubmissionModal({ projectId, products = [], groups = [], onClose, on
                 platform: (() => {
                     const ps = grp ? groupPlatforms(grp) : [];
                     if (!ps.length) return st.platform;
-                    return ps.includes(st.platform) ? st.platform : ps[0];
+                    if (ps.includes(st.platform)) return st.platform;
+                    // มี Platform เดียวก็เลือกให้เลย หลายอันให้คนเลือกเอง จะได้ไม่กรอกผิดช่องทาง
+                    return ps.length === 1 ? ps[0] : '';
                 })(),
                 product: allow ? cur.filter(c => allow.includes(c)).join(',') : st.product
             };
@@ -118,6 +120,7 @@ function AddSubmissionModal({ projectId, products = [], groups = [], onClose, on
 
     async function submit(e) {
         e.preventDefault();
+        if (!f.platform) { setError('กรุณาเลือก Platform'); return; }
         setError(''); setSaving(true);
         try {
             await api(`/projects/${projectId}/submissions`, {
@@ -180,6 +183,7 @@ function AddSubmissionModal({ projectId, products = [], groups = [], onClose, on
                             ) : (
                                 // กลุ่มลงได้หลาย Platform → ให้เลือกเฉพาะที่กลุ่มนี้มี
                                 <select value={f.platform} onChange={e => up('platform', e.target.value)}>
+                                    <option value="">— เลือก —</option>
                                     {(gPlats.length ? gPlats : SUB_PLATFORMS).map(p => <option key={p} value={p}>{p}</option>)}
                                 </select>
                             )}
