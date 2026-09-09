@@ -342,7 +342,9 @@ export default function ProjectDetail() {
     const [newLinkKol, setNewLinkKol] = useState('');
     const [copiedToken, setCopiedToken] = useState('');
     const [stage, setStage] = useState('all');   // ตัวกรองขั้นงานจากการ์ดสรุป
-    const [subTab, setSubTab] = useState('list'); // list | process
+    const [subTab, setSubTab] = useState('list');
+    // กรองรายชื่อตาม Platform — โชว์เมื่อแคมเปญมีมากกว่า 1 Platform
+    const [listPlat, setListPlat] = useState('all'); // list | process
     const [badges, setBadges] = useState({ listNew: false, processNew: false });
     const [subsLoaded, setSubsLoaded] = useState(false);
 
@@ -1022,6 +1024,19 @@ export default function ProjectDetail() {
                 </button>
             </div>
 
+            {subTab === 'list' && projectPlatforms.length > 1 && submissions.length > 0 && (
+                <div className="proc-platfilter">
+                    <span className="proc-platfilter-lbl">แพลตฟอร์ม:</span>
+                    <button type="button" className={'proc-plat-chip' + (listPlat === 'all' ? ' on' : '')}
+                        onClick={() => setListPlat('all')}>ทั้งหมด ({countPeople(submissions)})</button>
+                    {projectPlatforms.map(p => (
+                        <button type="button" key={p} className={'proc-plat-chip' + (listPlat === p ? ' on' : '')}
+                            onClick={() => setListPlat(p)}>
+                            {p} ({countPeople(submissions.filter(s => s.platform === p))})
+                        </button>
+                    ))}
+                </div>
+            )}
             {subTab === 'list' && (
                 submissions.length === 0 ? (
                     <div className="panel"><p className="empty" style={{ padding: '10px 0' }}>ยังไม่มีรายชื่อจาก Agency — กด "สร้างลิงก์ให้ Agency" แล้วส่งลิงก์ให้เอเจนซี่กรอก</p></div>
@@ -1029,7 +1044,8 @@ export default function ProjectDetail() {
                     /* แบ่งตามกลุ่มสินค้า */
                     <>
                         {project.ad_groups.map((g, gi) => {
-                            const gsubs = submissions.filter(s => s.group_key === g.key);
+                            const gsubs = submissions.filter(s => s.group_key === g.key
+                                && (listPlat === 'all' || s.platform === listPlat));
                             return (
                                 <div className="kol-group-card" key={g.key || gi}>
                                     {teamGroupBar(g, gi, gsubs)}

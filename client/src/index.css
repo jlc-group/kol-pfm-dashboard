@@ -2658,3 +2658,5 @@ a { text-decoration: none; color: inherit; }
 .tgt-field .pms-toggle { border-color: var(--mint); background: #f2fbf7; color: #0f766e; font-weight: 600; }
 .tgt-field.need .pms-toggle { border-color: #f0b357; background: #fff4e3; color: #92400e; border-style: dashed; }
 .tgt-field .pms-toggle:hover { background: #e8f7f1; }
+
+.ag-platfilter { margin: 0 0 12px; }

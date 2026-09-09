@@ -191,15 +191,15 @@ function SubItem({ s, onEdit }) {
 }
 
 // section 1 กลุ่มสินค้า — โชว์ความต้องการ (Platform/Tier/จำนวน) + ฟอร์มใส่ชื่อ + ลิสต์ของกลุ่ม
-function GroupSection({ token, group, gi, subs, onReload, onEdit, onDelete, onNote, agencyName, platformBudgets = {}, scopePlatforms = [] }) {
+function GroupSection({ token, group, gi, subs, onReload, onEdit, onDelete, onNote, agencyName, platformBudgets = {}, scopePlatforms = [], platFilter = 'all' }) {
     const groupProducts = group.products || [];
     const groupPlats = groupPlatforms(group);
     // เห็นแค่แถวของ Platform ที่เจ้านี้รับผิดชอบ ไม่ใช่ทั้งกลุ่ม
-    const myAllocs = allocsInScope(group, scopePlatforms);
+    const myAllocs = allocsInScope(group, platFilter === 'all' ? scopePlatforms : [platFilter]);
     const groupTiers = [...new Set(myAllocs.map(a => a.tier).filter(Boolean))];
     const myKol = myAllocs.reduce((s, a) => s + (Number(a.kols) || 0), 0);
     // API ส่งมาแบบใหม่สุดขึ้นก่อน — กลับด้านให้คนที่บันทึกทีหลังต่อท้ายลงมาเรื่อย ๆ
-    const groupRows = subs.filter(s => s.group_key === group.key)
+    const groupRows = subs.filter(s => s.group_key === group.key && (platFilter === 'all' || s.platform === platFilter))
         .slice().sort((a, b) => (a.submitted_at || '').localeCompare(b.submitted_at || '') || (a.id - b.id));
     // หน้านี้ = หน้าคัดเลือก "คน" จึงยุบแถวพี่น้อง (คนเดียวกันหลายคลิป) ให้เหลือคนละแถว
     const groupSubs = collapseByPerson(groupRows);
@@ -379,6 +379,7 @@ export default function AgencyPortal() {
     const [tab, setTab] = useState('list'); // list | process
     const [editSub, setEditSub] = useState(null); // KOL ที่กำลังแก้ไข
     const [stage, setStage] = useState('all');    // ตัวกรองขั้นงานจากการ์ดสรุป
+    const [platFilter, setPlatFilter] = useState('all');   // ดูทีละ Platform เมื่อเจ้านี้รับหลาย Platform
     const [badges, setBadges] = useState({ listNew: false, processNew: false });
     const [toasts, setToasts] = useState([]);       // แจ้งเตือนเด้งอัตโนมัติ (Feedback/สถานะดราฟจากทีม)
     const toastId = useRef(0);
@@ -508,6 +509,10 @@ export default function AgencyPortal() {
     const scope = info.agency_scope || {};
     const scopeProducts = scope.products || [];
     const scopePlatforms = scope.platforms || [];
+    // Platform ที่เจ้านี้รับผิดชอบจริง — ถ้าลิงก์ไม่ได้จำกัดไว้ ใช้ Platform ที่มีอยู่ในกลุ่มที่เห็น
+    const myPlatforms = scopePlatforms.length
+        ? scopePlatforms
+        : [...new Set((info.ad_groups || []).flatMap(g => groupPlatforms(g)))];
     const scopeKol = scope.kol_count || 0;
     const formProducts = scopeProducts.length ? scopeProducts : products;   // จำกัดสินค้าในฟอร์มตามที่รับผิดชอบ
     // บรีฟต่อสินค้า เฉพาะของเจ้านี้
@@ -647,6 +652,21 @@ export default function AgencyPortal() {
                     </button>
                 </div>
 
+                {/* ดูทีละ Platform — โชว์เมื่อเจ้านี้รับผิดชอบมากกว่า 1 Platform */}
+                {myPlatforms.length > 1 && (
+                    <div className="proc-platfilter ag-platfilter">
+                        <span className="proc-platfilter-lbl">แพลตฟอร์ม:</span>
+                        <button type="button" className={'proc-plat-chip' + (platFilter === 'all' ? ' on' : '')}
+                            onClick={() => setPlatFilter('all')}>ทั้งหมด ({countPeople(subs)})</button>
+                        {myPlatforms.map(p => (
+                            <button type="button" key={p} className={'proc-plat-chip' + (platFilter === p ? ' on' : '')}
+                                onClick={() => setPlatFilter(p)}>
+                                {p} ({countPeople(subs.filter(s => s.platform === p))})
+                            </button>
+                        ))}
+                    </div>
+                )}
+
                 {/* ===== แท็บ Influencers List ===== */}
                 {tab === 'list' && <>
                     {savedMsg && <div className="agency-saved">{savedMsg}</div>}
@@ -654,7 +674,7 @@ export default function AgencyPortal() {
                     {adGroups.length > 0 ? (
                         <>
                             {adGroups.map((g, gi) => (
-                                <GroupSection key={g.key || gi} token={token} group={g} gi={gi} subs={subs} onReload={load} onEdit={setEditSub} onDelete={deleteSub} onNote={saveNote} agencyName={info.agency_name} platformBudgets={platformBudgets} scopePlatforms={scopePlatforms} />
+                                <GroupSection key={g.key || gi} token={token} group={g} gi={gi} subs={subs} onReload={load} onEdit={setEditSub} onDelete={deleteSub} onNote={saveNote} agencyName={info.agency_name} platformBudgets={platformBudgets} scopePlatforms={scopePlatforms} platFilter={platFilter} />
                             ))}
                             {ungrouped.length > 0 && (
                                 <div className="agency-card">
