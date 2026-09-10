@@ -224,12 +224,14 @@ function AdRow({ row, onSaved }) {
                 <span className="ads-camp-name">{row.project_name || '—'}</span>
                 {row.brand && <span className="tag">{row.brand}</span>}
             </div>
-            {/* สินค้า + Target อยู่ช่องเดียวกัน (เป็นเรื่องเดียวกัน) เพื่อให้ตารางพอดีจอ */}
             <div className="ads-cell ads-stack">
                 <ProductSummary value={row.product} max={2} />
+            </div>
+            {/* Target ตั้งต่อ Platform และมีเฉพาะ Platform ที่ใช้ยิงแอด — ช่องว่างโชว์ — เหมือนหน้า On Process */}
+            <div className="ads-cell ads-stack">
                 {asTargetArray(row.target).length > 0
-                    ? <div className="ads-sub">{asTargetArray(row.target).map(t => <span className="proc-ads-tgt" key={t} title={t}>🎯 {t}</span>)}</div>
-                    : null}
+                    ? asTargetArray(row.target).map(t => <span className="proc-ads-tgt" key={t} title={t}>🎯 {t}</span>)
+                    : <span className="muted">—</span>}
             </div>
             <div className="ads-cell ads-stack">
                 {row.content_type || row.media_type || row.group_format ? (
@@ -240,30 +242,35 @@ function AdRow({ row, onSaved }) {
                     </>
                 ) : <span className="muted">—</span>}
             </div>
-            {/* โพสต์ + Gencode + ID Post ซ้อนกัน — ใช้คู่กันตอนไปตั้งค่าในระบบยิงแอด */}
-            <div className="ads-cell ads-stack">
-                <div className="ads-code-line">
-                    {row.post_url
-                        ? <a href={row.post_url} target="_blank" rel="noreferrer" title="เปิดโพสต์"><Icon name="eye" size={15} /></a>
-                        : <span className="muted">—</span>}
-                    <CopyCode value={row.gencode} />
-                </div>
-                {row.id_post
-                    ? <span className="ads-code ads-sub" title={row.id_post}>{row.id_post}</span>
-                    : <span className="muted ads-sub">ยังไม่มี ID Post</span>}
+            {/* POST — ลิงก์โพสต์จริง (ไอคอนอย่างเดียว คอลัมน์จึงแคบสุดในตาราง) */}
+            <div className="ads-cell">
+                {row.post_url
+                    ? <a href={row.post_url} target="_blank" rel="noreferrer" title="เปิดโพสต์"><Icon name="eye" size={15} /></a>
+                    : <span className="muted">—</span>}
             </div>
-            {/* วันลงงาน / วันยิงแอด ซ้อนกัน */}
+            {/* GENCODE — โค้ดยาว 65 ตัว แสดงไม่ครบแน่นอน จึงตัดด้วย ... แล้วให้กดปุ่มคัดลอกเอาไปใช้แทน */}
+            <div className="ads-cell"><CopyCode value={row.gencode} /></div>
+            {/* ID POST */}
+            <div className="ads-cell">
+                {row.id_post
+                    ? <span className="ads-code" title={row.id_post}>{row.id_post}</span>
+                    : <span className="muted">ยังไม่มี</span>}
+            </div>
+            {/* วันลงงาน — ป้าย "แจ้งช้า" อยู่ช่องนี้เพราะเป็นเรื่องของวันลงงานโดยตรง (ลงจริงวันหนึ่ง แต่เพิ่งแจ้งอีกวันหนึ่ง) */}
             <div className="ads-cell ads-stack">
                 {row.post_date ? <span className="ads-postdate">{fmtDate(row.post_date)}</span> : <span className="muted">—</span>}
-                <span className="ads-sub" title="วันที่ยิงแอด (ระบบลงให้ตอนกดสถานะเป็นยิงแล้ว)">
-                    {end ? '▸ ยิง ' + fmtDate(end) : <span className="muted">▸ ยังไม่ยิง</span>}
-                </span>
                 {reportLag !== null && reportLag >= 2 && (
                     <span className={'ads-lag ' + (reportLag <= 3 ? 'warn' : 'bad')}
                         title={`KOL ลงงาน ${fmtDate(row.post_date)} แต่เพิ่งแจ้งเข้าระบบ ${fmtDate(row.post_date_at)} — ช้าไป ${reportLag} วัน ทำให้เริ่มยิงแอดได้ช้าตามไปด้วย`}>
                         แจ้งช้า {reportLag} วัน
                     </span>
                 )}
+            </div>
+            {/* วันยิงแอด — ระบบลงวันที่ให้เองตอนกดสถานะเป็น "ยิงแล้ว" */}
+            <div className="ads-cell">
+                {end
+                    ? <span className="ads-postdate" title="วันที่ยิงแอด (ระบบลงให้ตอนกดสถานะเป็นยิงแล้ว)">{fmtDate(end)}</span>
+                    : <span className="muted">ยังไม่ยิง</span>}
             </div>
             <div className="ads-cell">
                 <button type="button" className={'ads-status ' + (adStatus === 'ยิงแล้ว' ? 'done' : 'pending')} onClick={toggleStatus} disabled={saving}>
@@ -449,7 +456,8 @@ export default function Ads() {
                                         options={[{ value: '', label: 'ทุก Platform', count: countIf('platform', () => true) },
                                         ...platformOptions.map(p => ({ value: p, label: p, count: countIf('platform', r => r.platform === p) }))]} />
                                 </span>
-                                <span>แคมเปญ</span><span>PRODUCT / TARGET</span><span>CONTENT</span><span>โพสต์ / GENCODE / ID</span><span>วันลง / วันยิง</span>
+                                <span>แคมเปญ</span><span>PRODUCT</span><span>TARGET</span><span>CONTENT</span>
+                                <span>POST</span><span>GENCODE</span><span>ID POST</span><span>วันลงงาน</span><span>วันยิงแอด</span>
                                 <span>สถานะ
                                     <ColumnFilter label="สถานะยิงแอด" value={status} onPick={setStatus}
                                         options={[{ value: '', label: 'ทุกสถานะ', count: countIf('status', () => true) },

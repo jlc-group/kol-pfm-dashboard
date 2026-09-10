@@ -1108,7 +1108,11 @@ a { text-decoration: none; color: inherit; }
 
 /* ตารางยิงแอด (แถวแนวนอน) */
 .ads-tbl-scroll { overflow-x: auto; }
-.ads-tbl { min-width: 0; }   /* พอดีจอ ไม่ต้องเลื่อนซ้ายขวา */
+/* ให้คอลัมน์กว้างพอจะอ่าน Target/Product ได้ครบ แล้วเลื่อนซ้ายขวาเอา (ตัวห่อ .ads-tbl-scroll เลื่อนให้)
+   1700px = ค่าต่ำสุดที่วัดแล้วว่า Target ("F_Beauty-Make up_18-44" ต้องการ 158px) แสดงครบไม่โดนตัด
+   ต่ำกว่านี้ Target จะโดนตัดเป็น ... / สูงกว่านี้ Target ไม่ได้กว้างขึ้นแล้ว มีแต่เลื่อนไกลขึ้นเปล่า ๆ
+   หมายเหตุ: body ตั้ง zoom 1.2 (--app-zoom) ค่านี้จึงกลายเป็น ~2040px จริงบนจอ */
+.ads-tbl { min-width: 1700px; }
 /* ปุ่มกรองเล็กบนหัวคอลัมน์ (แบบตาราง Excel) */
 .colf { position: relative; display: inline-flex; vertical-align: middle; }
 .colf-btn {
@@ -1149,8 +1153,9 @@ a { text-decoration: none; color: inherit; }
 .colf-dot.none { background: #c3cdc8; }
 .ads-tbl-head, .ads-row {
     display: grid;
-    /* KOL แคมเปญ PRODUCT/TARGET CONTENT โพสต์+โค้ด วันลง/วันยิง สถานะ ยิงช้า STAMPED LIVE หมายเหตุ */
-    grid-template-columns: 1.05fr 1fr 1.15fr 0.8fr 1.1fr 0.9fr 0.75fr 0.7fr 0.8fr 0.8fr 1fr;
+    /* KOL แคมเปญ PRODUCT TARGET CONTENT POST GENCODE ID-POST วันลงงาน วันยิงแอด สถานะ ยิงช้า STAMPED LIVE หมายเหตุ */
+    /* POST เป็นไอคอนอย่างเดียวจึงให้แคบสุด เพื่อเก็บพื้นที่ไว้ให้คอลัมน์ที่มีข้อความยาว */
+    grid-template-columns: 1fr 0.95fr 0.85fr 1.25fr 0.75fr 0.3fr 1fr 0.95fr 0.8fr 0.65fr 0.65fr 0.6fr 0.7fr 0.7fr 0.9fr;
     gap: 10px; align-items: center;
 }
 .ads-note input { width: 100%; }
