@@ -1,5 +1,27 @@
 # KOL Central Dashboard v2
 
+## เตรียมใช้งานผ่าน we-platform (2026-09-10)
+
+โค้ดรองรับ build จาก root และเปิดหน้าเว็บ/API ด้วย Node process เดียวแล้ว
+**Production ออนไลน์ที่ `https://kol-pfm-dashboard.wejlc.com` แล้ว** — แอปและ tunnel แยกทำงานผ่าน PM2, ตั้ง `.env` และตรวจฐานข้อมูลจริงผ่านแล้ว เหลือยืนยัน GitHub webhook auto deploy
+รายละเอียดการลงทะเบียน การตั้งค่า และ rollback อยู่ที่ [docs/we-platform-deployment.md](docs/we-platform-deployment.md)
+
+```bash
+# Node.js 22.12+; แนะนำ Node 22 LTS ตาม CI
+npm ci
+npm run build          # ติดตั้ง server/client ตาม lockfile, build และทดสอบ API
+npm run test:browser   # ต้องติดตั้ง Chromium: npx playwright install chromium
+npm run check:production  # ตรวจ config/build/ตาราง DB แบบอ่านอย่างเดียว
+npm start             # หน้าเว็บและ API ใช้พอร์ตเดียว
+```
+
+เมื่อใช้ production ต้องตั้ง `NODE_ENV=production`, พอร์ตที่ลงทะเบียนแล้ว, ค่า PostgreSQL/JWT
+และ `UPLOAD_DIR` เป็น absolute path ภายนอกโฟลเดอร์ deploy ที่สร้างไว้แล้ว
+ระบบอ่าน environment ของ process ก่อน แล้วจึง root `.env` และ `server/.env` ตามลำดับ
+ห้ามใช้ `start-dashboard.bat` หรือ Vite dev server เป็น production service
+
+สถานะ/คำสั่งในหัวข้อเดิมด้านล่างเป็นข้อมูลพัฒนาระบบ ไม่ใช่หลักฐานว่า production ออนไลน์แล้ว
+
 Dashboard กลางสำหรับหลายทีม — สร้างใหม่ ไม่ต่อยอดจากของเดิม
 
 ## สถานะปัจจุบัน

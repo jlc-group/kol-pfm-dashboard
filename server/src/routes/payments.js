@@ -11,7 +11,7 @@ const router = express.Router();
 router.use(authenticate, requireRole('admin'));
 
 // ---------- ตั้งค่าที่เก็บไฟล์อัปโหลด ----------
-const UPLOAD_DIR = path.join(__dirname, '..', '..', 'uploads');
+const { UPLOAD_DIR } = require('../config/uploads');
 if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 
 const storage = multer.diskStorage({

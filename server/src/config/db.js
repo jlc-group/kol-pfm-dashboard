@@ -4,11 +4,10 @@
  * อ่านค่าจาก server/.env — ดู .env.example ประกอบ
  * ใช้ร่วมกันทั้ง pgStore, สคริปต์ย้ายข้อมูล และสคริปต์สร้างตาราง
  */
-const path = require('path');
+require('./env');
 const { Pool } = require('pg');
 // ระบุ path ของ .env ตายตัว — ไม่งั้นสคริปต์ที่รันจากโฟลเดอร์อื่นจะหาไฟล์ไม่เจอ
 // แล้วไปต่อ DB ด้วยค่าว่าง ซึ่ง error ที่ได้ ('password must be a string') ชี้ต้นเหตุไม่ตรงจุด
-require('dotenv').config({ path: path.join(__dirname, '..', '..', '.env') });
 
 const pool = new Pool({
     user: process.env.DB_USER,

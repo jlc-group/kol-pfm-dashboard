@@ -11,12 +11,12 @@ const router = express.Router();
 router.use(authenticate);
 
 // ---------- ที่เก็บไฟล์บรีฟ (ใช้โฟลเดอร์ uploads ร่วมกัน) ----------
-const UPLOAD_DIR = path.join(__dirname, '..', '..', 'uploads');
+const { UPLOAD_DIR } = require('../config/uploads');
 if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 // รูปแนบในแชทกับเอเจนซี่ — รูปเท่านั้น
 const chatImage = multer({
     storage: multer.diskStorage({
-        destination: (req, file, cb) => cb(null, path.join(__dirname, '..', '..', 'uploads')),
+        destination: (req, file, cb) => cb(null, UPLOAD_DIR),
         filename: (req, file, cb) => cb(null, `chat_${Date.now()}_${Math.random().toString(36).slice(2, 8)}${path.extname(file.originalname)}`)
     }),
     limits: { fileSize: 8 * 1024 * 1024 },
@@ -562,7 +562,7 @@ router.get('/:id/agency-reports/:token/:reportId/file', async (req, res, next) =
         if (!check.ok) return res.status(check.code).json({ status: 'error', message: check.message });
         const r = await store.projects.getAgencyReport(req.params.id, req.params.token, req.params.reportId);
         if (!r || r.kind !== 'file') return res.status(404).json({ status: 'error', message: 'ไม่พบไฟล์' });
-        const fp = path.join(__dirname, '..', '..', 'uploads', r.filename);
+        const fp = path.join(UPLOAD_DIR, r.filename);
         if (!fs.existsSync(fp)) return res.status(404).json({ status: 'error', message: 'ไฟล์หายไป' });
         res.sendFile(fp);
     } catch (err) { next(err); }
@@ -622,7 +622,7 @@ router.get('/:id/agency-links/:token/messages/:msgId/:which(image|thumb)', async
         if (!check.ok) return res.status(check.code).json({ status: 'error', message: check.message });
         const img = await store.projects.getAgencyMessageImage(req.params.id, req.params.token, req.params.msgId, req.params.which);
         if (!img) return res.status(404).json({ status: 'error', message: 'ไม่พบรูป' });
-        const fp = path.join(__dirname, '..', '..', 'uploads', img.filename);
+        const fp = path.join(UPLOAD_DIR, img.filename);
         if (!fs.existsSync(fp)) return res.status(404).json({ status: 'error', message: 'ไฟล์หายไป' });
         res.sendFile(fp);
     } catch (err) { next(err); }
@@ -652,7 +652,7 @@ router.delete('/:id/agency-links/:token/messages/:msgId', async (req, res, next)
         if (out.error === 404) return res.status(404).json({ status: 'error', message: 'ไม่พบข้อความ' });
         if (out.error === 403) return res.status(403).json({ status: 'error', message: 'ลบได้เฉพาะข้อความของตัวเอง' });
         (out.files || []).forEach(f => {
-            const fp = path.join(__dirname, '..', '..', 'uploads', f);
+            const fp = path.join(UPLOAD_DIR, f);
             try { if (fs.existsSync(fp)) fs.unlinkSync(fp); } catch { /* ลบไฟล์ไม่ได้ก็ปล่อย */ }
         });
         chatHub.broadcast(req.params.token);

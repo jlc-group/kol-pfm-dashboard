@@ -1,0 +1,19 @@
+{
+  "status": "online_pending_webhook_verification",
+  "project_id": "kol-pfm-dashboard",
+  "repository": "jlc-group/kol-pfm-dashboard",
+  "branch": "main",
+  "type": "node-backend",
+  "dev_path": "D:/AI_WORKSPACE/AI_Project/Github/kol-pfm-dashboard",
+  "prod_path": "D:/AI_WORKSPACE/Production/kol-pfm-dashboard",
+  "pm2_name": "kol-pfm-dashboard-prod",
+  "entrypoint": "server/src/index.js",
+  "proposed_port": 3080,
+  "port_reserved": true,
+  "domain": "kol-pfm-dashboard.wejlc.com",
+  "uploads": "D:/AI_WORKSPACE/Persistent/kol-pfm-dashboard/uploads",
+  "webhook_url": "https://api.wejlc.com/api/deploy/webhook",
+  "health_path": "/api/health",
+  "readiness_path": "/api/ready",
+  "blockers": ["Commit/push source and enable/verify GitHub webhook"]
+}

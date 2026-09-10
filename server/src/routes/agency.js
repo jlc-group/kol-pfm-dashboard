@@ -6,7 +6,7 @@ const multer = require('multer');
 const chatHub = require('../services/chatHub');
 const { authenticate } = require('../middleware/auth');
 
-const UPLOAD_DIR = path.join(__dirname, '..', '..', 'uploads');
+const { UPLOAD_DIR } = require('../config/uploads');
 const router = express.Router();
 
 // ===== ต้องล็อกอินก่อนถึงจะเปิดลิงก์งานได้ =====
@@ -19,9 +19,13 @@ function isPublicPath(pathname) {
 
 function requireAgencyAccess(req, res, next) {
     if (isPublicPath(req.path)) return next();
-    authenticate(req, res, () => {
+    authenticate(req, res, (error) => {
+        if (error) return next(error);
         const u = req.user;
         if (!u) return res.status(401).json({ status: 'error', message: 'กรุณาเข้าสู่ระบบก่อน' });
+        if ((req.account.status || 'active') !== 'active') {
+            return res.status(403).json({ status: 'error', message: 'บัญชียังไม่ได้รับอนุมัติให้ใช้งาน', code: 'PENDING' });
+        }
         // ทีม/แอดมิน/Manager เปิดดูได้ทุกลิงก์ (ต้องเข้าไปตรวจงานอยู่แล้ว)
         if (u.role !== 'agency') return next();
         // บัญชีเอเจนซี่ เปิดได้เฉพาะลิงก์ที่ admin ผูกไว้ให้
