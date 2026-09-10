@@ -3,7 +3,7 @@
 ## เตรียมใช้งานผ่าน we-platform (2026-09-10)
 
 โค้ดรองรับ build จาก root และเปิดหน้าเว็บ/API ด้วย Node process เดียวแล้ว
-**Production ออนไลน์ที่ `https://kol-pfm-dashboard.wejlc.com` แล้ว** — แอปและ tunnel แยกทำงานผ่าน PM2, ตั้ง `.env` และตรวจฐานข้อมูลจริงผ่านแล้ว เหลือยืนยัน GitHub webhook auto deploy
+**Production ออนไลน์ที่ `https://kol-pfm-dashboard.wejlc.com` แล้ว** — แอปและ tunnel แยกทำงานผ่าน PM2, ตั้ง `.env`, ตรวจฐานข้อมูลจริง และยืนยัน GitHub webhook auto deploy แล้ว
 รายละเอียดการลงทะเบียน การตั้งค่า และ rollback อยู่ที่ [docs/we-platform-deployment.md](docs/we-platform-deployment.md)
 
 ```bash

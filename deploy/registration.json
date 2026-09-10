@@ -1,5 +1,5 @@
 {
-  "status": "online_pending_webhook_verification",
+  "status": "production_verified",
   "project_id": "kol-pfm-dashboard",
   "repository": "jlc-group/kol-pfm-dashboard",
   "branch": "main",
@@ -15,5 +15,5 @@
   "webhook_url": "https://api.wejlc.com/api/deploy/webhook",
   "health_path": "/api/health",
   "readiness_path": "/api/ready",
-  "blockers": ["Commit/push source and enable/verify GitHub webhook"]
+  "blockers": []
 }

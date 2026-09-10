@@ -1,6 +1,6 @@
 # KOL PFM Dashboard — we-platform deployment
 
-Updated: 2026-09-10. Status: **production online; GitHub webhook verification pending**.
+Updated: 2026-09-10. Status: **production online; GitHub webhook auto deploy verified**.
 
 ## Latest activation checkpoint
 
@@ -10,10 +10,10 @@ Updated: 2026-09-10. Status: **production online; GitHub webhook verification pe
 - Selective additions were applied independently to DEV and PROD `we-platform/main.py`, `ecosystem.config.cjs`, and `scripts/deploy.ps1`. Existing unrelated edits were preserved. The shared control plane was reloaded and recognizes this project.
 - Exact backups and validated drafts: `D:/AI_WORKSPACE/_maintenance/kol-pfm-deploy-20260910`. `plan.json` records target paths and original hashes.
 - The production we-platform deploy script ran for only `kol-pfm-dashboard` with `RestartPm2=false`: sync, build, 12 API regression tests and real DB production preflight passed.
-- The first PM2 start attempt was rejected by automatic approval review. A later user-directed retry succeeded; the app is online with zero restarts.
-- DNS and a dedicated tunnel are active. GitHub webhook count remained 0 at this checkpoint; source work was still uncommitted/unpushed.
+- The app source was committed and pushed as `01493ac`; GitHub Actions run `34449172289` passed.
+- GitHub webhook `677027830` delivered the push to we-platform with HTTP 200. Deployment history records success at `2026-09-10 14:17:28`.
 
-The activation was retried after the user confirmed Cloudflare login. `kol-pfm-dashboard-prod` is now online on port 3080 with zero restarts. The shared we-platform process was reloaded and recognizes the project. Because the LocalSystem Cloudflared service could not be restarted from the non-elevated session, a dedicated locally managed tunnel named `kol-pfm-dashboard` was created and registered as PM2 process `kol-pfm-dashboard-tunnel`. DNS now points to that tunnel. Public login, health and readiness pass; readiness returned 200 in 10 consecutive checks. PM2 state was saved. The temporary connector used during diagnosis was stopped.
+The activation was retried after the user confirmed Cloudflare login. `kol-pfm-dashboard-prod` is online on port 3080. The shared we-platform process was reloaded and recognizes the project. Because the LocalSystem Cloudflared service could not be restarted from the non-elevated session, a dedicated locally managed tunnel named `kol-pfm-dashboard` was created and registered as PM2 process `kol-pfm-dashboard-tunnel`. DNS now points to that tunnel. Public login, health and readiness pass; readiness returned 200 in 10 consecutive checks. PM2 state was saved. The temporary connector used during diagnosis was stopped.
 
 ## Verified baseline
 
@@ -49,7 +49,7 @@ The user supplied and authorized the environment settings. They were saved priva
 | Setting | Requirement |
 |---|---|
 | `NODE_ENV` | `production` |
-| `PORT` | Confirmed, reserved port; 3080 is only a candidate |
+| `PORT` | `3080`, confirmed and reserved |
 | `HOST` | `127.0.0.1` behind the existing tunnel |
 | `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD` | Existing approved PostgreSQL database/account; verify `kol_dashboard` with owner |
 | `JWT_SECRET` | Existing approved secret, or operator-provisioned random value of at least 32 characters |
@@ -59,7 +59,7 @@ The user supplied and authorized the environment settings. They were saved priva
 
 Preferred runtime env file: `D:/AI_WORKSPACE/Production/kol-pfm-dashboard/.env`.
 Explicit process variables take precedence, followed by root `.env`, then legacy `server/.env`.
-Database SSL behavior remains the original `ssl: false`; confirm the database connection requirements before enabling the service.
+Database SSL behavior remains the original `ssl: false`, matching the verified private-network connection.
 
 ## Activation sequence
 
@@ -72,8 +72,8 @@ Database SSL behavior remains the original `ssl: false`; confirm the database co
 7. Deploy only `kol-pfm-dashboard` via we-platform (`node-backend`). Verify its production path and start only `kol-pfm-dashboard-prod` using the reviewed ecosystem entry. The deploy script may require the first process start explicitly if its restart path cannot create a missing process.
 8. Check origin `/`, a SPA deep link, `/api/health`, `/api/ready`, login and authorized upload/download. Recheck existing port owners.
 9. Add the confirmed domain's ingress/DNS to the existing tunnel through the standard process. Validate HTTPS and authenticated paths; no broad PM2/tunnel restarts.
-10. Enable a single GitHub push webhook using the existing approved we-platform webhook secret and endpoint `https://api.wejlc.com/api/deploy/webhook`. Verify one delivery, build result, PM2 process and public readiness. Record deployed commit and delivery result.
-11. Perform another approved deployment and verify the previously uploaded file remains downloadable. Update the production runbook only after these checks pass.
+10. A single GitHub push webhook uses the existing we-platform endpoint `https://api.wejlc.com/api/deploy/webhook`; its first push delivery, build result, PM2 process and public readiness are verified.
+11. If an operator needs evidence for file retention, upload a disposable approved file and verify it after a later deployment. The upload directory is outside both mirrored release trees.
 
 ## Rollback
 
@@ -83,13 +83,15 @@ Database SSL behavior remains the original `ssl: false`; confirm the database co
 - Never automatically roll back or reseed the database. Schema rollback needs its own reviewed plan.
 - `robocopy /PURGE` is not an atomic release system; do not claim transactional deploy or automatic rollback.
 
-## Validation and remaining limits
+## Validation and operational limit
 
 Local validation uses an ephemeral loopback server and isolated in-memory store fixtures. The test code rejects real database access.
 
 - API tests cover serving built assets/deep links, 404s, DB outage readiness, active/demoted/disabled/deleted/pending/agency accounts, token rejection, external multipart upload and authorized download, production setting validation.
 - Browser smoke uses the real React bundle and real login API with fixture persistence: login rejection/success, pending state, reload, logout, navigation and mobile width, with no browser JS exceptions.
-- These checks do not substitute for actual PostgreSQL login/payment workflows, public-domain checks or a delivered auto-deploy webhook. Those remain pending required runtime inputs.
+- Public login and `/api/auth/me` passed against PostgreSQL with the existing active admin account. `/api/ready` returned HTTP 200 in 10 consecutive public checks. No production payment record or disposable upload was created during deployment verification.
+
+The durable we-platform registration is proposed in [Chanack18/we-platform PR #13](https://github.com/Chanack18/we-platform/pull/13). The host is already running the same selective mapping; the PR isolates it from unrelated local changes in the shared control-plane checkout.
 
 ## Source rules
 
