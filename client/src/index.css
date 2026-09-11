@@ -598,6 +598,22 @@ a { text-decoration: none; color: inherit; }
 .ag-add-row .atr-action { display: flex; gap: 5px; justify-content: center; }
 .ag-add-head { font-size: 10.5px; font-weight: 700; color: var(--muted); letter-spacing: .3px; padding: 0 4px 9px; }
 .ag-add-row { background: #fafdfb; border: 1px solid var(--border); border-radius: 12px; padding: 9px 9px; }
+/* แถวที่ยังกรอกไม่ครบ — ขอบประบอกว่ายังบันทึกไม่ได้ ใช้เส้นประไม่ใช่สีแดง
+   เพราะแถวที่เพิ่งกดเพิ่มยังว่างทั้งแถวเป็นเรื่องปกติ ไม่ใช่ความผิดพลาด */
+.ag-add-row.incomplete { border-style: dashed; border-color: #d7e3dd; }
+/* dropdown เปลี่ยนสิทธิ์/ทีม ในตารางผู้ใช้ — ทำให้ดูเบาเหมือนป้าย ไม่ใช่ฟอร์มเต็ม */
+.users-inline-sel {
+    padding: 5px 8px; border: 1px solid var(--border); border-radius: 8px; background: #fff;
+    font-size: 12px; font-weight: 600; color: var(--text); max-width: 100%; cursor: pointer;
+}
+.users-inline-sel:hover:enabled { border-color: var(--mint); }
+.users-inline-sel:focus { outline: none; border-color: var(--mint); box-shadow: 0 0 0 3px rgba(16,185,129,.12); }
+.users-inline-sel:disabled { opacity: .55; cursor: wait; }
+/* กล่องเลื่อนของตารางผู้ใช้ — กันของหลุดออกนอกจอแล้วหาไม่เจอเพราะ .panel.no-pad ตัดทิ้ง */
+.users-table-scroll { overflow-x: auto; }
+/* ป้ายเตือนใต้ชื่อผู้ใช้ที่ยังไม่ได้สังกัดทีม — แทนคอลัมน์ "ทีม" ที่ถูกซ่อนไป
+   วางไว้ในคอลัมน์เดิมจึงไม่ทำให้ตารางกว้างขึ้น */
+.user-noteam { margin-top: 3px; font-size: 10.5px; font-weight: 700; color: #b7791f; white-space: nowrap; }
 .ag-add-row input, .ag-add-row select { width: 100%; padding: 9px 8px; border: 1px solid var(--border); border-radius: 9px; background: #fff; font-size: 12.5px; color: var(--text); }
 .ag-add-row input:focus, .ag-add-row select:focus { outline: none; border-color: var(--mint); box-shadow: 0 0 0 3px rgba(16,185,129,.12); }
 .ag-add-row .atr-name { display: flex; align-items: center; gap: 7px; }
@@ -2938,8 +2954,11 @@ button { color: inherit; }
     .report-filters .campaign-select { width: 100%; max-width: none; }
     .report-filters .brand-chip { grid-column: 1 / -1; width: 100%; }
     .users-table th, .users-table td { padding: 12px 10px; }
-    .users-table th:nth-child(3), .users-table td:nth-child(3),
-    .users-table th:nth-child(4), .users-table td:nth-child(4) { display: none; }
+    /* ซ่อน "แบรนด์ที่ดูได้" อย่างเดียว เหลือ ผู้ใช้ · สิทธิ์ · สถานะ · จัดการ บนมือถือ
+       กฎนี้เคยซ่อน nth-child(3)+(4) ตอนตารางมี 6 คอลัมน์ (ทีม+แบรนด์) พอคอลัมน์ "ทีม" ถูกซ่อนไป
+       ลำดับเลื่อนหมด (4) กลายเป็น "สถานะ" ทำให้ป้ายรออนุมัติหายจากมือถือ
+       ถ้าเพิ่ม/ลดคอลัมน์อีก ต้องกลับมาแก้เลขตรงนี้ด้วยเสมอ */
+    .users-table th:nth-child(3), .users-table td:nth-child(3) { display: none; }
     .users-table .inf-cell { min-width: 126px; }
     .users-table .row-actions { gap: 4px; }
     .users-table .icon-btn { width: 40px; min-width: 40px; min-height: 40px; }

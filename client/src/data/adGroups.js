@@ -31,7 +31,11 @@ export const needTarget = p => TARGET_PLATFORMS.includes(p);
 
 // Content Type ต่างกันตาม Platform
 export const CONTENT_TYPES_DEFAULT = ['Review', 'Sale'];
-export const CONTENT_TYPES_BY_PLATFORM = { Facebook: ['Awareness', 'Engagement', 'Reels'] };
+export const CONTENT_TYPES_BY_PLATFORM = {
+    Facebook: ['Awareness', 'Engagement', 'Reels'],
+    // TikTok ใช้ค่า default เดิมทั้งสองตัว แล้วเพิ่ม C-ADS ที่มีเฉพาะ Platform นี้
+    TikTok: [...CONTENT_TYPES_DEFAULT, 'C-ADS'],
+};
 // ค่าที่เคยบันทึกไว้ต้องคงอยู่ในลิสต์เสมอ ไม่งั้น dropdown จะเด้งเป็นค่าว่างแล้วข้อมูลหายเงียบ ๆ
 export function contentTypesFor(platformCsv, current) {
     const plats = splitCsv(platformCsv);

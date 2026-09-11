@@ -4,19 +4,33 @@ import Icon from '../components/Icon.jsx';
 import Avatar from '../components/Avatar.jsx';
 import { BRANDS, ROLE_LABEL } from '../data/brands.js';
 import PasswordInput from '../components/PasswordInput.jsx';
+import { useAuth } from '../auth/AuthContext.jsx';
+
+// ผู้ใช้ใหม่ให้เริ่มที่ Admin Team ไว้ก่อน — จะได้สร้างแคมเปญได้ทันทีตั้งแต่วันแรก
+// ไม่ต้องรอใครมาตั้งทีมให้ทีหลัง (ก่อนหน้านี้ทุกคนที่เพิ่มผ่านหน้าเว็บติดปัญหานี้)
+const DEFAULT_TEAM_NAME = 'Admin Team';
+const defaultTeamId = teams => {
+    const t = teams.find(x => x.name === DEFAULT_TEAM_NAME);
+    return t ? String(t.id) : '';
+};
 
 function UserForm({ editing, agencyLinks, teams, onClose, onSaved }) {
     const [form, setForm] = useState({
         username: editing?.username || '',
         password: '',
         role: editing?.role || 'member',
-        team_id: editing?.team_id ? String(editing.team_id) : '',
+        team_id: editing?.team_id ? String(editing.team_id) : defaultTeamId(teams),
         brands: Array.isArray(editing?.brands) ? editing.brands : [],
         agency_tokens: Array.isArray(editing?.agency_tokens) ? editing.agency_tokens : [],
     });
     const [error, setError] = useState('');
     const [saving, setSaving] = useState(false);
     const isEdit = !!editing;
+    // เผื่อกด "เพิ่มผู้ใช้" ตอนรายชื่อทีมยังโหลดไม่เสร็จ — พอทีมมาถึงค่อยเติมค่าตั้งต้นให้
+    useEffect(() => {
+        if (isEdit) return;
+        setForm(f => (f.team_id ? f : { ...f, team_id: defaultTeamId(teams) }));
+    }, [teams, isEdit]);
 
     function update(k, v) { setForm(f => ({ ...f, [k]: v })); }
 
@@ -139,6 +153,8 @@ export default function Users() {
     const [users, setUsers] = useState([]);
     const [agencyLinks, setAgencyLinks] = useState([]);   // ลิงก์เอเจนซี่ทุกแคมเปญ (ไว้ผูกกับบัญชี role agency)
     const [teams, setTeams] = useState([]);               // ทีมทั้งหมด (ไว้เลือกให้ผู้ใช้สังกัด)
+    const { user: me } = useAuth();                       // บัญชีที่กำลังล็อกอินอยู่ — ห้ามลดสิทธิ์ตัวเอง
+    const [busyId, setBusyId] = useState(null);           // แถวที่กำลังบันทึกอยู่ (ล็อก dropdown กันกดซ้ำ)
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
     const [modal, setModal] = useState(null); // null | {editing?}
@@ -160,6 +176,38 @@ export default function Users() {
     }
 
     function handleSaved() { setModal(null); load(); window.dispatchEvent(new Event('kol:users-changed')); }
+
+    // บันทึกฟิลด์เดียวจาก dropdown ในตาราง — ส่งเฉพาะฟิลด์ที่เปลี่ยน
+    // ฝั่ง server ข้ามฟิลด์ที่เป็น undefined อยู่แล้ว ค่าอื่นจึงไม่โดนล้าง
+    async function patchUser(u, body) {
+        setBusyId(u.id);
+        try {
+            await api(`/users/${u.id}`, { method: 'PUT', body });
+            load();
+            window.dispatchEvent(new Event('kol:users-changed'));
+        } catch (err) { alert(err.message); load(); }
+        finally { setBusyId(null); }
+    }
+
+    function changeRole(u, role) {
+        if (role === u.role) return;
+        const who = u.nickname || u.full_name || u.username;
+        // server ล้างข้อมูลพ่วงเมื่อเปลี่ยน role — เตือนก่อนเพราะกู้คืนเองไม่ได้
+        const loss = [];
+        if (role !== 'member' && (u.brands || []).length) loss.push(`แบรนด์ที่กำหนดไว้ ${u.brands.length} แบรนด์`);
+        if (role !== 'agency' && (u.agency_tokens || []).length) loss.push(`ลิงก์งานเอเจนซี่ ${u.agency_tokens.length} ลิงก์`);
+        const warn = loss.length ? `\n\n⚠ การเปลี่ยนนี้จะล้าง ${loss.join(' และ ')} ทิ้ง` : '';
+        const admin = role === 'admin' ? '\n\n⚠ ผู้ดูแลระบบเข้าถึงรอบทำจ่าย ผู้ใช้งาน และตั้งสิทธิ์คนอื่นได้' : '';
+        // admin/manager มี brands ว่างเสมอโดยการออกแบบ ลดลงมาเป็น member ตรง ๆ จะได้บัญชีที่ไม่เห็นข้อมูลอะไรเลย
+        const blind = (role === 'member' && !(u.brands || []).length)
+            ? '\n\n⚠ บัญชีนี้ยังไม่ได้กำหนดแบรนด์ — เปลี่ยนแล้วจะไม่เห็นข้อมูลใด ๆ จนกว่าจะไปกำหนดแบรนด์ให้ที่ปุ่มแก้ไข (✎)' : '';
+        if (!confirm(`เปลี่ยนสิทธิ์ "${who}"\nจาก ${ROLE_LABEL[u.role] || u.role} → ${ROLE_LABEL[role] || role}${admin}${warn}${blind}`)) return;
+        // บัญชีที่ยังไม่มีทีม (เช่น agency ที่ถูกแปลงเป็น role อื่น) ต้องเติมทีมไปพร้อมกัน
+        // ไม่งั้นจะได้บัญชีที่สร้างแคมเปญไม่ได้ — เป็นสถานะที่ฟอร์ม (✎) กันไว้ด้วย required อยู่แล้ว
+        const team = (role !== 'agency' && !u.team_id) ? Number(defaultTeamId(teams)) : 0;
+        patchUser(u, team ? { role, team_id: team } : { role });
+    }
+
 
     // อนุมัติ / ปฏิเสธ คำขอเข้าใช้งาน
     async function setStatus(u, status) {
@@ -187,18 +235,24 @@ export default function Users() {
 
             {error && <div className="alert-error">{error}</div>}
 
+            {/* .panel.no-pad มี overflow:hidden (ไว้ตัดมุมโค้ง) ถ้าตารางกว้างเกินจอ ของที่ล้นจะหายไปเฉย ๆ
+                เลื่อนไปหาไม่ได้ด้วย — บนมือถือปุ่มลบเคยหลุดออกนอกจอเพราะเหตุนี้
+                จึงห่อด้วยกล่องเลื่อนแนวนอนแบบเดียวกับ .ads-tbl-scroll / .proc-tbl-scroll */}
             <div className="panel no-pad">
+              <div className="users-table-scroll">
                 <table className="data-table users-table">
                     <thead>
                         <tr>
-                            <th>ผู้ใช้</th><th>สิทธิ์</th><th>ทีม</th><th>แบรนด์ที่ดูได้</th><th>สถานะ</th><th className="actions">จัดการ</th>
+                            {/* คอลัมน์ "ทีม" ถูกซ่อนไว้ — ผู้ใช้ใหม่ตั้งต้นเป็น Admin Team ให้อยู่แล้ว
+                                ถ้าต้องเปลี่ยนทีมรายคน ยังทำได้จากปุ่มแก้ไข (✎) ในฟอร์ม */}
+                            <th>ผู้ใช้</th><th>สิทธิ์</th><th>แบรนด์ที่ดูได้</th><th>สถานะ</th><th className="actions">จัดการ</th>
                         </tr>
                     </thead>
                     <tbody>
                         {loading ? (
-                            <tr><td colSpan="6" className="empty">กำลังโหลด...</td></tr>
+                            <tr><td colSpan="5" className="empty">กำลังโหลด...</td></tr>
                         ) : users.length === 0 ? (
-                            <tr><td colSpan="6" className="empty">ยังไม่มีผู้ใช้</td></tr>
+                            <tr><td colSpan="5" className="empty">ยังไม่มีผู้ใช้</td></tr>
                         ) : users.map(u => (
                             <tr key={u.id}>
                                 <td>
@@ -210,17 +264,29 @@ export default function Users() {
                                             {(u.nickname || u.full_name) && (u.nickname || u.full_name) !== u.username && (
                                                 <div className="inf-cell-user">{u.nickname || u.full_name}</div>
                                             )}
+                                            {/* คอลัมน์ "ทีม" ถูกซ่อนไปแล้ว แต่ยังต้องเห็นบัญชีที่สร้างแคมเปญไม่ได้
+                                                (เช่นคนที่สมัครเองผ่าน /register จะไม่ได้ทีมมาตั้งแต่ต้น) */}
+                                            {u.role !== 'agency' && !u.team_name && (
+                                                <div className="user-noteam" title="ยังไม่ได้สังกัดทีม — บัญชีนี้จะสร้างแคมเปญไม่ได้ กดปุ่มแก้ไข (✎) เพื่อกำหนดทีม">
+                                                    ⚠ ยังไม่มีทีม
+                                                </div>
+                                            )}
                                         </div>
                                     </div>
                                 </td>
-                                <td><span className={`badge badge-${u.role}`}>{ROLE_LABEL[u.role] || u.role}</span></td>
                                 <td>
-                                    {/* เอเจนซี่ไม่ใช้ทีม ที่เหลือถ้าไม่มีทีมจะสร้างแคมเปญไม่ได้ จึงเตือนให้เห็นชัด */}
-                                    {u.role === 'agency'
-                                        ? <span className="muted">—</span>
-                                        : u.team_name
-                                            ? <span className="cat-chip">{u.team_name}</span>
-                                            : <span className="badge badge-off" title="ยังไม่ได้สังกัดทีม — บัญชีนี้จะสร้างแคมเปญไม่ได้">⚠ ยังไม่มีทีม</span>}
+                                    {/* สิทธิ์ของตัวเองแก้จากตรงนี้ไม่ได้ — ระบบอ่าน role จากฐานสดทุก request
+                                        ถ้าเผลอลดสิทธิ์ตัวเองจะหลุดออกทันทีและกลับเข้ามาแก้คืนไม่ได้ */}
+                                    {u.id === me?.id ? (
+                                        <span className={`badge badge-${u.role}`} title="สิทธิ์ของบัญชีคุณเอง — ให้ผู้ดูแลระบบคนอื่นเป็นคนเปลี่ยนให้">
+                                            {ROLE_LABEL[u.role] || u.role}
+                                        </span>
+                                    ) : (
+                                        <select className="users-inline-sel" value={u.role} disabled={busyId === u.id}
+                                            onChange={e => changeRole(u, e.target.value)}>
+                                            {Object.entries(ROLE_LABEL).map(([v, label]) => <option key={v} value={v}>{label}</option>)}
+                                        </select>
+                                    )}
                                 </td>
                                 <td>
                                     {u.role === 'agency'
@@ -256,6 +322,7 @@ export default function Users() {
                         ))}
                     </tbody>
                 </table>
+              </div>
             </div>
 
             {modal && <UserForm editing={modal.editing} agencyLinks={agencyLinks} teams={teams} onClose={() => setModal(null)} onSaved={handleSaved} />}

@@ -244,11 +244,28 @@ function TypeBox({ token, group, platform, contentType, saved, quota, agencyName
     const tierOpts = tiersOf(group, platform, contentType);
     const prodOpts = productsFor(group, platform);
     const blank = () => ({ account_name: '', tier: tierOpts.length === 1 ? tierOpts[0] : '', followers: '', product: '', agency: '', budget: autoBudget, link_account: '', saving: false });
-    const [rows, setRows] = useState([blank()]);
+    // เริ่มต้นไม่มีแถวกรอก — ต้องกด "เพิ่มรายชื่อ" ก่อนช่องกรอกถึงจะขึ้น
+    // กันแถวเปล่าค้างอยู่ทุกกล่องจนดูเหมือนมีงานรอกรอกทั้งที่ยังไม่มีใครตั้งใจกรอก
+    const [rows, setRows] = useState([]);
     const [err, setErr] = useState('');
     const upRow = (i, k, v) => setRows(rs => rs.map((x, idx) => idx === i ? { ...x, [k]: v } : x));
     const addRow = () => setRows(rs => [...rs, blank()]);
-    const removeRow = i => setRows(rs => rs.length === 1 ? [blank()] : rs.filter((_, idx) => idx !== i));
+    const removeRow = i => setRows(rs => rs.filter((_, idx) => idx !== i));
+    // ช่องที่ยังไม่ได้กรอกในแถวนี้ — ใช้ทั้งปิดปุ่ม ✓ และบอกใน tooltip ว่าขาดอะไร
+    // เช็คเฉพาะช่องที่กล่องนี้ "แสดงให้กรอกจริง" — Tier ที่มีตัวเลือกเดียวถูกล็อกไว้แล้ว
+    // Product ที่กลุ่มไม่ได้ตั้งสินค้าไว้ก็ไม่มีให้เลือก และ Contact จะโผล่เฉพาะลิงก์ที่ยังไม่ผูกเอเจนซี่
+    const filled = v => String(v ?? '').trim() !== '';
+    const missingOf = en => {
+        const miss = [];
+        if (!filled(en.account_name)) miss.push('ชื่อ Account');
+        if (tierOpts.length > 1 && !filled(en.tier)) miss.push('Tier');
+        if (!filled(en.followers)) miss.push('ยอดฟอล');
+        if (prodOpts.length > 0 && !filled(en.product)) miss.push('Product');
+        if (!agencyName && !filled(en.agency)) miss.push('Contact');
+        if (!filled(en.budget)) miss.push('Budget');
+        if (!filled(en.link_account)) miss.push('Link Account');
+        return miss;
+    };
     // กดหารเฉลี่ย/ล้างงบที่หัวกลุ่ม -> ทับยอดในแถวที่ยังกรอกค้างอยู่ด้วย
     useEffect(() => {
         setRows(rs => rs.map(r => (r.saving ? r : { ...r, budget: autoBudget })));
@@ -256,9 +273,9 @@ function TypeBox({ token, group, platform, contentType, saved, quota, agencyName
 
     async function saveRow(i) {
         const en = rows[i];
-        if (!en.account_name.trim()) { setErr('กรุณากรอกชื่อ Account'); return; }
+        const miss = missingOf(en);
+        if (miss.length) { setErr('กรอกไม่ครบ ขาด: ' + miss.join(', ')); return; }
         const tier = tierOpts.length === 1 ? tierOpts[0] : en.tier;
-        if (tierOpts.length > 1 && !tier) { setErr('กรุณาเลือก Tier'); return; }
         setErr(''); upRow(i, 'saving', true);
         try {
             await api(`/agency/${token}`, {
@@ -271,7 +288,8 @@ function TypeBox({ token, group, platform, contentType, saved, quota, agencyName
                     link_account: en.link_account || null, group_key: group.key
                 }
             });
-            setRows(rs => rs.length === 1 ? [blank()] : rs.filter((_, idx) => idx !== i));
+            // บันทึกแล้วเอาแถวออกเฉย ๆ ไม่เด้งแถวเปล่าใหม่ — ถ้าจะกรอกคนต่อไปให้กด "เพิ่มรายชื่อ" เอง
+            setRows(rs => rs.filter((_, idx) => idx !== i));
             onReload();
         } catch (e) { setErr(e.message); upRow(i, 'saving', false); }
     }
@@ -292,8 +310,10 @@ function TypeBox({ token, group, platform, contentType, saved, quota, agencyName
                 <div className={'ag-add-grid' + (agencyName ? ' no-agency' : '')}>
                     <div className="ag-add-head"><span>NAME</span><span>CONTENT TYPE</span><span>FORMAT</span><span>TIER</span><span>FOLLOWER</span><span>PRODUCT</span>{!agencyName && <span>AGENCY</span>}<span>BUDGET</span><span>LINK ACCOUNT</span><span /></div>
                     {saved.map((s, si) => <SavedGridRow key={s.id} s={s} n={startNo + si} group={group} agencyName={agencyName} boxType={contentType} onEdit={onEdit} onDelete={onDelete} onNote={onNote} />)}
-                    {rows.map((en, i) => (
-                        <div className="ag-add-row" key={i}>
+                    {rows.map((en, i) => {
+                        const miss = missingOf(en);
+                        return (
+                        <div className={'ag-add-row' + (miss.length ? ' incomplete' : '')} key={i}>
                             <div className="atr-name"><span className="atr-num">{startNo + saved.length + i}</span><input value={en.account_name} onChange={e => upRow(i, 'account_name', e.target.value)} placeholder="ชื่อ Account" onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); saveRow(i); } }} /></div>
                             {/* Content Type กับ Format ล็อกตามกล่อง โชว์ไว้ให้เห็นว่ากรอกอยู่ช่องไหน */}
                             {contentType
@@ -319,11 +339,15 @@ function TypeBox({ token, group, platform, contentType, saved, quota, agencyName
                             <input type="number" min="0" value={en.budget} onChange={e => upRow(i, 'budget', e.target.value)} placeholder="฿" />
                             <input type="url" value={en.link_account} onChange={e => upRow(i, 'link_account', e.target.value)} placeholder="https://..." />
                             <div className="atr-action">
-                                <button type="button" className="atr-ok" title="บันทึกรายชื่อนี้" disabled={en.saving} onClick={() => saveRow(i)}>✓</button>
+                                {/* กดบันทึกไม่ได้จนกว่าจะกรอกครบ — tooltip บอกว่าเหลือช่องไหน จะได้ไม่ต้องเดา */}
+                                <button type="button" className="atr-ok"
+                                    title={miss.length ? 'ยังกรอกไม่ครบ ขาด: ' + miss.join(', ') : 'บันทึกรายชื่อนี้'}
+                                    disabled={en.saving || miss.length > 0} onClick={() => saveRow(i)}>✓</button>
                                 <button type="button" className="atr-x" title="ลบแถว" onClick={() => removeRow(i)}>×</button>
                             </div>
                         </div>
-                    ))}
+                        );
+                    })}
                 </div>
             </div>
             <button type="button" className="agency-add-row" onClick={addRow}><Icon name="plus" size={15} /> เพิ่มรายชื่อ</button>
