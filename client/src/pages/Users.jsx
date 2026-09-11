@@ -5,11 +5,12 @@ import Avatar from '../components/Avatar.jsx';
 import { BRANDS, ROLE_LABEL } from '../data/brands.js';
 import PasswordInput from '../components/PasswordInput.jsx';
 
-function UserForm({ editing, agencyLinks, onClose, onSaved }) {
+function UserForm({ editing, agencyLinks, teams, onClose, onSaved }) {
     const [form, setForm] = useState({
         username: editing?.username || '',
         password: '',
         role: editing?.role || 'member',
+        team_id: editing?.team_id ? String(editing.team_id) : '',
         brands: Array.isArray(editing?.brands) ? editing.brands : [],
         agency_tokens: Array.isArray(editing?.agency_tokens) ? editing.agency_tokens : [],
     });
@@ -28,6 +29,8 @@ function UserForm({ editing, agencyLinks, onClose, onSaved }) {
                 // admin/manager เห็นทุกแบรนด์ ไม่ต้องส่งรายการแบรนด์ไป
                 brands: form.role === 'member' ? form.brands : [],
                 agency_tokens: form.role === 'agency' ? form.agency_tokens : [],
+                // เอเจนซี่ไม่เข้า dashboard จึงไม่ต้องมีทีม ที่เหลือต้องมี ไม่งั้นสร้างแคมเปญไม่ได้
+                team_id: form.role === 'agency' ? null : (form.team_id ? Number(form.team_id) : null),
             };
             body.username = form.username.trim();
             if (form.password) body.password = form.password;
@@ -70,6 +73,20 @@ function UserForm({ editing, agencyLinks, onClose, onSaved }) {
                                 <option value="agency">Agency — เห็นเฉพาะลิงก์งานของตัวเอง</option>
                             </select>
                     </div>
+                    {/* ทีมเป็นตัวผูกว่าแคมเปญที่สร้างจะอยู่ทีมไหน ถ้าไม่มีทีมจะสร้างแคมเปญไม่ได้เลย
+                        (server ปฏิเสธด้วยข้อความ "ผู้ใช้ยังไม่ได้สังกัดทีม") */}
+                    {form.role !== 'agency' && (
+                        <div className="field">
+                            <label>ทีม * <span className="dash-section-sub">ต้องมีทีม ไม่งั้นบัญชีนี้จะสร้างแคมเปญไม่ได้</span></label>
+                            <select value={form.team_id} onChange={e => update('team_id', e.target.value)} required>
+                                <option value="">— เลือกทีม —</option>
+                                {teams.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                            </select>
+                            {teams.length === 0 && (
+                                <p className="dash-section-sub">ยังไม่มีทีมในระบบ — สร้างทีมที่หน้า "ทีม" ก่อน</p>
+                            )}
+                        </div>
+                    )}
                     {form.role === 'agency' && (
                         <div className="field">
                             <label>ลิงก์งานที่เข้าได้ <span className="dash-section-sub">เลือกได้หลายลิงก์ · บัญชีนี้จะเข้า dashboard ไม่ได้เลย</span></label>
@@ -121,6 +138,7 @@ function UserForm({ editing, agencyLinks, onClose, onSaved }) {
 export default function Users() {
     const [users, setUsers] = useState([]);
     const [agencyLinks, setAgencyLinks] = useState([]);   // ลิงก์เอเจนซี่ทุกแคมเปญ (ไว้ผูกกับบัญชี role agency)
+    const [teams, setTeams] = useState([]);               // ทีมทั้งหมด (ไว้เลือกให้ผู้ใช้สังกัด)
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
     const [modal, setModal] = useState(null); // null | {editing?}
@@ -128,8 +146,8 @@ export default function Users() {
     function load() {
         setLoading(true);
         // ใช้เส้นเดิมที่คืนลิงก์เอเจนซี่ทุกแคมเปญอยู่แล้ว ไม่ต้องทำเส้นใหม่
-        Promise.all([api('/users'), api('/projects/chats/all')])
-            .then(([u, a]) => { setUsers(u.data); setAgencyLinks(a.data || []); })
+        Promise.all([api('/users'), api('/projects/chats/all'), api('/teams')])
+            .then(([u, a, t]) => { setUsers(u.data); setAgencyLinks(a.data || []); setTeams(t.data || []); })
             .catch(err => setError(err.message))
             .finally(() => setLoading(false));
     }
@@ -173,14 +191,14 @@ export default function Users() {
                 <table className="data-table users-table">
                     <thead>
                         <tr>
-                            <th>ผู้ใช้</th><th>สิทธิ์</th><th>แบรนด์ที่ดูได้</th><th>สถานะ</th><th className="actions">จัดการ</th>
+                            <th>ผู้ใช้</th><th>สิทธิ์</th><th>ทีม</th><th>แบรนด์ที่ดูได้</th><th>สถานะ</th><th className="actions">จัดการ</th>
                         </tr>
                     </thead>
                     <tbody>
                         {loading ? (
-                            <tr><td colSpan="5" className="empty">กำลังโหลด...</td></tr>
+                            <tr><td colSpan="6" className="empty">กำลังโหลด...</td></tr>
                         ) : users.length === 0 ? (
-                            <tr><td colSpan="5" className="empty">ยังไม่มีผู้ใช้</td></tr>
+                            <tr><td colSpan="6" className="empty">ยังไม่มีผู้ใช้</td></tr>
                         ) : users.map(u => (
                             <tr key={u.id}>
                                 <td>
@@ -196,6 +214,14 @@ export default function Users() {
                                     </div>
                                 </td>
                                 <td><span className={`badge badge-${u.role}`}>{ROLE_LABEL[u.role] || u.role}</span></td>
+                                <td>
+                                    {/* เอเจนซี่ไม่ใช้ทีม ที่เหลือถ้าไม่มีทีมจะสร้างแคมเปญไม่ได้ จึงเตือนให้เห็นชัด */}
+                                    {u.role === 'agency'
+                                        ? <span className="muted">—</span>
+                                        : u.team_name
+                                            ? <span className="cat-chip">{u.team_name}</span>
+                                            : <span className="badge badge-off" title="ยังไม่ได้สังกัดทีม — บัญชีนี้จะสร้างแคมเปญไม่ได้">⚠ ยังไม่มีทีม</span>}
+                                </td>
                                 <td>
                                     {u.role === 'agency'
                                         ? <span className="cat-chip">{(u.agency_tokens || []).length} ลิงก์งาน</span>
@@ -232,7 +258,7 @@ export default function Users() {
                 </table>
             </div>
 
-            {modal && <UserForm editing={modal.editing} agencyLinks={agencyLinks} onClose={() => setModal(null)} onSaved={handleSaved} />}
+            {modal && <UserForm editing={modal.editing} agencyLinks={agencyLinks} teams={teams} onClose={() => setModal(null)} onSaved={handleSaved} />}
         </div>
     );
 }
