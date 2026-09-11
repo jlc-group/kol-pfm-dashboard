@@ -69,12 +69,15 @@ export default function Dashboard() {
     const maxBrandBudget = Math.max(1, ...(data?.brand_summary || []).map(b => b.budget));
 
     return (
-        <div>
-            <header className="page-head with-action">
+        <div className="dashboard-page">
+            <header className="page-head">
                 <div>
-                    <h1>Dashboard Overview</h1>
-                    <p className="page-sub">Campaign Performance &amp; KOL Metrics</p>
+                    <h1>ภาพรวมแคมเปญ</h1>
+                    <p className="page-sub">ติดตามงบประมาณ ผลงาน และประสิทธิภาพของอินฟลูเอนเซอร์</p>
                 </div>
+            </header>
+
+            <section className="dashboard-filterbar" aria-label="ตัวกรองข้อมูลภาพรวม">
                 <div className="filter-controls">
                     <div className="date-range">
                         <Icon name="dashboard" size={15} />
@@ -82,23 +85,22 @@ export default function Dashboard() {
                         <span>–</span>
                         <DatePicker value={filters.to} onChange={v => setF({ to: v })} placeholder="ถึง" />
                     </div>
-                    <select className="campaign-select" value={filters.projectId} onChange={e => setF({ projectId: e.target.value })}>
+                    <select aria-label="เลือกแคมเปญ" className="campaign-select" value={filters.projectId} onChange={e => setF({ projectId: e.target.value })}>
                         <option value="">ทุก Campaign</option>
                         {(data?.campaigns || []).map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                     </select>
                 </div>
-            </header>
+
+                <div className="brand-filter">
+                    <span className="brand-filter-label">แบรนด์</span>
+                    <button aria-pressed={filters.brand === ''} className={'brand-chip' + (filters.brand === '' ? ' active' : '')} onClick={() => setF({ brand: '' })}>ทุกแบรนด์</button>
+                    {BRANDS.map(b => (
+                        <button aria-pressed={filters.brand === b} key={b} className={'brand-chip' + (filters.brand === b ? ' active' : '')} onClick={() => setF({ brand: b })}>{b}</button>
+                    ))}
+                </div>
+            </section>
 
             {error && <div className="alert-error">{error}</div>}
-
-            {/* ตัวกรองแบรนด์ */}
-            <div className="brand-filter">
-                <span className="brand-filter-label">▼ แบรนด์:</span>
-                <button className={'brand-chip' + (filters.brand === '' ? ' active' : '')} onClick={() => setF({ brand: '' })}>ทุกแบรนด์</button>
-                {BRANDS.map(b => (
-                    <button key={b} className={'brand-chip' + (filters.brand === b ? ' active' : '')} onClick={() => setF({ brand: b })}>{b}</button>
-                ))}
-            </div>
 
             {/* โซน 1: Bento สรุปภาพรวม */}
             <div className="dash-section"><span className="dash-bar" /> สรุปภาพรวม</div>

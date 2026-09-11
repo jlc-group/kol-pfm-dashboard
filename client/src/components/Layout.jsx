@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { NavLink, Outlet, useNavigate } from 'react-router-dom';
+import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext.jsx';
 import Icon from './Icon.jsx';
 import { api } from '../api/client.js';
@@ -8,10 +8,10 @@ import ChangePasswordModal from './ChangePasswordModal.jsx';
 
 const MAIN_NAV = [
     { to: '/', label: 'ภาพรวม', icon: 'dashboard', end: true },
-    { to: '/projects', label: 'Projects', icon: 'folder' },
-    { to: '/ads', label: 'ADS', icon: 'target' },
-    { to: '/budget', label: 'Report Campaign', icon: 'bars' },
-    { to: '/kols', label: 'Influencer', icon: 'star' }
+    { to: '/projects', label: 'แคมเปญ', icon: 'folder' },
+    { to: '/ads', label: 'โฆษณา', icon: 'target' },
+    { to: '/budget', label: 'รายงานแคมเปญ', icon: 'bars' },
+    { to: '/kols', label: 'อินฟลูเอนเซอร์', icon: 'star' }
 ];
 
 const ADMIN_NAV = [
@@ -23,7 +23,9 @@ const ADMIN_NAV = [
 export default function Layout() {
     const { user, logout, isAdmin } = useAuth();
     const navigate = useNavigate();
+    const location = useLocation();
     const [showPw, setShowPw] = useState(false);
+    const [navOpen, setNavOpen] = useState(false);
     // จำนวนคนที่สมัครแล้วรออนุมัติ — ไม่มีอีเมลแจ้ง admin ต้องเห็นจากตัวเลขบนเมนู
     const [pendingCount, setPendingCount] = useState(0);
     useEffect(() => {
@@ -39,6 +41,15 @@ export default function Layout() {
         return () => { alive = false; clearInterval(t); window.removeEventListener('kol:users-changed', load); };
     }, [user]);
 
+    useEffect(() => {
+        setNavOpen(false);
+    }, [location.pathname]);
+
+    useEffect(() => {
+        document.body.classList.toggle('nav-open', navOpen);
+        return () => document.body.classList.remove('nav-open');
+    }, [navOpen]);
+
     function handleLogout() {
         logout();
         navigate('/login');
@@ -50,6 +61,7 @@ export default function Layout() {
                 key={item.to}
                 to={item.to}
                 end={item.end}
+                onClick={() => setNavOpen(false)}
                 className={({ isActive }) => 'nav-item' + (isActive ? ' active' : '')}
             >
                 <Icon name={item.icon} size={19} />
@@ -63,12 +75,40 @@ export default function Layout() {
 
     return (
         <div className="layout">
-            <aside className="sidebar">
+            <a className="skip-link" href="#main-content">ข้ามไปยังเนื้อหา</a>
+            <header className="mobile-topbar">
+                <button
+                    type="button"
+                    className="mobile-menu-btn"
+                    aria-label="เปิดเมนูหลัก"
+                    aria-expanded={navOpen}
+                    aria-controls="primary-sidebar"
+                    onClick={() => setNavOpen(true)}
+                >
+                    <span aria-hidden="true">☰</span>
+                </button>
+                <div className="mobile-brand">
+                    <span className="brand-mark">K</span>
+                    <span>KOL Dashboard</span>
+                </div>
+                <div className="mobile-avatar" aria-label={user?.full_name || user?.username}>
+                    {(user?.full_name || user?.username || '?')[0]}
+                </div>
+            </header>
+            <button
+                type="button"
+                className={'sidebar-backdrop' + (navOpen ? ' show' : '')}
+                aria-label="ปิดเมนูหลัก"
+                tabIndex={navOpen ? 0 : -1}
+                onClick={() => setNavOpen(false)}
+            />
+            <aside id="primary-sidebar" className={'sidebar' + (navOpen ? ' open' : '')} aria-label="เมนูหลัก">
                 <div className="brand">
                     <span className="brand-mark">K</span>
                     <span className="brand-text">KOL Dashboard</span>
+                    <button type="button" className="sidebar-close" aria-label="ปิดเมนูหลัก" onClick={() => setNavOpen(false)}>×</button>
                 </div>
-                <nav className="nav">
+                <nav className="nav" aria-label="เมนูการทำงาน">
                     {MAIN_NAV.map(renderItem)}
                     {isAdmin && (
                         <>
@@ -99,7 +139,7 @@ export default function Layout() {
                 </div>
             </aside>
             {showPw && <ChangePasswordModal onClose={() => setShowPw(false)} />}
-            <main className="content">
+            <main id="main-content" className="content" tabIndex="-1">
                 <Outlet />
             </main>
         </div>

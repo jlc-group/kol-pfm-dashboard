@@ -49,12 +49,25 @@ const app = require('../server/src/app');
         await page.getByRole('heading', { name: 'รออนุมัติ' }).waitFor();
         await page.reload();
         await page.getByRole('heading', { name: 'รออนุมัติ' }).waitFor();
-        await page.getByRole('button', { name: 'ออกจากระบบ' }).click();
-        await page.waitForURL('**/login');
+
+        // Promote the same fixture so the authenticated application shell can be
+        // checked without connecting to production data. API panels may fail,
+        // but the responsive navigation and layout must still remain usable.
+        user.status = 'active';
+        await page.reload();
+        await page.getByRole('heading', { name: 'ภาพรวมแคมเปญ' }).waitFor();
         await page.setViewportSize({ width: 390, height: 844 });
         assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true);
+        const menuButton = page.getByRole('button', { name: 'เปิดเมนูหลัก' });
+        await menuButton.click();
+        assert.equal(await page.locator('#primary-sidebar').isVisible(), true);
+        await page.locator('.sidebar-close').click();
+        await page.locator('#primary-sidebar').waitFor({ state: 'hidden' });
+        await menuButton.click();
+        await page.getByRole('button', { name: 'ออกจากระบบ' }).click();
+        await page.waitForURL('**/login');
         assert.deepEqual(errors, []);
-        console.log('Browser smoke passed: deep link, registration navigation, login failure/success, session reload, logout, mobile width; no JS errors.');
+        console.log('Browser smoke passed: deep link, registration, login states, responsive drawer, logout, mobile width; no JS errors.');
     } finally {
         if (browser) await browser.close();
         if (server) { server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); }

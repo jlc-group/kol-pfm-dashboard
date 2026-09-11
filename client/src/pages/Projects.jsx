@@ -118,7 +118,7 @@ export default function Projects() {
 
     // การ์ด Project 1 ใบ
     const renderCard = (p) => (
-        <div className="pcard" key={p.id} onClick={() => navigate(`/projects/${p.id}`)}>
+        <button type="button" className="pcard" key={p.id} onClick={() => navigate(`/projects/${p.id}`)}>
             <div className={`pcard-accent acc-${p.status}`} />
             <div className="pcard-body">
                 <div className="pcard-head">
@@ -147,28 +147,28 @@ export default function Projects() {
                     })()}
                 </div>
             </div>
-        </div>
+        </button>
     );
 
     return (
         <div>
             <header className="page-head">
-                <h1>Projects</h1>
-                <p className="page-sub">{isAdmin ? 'Project ของทุกทีม' : 'Project ของทีมคุณ'}</p>
+                <h1>แคมเปญ</h1>
+                <p className="page-sub">{isAdmin ? 'จัดการแคมเปญของทุกทีมในที่เดียว' : 'จัดการแคมเปญของทีมคุณ'}</p>
             </header>
 
             {/* ค้นหา + กรองรายเดือน */}
             <div className="toolbar" style={{ flexWrap: 'wrap' }}>
                 <div className="search-wrap">
                     <Icon name="search" size={17} />
-                    <input className="search-input" placeholder="ค้นหาชื่อ Project / แบรนด์ / owner..."
+                    <input aria-label="ค้นหาแคมเปญ" className="search-input" placeholder="ค้นหาชื่อแคมเปญ แบรนด์ หรือผู้ดูแล"
                         value={search} onChange={e => setSearch(e.target.value)} />
                 </div>
-                <select className="campaign-select" value={year} onChange={e => changeYear(e.target.value)}>
+                <select aria-label="กรองตามปี" className="campaign-select" value={year} onChange={e => changeYear(e.target.value)}>
                     <option value="">ทุกปี</option>
                     {yearOptions.map(y => <option key={y} value={y}>{y}</option>)}
                 </select>
-                <select className="campaign-select" value={month} onChange={e => setMonth(e.target.value)}>
+                <select aria-label="กรองตามเดือน" className="campaign-select" value={month} onChange={e => setMonth(e.target.value)}>
                     <option value="">ทุกเดือน</option>
                     {monthOptions.map(mm => <option key={mm} value={mm}>{monthLabel(mm)}</option>)}
                 </select>
@@ -177,10 +177,10 @@ export default function Projects() {
             {/* ฟิลเตอร์ตามแบรนด์ (dropdown) + ปุ่มสร้าง (ซ้ายสุด) */}
             <div className="brand-filter">
                 <button className="btn-primary" style={{ marginRight: 6 }} onClick={() => setShowForm(true)}>
-                    <Icon name="plus" size={17} /> สร้าง Project
+                    <Icon name="plus" size={17} /> สร้างแคมเปญ
                 </button>
-                <span className="brand-filter-label">▼ แบรนด์:</span>
-                <select className="campaign-select" value={brand} onChange={e => setBrand(e.target.value)}>
+                <span className="brand-filter-label">แบรนด์</span>
+                <select aria-label="กรองตามแบรนด์" className="campaign-select" value={brand} onChange={e => setBrand(e.target.value)}>
                     <option value="">ทุกแบรนด์ ({base.length})</option>
                     {BRANDS.map(b => (
                         <option key={b} value={b}>{b} ({countOf(b)})</option>
@@ -197,7 +197,7 @@ export default function Projects() {
                     <div className="empty-emoji">🔍</div>
                     <p>{hasFilter ? 'ไม่พบ Project ตามเงื่อนไขที่เลือก — ลองปรับคำค้นหา แบรนด์ ปี หรือเดือน' : 'ยังไม่มี Project — เริ่มสร้าง Project แรกของทีมได้เลย'}</p>
                     <button className="btn-primary" onClick={() => setShowForm(true)}>
-                        <Icon name="plus" size={17} /> สร้าง Project
+                        <Icon name="plus" size={17} /> สร้างแคมเปญ
                     </button>
                 </div>
             ) : (
