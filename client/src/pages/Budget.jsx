@@ -49,7 +49,7 @@ export default function Budget() {
             </header>
 
             {/* ฟิลเตอร์: แบรนด์ + ปี + เดือน (ปี/เดือน ดูจากวันเริ่มแคมเปญ) */}
-            <div className="brand-filter">
+            <div className="brand-filter report-filters">
                 <span className="brand-filter-label">▼ แบรนด์:</span>
                 <select className="campaign-select" value={brand} onChange={e => setBrand(e.target.value)}>
                     <option value="">ทุกแบรนด์</option>

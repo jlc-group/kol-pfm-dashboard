@@ -63,6 +63,26 @@ const app = require('../server/src/app');
         await page.locator('#primary-sidebar').waitFor({ state: 'visible' });
         await page.locator('.sidebar-close').click();
         await page.locator('#primary-sidebar').waitFor({ state: 'hidden' });
+
+        // Admin pages have dense filters and tables. Keep their primary controls
+        // inside the mobile viewport so actions never become unreachable.
+        user.role = 'admin';
+        for (const route of ['/kols', '/budget', '/payments', '/users']) {
+            await page.goto(base + route);
+            await page.locator('h1').waitFor();
+            assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true, `${route} overflows mobile viewport`);
+        }
+        const paymentTabsFit = await page.goto(base + '/payments').then(async () => {
+            await page.locator('.pay-tabs').waitFor();
+            return page.locator('.pay-tab').evaluateAll(items => items.every(item => item.getBoundingClientRect().right <= window.innerWidth));
+        });
+        assert.equal(paymentTabsFit, true, 'payment tabs must all be reachable without horizontal scrolling');
+        await page.goto(base + '/users');
+        await page.getByRole('button', { name: 'เพิ่มผู้ใช้' }).click();
+        await page.locator('.modal').waitFor({ state: 'visible' });
+        await page.getByRole('button', { name: 'ยกเลิก' }).click();
+
+        await page.goto(base + '/');
         await menuButton.click();
         await page.locator('#primary-sidebar').waitFor({ state: 'visible' });
         await page.getByRole('button', { name: 'ออกจากระบบ' }).click();

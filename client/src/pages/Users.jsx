@@ -170,7 +170,7 @@ export default function Users() {
             {error && <div className="alert-error">{error}</div>}
 
             <div className="panel no-pad">
-                <table className="data-table">
+                <table className="data-table users-table">
                     <thead>
                         <tr>
                             <th>ผู้ใช้</th><th>สิทธิ์</th><th>แบรนด์ที่ดูได้</th><th>สถานะ</th><th className="actions">จัดการ</th>
