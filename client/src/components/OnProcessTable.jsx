@@ -47,6 +47,16 @@ function ProcessRow({ sub, putSubmission, reload, showAds = false, group = null,
     const adLocked = sub.ad_status === 'ยิงแล้ว';
     const canEditPost = unlocked && !adLocked;
     const lockTip = 'ยิงแอดไปแล้ว แก้ไม่ได้ — ถ้าต้องแก้จริง ให้กดสถานะกลับเป็น "ยังไม่ยิง" ที่หน้า ADS ก่อน';
+    // ลิงก์ที่กดเปิดได้จริง — อ่านจากช่องกรอกสด ๆ จะได้เช็คได้ทันทีตั้งแต่ยังไม่กดบันทึก
+    // รับเฉพาะ http/https: ค่านี้มาจากช่องกรอก ถ้าปล่อยผ่านจะเปิด javascript: ที่ฝังสคริปต์มาได้
+    const openablePostUrl = (() => {
+        const v = String(postUrl || '').trim();
+        if (!v) return null;
+        try {
+            const u = new URL(v);
+            return (u.protocol === 'http:' || u.protocol === 'https:') ? u.href : null;
+        } catch { return null; }
+    })();
 
     // มีการแก้ไขที่ยังไม่บันทึกหรือไม่ (เทียบกับค่าที่บันทึกไว้ล่าสุด = sub prop)
     const dirty =
@@ -133,6 +143,10 @@ function ProcessRow({ sub, putSubmission, reload, showAds = false, group = null,
             </div>
             <div className="proc-cell" title={adLocked ? lockTip : undefined}>
                 <input type="url" value={postUrl} onChange={e => setPostUrl(e.target.value)} placeholder="ลิงก์โพสต์" disabled={!canEditPost} />
+                {/* กดดูคลิปได้แม้แถวถูกล็อก — ล็อกแค่ห้ามแก้ ไม่ได้ห้ามดู */}
+                {openablePostUrl
+                    ? <a className="proc-openpost" href={openablePostUrl} target="_blank" rel="noreferrer" title="เปิดลิงก์คลิปในแท็บใหม่"><Icon name="eye" size={14} /></a>
+                    : <span className="proc-openpost off" title={postUrl.trim() ? 'ลิงก์ไม่ถูกต้อง — ต้องขึ้นต้นด้วย http:// หรือ https://' : 'ยังไม่มีลิงก์โพสต์'}><Icon name="eye" size={14} /></span>}
             </div>
             <div className="proc-cell"><DatePicker value={postDate} onChange={setPostDate} disabled={!unlocked} placeholder="เลือกวัน" /></div>
             <div className="proc-cell" title={adLocked ? lockTip : undefined}>
@@ -218,6 +232,7 @@ export default function OnProcessTable({ subs = [], groups = [], showAds = false
     const [platFilter, setPlatFilter] = useState('all');   // ตัวกรองตามแพลตฟอร์ม
     const [ctypeFilter, setCtypeFilter] = useState('all'); // ตัวกรองย่อยตาม Content Type
     const [clipFilter, setClipFilter] = useState('all');   // ตัวกรองตามคลิป (กลุ่มที่ 1 คนส่งหลายคลิป)
+    const [groupFilter, setGroupFilter] = useState('all'); // ตัวกรองตามกลุ่มสินค้า ('__none' = คนที่ไม่อยู่กลุ่มไหน)
     // เรียงเก่า -> ใหม่ ให้ตรงกับแท็บรายชื่อและฝั่งลิงก์เอเจนซี่ (API ส่งมาแบบใหม่สุดขึ้นก่อน)
     const confirmed = subs.filter(s => s.status === 'confirmed')
         .slice().sort((a, b) => (a.submitted_at || '').localeCompare(b.submitted_at || '') || (a.id - b.id));
@@ -232,10 +247,16 @@ export default function OnProcessTable({ subs = [], groups = [], showAds = false
     const subCtypes = platFilter === 'all' ? [] : ctypesOfPlat(platFilter);
     // ชื่อคลิปที่มีจริงในลิสต์ (กลุ่มที่ 1 คนส่ง 2 คลิปจะมีมากกว่า 1 ชื่อ)
     const clipNames = [...new Set(confirmed.map(s => s.clip_name).filter(Boolean))];
+    // กลุ่มที่มีคนอยู่จริง + คนที่ตกกลุ่ม (group_key ว่าง หรือชี้ไปกลุ่มที่ถูกลบไปแล้ว)
+    const groupKeySet = new Set(groups.map(g => g.key));
+    const isUngrouped = s => !s.group_key || !groupKeySet.has(s.group_key);
+    const groupsInUse = groups.filter(g => confirmed.some(s => s.group_key === g.key));
+    const ungroupedCount = confirmed.filter(isUngrouped).length;
     const view = confirmed
         .filter(s => platFilter === 'all' || (s.platform || '') === platFilter)
         .filter(s => ctypeFilter === 'all' || (s.content_type || '') === ctypeFilter)
         .filter(s => clipFilter === 'all' || (s.clip_name || '') === clipFilter)
+        .filter(s => groupFilter === 'all' || (groupFilter === '__none' ? isUngrouped(s) : s.group_key === groupFilter))
         .filter(s => stage === 'all' || workStage(s) === stage);   // ตัวกรองจากการ์ดสรุปด้านบน
 
     const groupMap = {};
@@ -251,6 +272,29 @@ export default function OnProcessTable({ subs = [], groups = [], showAds = false
         <div className="proc-stagebar">
             <span>กำลังดูเฉพาะ <b>{stageLabel}</b> · {view.length} รายการ</span>
             {onClearStage && <button type="button" onClick={onClearStage}>× ดูทั้งหมด</button>}
+        </div>
+    ) : null;
+
+    // แถบปุ่มกรองกลุ่มสินค้า — โชว์เมื่อแบ่งเกิน 1 กลุ่ม (นับ "ไม่ระบุกลุ่ม" เป็นหนึ่งกลุ่มด้วย)
+    // วางไว้บนสุดเพราะกลุ่มเป็นการแบ่งระดับใหญ่กว่าแพลตฟอร์มและคลิป
+    const groupBar = (groupsInUse.length + (ungroupedCount > 0 ? 1 : 0)) > 1 ? (
+        <div className="proc-platfilter">
+            <span className="proc-platfilter-lbl">กลุ่ม:</span>
+            <button type="button" className={'proc-plat-chip' + (groupFilter === 'all' ? ' on' : '')}
+                onClick={() => setGroupFilter('all')}>ทั้งหมด ({confirmed.length})</button>
+            {groupsInUse.map(g => (
+                <button type="button" key={g.key}
+                    className={'proc-plat-chip' + (groupFilter === g.key ? ' on' : '')}
+                    title={[(g.products || []).join(', '), g.concept].filter(Boolean).join(' · ')}
+                    onClick={() => setGroupFilter(g.key)}>
+                    กลุ่มที่ {groups.indexOf(g) + 1}{g.concept ? ' · ' + g.concept : ''} ({confirmed.filter(s => s.group_key === g.key).length})
+                </button>
+            ))}
+            {ungroupedCount > 0 && (
+                <button type="button" className={'proc-plat-chip' + (groupFilter === '__none' ? ' on' : '')}
+                    title="KOL ที่ยังไม่ได้ถูกจัดเข้ากลุ่มไหน"
+                    onClick={() => setGroupFilter('__none')}>ไม่ระบุกลุ่ม ({ungroupedCount})</button>
+            )}
         </div>
     ) : null;
 
@@ -310,6 +354,7 @@ export default function OnProcessTable({ subs = [], groups = [], showAds = false
         return (
             <div>
                 {stageBar}
+                {groupBar}
                 {filterBar}
                 {clipBar}
                 <div className="proc-tbl-scroll">
@@ -330,7 +375,7 @@ export default function OnProcessTable({ subs = [], groups = [], showAds = false
                                 {procHead(showAds)}{rowsFor(ungrouped)}
                             </div>
                         )}
-                        {view.length === 0 && <div className="proc-group-empty" style={{ padding: '16px 4px' }}>ไม่มี KOL ในแพลตฟอร์มนี้</div>}
+                        {view.length === 0 && <div className="proc-group-empty" style={{ padding: '16px 4px' }}>ไม่มี KOL ตรงกับตัวกรอง</div>}
                     </div>
                 </div>
             </div>
@@ -341,13 +386,14 @@ export default function OnProcessTable({ subs = [], groups = [], showAds = false
     return (
         <div>
             {stageBar}
+            {groupBar}
             {filterBar}
             {clipBar}
             <div className="proc-tbl-scroll">
                 <div className={tblCls}>
                     {procHead(showAds)}
                     {rowsFor(view)}
-                    {view.length === 0 && <div className="proc-group-empty" style={{ padding: '16px 4px' }}>ไม่มี KOL ในแพลตฟอร์มนี้</div>}
+                    {view.length === 0 && <div className="proc-group-empty" style={{ padding: '16px 4px' }}>ไม่มี KOL ตรงกับตัวกรอง</div>}
                 </div>
             </div>
         </div>
