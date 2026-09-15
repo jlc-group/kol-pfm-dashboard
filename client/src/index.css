@@ -2054,6 +2054,9 @@ a { text-decoration: none; color: inherit; }
 
     /* ปุ่มพับ/ดูเพิ่ม ไม่มีความหมายบนกระดาษ */
     .prod-codes-more, .prodchip-more { display: none !important; }
+
+    /* กระดาษเลื่อนไม่ได้ — กล่องเลื่อนตารางต้องปล่อยให้ตารางแสดงเต็ม ไม่ตัดคอลัมน์ขวาทิ้ง */
+    .rpt-tbl-scroll { overflow: visible !important; }
 }
 
 /* ============ กล่องส่ง Report ของเอเจนซี่ ============ */
@@ -3031,6 +3034,13 @@ button { color: inherit; }
 .fee-add-total { display: block; margin-top: 5px; font-size: 12px; font-weight: 700; color: #4338ca; }
 /* หน้า KOL / Ads: สแตมป์รอค่าตัว (ไม่ใช่รอข้อมูลซิงก์) */
 .perf-pill.wait.fee { background: #fef3c7; color: #92400e; border: 1px dashed #f59e0b; }
+/* หน้า Dashboard / Report: ยอดรวมยังไม่รวมคลิปที่รอค่าตัว */
+/* การ์ดใหญ่สีเขียวแบ่ง 3 คอลัมน์ — จอมือถือคอลัมน์แคบมาก ต้องตัดบรรทัดได้ ไม่งั้นชิปล้นขอบการ์ดแล้วโดนตัดทิ้ง */
+.fee-missing-chip.hero { max-width: 100%; white-space: normal; line-height: 1.4; border-radius: 10px; }
+/* ในช่องตาราง: ไม่ต้องเว้นระยะด้านบน ให้อยู่แนวเดียวกับตัวเลขแถวอื่น */
+.fee-missing-chip.in-cell { margin-top: 0; vertical-align: middle; }
+/* ตารางรายละเอียด KOL หน้า Report — .panel.no-pad ตัดของที่ล้นทิ้ง จึงต้องมีกล่องเลื่อนซ้าย-ขวาของตัวเอง */
+.rpt-tbl-scroll { overflow-x: auto; scrollbar-width: thin; overscroll-behavior-inline: contain; }
 
 /* หน้าต่างหาร/ล้างค่าตัว */
 .modal.fee-modal { width: min(100%, 760px); max-width: 760px; }

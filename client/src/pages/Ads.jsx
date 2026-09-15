@@ -68,6 +68,10 @@ function StampCell({ row }) {
 
 // ผลตอนนี้ + ลูกศรเทียบกับตอนสแตมป์ (ใช้ตัดสินว่าควรยิงต่อหรือหยุด)
 function LiveCell({ row }) {
+    // ทีมยังไม่ใส่ค่าตัว = ยังคิด CPM/CPE ไม่ได้ ห้ามตัดสินจากค่าแอดอย่างเดียว (กฎเดียวกับหน้า Report)
+    if (row.fee_missing) {
+        return <span className="perf-pill wait fee" title="ทีมยังไม่ได้ใส่ค่าตัว KOL คลิปนี้ — ยังคิด CPM/CPE และตัดสินผ่าน/ไม่ผ่านไม่ได้ ใส่ค่าตัวที่หน้าแคมเปญ">รอค่าตัว</span>;
+    }
     if (!row.performance) {
         return <span className="perf-pill none" title="ยังไม่มียอดวิว/engagement ให้ตัดสิน">Not rated</span>;
     }

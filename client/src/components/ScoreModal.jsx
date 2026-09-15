@@ -5,14 +5,18 @@ const N = n => (Number(n) || 0).toLocaleString('th-TH');
 function verdict(k) {
     const parts = k.score_parts || [];
     const by = key => parts.find(p => p.key === key) || { earned: 0, weight: 0 };
-    const strong = parts.filter(p => p.weight > 0 && p.earned / p.weight >= 0.7);
-    const weak = parts.filter(p => p.weight > 0 && p.earned / p.weight <= 0.3);
+    // ยังไม่ใส่ค่าตัว = คะแนนด้านต้นทุน (CPM/CPE) ยังคิดไม่ได้ — ไม่นับเป็นจุดอ่อน และไม่สรุปเรื่องความคุ้มค่า
+    const scored = k.fee_missing ? parts.filter(p => p.key !== 'cpm' && p.key !== 'cpe') : parts;
+    const strong = scored.filter(p => p.weight > 0 && p.earned / p.weight >= 0.7);
+    const weak = scored.filter(p => p.weight > 0 && p.earned / p.weight <= 0.3);
     const costPts = by('cpm').earned + by('cpe').earned;      // เต็ม 40
     const reachPts = by('er').earned + by('views').earned;    // เต็ม 60
 
     const lines = [];
+    if (k.fee_missing) lines.push('ยังไม่ได้ใส่ค่าตัว — ยังคิด CPM/CPE ไม่ได้ คะแนนตอนนี้มาจาก Engagement Rate และยอดวิวเท่านั้น (เต็ม 60)');
     if (strong.length) lines.push(`ได้คะแนนดีจาก ${strong.map(p => p.label).join(' และ ')}`);
     if (weak.length) lines.push(`เสียคะแนนที่ ${weak.map(p => p.label).join(' และ ')}`);
+    if (k.fee_missing) return lines;
 
     // ประเด็นที่มักเป็นสาเหตุจริง: วิวเยอะแต่ต้นทุนแพง
     if (by('views').earned / 25 >= 0.7 && costPts / 40 <= 0.35) {
@@ -73,7 +77,7 @@ export default function ScoreModal({ k, onClose }) {
                                     <tr key={p.key}>
                                         <td><b>{p.label}</b></td>
                                         <td className="num">
-                                            {p.unit === '฿' ? B(p.value) : N(p.value)}{p.unit === '%' ? '%' : ''}
+                                            {p.value == null ? '—' : <>{p.unit === '฿' ? B(p.value) : N(p.value)}{p.unit === '%' ? '%' : ''}</>}
                                         </td>
                                         <td className="muted">{p.better === 'ต่ำ' ? 'ยิ่งต่ำยิ่งดี' : 'ยิ่งสูงยิ่งดี'}</td>
                                         <td className="num">

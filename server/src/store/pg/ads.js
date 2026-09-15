@@ -15,7 +15,7 @@ const { shouldApplyOrganicMetrics, shouldApplyCumulativeMetric } = require('../m
 const {
     now, clone, scopeProjects,
     resolveGroupTarget, resolveGroupProducts, resolveGroupCtype, resolveGroupMedia,
-    engagementOf, GOOD_CPM, GOOD_CPE,
+    engagementOf, clipCostMetrics, perfVerdict,
     maybeStamp, stampWaitReason
 } = logic;
 
@@ -186,15 +186,12 @@ const ads = {
                     ...(() => {
                         const views = Number(s.views) || 0;
                         const eng = engagementOf(s);
-                        const totalCost = (Number(s.budget) || 0) + spend;
-                        const cCpm = views > 0 ? Number((totalCost / (views / 1000)).toFixed(2)) : 0;
-                        const cCpe = eng > 0 ? Number((totalCost / eng).toFixed(2)) : 0;
+                        // ยังไม่ใส่ค่าตัว = content_cpm/cpe เป็น null และยังไม่ตัดสิน (กฎเดียวกับหน้า Report — ดู clipCostMetrics)
+                        const { fee_missing, cpm: cCpm, cpe: cCpe } = clipCostMetrics({ fee: s.budget, adSpend: spend, views, engagement: eng });
                         return {
-                            views, engagement: eng,
+                            views, engagement: eng, fee_missing,
                             content_cpm: cCpm, content_cpe: cCpe,
-                            performance: views > 0
-                                ? ((cCpm > 0 && cCpm <= GOOD_CPM && cCpe > 0 && cCpe <= GOOD_CPE) ? 'Good' : 'Improve')
-                                : null,
+                            performance: views > 0 ? perfVerdict({ fee_missing, views, cpm: cCpm, cpe: cCpe }) : null,
                             perf_stamp: s.perf_stamp ? clone(s.perf_stamp) : null,
                             stamp_waiting: waitReason !== null,
                             stamp_wait_reason: waitReason
@@ -205,15 +202,12 @@ const ads = {
                     ...(() => {
                         const views = Number(s.views) || 0;
                         const eng = engagementOf(s);
-                        const totalCost = (Number(s.budget) || 0) + spend;
-                        const cCpm = views > 0 ? Number((totalCost / (views / 1000)).toFixed(2)) : 0;
-                        const cCpe = eng > 0 ? Number((totalCost / eng).toFixed(2)) : 0;
+                        // ยังไม่ใส่ค่าตัว = content_cpm/cpe เป็น null และยังไม่ตัดสิน (กฎเดียวกับหน้า Report — ดู clipCostMetrics)
+                        const { fee_missing, cpm: cCpm, cpe: cCpe } = clipCostMetrics({ fee: s.budget, adSpend: spend, views, engagement: eng });
                         return {
-                            views, engagement: eng,
+                            views, engagement: eng, fee_missing,
                             content_cpm: cCpm, content_cpe: cCpe,
-                            performance: views > 0
-                                ? ((cCpm > 0 && cCpm <= GOOD_CPM && cCpe > 0 && cCpe <= GOOD_CPE) ? 'Good' : 'Improve')
-                                : null,
+                            performance: views > 0 ? perfVerdict({ fee_missing, views, cpm: cCpm, cpe: cCpe }) : null,
                             perf_stamp: s.perf_stamp ? clone(s.perf_stamp) : null,
                             stamp_waiting: waitReason !== null,
                             stamp_wait_reason: waitReason

@@ -66,6 +66,9 @@ export default function Dashboard() {
     const spent = Number(data?.total_spent) || 0;
     const extra = Math.max(0, spent - planned);      // ส่วนที่รีเควสเพิ่มทีหลัง
     const budgetTotal = planned + extra;
+    // คลิปที่ทีมยังไม่ใส่ค่าตัว (ค่าตัว 0) — ยอดค่าจ้างที่ใช้ไปจึงยังไม่รวมคลิปพวกนี้
+    // server เก่าไม่ส่งช่องนี้มา = 0 ไม่ต้องโชว์อะไรเพิ่ม
+    const feeMissingClips = Number(data?.fee_missing_clips) || 0;
     const maxBrandBudget = Math.max(1, ...(data?.brand_summary || []).map(b => b.budget));
 
     return (
@@ -124,7 +127,15 @@ export default function Dashboard() {
                             {data && data.total_clips > data.total_kols && <span className="bh-sub"> · {data.total_clips} คลิป</span>}
                         </div></div>
                         <div><div className="bh-k">แคมเปญ</div><div className="bh-v">{data ? data.total_campaigns : '—'}</div></div>
-                        <div><div className="bh-k">ค่าจ้าง KOL ที่ใช้ไป</div><div className="bh-v">{data ? fmtMoney(data.total_spent) : '—'}</div></div>
+                        <div>
+                            <div className="bh-k">ค่าจ้าง KOL ที่ใช้ไป</div>
+                            <div className="bh-v">{data ? fmtMoney(data.total_spent) : '—'}</div>
+                            {feeMissingClips > 0 && (
+                                <span className="fee-missing-chip hero" title="คลิปเหล่านี้ทีมยังไม่ได้ใส่ค่าตัว KOL — ใส่ที่หน้าแคมเปญแล้วยอดนี้จะรวมให้เอง">
+                                    ไม่รวม {feeMissingClips} คลิปที่ยังไม่ใส่ค่าตัว
+                                </span>
+                            )}
+                        </div>
                     </div>
                 </div>
 
@@ -239,7 +250,11 @@ export default function Dashboard() {
                                     <td>{k.platform ? <span className="tag">{k.platform}</span> : '—'}</td>
                                     <td>{k.brand ? <span className="tag">{k.brand}</span> : '—'}</td>
                                     <td><ProductSummary value={k.product} max={2} /></td>
-                                    <td className="num">{fmtMoney(k.fee)}</td>
+                                    <td className="num">
+                                        {k.fee_missing
+                                            ? <span className="fee-missing-chip in-cell" title="ทีมยังไม่ได้ใส่ค่าตัว KOL คลิปนี้ — ใส่ที่หน้าแคมเปญ">รอค่าตัว</span>
+                                            : fmtMoney(k.fee)}
+                                    </td>
                                     <td className="num">{fmtNum(k.views)}</td>
                                     <td className="num">{fmtNum(k.likes)}</td>
                                     <td className="num">{fmtNum(k.comments)}</td>

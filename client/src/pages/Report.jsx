@@ -43,6 +43,11 @@ export default function Report() {
     const eb = d.engagement_breakdown || { likes: 0, comments: 0, saves: 0, shares: 0 };
     const ebTotal = eb.likes + eb.comments + eb.saves + eb.shares;
     const ebPct = v => (ebTotal > 0 ? Math.round((v / ebTotal) * 100) : 0);
+    // คลิปที่ยังไม่ใส่ค่าตัว — ค่าจ้างรวมยังไม่รวมคลิปพวกนี้ และไม่เอามาเฉลี่ย CPM/CPE (ไม่งั้นดูถูกเกินจริง)
+    // server เก่าไม่ส่งช่องนี้มา = 0 หน้าเว็บจึงแสดงเหมือนเดิมทุกอย่าง
+    const feeMissingClips = Number(d.cost.fee_missing_clips) || 0;
+    // fee_clips = คลิปที่เอามาเฉลี่ยจริง (มีค่าตัวและมี Reach จากแอดแล้ว) — เป็น 0 ใช้คำอธิบายเดิม ไม่ขึ้น "คิดจาก 0 คลิป"
+    const feeBasis = feeMissingClips > 0 && Number(d.cost.fee_clips) > 0;
 
     return (
         <div className="report-page">
@@ -193,9 +198,14 @@ export default function Report() {
             <div className="panel">
                 <h3>💰 สรุปค่าใช้จ่าย / Cost Summary</h3>
                 <div className="rpt-cost-grid">
-                    <div className="rpt-cost c-orange"><div className="rpt-cost-k">KOL COST</div><div className="rpt-cost-v">{B(d.cost.kol_cost)}</div><div className="rpt-cost-sub">ค่าจ้าง KOL ทั้งหมด</div></div>
-                    <div className="rpt-cost c-green"><div className="rpt-cost-k">AVG CPM / คน</div><div className="rpt-cost-v">{B(d.cost.avg_cpm)}</div><div className="rpt-cost-sub">เฉลี่ย Cost per 1K Reach ต่อคน</div></div>
-                    <div className="rpt-cost c-blue"><div className="rpt-cost-k">AVG CPE / คน</div><div className="rpt-cost-v">{B(d.cost.avg_cpe)}</div><div className="rpt-cost-sub">เฉลี่ย Cost per Engagement ต่อคน</div></div>
+                    <div className="rpt-cost c-orange">
+                        <div className="rpt-cost-k">KOL COST</div><div className="rpt-cost-v">{B(d.cost.kol_cost)}</div><div className="rpt-cost-sub">ค่าจ้าง KOL ทั้งหมด</div>
+                        {feeMissingClips > 0 && (
+                            <span className="fee-missing-chip" title="คลิปเหล่านี้ทีมยังไม่ได้ใส่ค่าตัว KOL — ใส่ที่หน้าแคมเปญแล้วยอดนี้จะรวมให้เอง">ยังไม่รวม {feeMissingClips} คลิป</span>
+                        )}
+                    </div>
+                    <div className="rpt-cost c-green"><div className="rpt-cost-k">AVG CPM / คน</div><div className="rpt-cost-v">{B(d.cost.avg_cpm)}</div><div className="rpt-cost-sub">{feeBasis ? `คิดจาก ${d.cost.fee_clips} คลิปที่มีค่าตัวและมี Reach แล้ว` : 'เฉลี่ย Cost per 1K Reach ต่อคน'}</div></div>
+                    <div className="rpt-cost c-blue"><div className="rpt-cost-k">AVG CPE / คน</div><div className="rpt-cost-v">{B(d.cost.avg_cpe)}</div><div className="rpt-cost-sub">{feeBasis ? `คิดจาก ${d.cost.fee_clips} คลิปที่มีค่าตัวและมี Reach แล้ว` : 'เฉลี่ย Cost per Engagement ต่อคน'}</div></div>
                 </div>
             </div>
 
@@ -216,6 +226,7 @@ export default function Report() {
                                             ? <b className="rank-score" title="คะแนนเทียบกับคนอื่นในแคมเปญนี้ เต็ม 100">{k.score} คะแนน</b>
                                             : <span className="rank-nodata" title="ยังไม่ได้กรอกผลงานคอนเทนต์ จึงยังไม่มีคะแนน — ไม่ได้แปลว่าทำได้แย่">ยังไม่กรอกผลงาน</span>}
                                         {k.boosted ? ' · ยิงแอดแล้ว' : ''}
+                                        {k.fee_missing && <span className="fee-missing-txt"> · รอค่าตัว</span>}
                                     </span>
                                 </div>
                                 <div className="rank-stats">
@@ -224,8 +235,9 @@ export default function Report() {
                                     <span><i>comments</i><b>{fmtV(k.comments)}</b></span>
                                     <span><i>bookmark</i><b>{fmtV(k.saves)}</b></span>
                                     <span><i>shares</i><b>{fmtV(k.shares)}</b></span>
-                                    <span className="sep"><i>CPM</i><b>{Number(k.cpm) > 0 ? B(k.cpm) : '—'}</b></span>
-                                    <span><i>CPE</i><b>{Number(k.cpe) > 0 ? B(k.cpe) : '—'}</b></span>
+                                    {/* ยังไม่ใส่ค่าตัว = ยังคิด CPM/CPE ไม่ได้ ห้ามโชว์ตัวเลขที่คิดจากค่าตัว 0 (จะดูถูกเกินจริง) */}
+                                    <span className="sep"><i>CPM</i><b>{!k.fee_missing && Number(k.cpm) > 0 ? B(k.cpm) : '—'}</b></span>
+                                    <span><i>CPE</i><b>{!k.fee_missing && Number(k.cpe) > 0 ? B(k.cpe) : '—'}</b></span>
                                 </div>
                             </div>
                         ))}
@@ -258,30 +270,40 @@ export default function Report() {
             {/* รายละเอียด KOL */}
             <div className="panel no-pad">
                 <div className="panel-head"><h3>📋 รายละเอียด KOL ทั้งหมด</h3></div>
-                <table className="data-table">
-                    <thead><tr><th>#</th><th>KOL NAME</th><th>PRODUCT</th><th>KOL CONTACT</th><th className="num">COST</th><th>LINK</th><th className="num">CPM</th><th className="num">CPE</th><th>PERFORMANCE</th></tr></thead>
-                    <tbody>
-                        {kolRows.length === 0 ? (
-                            <tr><td colSpan="9" className="empty">ไม่มี KOL ในแพลตฟอร์มนี้</td></tr>
-                        ) : kolRows.map(k => (
-                            <tr key={k.idx}>
-                                <td>{k.idx}</td>
-                                <td><strong>{k.name}</strong></td>
-                                <td className="muted"><ProductSummary value={k.product} /></td>
-                                <td className="muted">{k.agency || '—'}</td>
-                                <td className="num">{B(k.cost)}</td>
-                                <td>{k.link ? <a className="work-link" href={k.link} target="_blank" rel="noreferrer"><Icon name="eye" size={12} /> เปิด</a> : '-'}</td>
-                                <td className="num">{k.cpm}</td>
-                                <td className="num">{k.cpe}</td>
-                                <td>
-                                    {k.performance === 'Good'
-                                        ? <span className="perf-good">✓ Good</span>
-                                        : <span className="perf-improve">📈 Improve</span>}
-                                </td>
-                            </tr>
-                        ))}
-                    </tbody>
-                </table>
+                {/* .panel.no-pad ตัดของที่ล้นทิ้ง — จอมือถือต้องเลื่อนซ้าย-ขวาได้ ไม่งั้นคอลัมน์ PERFORMANCE หายไปทั้งคอลัมน์ */}
+                <div className="rpt-tbl-scroll">
+                    <table className="data-table">
+                        <thead><tr><th>#</th><th>KOL NAME</th><th>PRODUCT</th><th>KOL CONTACT</th><th className="num">COST</th><th>LINK</th><th className="num">CPM</th><th className="num">CPE</th><th>PERFORMANCE</th></tr></thead>
+                        <tbody>
+                            {kolRows.length === 0 ? (
+                                <tr><td colSpan="9" className="empty">ไม่มี KOL ในแพลตฟอร์มนี้</td></tr>
+                            ) : kolRows.map(k => (
+                                <tr key={k.idx}>
+                                    <td>{k.idx}</td>
+                                    <td><strong>{k.name}</strong></td>
+                                    <td className="muted"><ProductSummary value={k.product} /></td>
+                                    <td className="muted">{k.agency || '—'}</td>
+                                    {/* ยังไม่ใส่ค่าตัว: ไม่โชว์ ฿0 / CPM / CPE / Good-Improve ที่คิดจากค่าตัว 0 — บอกว่ารอค่าตัวแทน */}
+                                    <td className="num">
+                                        {k.fee_missing
+                                            ? <span className="fee-missing-chip in-cell" title="ทีมยังไม่ได้ใส่ค่าตัว KOL คลิปนี้ — ใส่ที่หน้าแคมเปญ">รอค่าตัว</span>
+                                            : B(k.cost)}
+                                    </td>
+                                    <td>{k.link ? <a className="work-link" href={k.link} target="_blank" rel="noreferrer"><Icon name="eye" size={12} /> เปิด</a> : '-'}</td>
+                                    <td className="num">{k.fee_missing ? '—' : k.cpm}</td>
+                                    <td className="num">{k.fee_missing ? '—' : k.cpe}</td>
+                                    <td>
+                                        {k.fee_missing
+                                            ? <span className="fee-missing-chip in-cell" title="ยังไม่มีค่าตัว จึงยังคิด CPM/CPE และตัดสินผลไม่ได้ — ไม่ได้แปลว่าทำได้แย่">รอค่าตัว</span>
+                                            : k.performance === 'Good'
+                                                ? <span className="perf-good">✓ Good</span>
+                                                : <span className="perf-improve">📈 Improve</span>}
+                                    </td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
             </div>
         </div>
     );

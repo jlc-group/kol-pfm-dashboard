@@ -9,7 +9,7 @@
  */
 const { query, insertRow, updateRow, asNum, asNumOrNull, asJson } = require('./_base');
 const { loadSnapshot } = require('./_snapshot');
-const { now, clone, duplicateError, scopeProjects, GOOD_CPM, GOOD_CPE, stampWaitReason } = require('../logic');
+const { now, clone, duplicateError, scopeProjects, stampWaitReason, clipCostMetrics, perfVerdict } = require('../logic');
 
 // id ที่ส่งมาเป็นสตริงจาก URL — jsonStore ใช้ Number(id) เทียบตรง ๆ
 // ค่าที่แปลงไม่ได้ (NaN) จะหาไม่เจอเสมอ ต้องดักไว้ก่อนยิง SQL ไม่งั้น Postgres จะ error แทนที่จะคืน null
@@ -219,18 +219,16 @@ const kols = {
                 const saves = Number(s.saves) || 0, shares = Number(s.shares) || 0;
                 const reposts = Number(s.reposts) || 0;   // IG เท่านั้น อันอื่นเป็น 0 อยู่แล้ว
                 const engagement = likes + comments + saves + shares + reposts;
-                const totalCost = (Number(s.budget) || 0) + (Number(s.ad_spend) || 0);
-                const cpm = views > 0 ? Number((totalCost / (views / 1000)).toFixed(2)) : 0;
-                const cpe = engagement > 0 ? Number((totalCost / engagement).toFixed(2)) : 0;
+                // ยังไม่ใส่ค่าตัว = cpm/cpe เป็น null (กฎเดียวกับหน้า Report — ดู clipCostMetrics)
+                const { fee_missing, cost: totalCost, cpm, cpe } = clipCostMetrics({ fee: s.budget, adSpend: s.ad_spend, views, engagement });
                 const er = views > 0 ? Number(((engagement / views) * 100).toFixed(2)) : 0;
                 const spendNow = Number(s.ad_spend) || 0;
                 const waitReason = stampWaitReason(s);
                 const perf = {
                     views, likes, comments, saves, shares, reposts, engagement, er,
-                    ad_spend: spendNow, total_cost: totalCost, cpm, cpe,
-                    performance: views > 0
-                        ? ((cpm > 0 && cpm <= GOOD_CPM && cpe > 0 && cpe <= GOOD_CPE) ? 'Good' : 'Improve')
-                        : null,  // ยังไม่กรอกผลงาน = ยังตัดสินไม่ได้
+                    ad_spend: spendNow, total_cost: totalCost, cpm, cpe, fee_missing,
+                    // ยังไม่กรอกผลงาน หรือยังไม่ใส่ค่าตัว = ยังตัดสินไม่ได้ (null) · หน้าเว็บเช็ค fee_missing ก่อนเพื่อขึ้น "รอค่าตัว"
+                    performance: views > 0 ? perfVerdict({ fee_missing, views, cpm, cpe }) : null,
                     // ผลที่ล็อกไว้ตอนค่าแอดถึงเกณฑ์ (ถ้ายังไม่ถึงจะเป็น null)
                     perf_stamp: s.perf_stamp ? clone(s.perf_stamp) : null,
                     // ค่าแอดถึงเกณฑ์แล้วแต่ยังสแตมป์ไม่ได้ — รอสแตมป์อยู่

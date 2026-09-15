@@ -5,9 +5,12 @@
  * สูตรละเอียดและไม่มีเทสต์คุม ถ้าเขียนใหม่เป็น SQL aggregate จะเพี้ยนแบบเงียบ ๆ
  * จึงดึงแถวจริงจาก PostgreSQL ผ่าน loadSnapshot() แล้วรันอัลกอริทึมเดิมของ jsonStore
  * แบบคำต่อคำ (เปลี่ยนแค่ db. -> snap.) เพื่อให้ผลลัพธ์ตรงกับของเดิมเป๊ะ
+ *
+ * ข้อยกเว้นที่ตั้งใจให้ต่างจากของเดิม: คลิปที่ยังไม่ใส่ค่าตัว (budget <= 0)
+ * ไม่เอามาคิดค่าเฉลี่ย CPM/CPE, แกนคะแนน CPM/CPE และการตัดสิน Good — ใช้กฎกลางจาก logic.js ชุดเดียวกับหน้า Dashboard
  */
 const { loadSnapshot } = require('./_snapshot');
-const { clone, inScope, scopeProjects, GOOD_CPM, GOOD_CPE } = require('../logic');
+const { clone, inScope, scopeProjects, clipCostMetrics, costAxisRange, costAxisNorm, perfVerdict, feeCostAverages } = require('../logic');
 
 const reports = {
     // รายการแคมเปญ + ตัวเลขสรุปสำหรับหน้ารายงาน (KOLS / BUDGET / USED / POST RATE)
@@ -56,21 +59,21 @@ const reports = {
 
             const fee = Number(s.budget) || 0;
             const adSpend = Number(s.ad_spend) || 0;
-            const cost = fee + adSpend;                 // ต้นทุนรวม = ค่าตัว + ค่ายิงแอด
             const reach = Number(s.ad_reach) || 0;
             // CPM/CPE คิดจากยอดคอนเทนต์จริง (เดิมใช้ reach และเดา engagement เป็น 2% ของ reach)
-            const cpm = views > 0 ? Number((cost / (views / 1000)).toFixed(2)) : 0;
-            const cpe = engagement > 0 ? Number((cost / engagement).toFixed(2)) : 0;
+            // ต้นทุนรวม = ค่าตัว + ค่ายิงแอด · ยังไม่ใส่ค่าตัว = cpm/cpe เป็น null (ดู clipCostMetrics)
+            const { fee_missing, cost, cpm, cpe } = clipCostMetrics({ fee, adSpend, views, engagement });
             const posted = !!(s.post_url && String(s.post_url).trim());
             const boosted = s.ad_status === 'ยิงแล้ว';
-            // เกณฑ์ผ่าน/ไม่ผ่าน อยู่ที่หน้านี้กับหน้า Influencer (หน้า Dashboard ใช้คะแนนไล่ระดับแทน)
-            const good = views > 0 && cpm > 0 && cpm <= GOOD_CPM && cpe > 0 && cpe <= GOOD_CPE;
+            // เกณฑ์ผ่าน/ไม่ผ่าน (perfVerdict) ใช้ร่วมกับหน้า Influencer และหน้า Ads (หน้า Dashboard ใช้คะแนนไล่ระดับแทน)
+            // ยังไม่ใส่ค่าตัว = performance เป็น null (หน้าเว็บขึ้น "รอค่าตัว") ไม่ใช่ Good/Improve
+            const performance = perfVerdict({ fee_missing, views, cpm, cpe });
             return {
                 idx: i + 1, name: s.account_name, platform: s.platform || null,
                 product: s.product || null, agency: s.agency || null,
-                cost: fee, ad_spend: adSpend, total_cost: cost, reach,
+                cost: fee, ad_spend: adSpend, total_cost: cost, reach, fee_missing,
                 link: s.post_url || s.link_account || null,
-                cpm, cpe, performance: good ? 'Good' : 'Improve', posted, boosted,
+                cpm, cpe, performance, posted, boosted,
                 views, likes, comments, saves, shares, engagement, er,
                 // Content Format ยึดจากที่บรีฟไว้ตอนตั้งแคมเปญ
                 // s.content_format คือของเก่าที่เคยกรอกมือก่อนเปลี่ยนวิธี เก็บไว้เป็น fallback
@@ -98,15 +101,15 @@ const reports = {
             };
             const rEr = span(rated, r => r.er);
             const rVw = span(rated, r => r.views);
-            const withCpm = rated.filter(r => r.cpm > 0);
-            const withCpe = rated.filter(r => r.cpe > 0);
-            const rCpm = withCpm.length ? span(withCpm, r => r.cpm) : { min: 0, max: 0 };
-            const rCpe = withCpe.length ? span(withCpe, r => r.cpe) : { min: 0, max: 0 };
+            // แกน CPM/CPE เทียบเฉพาะคลิปที่ใส่ค่าตัวแล้วและมีค่านั้นจริง (costAxisRange)
+            const rCpm = costAxisRange(rated, 'cpm');
+            const rCpe = costAxisRange(rated, 'cpe');
             rows.forEach(r => {
                 if (!r.measured) { r.score = null; return; }
-                // ยังไม่มี CPM/CPE (เพราะยังไม่มีวิว/engagement) = แย่สุดของแกนนั้น ไม่ใช่ดีสุด
-                const nCpm = r.cpm > 0 ? nrm(r.cpm, rCpm, true) : 0;
-                const nCpe = r.cpe > 0 ? nrm(r.cpe, rCpe, true) : 0;
+                // ยังไม่มี CPM/CPE (เพราะยังไม่มีวิว/engagement) หรือยังไม่ใส่ค่าตัว = แย่สุดของแกนนั้น ไม่ใช่ดีสุด
+                // คลิปที่ยังไม่ใส่ค่าตัวจึงได้คะแนนจาก ER กับยอดวิวเท่านั้น (เต็ม 60)
+                const nCpm = costAxisNorm(r, 'cpm', rCpm);
+                const nCpe = costAxisNorm(r, 'cpe', rCpe);
                 r.score = Number(((RW.er * nrm(r.er, rEr) + RW.views * nrm(r.views, rVw)
                     + RW.cpm * nCpm + RW.cpe * nCpe) * 100).toFixed(1));
             });
@@ -116,9 +119,9 @@ const reports = {
         const kols = rows.length;
         const kol_cost = rows.reduce((a, r) => a + r.cost, 0);
         const ads_cost = rows.reduce((a, r) => a + r.ad_spend, 0);
-        const withReach = rows.filter(r => r.reach > 0);
-        const avg_cpm = withReach.length ? Number((withReach.reduce((a, r) => a + r.cpm, 0) / withReach.length).toFixed(2)) : 0;
-        const avg_cpe = withReach.length ? Number((withReach.reduce((a, r) => a + r.cpe, 0) / withReach.length).toFixed(2)) : 0;
+        // ค่าเฉลี่ย CPM/CPE ต่อคลิป — เฉพาะคลิปที่มี reach และใส่ค่าตัวแล้ว (fee_clips = จำนวนที่เอามาเฉลี่ยจริง)
+        // fee_missing_clips นับจากทุกแถวที่รวมอยู่ใน kol_cost
+        const { avg_cpm, avg_cpe, fee_clips, fee_missing_clips } = feeCostAverages(rows);
         const postedCount = rows.filter(r => r.posted).length;
 
         const platOrder = ['TikTok', 'Instagram', 'Facebook', 'Lemon8'];
@@ -205,8 +208,10 @@ const reports = {
             platforms, all_count: kols,
             post_rate: { rate: kols > 0 ? Math.round((postedCount / kols) * 100) : 0, posted: postedCount, total: kols },
             ads_boosted: rows.filter(r => r.boosted).length,
-            good_performance: { good: rows.filter(r => r.performance === 'Good').length, total: kols },
-            cost: { kol_cost, ads_cost, avg_cpm, avg_cpe, total: kol_cost + ads_cost },
+            // total = คลิปที่ตัดสินได้ (ไม่นับคลิปที่ยังไม่ใส่ค่าตัว) — ตรงกับจำนวน Good + Improve ในตาราง
+            good_performance: { good: rows.filter(r => r.performance === 'Good').length, total: rows.filter(r => !r.fee_missing).length },
+            // fee_missing_clips = คลิปที่ยังไม่รวมใน kol_cost · fee_clips = คลิปที่ใช้คิด avg_cpm/avg_cpe
+            cost: { kol_cost, ads_cost, avg_cpm, avg_cpe, total: kol_cost + ads_cost, fee_missing_clips, fee_clips },
             // ผลงานคอนเทนต์
             performance: {
                 total_views, total_engagement, avg_views, engagement_rate,

@@ -140,11 +140,72 @@ function stampWaitReason(s) {
     return null;
 }
 
+// ===== คลิปที่ยังไม่ใส่ค่าตัว — กฎชุดเดียวกันทั้งหน้า Dashboard และหน้า Report =====
+// ค่าตัว (submissions.budget) เก็บต่อคลิป · 0 / ว่าง = ทีมยังไม่ได้ใส่ (เงื่อนไขเดียวกับ maybeStamp)
+// ยอดรวมค่าจ้างยังบวกตามเดิม (0 ไม่ได้เพิ่มอะไร) แต่ CPM/CPE ของคลิปพวกนี้เหลือแค่ค่าแอด หรือเป็น 0
+// ซึ่งดูถูกเกินจริง จึงตัดออกจากค่าเฉลี่ย CPM/CPE, แกนคะแนน CPM/CPE และการตัดสิน Good/Improve
+function feeMissing(budget) {
+    return (Number(budget) || 0) <= 0;
+}
+
+// CPM/CPE ของ 1 คลิป — ต้นทุน = ค่าตัว + ค่ายิงแอด
+// ยังไม่ใส่ค่าตัว = cpm/cpe เป็น null (ห้ามคืน 0 หรือคิดจากค่าแอดอย่างเดียว เพราะจะดูคุ้มเกินจริง)
+function clipCostMetrics({ fee, adSpend, views, engagement }) {
+    const f = Number(fee) || 0;
+    const cost = f + (Number(adSpend) || 0);
+    if (feeMissing(f)) return { fee_missing: true, cost, cpm: null, cpe: null };
+    return {
+        fee_missing: false, cost,
+        cpm: views > 0 ? Number((cost / (views / 1000)).toFixed(2)) : 0,
+        cpe: engagement > 0 ? Number((cost / engagement).toFixed(2)) : 0
+    };
+}
+
+// has(row) = แถวนี้มีค่าแกนนี้ให้เทียบไหม — แต่ละหน้าคงกติกาเดิมของตัวเองไว้สำหรับคนที่มีค่าตัว
+// ค่าเริ่มต้น = ค่ามากกว่า 0 (กติกาเดิมของหน้า Report)
+// หน้า Dashboard ส่งกติกาเดิมของตัวเองมา เพื่อให้ค่าที่ถูกมากจนปัดเศษเหลือ 0.00 ยังได้คะแนนเต็ม ไม่กลายเป็นแย่สุด
+const hasPositive = key => r => Number(r[key]) > 0;
+
+// ช่วง min/max ของแกน CPM หรือ CPE ที่ใช้เทียบคะแนน (key = 'cpm' | 'cpe')
+// นับเฉพาะแถวที่มีค่าตัวและมีค่านั้น (has) — แถวที่ยังไม่ใส่ค่าตัวห้ามเข้ามายืดช่วง
+function costAxisRange(rows, key, has = hasPositive(key)) {
+    const v = rows.filter(r => !r.fee_missing && r[key] != null && has(r)).map(r => Number(r[key]));
+    return v.length ? { min: Math.min(...v), max: Math.max(...v) } : { min: 0, max: 0 };
+}
+
+// คะแนนแกน CPM/CPE ของ 1 แถว เป็นสัดส่วน 0-1 (ยิ่งต่ำยิ่งได้มาก)
+// ยังไม่ใส่ค่าตัว หรือยังไม่มีค่านี้ = 0 (แย่สุดของแกน ไม่ใช่ดีสุด) · ทุกคนเท่ากัน = 1
+// has ต้องเป็นตัวเดียวกับที่ส่งให้ costAxisRange ตอนสร้าง range
+function costAxisNorm(row, key, range, has = hasPositive(key)) {
+    if (row.fee_missing || row[key] == null || !has(row)) return 0;
+    if (range.max === range.min) return 1;
+    return 1 - (Number(row[key]) - range.min) / (range.max - range.min);
+}
+
+// ผ่าน/ไม่ผ่านเกณฑ์คุ้มค่า — ยังไม่ใส่ค่าตัว = null (ยังตัดสินไม่ได้ ไม่นับเป็นทั้ง Good และ Improve)
+function perfVerdict({ fee_missing, views, cpm, cpe }) {
+    if (fee_missing) return null;
+    return (views > 0 && cpm > 0 && cpm <= GOOD_CPM && cpe > 0 && cpe <= GOOD_CPE) ? 'Good' : 'Improve';
+}
+
+// ค่าเฉลี่ย CPM/CPE ต่อคลิปของหน้า Report — เฉพาะคลิปที่มีค่าตัวและมี reach จากแอดแล้ว
+// fee_clips = จำนวนคลิปที่เอามาเฉลี่ยจริง · fee_missing_clips = คลิปที่ยังไม่ใส่ค่าตัว (นับทุกแถวที่รวมอยู่ในยอดค่าจ้าง)
+function feeCostAverages(rows) {
+    const used = rows.filter(r => !r.fee_missing && r.reach > 0);
+    const avg = key => (used.length ? Number((used.reduce((a, r) => a + r[key], 0) / used.length).toFixed(2)) : 0);
+    return {
+        avg_cpm: avg('cpm'), avg_cpe: avg('cpe'),
+        fee_clips: used.length,
+        fee_missing_clips: rows.filter(r => r.fee_missing).length
+    };
+}
+
 
 module.exports = {
     GOOD_CPM, GOOD_CPE, TARGET_PLATFORMS, AD_STAMP_AT, now, clone,
     duplicateError, inScope, scopeProjects,
     linkGroupPlatforms, resolveGroupClips, resolveGroupTarget,
     resolveGroupProducts, resolveGroupCtype, resolveGroupMedia,
-    engagementOf, maybeStamp, stampWaitReason
+    engagementOf, maybeStamp, stampWaitReason,
+    feeMissing, clipCostMetrics, costAxisRange, costAxisNorm, perfVerdict, feeCostAverages
 };
