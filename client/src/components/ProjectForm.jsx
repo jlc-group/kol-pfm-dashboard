@@ -5,13 +5,14 @@ import DatePicker from './DatePicker.jsx';
 import { productsByBrand, productLabel, targetsForProducts, asTargetArray } from '../data/products.js';
 import { CONTENT_FORMATS } from '../data/contentFormats.js';
 import MultiSelect from './MultiSelect.jsx';
+import { useAuth } from '../auth/AuthContext.jsx';
+import { visibleBrands } from '../data/brands.js';
 import {
     groupPlatforms, splitCsv, needTarget, contentTypesFor,
     emptyTier, emptySet, emptyBlock, blockKol, blocksKol, toBlocks, flattenBlocks,
     num, blocksBudget, platformBudgets, blocksProducts
 } from '../data/adGroups.js';
 
-const BRANDS = ["Jula's Herb", 'Code Lab', 'Jdent', 'Jarvit', 'Beauterry', 'Jernis', 'Dermiq', 'Minimii', 'Any Skin'];
 // รายชื่อทีมงานที่รับเป็น Owner ของแคมเปญ — แก้/เพิ่มชื่อตรงนี้ได้เลย
 // ตั้งใจไม่ดึงจากรายชื่อผู้ใช้ในระบบ เพราะบัญชีล็อกอิน (admin/member) ไม่ใช่คนที่ดูแลแคมเปญจริง
 // รายชื่อคนดูแล/คนสร้าง ดึงจากผู้ใช้จริงที่อนุมัติแล้ว (เดิมเป็นรายชื่อตายตัวในโค้ด
@@ -152,6 +153,11 @@ export default function ProjectForm({ editing, onClose, onSaved }) {
             .catch(() => setOwners([]));
     }, []);
     const OWNERS = owners;
+    // แบรนด์ให้เลือกเฉพาะที่ตัวเองมีสิทธิ์ (admin/manager เห็นครบ) — server ตรวจซ้ำอีกชั้นที่ routes/projects.js
+    const { user } = useAuth();
+    const brandOpts = visibleBrands(user);
+    // ตอนแก้ไข ถ้าแบรนด์เดิมไม่อยู่ในรายการ (เช่นชื่อแบรนด์เก่า) ต้องโชว์ไว้ ไม่งั้นช่องจะว่างแล้วบันทึกไม่ผ่าน
+    const keepBrand = isEdit && editing.brand && !brandOpts.includes(editing.brand) ? editing.brand : null;
 
     function update(k, v) { setForm(f => ({ ...f, [k]: v })); }
     // เริ่มจากกลุ่มสินค้า แล้วค่อยเลือก Platform ในหัวกลุ่ม
@@ -353,8 +359,9 @@ export default function ProjectForm({ editing, onClose, onSaved }) {
                         <div className="field">
                             <label>Brand</label>
                             <select value={form.brand} onChange={e => update('brand', e.target.value)}>
-                                <option value="">เลือกแบรนด์</option>
-                                {BRANDS.map(b => <option key={b} value={b}>{b}</option>)}
+                                <option value="">{brandOpts.length || keepBrand ? 'เลือกแบรนด์' : 'ยังไม่ได้รับสิทธิ์แบรนด์ — ติดต่อผู้ดูแลระบบ'}</option>
+                                {brandOpts.map(b => <option key={b} value={b}>{b}</option>)}
+                                {keepBrand && <option value={keepBrand}>{keepBrand}</option>}
                             </select>
                         </div>
                     </div>

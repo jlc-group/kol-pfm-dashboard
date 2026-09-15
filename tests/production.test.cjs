@@ -134,6 +134,98 @@ test('multipart upload and authenticated download use the external upload direct
     assert.equal((await request('/api/projects/23/brief/file')).status, 403);
 });
 
+test('members can only create or move campaigns into brands they are assigned', async () => {
+    const project = { id: 31, name: 'fixture', team_id: 2, brand: 'Jdent' };
+    let created = 0, updated = 0;
+    store.projects.findByIdFull = async () => project;
+    store.projects.create = async fields => { created++; return { id: 32, ...fields }; };
+    store.projects.update = async (id, fields) => { updated++; return { ...project, ...fields }; };
+    store.activity.log = async () => {};
+    const send = (method, body) => ({ method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    user({ role: 'member', team_id: 2, brands: ['Jdent'] });
+    assert.equal((await request('/api/projects', adminToken, send('POST', { name: 'x', brand: 'Code Lab' }))).status, 403);
+    assert.equal((await request('/api/projects', adminToken, send('POST', { name: 'x' }))).status, 403);
+    assert.equal(created, 0);
+    assert.equal((await request('/api/projects', adminToken, send('POST', { name: 'x', brand: 'Jdent' }))).status, 201);
+    assert.equal(created, 1);
+    assert.equal((await request('/api/projects/31', adminToken, send('PUT', { name: 'x', brand: 'Code Lab' }))).status, 403);
+    assert.equal((await request('/api/projects/31', adminToken, send('PUT', { name: 'x', brand: null }))).status, 403);
+    assert.equal(updated, 0);
+    assert.equal((await request('/api/projects/31', adminToken, send('PUT', { status: 'Active' }))).status, 200);
+    assert.equal((await request('/api/projects/31', adminToken, send('PUT', { name: 'x', brand: 'Jdent' }))).status, 200);
+    assert.equal(updated, 2);
+    user({ role: 'manager', team_id: 3, brands: [] });
+    assert.equal((await request('/api/projects', adminToken, send('POST', { name: 'x', brand: 'Code Lab' }))).status, 201);
+    assert.equal((await request('/api/projects/31', adminToken, send('PUT', { brand: 'Code Lab' }))).status, 200);
+});
+
+function agencyFixture() {
+    const project = { id: 41, name: 'fixture', brand: 'Jdent', platform_budgets: { TikTok: 90000 },
+        ad_groups: [{ key: 'g1', budget: 90000, products: [], blocks: [{ platform: 'TikTok', budget: '90000', products: [], clips: [], sets: [] }] }] };
+    const link = { token: 'tok1', scoped: true, name: 'Fixture Agency', products: [], platforms: [], groups: [], reports: [] };
+    const row = { id: 5, project_id: 41, agency_token: 'tok1', person_key: 'p1', budget: '5000.00', ad_spend: '12000.00', ad_status: 'ยิงแล้ว',
+        perf_stamp: { views: 1000, verdict: 'Pass', ad_spend: 12000, total_cost: 17000, cpm: 17, cpe: 2 } };
+    store.projects.resolveToken = async () => ({ project, link });
+    store.submissions.listByProject = async () => [row];
+    store.submissions.get = async () => row;
+    return { project, row };
+}
+
+test('agency accounts get no team budgets, and only admin/manager get ad costs on agency links', async () => {
+    const { project } = agencyFixture();
+    user({ role: 'agency', agency_tokens: ['tok1'] });
+    const seen = (await (await request('/api/agency/tok1')).json()).data;
+    assert.deepEqual(seen.platform_budgets, {});
+    assert.equal('budget' in seen.ad_groups[0], false);
+    assert.equal('budget' in seen.ad_groups[0].blocks[0], false);
+    assert.equal(seen.ad_groups[0].blocks[0].platform, 'TikTok');
+    assert.equal(seen.submissions[0].budget, '5000.00');
+    assert.equal(seen.submissions[0].ad_status, 'ยิงแล้ว');
+    assert.equal('ad_spend' in seen.submissions[0], false);
+    assert.deepEqual(seen.submissions[0].perf_stamp, { views: 1000, verdict: 'Pass' });
+    assert.equal(project.ad_groups[0].budget, 90000);
+    user();
+    const staff = (await (await request('/api/agency/tok1')).json()).data;
+    assert.deepEqual(staff.platform_budgets, { TikTok: 90000 });
+    assert.equal(staff.ad_groups[0].blocks[0].budget, '90000');
+    assert.equal(staff.submissions[0].ad_spend, '12000.00');
+    user({ role: 'member', brands: ['Jdent'] });
+    const member = (await (await request('/api/agency/tok1')).json()).data;
+    assert.deepEqual(member.platform_budgets, { TikTok: 90000 });
+    assert.equal('ad_spend' in member.submissions[0], false);
+    assert.deepEqual(member.submissions[0].perf_stamp, { views: 1000, verdict: 'Pass' });
+});
+
+test('agency person edits cannot multiply clip fees, and stale pages are told to refresh', async () => {
+    const { row } = agencyFixture();
+    const person = [], single = [];
+    store.submissions.updatePerson = async (id, pid, fields) => { person.push(fields); return row; };
+    store.submissions.update = async (id, pid, fields) => { single.push(fields); return row; };
+    const put = body => request('/api/agency/tok1/submissions/5', adminToken, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    user({ role: 'agency', agency_tokens: ['tok1'] });
+    // หน้าเก่า + คนคลิปเดียว: ยอดที่ส่งมาคือค่าต่อคลิปอยู่แล้ว รับได้
+    const res = await put({ account_name: 'kol', budget: 8000 });
+    assert.equal(res.status, 200);
+    assert.equal('ad_spend' in (await res.json()).data, false);
+    assert.equal(person[0].budget, 8000);
+    assert.equal(person[0].account_name, 'kol');
+    // หน้าเก่า + คนหลายคลิป: ปฏิเสธทั้งคำขอ ไม่เขียนอะไรเลย
+    store.submissions.listByProject = async () => [row, { ...row, id: 6, clip_no: 2 }];
+    const stale = await put({ account_name: 'kol', budget: 10000 });
+    assert.equal(stale.status, 409);
+    assert.equal((await stale.json()).code, 'STALE_PAGE');
+    assert.equal(person.length, 1);
+    // หน้าใหม่ส่งค่าต่อคลิปพร้อมยืนยัน: รับได้แม้มีหลายคลิป
+    assert.equal((await put({ account_name: 'kol', budget: 7000, budget_per_clip: true })).status, 200);
+    assert.equal(person[1].budget, 7000);
+    // ปุ่มหารเฉลี่ย/ล้างงบส่งแค่ budget ต่อแถว ยังทำงานเหมือนเดิม
+    assert.equal((await put({ budget: 4000 })).status, 200);
+    assert.equal(single[0].budget, 4000);
+    // แก้ข้อมูลตัวคนโดยไม่แตะค่าตัว ไม่ถูกปฏิเสธ
+    assert.equal((await put({ account_name: 'kol2' })).status, 200);
+    assert.equal(person[2].budget, undefined);
+});
+
 test('production refuses missing settings, sample secrets and invalid ports', () => {
     assert.throws(() => validateRuntime({ NODE_ENV: 'production' }), /Missing production settings/);
     const env = { NODE_ENV: 'production', JWT_SECRET: process.env.JWT_SECRET, DB_HOST: 'fixture', DB_PORT: '5432',

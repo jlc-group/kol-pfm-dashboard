@@ -98,6 +98,10 @@ router.post('/', async (req, res, next) => {
     try {
         const { name } = req.body;
         if (!name) return res.status(400).json({ status: 'error', message: 'กรุณาระบุชื่อ Project' });
+        // สร้างได้เฉพาะแบรนด์ที่ตัวเองมีสิทธิ์ ไม่งั้นแคมเปญจะหายจากรายการของคนสร้างทันที (member ต้องระบุแบรนด์เสมอ)
+        if (!canSeeBrand(req.account || req.user, req.body.brand)) {
+            return res.status(403).json({ status: 'error', message: 'เลือกได้เฉพาะแบรนด์ที่คุณได้รับสิทธิ์' });
+        }
 
         // member สร้างให้ทีมตัวเอง; admin ระบุ team_id ได้ (fallback = ทีมตัวเอง)
         const teamId = (req.user.role === 'admin' && req.body.team_id) ? req.body.team_id : req.user.team_id;
@@ -116,6 +120,10 @@ router.put('/:id', async (req, res, next) => {
     try {
         const check = await canEditProject(req, req.params.id);
         if (!check.ok) return res.status(check.code).json({ status: 'error', message: check.message });
+        // ย้ายแคมเปญไปแบรนด์ที่ตัวเองไม่มีสิทธิ์ไม่ได้ (ส่งมาแค่ status ไม่ต้องตรวจ)
+        if (Object.prototype.hasOwnProperty.call(req.body, 'brand') && !canSeeBrand(req.account || req.user, req.body.brand)) {
+            return res.status(403).json({ status: 'error', message: 'เลือกได้เฉพาะแบรนด์ที่คุณได้รับสิทธิ์' });
+        }
         const bodyKeys = Object.keys(req.body);
         const data = await store.projects.update(req.params.id, { ...req.body, updated_by: req.user.id });
         // ถ้าแก้แค่สถานะ บันทึกเป็น "เปลี่ยนสถานะ" มิฉะนั้นเป็น "แก้ไขข้อมูล"

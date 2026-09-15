@@ -5,6 +5,7 @@ const store = require('../store');
 const multer = require('multer');
 const chatHub = require('../services/chatHub');
 const { authenticate } = require('../middleware/auth');
+const { canSeeCostMetrics } = require('../data/roles');
 
 const { UPLOAD_DIR } = require('../config/uploads');
 const router = express.Router();
@@ -132,6 +133,36 @@ function scopedAdGroups(project, link) {
     });
 }
 
+// ===== ตัวเลขเงินที่บัญชีเอเจนซี่ไม่ควรเห็น =====
+// งบที่ทีมตั้ง (งบต่อ Platform / งบกลุ่ม / งบของแต่ละ Platform ในกลุ่ม) และต้นทุนแอดของบริษัท
+// ตัดเฉพาะตอนส่งให้บัญชี agency — ทีมที่เปิดลิงก์เดียวกันเพื่อตรวจงานยังเห็นครบ และข้อมูลใน DB ไม่ถูกแตะ
+// ค่าตัว KOL (budget ของแต่ละแถว) ยังส่งตามเดิม เพราะเอเจนซี่เป็นคนเสนอราคาเอง
+const hidesTeamMoney = req => (req.account || req.user || {}).role === 'agency';
+function withoutGroupBudgets(groups) {
+    return groups.map(g => {
+        const out = { ...g };
+        delete out.budget;   // งบก้อนเดียวของกลุ่มแบบเก่า — หน้าเว็บเกลี่ยกลับเป็นงบต่อ Platform ได้ จึงต้องตัดด้วย
+        if (Array.isArray(g.blocks)) out.blocks = g.blocks.map(b => { const nb = { ...b }; delete nb.budget; return nb; });
+        return out;
+    });
+}
+// ad_status ต้องคงไว้ — แท็บ On Process ใช้ล็อกช่องลิงก์/Gencode/ID Post หลังยิงแอด
+const AD_COST_KEYS = ['ad_spend', 'total_cost', 'cpm', 'cpe'];
+function withoutAdCost(row) {
+    if (!row) return row;
+    const out = { ...row };
+    delete out.ad_spend;
+    if (out.perf_stamp && typeof out.perf_stamp === 'object') {
+        out.perf_stamp = { ...out.perf_stamp };
+        AD_COST_KEYS.forEach(k => { delete out.perf_stamp[k]; });
+    }
+    return out;
+}
+// ต้นทุนแอดใช้กติกาเดียวกับหน้าโฆษณา/KOL Analytics — เห็นเฉพาะ admin/manager (member และเอเจนซี่ไม่เห็น)
+// ต่างจากงบที่ทีมตั้ง ซึ่งซ่อนเฉพาะบัญชีเอเจนซี่ (member ที่เปิดดูลิงก์ยังเห็นงบ)
+const hidesAdCost = req => !canSeeCostMetrics(req.account || req.user);
+const rowsFor = (req, rows) => (hidesAdCost(req) ? rows.map(withoutAdCost) : rows);
+
 // GET /api/agency/:token — ข้อมูลแคมเปญ + รายชื่อที่ส่งไปแล้ว (พร้อมสถานะคัดเลือก)
 router.get('/:token', async (req, res, next) => {
     try {
@@ -139,6 +170,8 @@ router.get('/:token', async (req, res, next) => {
         if (!resolved) return res.status(404).json({ status: 'error', message: 'ลิงก์ไม่ถูกต้องหรือหมดอายุ' });
         const { project, link } = resolved;
         const subs = scopeSubs(await store.submissions.listByProject(project.id), link);
+        const hideMoney = hidesTeamMoney(req);
+        const groups = scopedAdGroups(project, link);
         res.json({
             status: 'success',
             data: {
@@ -147,14 +180,14 @@ router.get('/:token', async (req, res, next) => {
                 objective: project.objective,
                 brief_link: project.brief_link,
                 products: project.products || [],
-                ad_groups: scopedAdGroups(project, link),
+                ad_groups: hideMoney ? withoutGroupBudgets(groups) : groups,
                 kol_target: project.kol_target || 0,
                 agency_name: link.name,        // ชื่อเจ้าของลิงก์ (ถ้าเป็นลิงก์แยกต่อเจ้า)
                 agency_scope: { products: link.products || [], platforms: link.platforms || [], kol_count: link.kol_count || 0 }, // ขอบเขตงานที่รับผิดชอบ
                 product_briefs: scopedProductBriefs(project, link),   // บรีฟต่อสินค้า เฉพาะของเจ้านี้
                 platform_briefs: scopedPlatformBriefs(project, link), // บรีฟหลักต่อ Platform เฉพาะของเจ้านี้
-                platform_budgets: scopedPlatformBudgets(project, link), // งบต่อ Platform เฉพาะของเจ้านี้
-                submissions: subs,
+                platform_budgets: hideMoney ? {} : scopedPlatformBudgets(project, link), // งบต่อ Platform เฉพาะของเจ้านี้ (บัญชีเอเจนซี่ไม่เห็น)
+                submissions: rowsFor(req, subs),
                 reports: Array.isArray(link.reports) ? link.reports : []   // Report ที่เจ้านี้ส่งเข้ามาแล้ว
             }
         });
@@ -188,7 +221,8 @@ router.post('/:token', async (req, res, next) => {
             agency_token: link.scoped ? link.token : null   // ติดตราเจ้าของ (เฉพาะลิงก์แยกต่อเจ้า)
             // จำนวน Content ต่อคนตั้งแยกต่อ Platform ได้ ต้องดูจาก Platform ของ KOL คนนี้ ไม่ใช่ของกลุ่ม
         }, store.resolveGroupClips(grp, platform || null));
-        res.status(201).json({ status: 'success', data: rows[0], data_all: rows });
+        const shown = rowsFor(req, rows);
+        res.status(201).json({ status: 'success', data: shown[0], data_all: shown });
     } catch (err) { next(err); }
 });
 
@@ -221,6 +255,20 @@ router.put('/:token/submissions/:subId', async (req, res, next) => {
         const personFields = ['account_name', 'followers', 'platform', 'product', 'link_account', 'agency', 'content_type', 'tier'];
         const isPersonEdit = personFields.some(f => req.body[f] !== undefined);
         const writer = isPersonEdit ? store.submissions.updatePerson : store.submissions.update;
+        // ค่าตัวเก็บ "ต่อคลิป" แต่แถวที่ยุบรวมในหน้าเว็บมียอดรวมทุกคลิป — หน้าเว็บรุ่นเก่าส่งยอดรวมมากับการแก้ตัวคน
+        // แล้ว updatePerson เขียนยอดนั้นลงทุกคลิป ค่าตัวเลยทวีคูณทุกครั้งที่บันทึก
+        // หน้าเว็บรุ่นใหม่ยืนยันด้วย budget_per_clip — ถ้าไม่มี แปลว่าเป็นแท็บเก่าที่เปิดค้างไว้ก่อน deploy:
+        //   คนที่มีคลิปเดียว ยอดที่ส่งมาคือค่าต่อคลิปอยู่แล้ว รับได้ตามเดิม
+        //   คนที่มีหลายคลิป ปฏิเสธทั้งคำขอให้รีเฟรช ดีกว่าตอบว่าบันทึกแล้วแต่ค่าตัวไม่เปลี่ยน
+        if (isPersonEdit && budget !== undefined && req.body.budget_per_clip !== true) {
+            const target = await store.submissions.get(req.params.subId);
+            const clipCount = (target && target.person_key)
+                ? (await store.submissions.listByProject(project.id)).filter(s => s.person_key === target.person_key).length
+                : 1;
+            if (clipCount > 1) {
+                return res.status(409).json({ status: 'error', code: 'STALE_PAGE', message: 'หน้านี้เป็นเวอร์ชันเก่า กรุณารีเฟรชหน้า (กด F5) แล้วแก้ไขอีกครั้ง' });
+            }
+        }
         const data = await writer.call(store.submissions, req.params.subId, project.id, {
             account_name: account_name !== undefined ? String(account_name).trim() : undefined,
             followers: followers !== undefined ? (Number(followers) || 0) : undefined,
@@ -235,7 +283,7 @@ router.put('/:token/submissions/:subId', async (req, res, next) => {
             reposts: reposts !== undefined ? (Number(reposts) || 0) : undefined
         }, link.name ? `${link.name} (เอเจนซี่)` : 'เอเจนซี่');   // ฝั่งนี้ไม่มีบัญชีผู้ใช้ ใช้ชื่อจากลิงก์แทน
         if (!data) return res.status(404).json({ status: 'error', message: 'ไม่พบรายการ' });
-        res.json({ status: 'success', data });
+        res.json({ status: 'success', data: rowsFor(req, [data])[0] });
     } catch (err) { next(err); }
 });
 
@@ -287,7 +335,7 @@ router.post('/:token/batch', async (req, res, next) => {
             }, store.resolveGroupClips(grp, it.platform || null));
             added.push(...rows);
         }
-        res.status(201).json({ status: 'success', count: added.length, data: added });
+        res.status(201).json({ status: 'success', count: added.length, data: rowsFor(req, added) });
     } catch (err) { next(err); }
 });
 

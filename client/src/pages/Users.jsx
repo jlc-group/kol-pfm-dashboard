@@ -6,12 +6,22 @@ import { BRANDS, ROLE_LABEL } from '../data/brands.js';
 import PasswordInput from '../components/PasswordInput.jsx';
 import { useAuth } from '../auth/AuthContext.jsx';
 
-// ผู้ใช้ใหม่ให้เริ่มที่ Admin Team ไว้ก่อน — จะได้สร้างแคมเปญได้ทันทีตั้งแต่วันแรก
-// ไม่ต้องรอใครมาตั้งทีมให้ทีหลัง (ก่อนหน้านี้ทุกคนที่เพิ่มผ่านหน้าเว็บติดปัญหานี้)
-const DEFAULT_TEAM_NAME = 'Admin Team';
-const defaultTeamId = teams => {
-    const t = teams.find(x => x.name === DEFAULT_TEAM_NAME);
-    return t ? String(t.id) : '';
+// ทีม = สังกัด ไม่ใช่สิทธิ์ (roles.js ตัดสินว่าใครเห็นอะไรจาก role อย่างเดียว ไม่ได้ดูทีม)
+// ค่าตั้งต้นตอนเพิ่มผู้ใช้: admin → ทีม Admin · manager → ทีม Manager · member ต้องเลือกเอง (KOL / Ads)
+// เปลี่ยนทีมทีหลังได้ที่ฟอร์มแก้ไข เช่น Manager ที่ทำงานทีม Ads · agency ไม่มีทีม เพราะไม่เข้า dashboard
+// คนที่ใช้ dashboard ต้องมีทีมเสมอ — server ไม่ให้สร้างแคมเปญถ้าไม่มีทีม (routes/projects.js:104)
+const ROLE_TEAM_NAME = { admin: 'Admin', manager: 'Manager' };
+const teamIdByName = (teams, name) => {
+    const t = teams.find(x => x.name === name);
+    return t ? t.id : null;
+};
+// ทีมที่ member เลือกได้ = ทุกทีมที่ไม่ได้จองไว้ให้สิทธิ์ admin/manager (ตอนนี้คือ KOL, Ads)
+const memberTeams = teams => teams.filter(t => !Object.values(ROLE_TEAM_NAME).includes(t.name));
+// ทีมที่ควรได้ตามสิทธิ์ — member คงทีมเดิมไว้ถ้าเป็นทีมที่เลือกได้ ไม่งั้นคืน null (ต้องให้คนเลือก)
+const teamForRole = (teams, role, currentTeamId) => {
+    if (role === 'agency') return null;
+    if (ROLE_TEAM_NAME[role]) return teamIdByName(teams, ROLE_TEAM_NAME[role]);
+    return memberTeams(teams).some(t => t.id === currentTeamId) ? currentTeamId : null;
 };
 
 function UserForm({ editing, agencyLinks, teams, onClose, onSaved }) {
@@ -19,18 +29,18 @@ function UserForm({ editing, agencyLinks, teams, onClose, onSaved }) {
         username: editing?.username || '',
         password: '',
         role: editing?.role || 'member',
-        team_id: editing?.team_id ? String(editing.team_id) : defaultTeamId(teams),
+        team_id: editing?.team_id ? String(editing.team_id) : '',   // ใช้เฉพาะ member (admin/manager ระบบจัดทีมให้)
         brands: Array.isArray(editing?.brands) ? editing.brands : [],
         agency_tokens: Array.isArray(editing?.agency_tokens) ? editing.agency_tokens : [],
     });
     const [error, setError] = useState('');
     const [saving, setSaving] = useState(false);
     const isEdit = !!editing;
-    // เผื่อกด "เพิ่มผู้ใช้" ตอนรายชื่อทีมยังโหลดไม่เสร็จ — พอทีมมาถึงค่อยเติมค่าตั้งต้นให้
-    useEffect(() => {
-        if (isEdit) return;
-        setForm(f => (f.team_id ? f : { ...f, team_id: defaultTeamId(teams) }));
-    }, [teams, isEdit]);
+    // ทีมที่เลือกไว้ต้องเป็นทีมที่ member เลือกได้จริง (ไม่ใช่ Admin/Manager ที่ติดมาจากสิทธิ์เดิม) ไม่งั้นบังคับเลือกใหม่
+    const memberTeamOk = memberTeams(teams).some(t => String(t.id) === String(form.team_id));
+    // ตอนแก้ไข เลือกทีมไหนก็ได้ — ทีมเป็นแค่สังกัด ไม่ได้กำหนดว่าเห็นอะไร
+    // เช่น Manager ที่อยู่ทีม Ads ก็ยังเห็นทุกอย่างแบบ Manager
+    const anyTeamOk = teams.some(t => String(t.id) === String(form.team_id));
 
     function update(k, v) { setForm(f => ({ ...f, [k]: v })); }
 
@@ -38,13 +48,21 @@ function UserForm({ editing, agencyLinks, teams, onClose, onSaved }) {
         e.preventDefault();
         setError(''); setSaving(true);
         try {
+            // แก้ไข: ใช้ทีมที่เลือกในฟอร์ม (เปลี่ยนทีมได้อิสระ ไม่ผูกกับสิทธิ์)
+            // เพิ่มใหม่: admin/manager ระบบเลือกทีมตามสิทธิ์ให้ · member ใช้ทีมที่เลือก · agency ไม่มีทีม
+            // คำนวณตอนกดบันทึก จึงไม่ต้องห่วงว่ารายชื่อทีมโหลดเสร็จหรือยังตอนเปิดฟอร์ม
+            const teamId = isEdit
+                ? (anyTeamOk ? Number(form.team_id) : null)
+                : form.role === 'member'
+                    ? (memberTeamOk ? Number(form.team_id) : null)
+                    : teamForRole(teams, form.role, null);
             const body = {
                 role: form.role,
                 // admin/manager เห็นทุกแบรนด์ ไม่ต้องส่งรายการแบรนด์ไป
                 brands: form.role === 'member' ? form.brands : [],
                 agency_tokens: form.role === 'agency' ? form.agency_tokens : [],
                 // เอเจนซี่ไม่เข้า dashboard จึงไม่ต้องมีทีม ที่เหลือต้องมี ไม่งั้นสร้างแคมเปญไม่ได้
-                team_id: form.role === 'agency' ? null : (form.team_id ? Number(form.team_id) : null),
+                team_id: form.role === 'agency' ? null : teamId,
             };
             body.username = form.username.trim();
             if (form.password) body.password = form.password;
@@ -87,19 +105,29 @@ function UserForm({ editing, agencyLinks, teams, onClose, onSaved }) {
                                 <option value="agency">Agency — เห็นเฉพาะลิงก์งานของตัวเอง</option>
                             </select>
                     </div>
-                    {/* ทีมเป็นตัวผูกว่าแคมเปญที่สร้างจะอยู่ทีมไหน ถ้าไม่มีทีมจะสร้างแคมเปญไม่ได้เลย
-                        (server ปฏิเสธด้วยข้อความ "ผู้ใช้ยังไม่ได้สังกัดทีม") */}
-                    {form.role !== 'agency' && (
+                    {/* ทีม
+                        - แก้ไข: มีช่องเลือกทีมทุกสิทธิ์ (ยกเว้น agency) เปลี่ยนได้อิสระ ไม่กระทบสิ่งที่มองเห็น
+                        - เพิ่มใหม่: admin/manager ระบบจัดทีมให้ตามสิทธิ์ · member ต้องเลือกว่าอยู่ทีมไหน */}
+                    {isEdit && form.role !== 'agency' && (
                         <div className="field">
-                            <label>ทีม * <span className="dash-section-sub">ต้องมีทีม ไม่งั้นบัญชีนี้จะสร้างแคมเปญไม่ได้</span></label>
-                            <select value={form.team_id} onChange={e => update('team_id', e.target.value)} required>
+                            <label>ทีม * <span className="dash-section-sub">เปลี่ยนทีมได้ ไม่กระทบสิทธิ์ — สิ่งที่มองเห็นขึ้นกับช่องสิทธิ์ด้านบน</span></label>
+                            <select value={anyTeamOk ? form.team_id : ''} onChange={e => update('team_id', e.target.value)} required>
                                 <option value="">— เลือกทีม —</option>
                                 {teams.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
                             </select>
-                            {teams.length === 0 && (
-                                <p className="dash-section-sub">ยังไม่มีทีมในระบบ — สร้างทีมที่หน้า "ทีม" ก่อน</p>
-                            )}
                         </div>
+                    )}
+                    {!isEdit && form.role === 'member' && (
+                        <div className="field">
+                            <label>ทีม * <span className="dash-section-sub">Admin / Manager ระบบจัดทีมให้ตามสิทธิ์ · Member เลือกทีมที่ทำงาน</span></label>
+                            <select value={memberTeamOk ? form.team_id : ''} onChange={e => update('team_id', e.target.value)} required>
+                                <option value="">— เลือกทีม —</option>
+                                {memberTeams(teams).map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                            </select>
+                        </div>
+                    )}
+                    {!isEdit && ROLE_TEAM_NAME[form.role] && (
+                        <p className="dash-section-sub">ทีม: {ROLE_TEAM_NAME[form.role]} — ระบบจัดให้ตามสิทธิ์ (เปลี่ยนทีมทีหลังได้ที่ปุ่มแก้ไข)</p>
                     )}
                     {form.role === 'agency' && (
                         <div className="field">
@@ -152,7 +180,7 @@ function UserForm({ editing, agencyLinks, teams, onClose, onSaved }) {
 export default function Users() {
     const [users, setUsers] = useState([]);
     const [agencyLinks, setAgencyLinks] = useState([]);   // ลิงก์เอเจนซี่ทุกแคมเปญ (ไว้ผูกกับบัญชี role agency)
-    const [teams, setTeams] = useState([]);               // ทีมทั้งหมด (ไว้เลือกให้ผู้ใช้สังกัด)
+    const [teams, setTeams] = useState([]);               // ทีมทั้งหมด (ใช้จัดทีมตามสิทธิ์ และให้ member เลือกทีม)
     const { user: me } = useAuth();                       // บัญชีที่กำลังล็อกอินอยู่ — ห้ามลดสิทธิ์ตัวเอง
     const [busyId, setBusyId] = useState(null);           // แถวที่กำลังบันทึกอยู่ (ล็อก dropdown กันกดซ้ำ)
     const [loading, setLoading] = useState(true);
@@ -202,10 +230,13 @@ export default function Users() {
         const blind = (role === 'member' && !(u.brands || []).length)
             ? '\n\n⚠ บัญชีนี้ยังไม่ได้กำหนดแบรนด์ — เปลี่ยนแล้วจะไม่เห็นข้อมูลใด ๆ จนกว่าจะไปกำหนดแบรนด์ให้ที่ปุ่มแก้ไข (✎)' : '';
         if (!confirm(`เปลี่ยนสิทธิ์ "${who}"\nจาก ${ROLE_LABEL[u.role] || u.role} → ${ROLE_LABEL[role] || role}${admin}${warn}${blind}`)) return;
-        // บัญชีที่ยังไม่มีทีม (เช่น agency ที่ถูกแปลงเป็น role อื่น) ต้องเติมทีมไปพร้อมกัน
-        // ไม่งั้นจะได้บัญชีที่สร้างแคมเปญไม่ได้ — เป็นสถานะที่ฟอร์ม (✎) กันไว้ด้วย required อยู่แล้ว
-        const team = (role !== 'agency' && !u.team_id) ? Number(defaultTeamId(teams)) : 0;
-        patchUser(u, team ? { role, team_id: team } : { role });
+        // เปลี่ยนสิทธิ์ไม่ย้ายทีม — ทีมเป็นสังกัดที่ตั้งเองได้ (เช่น Manager ที่อยู่ทีม Ads)
+        // เติมทีมให้เฉพาะบัญชีที่ยังไม่มีทีม: admin/manager ได้ทีมตามสิทธิ์ · member ต้องเลือกเอง
+        if (u.team_id || role === 'agency') { patchUser(u, { role }); return; }
+        const team = teamForRole(teams, role, null);
+        // ยังไม่มีทีมและระบบเลือกให้ไม่ได้ (member) เปิดฟอร์มแก้ไขให้เลือกทีมและแบรนด์ในจังหวะเดียว
+        if (!team) { setModal({ editing: { ...u, role } }); return; }
+        patchUser(u, { role, team_id: team });
     }
 
 
@@ -214,7 +245,10 @@ export default function Users() {
         const what = status === 'active' ? 'อนุมัติ' : 'ปฏิเสธ';
         if (!confirm(`${what}คำขอของ "${u.nickname || u.username}" ?`)) return;
         try {
-            await api(`/users/${u.id}`, { method: 'PUT', body: { status } });
+            // อนุมัติคนที่ยังไม่มีทีม: admin/manager ใส่ทีมตามสิทธิ์ให้เลย · member ต้องเลือกทีมเอง
+            // จึงอนุมัติไปก่อน แล้วป้าย "ยังไม่มีทีม" ใต้ชื่อจะเตือนให้กด ✎ เลือกทีม · คนที่มีทีมอยู่แล้วไม่ย้าย
+            const team = (status === 'active' && !u.team_id) ? teamForRole(teams, u.role, null) : null;
+            await api(`/users/${u.id}`, { method: 'PUT', body: team ? { status, team_id: team } : { status } });
             load();
             window.dispatchEvent(new Event('kol:users-changed'));
         }
@@ -243,8 +277,8 @@ export default function Users() {
                 <table className="data-table users-table">
                     <thead>
                         <tr>
-                            {/* คอลัมน์ "ทีม" ถูกซ่อนไว้ — ผู้ใช้ใหม่ตั้งต้นเป็น Admin Team ให้อยู่แล้ว
-                                ถ้าต้องเปลี่ยนทีมรายคน ยังทำได้จากปุ่มแก้ไข (✎) ในฟอร์ม */}
+                            {/* คอลัมน์ "ทีม" ถูกซ่อนไว้
+                                เปลี่ยนทีมได้ที่ปุ่มแก้ไข (✎) — ทีมไม่กระทบสิทธิ์การมองเห็น */}
                             <th>ผู้ใช้</th><th>สิทธิ์</th><th>แบรนด์ที่ดูได้</th><th>สถานะ</th><th className="actions">จัดการ</th>
                         </tr>
                     </thead>
@@ -267,7 +301,7 @@ export default function Users() {
                                             {/* คอลัมน์ "ทีม" ถูกซ่อนไปแล้ว แต่ยังต้องเห็นบัญชีที่สร้างแคมเปญไม่ได้
                                                 (เช่นคนที่สมัครเองผ่าน /register จะไม่ได้ทีมมาตั้งแต่ต้น) */}
                                             {u.role !== 'agency' && !u.team_name && (
-                                                <div className="user-noteam" title="ยังไม่ได้สังกัดทีม — บัญชีนี้จะสร้างแคมเปญไม่ได้ กดปุ่มแก้ไข (✎) เพื่อกำหนดทีม">
+                                                <div className="user-noteam" title="ยังไม่ได้สังกัดทีม — บัญชีนี้จะสร้างแคมเปญไม่ได้ กดปุ่มแก้ไข (✎) เพื่อเลือกทีม">
                                                     ⚠ ยังไม่มีทีม
                                                 </div>
                                             )}
