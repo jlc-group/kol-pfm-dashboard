@@ -12,10 +12,12 @@ import { productLabel, asTargetArray } from '../data/products.js';
 import {
     groupPlatforms, kolInScope, contentTypesOf, mediaFor, quotaOf,
     toBlocks, blockKol, blocksKol, blocksBudget, num, needTarget,
-    contentCells, cellKeyOf, cellKey
+    contentCells, cellKeyOf, cellKey, clipCountFor
 } from '../data/adGroups.js';
 import { clipCount, collapseByPerson, countPeople } from '../data/clips.js';
 import StageCards from '../components/StageCards.jsx';
+import FeeInput from '../components/FeeInput.jsx';
+import DivideFeesModal, { feeOf, personKeyOf, feeBudgetFor, feeEligible, locksOnFee } from '../components/DivideFeesModal.jsx';
 import { tabBadges, markSeen, seedDraftsSeen } from '../utils/tabUpdates.js';
 import { fmtRange } from '../utils/date.js';
 import { useAuth } from '../auth/AuthContext.jsx';
@@ -234,8 +236,15 @@ function AddSubmissionModal({ projectId, products = [], groups = [], onClose, on
                             <input value={f.agency} onChange={e => up('agency', e.target.value)} placeholder="ชื่อเอเจนซี่ หรือคนในทีมที่ติดต่อ" />
                         </div>
                         <div className="field">
-                            <label>Budget (฿)</label>
-                            <input type="number" min="0" value={f.budget} onChange={e => up('budget', e.target.value)} placeholder="งบค่าตัว" />
+                            <label>ค่าตัวต่อคลิป (฿) — ไม่บังคับ</label>
+                            <input type="number" min="0" inputMode="numeric" value={f.budget} onChange={e => up('budget', e.target.value)} placeholder="ใส่ทีหลังที่รายชื่อได้" />
+                            {(() => {
+                                // 1 คนทำหลายคลิป -> ทุกคลิปได้ยอดนี้เท่ากัน โชว์ยอดรวมทั้งคนให้เห็นก่อนกดเพิ่ม
+                                const n = g ? clipCountFor(g, gPlats.length === 1 ? gPlats[0] : f.platform) : 1;
+                                return n > 1
+                                    ? <small className="fee-add-total">× {n} คลิป = ฿{((Number(f.budget) || 0) * n).toLocaleString('th-TH')}</small>
+                                    : null;
+                            })()}
                         </div>
                     </div>
                     <div className="field">
@@ -384,6 +393,10 @@ export default function ProjectDetail() {
     const [listPlat, setListPlat] = useState('all');
     // กรองย่อยตาม Content Type ในแพลตฟอร์มนั้น (เช่น Facebook มี Awareness / Engagement)
     const [listCtype, setListCtype] = useState('all');
+    // กรองเฉพาะคนที่ยังไม่ใส่ค่าตัว — ใช้ร่วมกับตัวกรอง Platform / Content Type ได้
+    const [feeOnly, setFeeOnly] = useState(false);
+    // หน้าต่างหาร/ล้างค่าตัวของกลุ่ม { key, gi, mode: 'divide' | 'clear' }
+    const [feeModal, setFeeModal] = useState(null);
     const [badges, setBadges] = useState({ listNew: false, processNew: false });
     const [subsLoaded, setSubsLoaded] = useState(false);
 
@@ -544,6 +557,38 @@ export default function ProjectDetail() {
     // อัปเดต submission (ใช้กับ On Process — บันทึกโพสต์/ดราฟ/feedback ฝั่งทีม)
     const putSubmission = (subId, payload) => api(`/projects/${id}/submissions/${subId}`, { method: 'PUT', body: payload });
 
+    // ===== ค่าตัว KOL (ต่อคลิป) =====
+    // คลิปทั้งหมดของคนนี้ หาจาก submissions ทั้งแคมเปญเสมอ — _clips ของแถวที่ยุบแล้วอาจโดนตัวกรอง/บล็อกสถานะตัดไปบางคลิป
+    const clipsOfPerson = s => submissions
+        .filter(x => personKeyOf(x) === personKeyOf(s))
+        .sort((a, b) => (Number(a.clip_no) || 1) - (Number(b.clip_no) || 1) || (a.id - b.id));
+    // ช่องเดียวต่อคน = ยอดต่อคลิป เขียนลงทุกคลิปของคนนั้นในคำขอเดียว
+    // ส่ง from = ค่าที่หน้าเว็บเห็นอยู่ ถ้ามีคนแก้ไปก่อน server ตอบ 409 จะได้ไม่ทับกัน
+    async function saveFee(clips, value) {
+        const items = clips.filter(c => feeOf(c) !== value).map(c => ({ sub_id: c.id, budget: value, from: feeOf(c) }));
+        if (!items.length) return;
+        // คลิปที่ค่าแอดถึงเกณฑ์แล้วแต่ยังไม่ล็อกผล — บันทึกแล้วผลคุ้ม/ไม่คุ้มจะล็อกทันทีและแก้ย้อนหลังไม่ได้ จึงถามยืนยันก่อน
+        const locking = clips.filter(c => items.some(i => i.sub_id === c.id) && locksOnFee(c, value)).length;
+        if (locking > 0 && !window.confirm(`บันทึกค่าตัว ฿${value.toLocaleString('th-TH')} ต่อคลิปใช่ไหม?\nค่าแอดของ ${locking} คลิปถึงเกณฑ์แล้ว — บันทึกแล้วผลคุ้ม/ไม่คุ้มจะล็อกทันทีและแก้ย้อนหลังไม่ได้`)) {
+            const cancelled = new Error('ยกเลิก');
+            cancelled.cancelled = true;
+            throw cancelled;
+        }
+        try {
+            const res = await api(`/projects/${id}/fees`, { method: 'PUT', body: { items, reason: 'manual' } });
+            // เอาแถวที่ server ส่งกลับมาใส่ก่อนเลย ตัวเลขจะได้ไม่กระพริบกลับค่าเดิมระหว่างรอโหลดใหม่
+            const rows = (res && res.data && res.data.rows) || [];
+            if (rows.length) {
+                const byId = new Map(rows.map(r => [r.id, r]));
+                setSubmissions(list => list.map(x => byId.get(x.id) || x));
+            }
+            loadSubs();
+        } catch (err) {
+            if (err.status === 409) { loadSubs(); throw new Error('มีคนแก้ไปแล้ว — โหลดค่าล่าสุดให้แล้ว'); }
+            throw err;
+        }
+    }
+
     // เปลี่ยนสถานะแคมเปญแบบเร็ว
     async function changeStatus(status) {
         try { await api(`/projects/${id}`, { method: 'PUT', body: { status } }); load(); }
@@ -584,8 +629,14 @@ export default function ProjectDetail() {
     const ctypesOfPlat = p => [...new Set(linkGroups.flatMap(g => contentTypesOf(g, p)))];
     const quotaFor = (p, ct) => linkGroups.reduce((n, g) => n + quotaOf(g, p, ct), 0);
     const subCtypes = listPlat === 'all' ? [] : ctypesOfPlat(listPlat);
-    const matchListFilter = s => (listPlat === 'all' || s.platform === listPlat)
+    const matchScope = s => (listPlat === 'all' || s.platform === listPlat)
         && (listCtype === 'all' || s.content_type === listCtype);
+    // คนที่ยังไม่ใส่ค่าตัว = มีคลิปที่ไม่ได้ถูก "ไม่เลือก" แต่ค่าตัวยังเป็น 0 — นับเป็นคน ไม่ใช่คลิป
+    const missingFee = s => s.status !== 'rejected' && feeOf(s) <= 0;
+    const feeMissingKeys = new Set(submissions.filter(missingFee).map(personKeyOf));
+    const feeMissingCount = countPeople(submissions.filter(s => matchScope(s) && missingFee(s)));
+    // กรองทั้งคน (ทุกคลิป) ไม่ใช่เฉพาะคลิปที่เป็น 0 — ช่องค่าตัวต่อคนจะได้เห็นครบ
+    const matchListFilter = s => matchScope(s) && (!feeOnly || feeMissingKeys.has(personKeyOf(s)));
 
     // แถวในตารางรายชื่อ KOL (action ต่างกันตามกลุ่ม)
     const subRow = (s, i, grp) => (
@@ -610,11 +661,27 @@ export default function ProjectDetail() {
             </td>
             <td className="muted"><ProductSummary value={s.product} /></td>
             <td className="muted">{s.agency || '—'}</td>
-            <td className="num">
-                ฿{Number(s.budget).toLocaleString('th-TH')}
-                {(s._clips || []).length > 1 && (
-                    <small className="sub-budget-split">฿{(Number(s._clips[0].budget) || 0).toLocaleString('th-TH')} × {s._clips.length}</small>
-                )}
+            <td className="num sub-fee">
+                {(() => {
+                    // ช่องเดียวต่อคน โชว์ยอดของคลิปแรก — แก้แล้วเขียนลงทุกคลิปของคนนี้
+                    const clips = clipsOfPerson(s);
+                    const first = feeOf(clips[0] || s);
+                    const uneven = clips.some(c => feeOf(c) !== first);
+                    // คนที่ "ไม่เลือก" ไม่ต้องเตือน และไม่นับคลิปที่ "ไม่เลือก" — ให้ตรงกับตัวนับในแถบกลุ่มและตัวกรอง
+                    const nudge = s.status !== 'rejected' && clips.some(c => c.status !== 'rejected' && feeOf(c) <= 0);
+                    // คลิปไม่เท่ากันหรือยังมีคลิปที่เป็น 0 — พิมพ์ยอดเดียวกับคลิปแรกก็ต้องบันทึกได้ ไม่งั้นแก้ให้เท่ากันไม่ได้
+                    const dirty = uneven || clips.some(c => feeOf(c) <= 0);
+                    // ใช้จับว่าระหว่างพิมพ์มีคนแก้ค่าตัวคนนี้ไปแล้วหรือยัง
+                    const version = clips.map(c => `${c.id}:${feeOf(c)}`).join('|');
+                    return <>
+                        <FeeInput value={first} missing={nudge} dirty={dirty} version={version} onSave={v => saveFee(clips, v)} />
+                        {clips.length > 1 && (
+                            <small className="sub-budget-split">× {clips.length} คลิป = ฿{clips.reduce((n, c) => n + feeOf(c), 0).toLocaleString('th-TH')}</small>
+                        )}
+                        {uneven && <small className="fee-uneven">แต่ละคลิปไม่เท่ากัน — แก้แล้วทุกคลิปจะเป็นยอดนี้</small>}
+                        {nudge && <span className="fee-missing-chip">ยังไม่ใส่ค่าตัว</span>}
+                    </>;
+                })()}
             </td>
             <td>{s.link_account ? <a className="work-link" href={s.link_account} target="_blank" rel="noreferrer"><Icon name="eye" size={12} /> เปิด</a> : '—'}</td>
             <td>
@@ -661,14 +728,17 @@ export default function ProjectDetail() {
                     <span className="sub-group-count">{rows.length}</span>
                 </div>
                 <div className={'panel no-pad ' + extraCls}>
-                    <table className="data-table tight">
-                        <thead><tr>
-                            <th className="sub-no">#</th><th>ชื่อ Account</th><th>Platform</th><th>Content Type</th><th>Product</th><th>KOL Contact</th>
-                            <th className="num">Budget</th><th>ลิงก์</th><th>หมายเหตุ</th><th className="actions">{actionLabel}</th>
-                            <th className="tbl-spacer" aria-hidden="true"></th>
-                        </tr></thead>
-                        <tbody>{rows.map((s, i) => subRow(s, i, grp))}</tbody>
-                    </table>
+                    {/* .panel.no-pad ตัดของที่ล้นทิ้ง — ตารางกว้างขึ้นจากช่องค่าตัว จึงให้เลื่อนซ้าย-ขวาในกล่องนี้แทน */}
+                    <div className="sub-table-scroll">
+                        <table className="data-table tight">
+                            <thead><tr>
+                                <th className="sub-no">#</th><th>ชื่อ Account</th><th>Platform</th><th>Content Type</th><th>Product</th><th>KOL Contact</th>
+                                <th className="num">ค่าตัว/คลิป</th><th>ลิงก์</th><th>หมายเหตุ</th><th className="actions">{actionLabel}</th>
+                                <th className="tbl-spacer" aria-hidden="true"></th>
+                            </tr></thead>
+                            <tbody>{rows.map((s, i) => subRow(s, i, grp))}</tbody>
+                        </table>
+                    </div>
                 </div>
             </div>
         );
@@ -703,7 +773,7 @@ export default function ProjectDetail() {
                     <div className="list-typebox" key={cellKey(c)}>
                         {cellHead(g, c, mine)}
                         {mine.length === 0
-                            ? <div className="proc-group-empty">ยังไม่มีรายชื่อในช่องนี้</div>
+                            ? <div className="proc-group-empty">{feeOnly ? 'ไม่มีคนที่ยังไม่ใส่ค่าตัวในช่องนี้' : 'ยังไม่มีรายชื่อในช่องนี้'}</div>
                             : statusBlocks(mine, g)}
                     </div>
                 );
@@ -736,21 +806,62 @@ export default function ProjectDetail() {
         ? blocksKol(toBlocks(g))
         : quotaOf(g, listPlat, listCtype === 'all' ? null : listCtype);
     // แถบหัวกลุ่มสินค้า (ฝั่งทีม)
+    // Platform ที่สรุป/หารค่าตัวของกลุ่ม — ตามตัวกรอง Platform ที่เลือกอยู่
+    const feePlatsOf = g => groupPlatforms(g).filter(p => listPlat === 'all' || p === listPlat);
     const teamGroupBar = (g, gi, gsubs) => {
-        const conf = countPeople(gsubs.filter(s => s.status === 'confirmed'));
+        // ตัวเลขคัดเลือกนับตามตัวกรอง Platform/Content Type เท่านั้น — เปิดตัวกรอง "ยังไม่ใส่ค่าตัว" แล้วยอดต้องไม่หด
+        const scoped = feeOnly ? submissions.filter(s => s.group_key === g.key && matchScope(s)) : gsubs;
+        const conf = countPeople(scoped.filter(s => s.status === 'confirmed'));
+        // สรุปค่าตัวของกลุ่ม: งบ (กลุ่ม × Platform) เทียบกับค่าตัวที่ใส่แล้ว — ไม่นับคนที่ "ไม่เลือก"
+        const plats = feePlatsOf(g);
+        const feeBudget = plats.reduce((n, p) => n + feeBudgetFor(project, g, p), 0);
+        const feeRows = plats.flatMap(p => feeEligible(submissions, g, p));
+        const feeSet = feeRows.reduce((n, s) => n + feeOf(s), 0);
+        const feeMissing = countPeople(feeRows.filter(s => feeOf(s) <= 0));
         return (
-            <div className="grp-bar grp-bar-stack">
-                <div className="grp-bar-row">
-                    <span className="grp-no">กลุ่มที่ {gi + 1}</span>
-                    <div className="grp-chips"><ProductSummary value={g.products || []} max={4} /></div>
-                    {g.concept && <span className="grp-concept">📝 Concept: {g.concept}</span>}
+            <>
+                <div className="grp-bar grp-bar-stack">
+                    <div className="grp-bar-row">
+                        <span className="grp-no">กลุ่มที่ {gi + 1}</span>
+                        <div className="grp-chips"><ProductSummary value={g.products || []} max={4} /></div>
+                        {g.concept && <span className="grp-concept">📝 Concept: {g.concept}</span>}
+                    </div>
+                    <span className="grp-count grp-count-under">
+                        {/* กรอง Platform/Content Type อยู่ ตัวหารต้องเป็นโควตาเฉพาะที่กรอง ไม่ใช่ยอดรวมทั้งกลุ่ม */}
+                        {conf}/{groupQuota(g) || countPeople(scoped)} คน คัดเลือก
+                        {clipCount(g) > 1 && <span className="grp-count-clip"> · {scoped.filter(s => s.status === 'confirmed').length}/{groupQuota(g) * clipCount(g)} คลิป</span>}
+                    </span>
                 </div>
-                <span className="grp-count grp-count-under">
-                    {/* กรอง Platform/Content Type อยู่ ตัวหารต้องเป็นโควตาเฉพาะที่กรอง ไม่ใช่ยอดรวมทั้งกลุ่ม */}
-                    {conf}/{groupQuota(g) || countPeople(gsubs)} คน คัดเลือก
-                    {clipCount(g) > 1 && <span className="grp-count-clip"> · {gsubs.filter(s => s.status === 'confirmed').length}/{groupQuota(g) * clipCount(g)} คลิป</span>}
-                </span>
-            </div>
+                {(feeBudget > 0 || feeRows.length > 0) && (
+                    <div className="ag-budget-bar fee-group-bar">
+                        <span className="ag-budget-info">
+                            💰 งบกลุ่มนี้ <b>{feeBudget > 0 ? '฿' + feeBudget.toLocaleString('th-TH') : '—'}</b>
+                            {' · '}ใส่แล้ว <b>฿{feeSet.toLocaleString('th-TH')}</b>
+                            {' · '}{feeRows.length === 0
+                                ? <span className="muted">ยังไม่มีรายชื่อ</span>
+                                : feeMissing > 0
+                                    ? <span className="fee-missing-txt">ยังไม่ใส่ค่าตัว {feeMissing} คน</span>
+                                    : <span className="fee-done-txt">✓ ใส่ค่าตัวครบ</span>}
+                            {listPlat !== 'all' && <span className="muted"> ({listPlat})</span>}
+                        </span>
+                        <div className="ag-budget-actions">
+                            {/* กลุ่มที่ไม่มีงบ = ไม่มีอะไรให้หาร จึงไม่มีปุ่มหาร */}
+                            {feeBudget > 0 && (
+                                <button type="button" className="ag-divide-btn" disabled={feeRows.length === 0}
+                                    onClick={() => setFeeModal({ key: g.key, gi, mode: 'divide' })}
+                                    title="หารงบของกลุ่มเท่า ๆ กันต่อคลิป — ดูตัวอย่างก่อนบันทึก">
+                                    = หารเฉลี่ยเท่ากัน
+                                </button>
+                            )}
+                            <button type="button" className="ag-clear-btn" disabled={!feeRows.some(s => feeOf(s) > 0)}
+                                onClick={() => setFeeModal({ key: g.key, gi, mode: 'clear' })}
+                                title="ตั้งค่าตัวของทุกคนในกลุ่มนี้กลับเป็น 0 (ดูตัวอย่างและยืนยันก่อน)">
+                                ล้างค่าตัว
+                            </button>
+                        </div>
+                    </div>
+                )}
+            </>
         );
     };
 
@@ -797,12 +908,17 @@ export default function ProjectDetail() {
                         const planned = Number(project.budget) || 0;
                         const spent = submissions.filter(s => s.status === 'confirmed').reduce((n, s) => n + (Number(s.budget) || 0), 0);
                         const extra = Math.max(0, spent - planned);
+                        // คนที่คัดเลือกแล้วแต่ค่าตัวยังเป็น 0 — ยอดงบด้านบนยังไม่รวมคนกลุ่มนี้
+                        const feeWait = countPeople(submissions.filter(s => s.status === 'confirmed' && feeOf(s) <= 0));
                         return (
                             <div>
                                 <div className="pd-metric-label">งบประมาณ</div>
                                 <div className="pd-metric-value">฿{(planned + extra).toLocaleString('th-TH')}</div>
                                 {extra > 0 && (
                                     <div className="pd-metric-extra">ตั้งไว้ ฿{planned.toLocaleString('th-TH')} · เพิ่มระหว่างทาง ฿{extra.toLocaleString('th-TH')}</div>
+                                )}
+                                {feeWait > 0 && (
+                                    <div className="pd-metric-extra fee-wait-line">คัดเลือกแล้วแต่ยังไม่ใส่ค่าตัว {feeWait} คน</div>
                                 )}
                             </div>
                         );
@@ -1177,6 +1293,17 @@ export default function ProjectDetail() {
                     ))}
                 </div>
             )}
+            {/* ตัวกรองคนที่ยังไม่ใส่ค่าตัว — แถวของตัวเอง โชว์ตลอด ใช้ร่วมกับตัวกรอง Platform / Content Type ด้านบนได้ */}
+            {subTab === 'list' && submissions.length > 0 && (
+                <div className="proc-platfilter fee-filter-row">
+                    <button type="button" aria-pressed={feeOnly}
+                        className={'proc-plat-chip fee-filter-chip' + (feeOnly ? ' on' : '') + (feeMissingCount > 0 ? ' has' : '')}
+                        onClick={() => setFeeOnly(v => !v)}>
+                        {feeOnly ? '✓ ' : ''}ยังไม่ใส่ค่าตัว ({feeMissingCount})
+                    </button>
+                    {feeOnly && <span className="fee-filter-hint">แสดงเฉพาะคนที่ยังไม่ใส่ค่าตัว · ไม่นับคนที่ไม่เลือก</span>}
+                </div>
+            )}
             {subTab === 'list' && (
                 submissions.length === 0 ? (
                     <div className="panel"><p className="empty" style={{ padding: '10px 0' }}>ยังไม่มีรายชื่อจาก Agency — กด "สร้างลิงก์ให้ Agency" แล้วส่งลิงก์ให้เอเจนซี่กรอก</p></div>
@@ -1189,7 +1316,7 @@ export default function ProjectDetail() {
                                 <div className="kol-group-card" key={g.key || gi}>
                                     {teamGroupBar(g, gi, gsubs)}
                                     {gsubs.length === 0
-                                        ? <div className="proc-group-empty">ยังไม่มีรายชื่อในกลุ่มนี้</div>
+                                        ? <div className="proc-group-empty">{feeOnly ? 'ไม่มีคนที่ยังไม่ใส่ค่าตัวในกลุ่มนี้' : 'ยังไม่มีรายชื่อในกลุ่มนี้'}</div>
                                         : cellBlocks(g, gsubs)}
                                 </div>
                             );
@@ -1208,7 +1335,9 @@ export default function ProjectDetail() {
                     </>
                 ) : (
                     /* ไม่มีกลุ่มสินค้า → รวมทั้งหมด */
-                    statusBlocks(submissions.filter(matchListFilter))
+                    (feeOnly && !submissions.some(matchListFilter))
+                        ? <div className="proc-group-empty">ไม่มีคนที่ยังไม่ใส่ค่าตัว</div>
+                        : statusBlocks(submissions.filter(matchListFilter))
                 ))
             )}
 
@@ -1236,6 +1365,27 @@ export default function ProjectDetail() {
                     onAdded={() => { setShowAddSub(false); loadSubs(); }}
                 />
             )}
+
+            {feeModal && (() => {
+                // อ่านกลุ่มจากข้อมูลแคมเปญล่าสุดทุกครั้ง (เผื่อแคมเปญถูกแก้ระหว่างเปิดหน้าต่าง)
+                const g = (project.ad_groups || []).find(x => x.key === feeModal.key);
+                if (!g) return null;
+                return (
+                    <DivideFeesModal
+                        projectId={id}
+                        project={project}
+                        group={g}
+                        groupNo={feeModal.gi + 1}
+                        mode={feeModal.mode}
+                        platforms={feePlatsOf(g)}
+                        filtered={listPlat !== 'all'}
+                        submissions={submissions}
+                        onClose={() => setFeeModal(null)}
+                        onReload={loadSubs}
+                        onDone={() => { setFeeModal(null); loadSubs(); }}
+                    />
+                );
+            })()}
 
             {showEdit && (
                 <ProjectForm

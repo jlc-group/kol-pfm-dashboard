@@ -66,6 +66,10 @@ function StampBadge({ row }) {
     const st = row.perf_stamp;
     if (!st) {
         if (row.stamp_waiting) {
+            // ค่าแอดถึงเกณฑ์ + มียอดวิวแล้ว ติดอยู่อย่างเดียวคือทีมยังไม่ใส่ค่าตัว — บอกให้ตรงจุด ไม่ใช่ "รอข้อมูล"
+            if (row.stamp_wait_reason === 'fee') {
+                return <span className="perf-pill wait fee" title="ค่าแอดถึงเกณฑ์และมียอดวิวแล้ว แต่ทีมยังไม่ได้ใส่ค่าตัว KOL — ใส่ที่หน้าแคมเปญแล้วระบบจะล็อกผลให้ทันที">รอค่าตัว</span>;
+            }
             return <span className="perf-pill wait" title={`ค่ายิงแอดถึงเกณฑ์แล้ว แต่ยังไม่มียอดวิวให้ตัดสิน
 ระบบจะสแตมป์ให้เองทันทีที่ข้อมูลผลงานเข้ามา`}>Awaiting data</span>;
         }

@@ -12,7 +12,7 @@ import ProductChips, { ProductSummary } from '../components/ProductChips.jsx';
 import { productLabel } from '../data/products.js';
 import {
     groupPlatforms, allocsInScope, contentTypesOf, mediaFor,
-    tiersOf, productsFor, budgetFor, clipCountFor, quotaOf, contentCells, cellKeyOf, cellKey
+    tiersOf, productsFor, clipCountFor, quotaOf, contentCells, cellKeyOf, cellKey
 } from '../data/adGroups.js';
 import { groupClips, clipCount, collapseByPerson, countPeople } from '../data/clips.js';
 import { tabBadges, markSeen, seedDraftsSeen } from '../utils/tabUpdates.js';
@@ -380,7 +380,7 @@ function LeftoverBox({ rows, group, agencyName, onEdit, onDelete, onNote }) {
 }
 
 // section 1 กลุ่มสินค้า — โชว์ความต้องการ (Platform/Tier/จำนวน) + กล่องกรอกแยกตาม Content Type
-function GroupSection({ token, group, gi, subs, onReload, onEdit, onDelete, onNote, agencyName, platformBudgets = {}, showTeamBudget = false, scopePlatforms = [], platFilter = 'all' }) {
+function GroupSection({ token, group, gi, subs, onReload, onEdit, onDelete, onNote, agencyName, scopePlatforms = [], platFilter = 'all' }) {
     const groupPlats = groupPlatforms(group);
     // Platform ที่กำลังดูอยู่ — งบ / จำนวนคน / Content ต่อคน ต้องคิดเฉพาะขอบเขตนี้
     const scopePlats = platFilter !== 'all' ? [platFilter]
@@ -407,56 +407,10 @@ function GroupSection({ token, group, gi, subs, onReload, onEdit, onDelete, onNo
     const known = new Set(cells.map(cellKey));
     const leftover = groupSubs.filter(s => !known.has(cellKeyOf(group, s)));
 
-    // Budget ของกลุ่มนี้ (สำหรับปุ่มหารเฉลี่ยแบบเหมาราคา)
     // เป้าจำนวน Content = ผลรวมของ (คนที่ต้องการ × Content ต่อคน) ของแต่ละ Platform ในขอบเขต
     const totalClips = scopePlats.reduce((s, p) => s + quotaOf(group, p) * clipCountFor(group, p), 0) || total;
-    // บัญชีเอเจนซี่ไม่เห็นงบที่ทีมตั้ง (server ก็ไม่ส่งมาให้) — แถบงบ/ปุ่มหารเฉลี่ยจึงมีเฉพาะทีมที่เปิดดูลิงก์
-    const groupBudget = !showTeamBudget ? 0 : (scopePlats.reduce((s, p) => s + budgetFor(group, p), 0)
-        || ((group.budget != null && group.budget !== '') ? (Number(group.budget) || 0) : 0)
-        || scopePlats.reduce((s, p) => s + (Number(platformBudgets[p]) || 0), 0));
-    // งบเป็นต่อคลิป เพราะเวลายิงแอดคิดจากงบของคลิปนั้น ๆ
-    const perHead = (groupBudget > 0 && totalClips > 0) ? Math.round(groupBudget / totalClips) : 0;
-    const perUnit = perClip > 1 ? 'คลิป' : 'คน';
-    const fmtBaht = n => '฿' + (Number(n) || 0).toLocaleString('th-TH');
-
-    // จำว่ากลุ่มนี้ "หารเฉลี่ยแล้ว" (ต่อ token+group) เพื่อให้แถวใหม่เติมยอดต่อหัวอัตโนมัติ แม้รีเฟรชหน้า
-    const divKey = `agdiv_${token}_${group.key}`;
-    const [divided, setDivided] = useState(() => { try { return localStorage.getItem(divKey) === '1'; } catch { return false; } });
-    const autoBudget = (divided && perHead > 0) ? String(perHead) : '';
-    const [err, setErr] = useState('');
-
-    // เหมาราคา: หารงบกลุ่มเท่าๆ กัน แล้ว "จำ" ไว้ทั้งกลุ่ม — ทับทุกคน (ทั้งแถวที่กรอก + คนที่บันทึกแล้ว) ให้เท่ากันหมด
-    async function divideBudget() {
-        if (perHead <= 0) return;
-        setDivided(true);
-        try { localStorage.setItem(divKey, '1'); } catch { /* ignore */ }
-        // ทับ Budget ของคนที่บันทึกแล้วทุกคนในกลุ่มบนเซิร์ฟเวอร์
-        const toUpdate = groupRows.filter(s => (Number(s.budget) || 0) !== perHead);   // ทุกแถวคลิป
-        if (toUpdate.length) {
-            try {
-                await Promise.all(toUpdate.map(s => api(`/agency/${token}/submissions/${s.id}`, { method: 'PUT', body: { budget: perHead } })));
-                onReload();
-            } catch (e) { setErr(e.message); }
-        }
-    }
-
-    // ล้าง Budget ทั้งกลุ่ม — เผื่อกดหารเฉลี่ยผิด หรืออยากกลับไปกรอกทีละคน
-    // ทับของจริงบนเซิร์ฟเวอร์ด้วย เลยถามยืนยันก่อนเสมอ
-    async function clearBudget() {
-        const hasBudget = groupRows.filter(x => (Number(x.budget) || 0) > 0);   // ทุกแถวคลิป
-        const msg = hasBudget.length
-            ? `ล้าง Budget ของกลุ่มนี้?\nคนที่บันทึกไปแล้ว ${hasBudget.length} คน จะถูกตั้งเป็น 0 ด้วย`
-            : 'ล้าง Budget ที่กรอกค้างไว้ในกลุ่มนี้?';
-        if (!window.confirm(msg)) return;
-        setDivided(false);
-        try { localStorage.removeItem(divKey); } catch { /* ignore */ }
-        if (hasBudget.length) {
-            try {
-                await Promise.all(hasBudget.map(x => api(`/agency/${token}/submissions/${x.id}`, { method: 'PUT', body: { budget: 0 } })));
-                onReload();
-            } catch (e) { setErr(e.message); }
-        }
-    }
+    // แถบงบกลุ่ม + ปุ่มหารเฉลี่ย/ล้างงบ ย้ายไปอยู่หน้าแคมเปญฝั่งทีมแล้ว (ProjectDetail → DivideFeesModal)
+    // ที่นั่นมีตัวอย่างก่อนบันทึก กันคนแก้ทับกัน และบันทึกประวัติ — หน้านี้จึงไม่มีปุ่มที่เขียนค่าตัวทั้งกลุ่มอีก
 
     let runningNo = 1;
     return (
@@ -486,28 +440,6 @@ function GroupSection({ token, group, gi, subs, onReload, onEdit, onDelete, onNo
             {group.brief && <a className="brief-link ag-group-brief" href={group.brief} target="_blank" rel="noreferrer"><Icon name="eye" size={14} /> เปิดบรีฟกลุ่มนี้</a>}
             {clipNames.length > 1 && <div className="ag-clip-names">🎬 ต้องส่ง {clipNames.join(' · ')}</div>}
 
-            {err && <div className="alert-error">{err}</div>}
-            {groupBudget > 0 && (
-                <div className="ag-budget-bar">
-                    <span className="ag-budget-info">
-                        💰 Budget กลุ่มนี้ <b>{fmtBaht(groupBudget)}</b>
-                        {divided && <span className="ag-divided-tag">✓ หารเฉลี่ยแล้ว {fmtBaht(perHead)}/{perUnit} (แถวใหม่เติมอัตโนมัติ)</span>}
-                    </span>
-                    {/* จับสองปุ่มเป็นกลุ่มเดียว จะได้เกาะกันชิดขวาเสมอ แม้ตอนข้อความยาวจนตกบรรทัด */}
-                    <div className="ag-budget-actions">
-                        <button type="button" className={'ag-divide-btn' + (divided ? ' on' : '')} onClick={divideBudget} disabled={perHead <= 0}
-                            title="เหมาราคา: หารงบเท่าๆ กันทุกคน แล้วจำไว้ทั้งกลุ่ม (ทับ Budget ทุกคน + แถวใหม่เติมให้อัตโนมัติ)">
-                            {divided ? `↻ ทับใหม่ (${fmtBaht(perHead)}/${perUnit})` : `= หารเฉลี่ยเท่ากัน (${fmtBaht(perHead)}/${perUnit})`}
-                        </button>
-                        <button type="button" className="ag-clear-btn" onClick={clearBudget}
-                            disabled={!divided && !groupRows.some(x => (Number(x.budget) || 0) > 0)}
-                            title="ล้าง Budget ของทุกคนในกลุ่มนี้ กลับไปกรอกทีละคนเอง">
-                            ล้างงบ
-                        </button>
-                    </div>
-                </div>
-            )}
-
             {cells.map(c => {
                 const key = cellKey(c);
                 const mine = groupSubs.filter(s => cellKeyOf(group, s) === key);
@@ -517,7 +449,7 @@ function GroupSection({ token, group, gi, subs, onReload, onEdit, onDelete, onNo
                     <TypeBox key={key} token={token} group={group}
                         platform={c.platform} contentType={c.contentType}
                         saved={mine} quota={quotaOf(group, c.platform, c.contentType || null)}
-                        agencyName={agencyName} autoBudget={autoBudget} startNo={startNo}
+                        agencyName={agencyName} autoBudget="" startNo={startNo}
                         onReload={onReload} onEdit={onEdit} onDelete={onDelete} onNote={onNote} />
                 );
             })}
@@ -845,7 +777,7 @@ export default function AgencyPortal() {
                     {adGroups.length > 0 ? (
                         <>
                             {adGroups.map((g, gi) => (
-                                <GroupSection key={g.key || gi} token={token} group={g} gi={gi} subs={subs} onReload={load} onEdit={setEditSub} onDelete={deleteSub} onNote={saveNote} agencyName={info.agency_name} platformBudgets={platformBudgets} showTeamBudget={seesTeamBudget} scopePlatforms={scopePlatforms} platFilter={platFilter} />
+                                <GroupSection key={g.key || gi} token={token} group={g} gi={gi} subs={subs} onReload={load} onEdit={setEditSub} onDelete={deleteSub} onNote={saveNote} agencyName={info.agency_name} scopePlatforms={scopePlatforms} platFilter={platFilter} />
                             ))}
                             {ungrouped.length > 0 && (
                                 <div className="agency-card">

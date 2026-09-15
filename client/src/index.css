@@ -2985,3 +2985,96 @@ button { color: inherit; }
     html { scroll-behavior: auto; }
     *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
 }
+
+/* ===== ค่าตัว KOL ต่อคลิป (ฝั่งทีม — หน้าแคมเปญ) ===== */
+/* ตารางรายชื่อกว้างขึ้นจากช่องกรอกค่าตัว — .panel.no-pad ตัดของที่ล้นทิ้ง จึงต้องมีกล่องเลื่อนซ้าย-ขวาของตัวเอง */
+.sub-table-scroll { overflow-x: auto; scrollbar-width: thin; overscroll-behavior-inline: contain; }
+/* ช่องค่าตัวมีคำอธิบายใต้ช่อง ต้องตัดบรรทัดได้ ไม่งั้น nowrap ของ .tight จะดันตารางกว้างเกิน */
+.data-table.tight td.sub-fee { white-space: normal; min-width: 136px; max-width: 220px; }
+.fee-input-wrap { display: inline-flex; flex-direction: column; align-items: flex-end; gap: 3px; max-width: 100%; vertical-align: middle; }
+.fee-input {
+    display: inline-flex; align-items: center; gap: 4px; padding: 0 8px;
+    border: 1px solid var(--border); border-radius: 9px; background: #fff;
+    transition: border-color .12s, box-shadow .12s;
+}
+.fee-input:focus-within { border-color: var(--mint); box-shadow: 0 0 0 3px rgba(16,185,129,.12); }
+.fee-input-cur { font-size: 12px; font-weight: 700; color: var(--muted); }
+.fee-input input {
+    width: 92px; min-width: 0; padding: 8px 0; border: 0; background: transparent;
+    font: inherit; font-size: 13px; font-weight: 700; color: var(--text); text-align: right; font-variant-numeric: tabular-nums;
+}
+.fee-input input:focus { outline: none; }
+.fee-input input::placeholder { color: #d6a35c; font-weight: 600; }
+/* ค่าตัวยังเป็น 0 — ขอบประสีเหลืองอำพัน บอกว่ายังค้างอยู่ แต่ไม่ใช่ข้อผิดพลาด (จึงไม่ใช้สีแดง) */
+.fee-input.missing { border: 1.5px dashed #f59e0b; background: #fffbeb; }
+.fee-input.err { border-color: var(--danger); }
+.fee-input-st { width: 14px; text-align: center; font-size: 12px; font-weight: 800; }
+.fee-input-st.ok { color: var(--mint-dark); }
+.fee-input-st.saving { color: var(--muted); }
+.fee-input-msg { font-size: 10.5px; font-weight: 600; color: var(--muted); text-align: right; white-space: normal; }
+.fee-input-msg.err { color: var(--danger); max-width: 200px; }
+.fee-uneven { display: block; margin-top: 2px; font-size: 10.5px; font-weight: 600; line-height: 1.35; color: #b45309; white-space: normal; }
+.fee-missing-chip {
+    display: inline-block; margin-top: 4px; padding: 1px 8px; border-radius: 999px;
+    background: #fef3c7; border: 1px dashed #f59e0b; color: #b45309;
+    font-size: 10.5px; font-weight: 800; white-space: nowrap;
+}
+/* แถบสรุปค่าตัวใต้หัวกลุ่ม */
+.fee-missing-txt { color: #b45309; font-weight: 800; }
+.fee-done-txt { color: var(--mint-dark); font-weight: 800; }
+/* ชิปกรอง "ยังไม่ใส่ค่าตัว" — ยังมีคนค้างอยู่ให้ขอบประสีอำพันดึงสายตา */
+.fee-filter-row { margin-top: -4px; }
+.proc-plat-chip.fee-filter-chip.has:not(.on) { border-style: dashed; border-color: #f59e0b; background: #fffbeb; color: #b45309; }
+.fee-filter-hint { font-size: 11.5px; color: var(--muted); }
+.pd-metric-extra.fee-wait-line { color: #b45309; font-weight: 700; }
+.fee-add-total { display: block; margin-top: 5px; font-size: 12px; font-weight: 700; color: #4338ca; }
+/* หน้า KOL / Ads: สแตมป์รอค่าตัว (ไม่ใช่รอข้อมูลซิงก์) */
+.perf-pill.wait.fee { background: #fef3c7; color: #92400e; border: 1px dashed #f59e0b; }
+
+/* หน้าต่างหาร/ล้างค่าตัว */
+.modal.fee-modal { width: min(100%, 760px); max-width: 760px; }
+.fee-modal-sub { margin: -8px 0 14px; font-size: 12.5px; line-height: 1.55; color: var(--muted); }
+.fee-modal-sub b { color: var(--text); }
+/* .modal input ตั้ง width 100% + padding ให้ช่องกรอกทุกช่อง — radio/checkbox ต้องคืนขนาดปกติ */
+.fee-modal input[type="radio"], .fee-modal input[type="checkbox"] {
+    width: auto; margin: 3px 0 0; padding: 0; flex-shrink: 0; box-shadow: none; accent-color: var(--mint-dark);
+}
+.fee-mode { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 14px; }
+.fee-mode-opt { display: flex; align-items: flex-start; gap: 8px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 11px; background: #fff; cursor: pointer; }
+.fee-mode-opt.on { border-color: var(--mint); background: var(--bg-soft); }
+.fee-mode-opt b { display: block; font-size: 13px; }
+.fee-mode-opt small { display: block; margin-top: 2px; font-size: 11.5px; color: var(--muted); }
+.fee-plan { margin-bottom: 10px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 12px; }
+.fee-plan-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 8px; }
+.fee-plan-calc { font-size: 12.5px; color: var(--text); }
+.fee-plan-calc b { color: var(--mint-dark); }
+.fee-plan-note { padding: 4px 2px; font-size: 12px; color: var(--muted); }
+.fee-preview-scroll { max-height: 280px; overflow: auto; border: 1px solid var(--border); border-radius: 9px; }
+.fee-preview { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.fee-preview th, .fee-preview td { padding: 7px 10px; border-bottom: 1px solid var(--border); text-align: left; white-space: nowrap; }
+.fee-preview th { position: sticky; top: 0; z-index: 1; background: #f5faf8; font-size: 11px; font-weight: 700; color: var(--muted); }
+.fee-preview th.num, .fee-preview td.num { text-align: right; }
+.fee-preview tbody tr:last-child td { border-bottom: 0; }
+.fee-preview td:first-child { max-width: 220px; overflow: hidden; text-overflow: ellipsis; }
+.fee-old { color: var(--muted); }
+.fee-new { color: var(--mint-dark); }
+.fee-new.clear { color: var(--danger); }
+.fee-plan-sum { display: flex; flex-direction: column; gap: 3px; margin-top: 8px; font-size: 12px; color: var(--text); }
+.fee-plan-sum b { color: var(--mint-dark); }
+.fee-plan-sum .warn { color: #b45309; font-weight: 700; }
+.fee-confirm {
+    display: flex; align-items: flex-start; gap: 8px; margin: 12px 0 6px; padding: 10px 12px;
+    border: 1px dashed #f59e0b; border-radius: 11px; background: #fffbeb;
+    font-size: 12.5px; font-weight: 700; color: #92400e; cursor: pointer;
+}
+/* ปุ่มบันทึกเกาะขอบล่างของหน้าต่าง ตัวอย่างยาวแค่ไหนก็กดได้โดยไม่ต้องเลื่อนลงไปหา */
+.fee-modal-actions { position: sticky; bottom: 0; margin-top: 12px; padding-top: 10px; background: #fff; }
+.fee-modal-actions .btn-danger { padding: 11px 18px; border-radius: 11px; font-weight: 700; font-size: 13.5px; cursor: pointer; }
+@media (max-width: 600px) {
+    /* มือถือ: หน้าต่างหารค่าตัวเต็มจอ ตารางตัวอย่างอ่านง่ายกว่าแผ่นเลื่อนขึ้นจากล่าง */
+    .modal-backdrop.fee-modal-backdrop { padding: 0; align-items: stretch; }
+    .modal.fee-modal { width: 100%; max-width: none; height: 100dvh; max-height: 100dvh; border-radius: 0; padding: 18px 14px; }
+    .fee-mode { grid-template-columns: 1fr; }
+    .fee-modal-actions > button { flex: 1 1 0; }
+    .fee-input input { width: 78px; }
+}

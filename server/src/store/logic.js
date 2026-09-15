@@ -109,6 +109,9 @@ function maybeStamp(s) {
     const views = Number(s.views) || 0;
     // ถึงเกณฑ์แล้วแต่ยังไม่มีผลงาน -> รอไว้ก่อน ไม่งั้นจะล็อกค่าว่างค้างถาวร
     if (views <= 0) return null;
+    // ยังไม่ได้ใส่ค่าตัว -> รอไว้ก่อน ไม่งั้นต้นทุนรวมเหลือแค่ค่าแอด CPM/CPE ต่ำเกินจริงแล้วล็อกค้างถาวร
+    // (ใส่ค่าตัวเมื่อไหร่ submissions.updateOne เรียกฟังก์ชันนี้ซ้ำ แล้วสแตมป์ตอนนั้นเอง)
+    if ((Number(s.budget) || 0) <= 0) return null;
     const engagement = engagementOf(s);
     const totalCost = (Number(s.budget) || 0) + spend;
     const cpm = Number((totalCost / (views / 1000)).toFixed(2));
@@ -125,11 +128,23 @@ function maybeStamp(s) {
     return s.perf_stamp;
 }
 
+// ค่าแอดถึงเกณฑ์แล้วแต่ยังสแตมป์ไม่ได้เพราะรออะไรอยู่ — ให้หน้าเว็บบอกได้ว่าต้องไปกรอกช่องไหน
+// 'views' = ยังไม่มียอดวิว · 'fee' = ยังไม่ได้ใส่ค่าตัว
+// null = ไม่ได้รออะไร (สแตมป์แล้ว / ค่าแอดยังไม่ถึงเกณฑ์ / ครบแล้วรอสแตมป์รอบถัดไป)
+// ลำดับการเช็คต้องตรงกับ maybeStamp: ยอดวิวก่อน แล้วค่อยค่าตัว
+function stampWaitReason(s) {
+    if (!s || s.perf_stamp) return null;
+    if ((Number(s.ad_spend) || 0) < AD_STAMP_AT) return null;
+    if ((Number(s.views) || 0) <= 0) return 'views';
+    if ((Number(s.budget) || 0) <= 0) return 'fee';
+    return null;
+}
+
 
 module.exports = {
     GOOD_CPM, GOOD_CPE, TARGET_PLATFORMS, AD_STAMP_AT, now, clone,
     duplicateError, inScope, scopeProjects,
     linkGroupPlatforms, resolveGroupClips, resolveGroupTarget,
     resolveGroupProducts, resolveGroupCtype, resolveGroupMedia,
-    engagementOf, maybeStamp
+    engagementOf, maybeStamp, stampWaitReason
 };

@@ -152,7 +152,9 @@ async function updateOne(client, subId, projectId, fields, byName) {
     });
 
     // ปรับ timestamp ตามหมวดของข้อมูลที่แก้ (ใช้ทำแจ้งเตือนแท็บ)
-    const LIST_F = ['account_name', 'followers', 'platform', 'product', 'agency', 'budget', 'link_account', 'tier', 'content_type', 'group_key', 'status'];
+    // budget ไม่อยู่ใน LIST_F — ทีมตั้งค่าตัวจากหน้า Dashboard ทีละหลายสิบแถว (หารเฉลี่ย/ล้างค่าตัว)
+    // ถ้าขยับ list_updated_at ด้วย ป้าย "มีอัปเดตใหม่" ฝั่งเอเจนซี่จะเด้งทั้งแคมเปญทั้งที่รายชื่อไม่ได้เปลี่ยน
+    const LIST_F = ['account_name', 'followers', 'platform', 'product', 'agency', 'link_account', 'tier', 'content_type', 'group_key', 'status'];
     const WORK_F = ['draft_link', 'draft_link2', 'draft_link3', 'draft_link4', 'draft_link5', 'draft_status', 'feedback', 'feedback2', 'feedback3', 'feedback4', 'feedback5', 'gencode', 'post_url', 'post_date', 'id_post', 'code_expire', 'approved', 'concept', 'gen_date'];
     const DRAFT_F = ['draft_link', 'draft_link2', 'draft_link3', 'draft_link4', 'draft_link5', 'draft_status', 'feedback', 'feedback2', 'feedback3', 'feedback4', 'feedback5'];
     const keys = Object.keys(fields).filter(k => fields[k] !== undefined); // นับเฉพาะ field ที่ส่งมาจริง
@@ -255,6 +257,67 @@ const submissions = {
     // อัปเดตได้ทั้งสถานะคัดเลือก + ข้อมูลดราฟงาน
     async update(subId, projectId, fields, byName) {
         return withTransaction(client => updateOne(client, subId, projectId, fields, byName));
+    },
+    /**
+     * ตั้งค่าตัว (ต่อคลิป) หลายแถวในคำขอเดียว — กรอกรายคน / หารเฉลี่ย / ล้างค่าตัว จากหน้า Dashboard
+     *
+     * items = [{ sub_id, budget, from? }] · from = ค่าตัวที่หน้าเว็บเห็นก่อนแก้
+     * ทั้งชุดอยู่ใน transaction เดียว: ผ่านครบถึงบันทึก ไม่งั้นไม่บันทึกอะไรเลย
+     * (หารเฉลี่ยทั้งกลุ่มแล้วพังกลางทาง = ยอดรวมไม่ตรงงบ ซึ่งแย่กว่าไม่บันทึก)
+     * แต่ละแถวเขียนผ่าน updateOne ตามเดิม เพื่อให้สแตมป์ผลงาน (maybeStamp) ทำงานทันทีที่ใส่ค่าตัว
+     *
+     * คืน { rows: แถวล่าสุดเรียงตามที่ส่งมา, changed: เฉพาะแถวที่ค่าตัวเปลี่ยนจริง }
+     * error ที่ตั้งใจโยน: status 400 = มีแถวที่ไม่ใช่ของแคมเปญนี้ · 409 = มีคนแก้ค่าตัวแทรกไปแล้ว
+     */
+    async setFees(projectId, items, byName) {
+        const fail = (status, message) => { const e = new Error(message); e.status = status; return e; };
+        const pid = numOr(projectId);
+        const list = Array.isArray(items) ? items : [];
+        if (pid === null || !list.length) throw fail(400, 'ไม่มีรายการค่าตัวที่จะบันทึก');
+        const ids = list.map(it => numOr(it && it.sub_id));
+        // numOr(null) ได้ 0 จึงต้องกัน id <= 0 ด้วย ไม่งั้นรายการว่างจะหลุดไปถึง SQL
+        if (ids.some(id => !Number.isInteger(id) || id <= 0) || new Set(ids).size !== ids.length) {
+            throw fail(400, 'รายการค่าตัวไม่ถูกต้อง');
+        }
+        // ปัดทีละสตางค์ให้ตรงกับคอลัมน์ NUMERIC(18,2) — ตัวเลขเท่านั้น ห้ามเดา '' / null เป็น 0 เงียบ ๆ
+        const fees = list.map(it => (typeof it.budget === 'number' ? Math.round(it.budget * 100) / 100 : NaN));
+        if (fees.some(b => !Number.isFinite(b) || b < 0)) throw fail(400, 'ค่าตัวไม่ถูกต้อง');
+        const cents = v => Math.round((Number(v) || 0) * 100);   // เทียบเป็นสตางค์ กันทศนิยมลอยของ JS
+
+        return withTransaction(async (client) => {
+            // ล็อกทุกแถวก่อนเทียบค่าเดิม — กันอีกคน (หรือหน้าเอเจนซี่) แก้แทรกระหว่างทาง
+            // เรียงตาม id เสมอ สองคำขอที่ล็อกแถวชุดเดียวกันจะได้ไม่รอกันเองจนค้าง (deadlock)
+            const r = await client.query(
+                'SELECT * FROM submissions WHERE project_id = $1 AND id = ANY($2::int[]) ORDER BY id FOR UPDATE',
+                [pid, ids]);
+            const locked = new Map(r.rows.map(s => [s.id, s]));
+            if (locked.size !== ids.length) throw fail(400, 'มีรายการที่ไม่ได้อยู่ในแคมเปญนี้ กรุณารีเฟรช');
+            list.forEach((it, i) => {
+                if (it.from === undefined) return;
+                if (cents(locked.get(ids[i]).budget) !== cents(it.from)) {
+                    throw fail(409, 'มีคนแก้ค่าตัวนี้ไปแล้ว กรุณารีเฟรช');
+                }
+            });
+
+            const after = new Map();      // id -> แถวหลังบันทึก
+            const diff = new Map();       // id -> รายการที่เปลี่ยนจริง
+            const order = ids.map((_, i) => i).sort((a, b) => ids[a] - ids[b]);   // เขียนตามลำดับเดียวกับที่ล็อก
+            for (const i of order) {
+                const cur = locked.get(ids[i]);
+                // ค่าเท่าเดิมไม่ต้องเขียน — ไม่งั้นประวัติจะมีรายการ "เปลี่ยน" ที่ไม่ได้เปลี่ยนอะไร
+                if (cents(cur.budget) === cents(fees[i])) { after.set(cur.id, cur); continue; }
+                const row = await updateOne(client, cur.id, pid, { budget: fees[i] }, byName);
+                after.set(cur.id, row);
+                diff.set(cur.id, {
+                    id: cur.id, account_name: cur.account_name, clip_no: cur.clip_no,
+                    from: Number(cur.budget) || 0, to: Number(row.budget) || 0
+                });
+            }
+            return {
+                rows: ids.map(id => after.get(id)),
+                changed: ids.filter(id => diff.has(id)).map(id => diff.get(id))
+            };
+        });
     },
     async countPending(projectId) {
         const pid = numOr(projectId);

@@ -9,12 +9,7 @@
  */
 const { query, insertRow, updateRow, asNum, asNumOrNull, asJson } = require('./_base');
 const { loadSnapshot } = require('./_snapshot');
-const { now, clone, duplicateError, scopeProjects, GOOD_CPM, GOOD_CPE } = require('../logic');
-
-// เกณฑ์ค่าแอดที่ระบบจะล็อกผลงาน (สแตมป์)
-// หมายเหตุ: jsonStore ประกาศค่านี้ไว้ที่บรรทัด 1278 (const AD_STAMP_AT = 10000) และใช้ข้ามมาที่ analytics
-// ส่วน logic.js อ้างถึง AD_STAMP_AT แต่ไม่ได้ประกาศ/ส่งออก จึงต้องประกาศซ้ำที่นี่ให้ค่าตรงกันเป๊ะ
-const AD_STAMP_AT = 10000;
+const { now, clone, duplicateError, scopeProjects, GOOD_CPM, GOOD_CPE, stampWaitReason } = require('../logic');
 
 // id ที่ส่งมาเป็นสตริงจาก URL — jsonStore ใช้ Number(id) เทียบตรง ๆ
 // ค่าที่แปลงไม่ได้ (NaN) จะหาไม่เจอเสมอ ต้องดักไว้ก่อนยิง SQL ไม่งั้น Postgres จะ error แทนที่จะคืน null
@@ -229,6 +224,7 @@ const kols = {
                 const cpe = engagement > 0 ? Number((totalCost / engagement).toFixed(2)) : 0;
                 const er = views > 0 ? Number(((engagement / views) * 100).toFixed(2)) : 0;
                 const spendNow = Number(s.ad_spend) || 0;
+                const waitReason = stampWaitReason(s);
                 const perf = {
                     views, likes, comments, saves, shares, reposts, engagement, er,
                     ad_spend: spendNow, total_cost: totalCost, cpm, cpe,
@@ -237,8 +233,10 @@ const kols = {
                         : null,  // ยังไม่กรอกผลงาน = ยังตัดสินไม่ได้
                     // ผลที่ล็อกไว้ตอนค่าแอดถึงเกณฑ์ (ถ้ายังไม่ถึงจะเป็น null)
                     perf_stamp: s.perf_stamp ? clone(s.perf_stamp) : null,
-                    // ถึงเกณฑ์แล้วแต่ยังไม่มีผลงานให้ตัดสิน — รอสแตมป์อยู่
-                    stamp_waiting: !s.perf_stamp && spendNow >= AD_STAMP_AT && views <= 0
+                    // ค่าแอดถึงเกณฑ์แล้วแต่ยังสแตมป์ไม่ได้ — รอสแตมป์อยู่
+                    // stamp_wait_reason บอกว่ารออะไร: 'views' ยอดวิว / 'fee' ค่าตัว (ไม่ได้รอ = null)
+                    stamp_waiting: waitReason !== null,
+                    stamp_wait_reason: waitReason
                 };
                 return {
                     sub_id: s.id, project_id: s.project_id, project_name: p ? p.name : null,

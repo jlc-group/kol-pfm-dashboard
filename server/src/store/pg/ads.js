@@ -14,50 +14,15 @@ const logic = require('../logic');
 const {
     now, clone, scopeProjects,
     resolveGroupTarget, resolveGroupProducts, resolveGroupCtype, resolveGroupMedia,
-    engagementOf, GOOD_CPM, GOOD_CPE
+    engagementOf, GOOD_CPM, GOOD_CPE,
+    maybeStamp, stampWaitReason
 } = logic;
 
 // ===== สแตมป์ Performance ตอนค่าแอดถึงเกณฑ์ =====
-// ค่าแอดสะสมถึง 10,000 เมื่อไหร่ ให้เก็บภาพนิ่งของผลงาน ณ ตอนนั้นไว้ถาวร
-// (jsonStore.js:1278 — logic.js ใช้ค่านี้เหมือนกันแต่ "ลืมประกาศ" จึงต้องมีสำเนาไว้ที่นี่)
-const AD_STAMP_AT = 10000;
-
-/**
- * ตัวห่อของ logic.maybeStamp
- *
- * บั๊กใน logic.js: ฟังก์ชัน maybeStamp อ้างตัวแปร AD_STAMP_AT ที่ไม่ได้ประกาศไว้ในไฟล์นั้น
- * (มีแต่ใน jsonStore.js) → เรียกทีไรก็โยน ReferenceError ทุกครั้งที่ submission ยังไม่มี perf_stamp
- * โชคดีที่มันโยนก่อนแตะข้อมูลใด ๆ (บรรทัดแรกคืน null ไปแล้วถ้ามี perf_stamp) จึงปลอดภัยที่จะ
- * ถอยมาใช้สำเนาตรรกะเดิมจาก jsonStore.js:1286-1307 แบบเป๊ะบรรทัดต่อบรรทัด
- * วันไหน logic.js ถูกแก้ให้ประกาศ AD_STAMP_AT ตัวห่อนี้จะกลับไปใช้ของกลางเองอัตโนมัติ
- */
-function maybeStamp(s) {
-    try {
-        return logic.maybeStamp(s);
-    } catch (err) {
-        if (!(err instanceof ReferenceError)) throw err;
-    }
-    if (!s || s.perf_stamp) return null;                       // สแตมป์แล้วห้ามแตะซ้ำ
-    const spend = Number(s.ad_spend) || 0;
-    if (spend < AD_STAMP_AT) return null;
-    const views = Number(s.views) || 0;
-    // ถึงเกณฑ์แล้วแต่ยังไม่มีผลงาน -> รอไว้ก่อน ไม่งั้นจะล็อกค่าว่างค้างถาวร
-    if (views <= 0) return null;
-    const engagement = engagementOf(s);
-    const totalCost = (Number(s.budget) || 0) + spend;
-    const cpm = Number((totalCost / (views / 1000)).toFixed(2));
-    const cpe = engagement > 0 ? Number((totalCost / engagement).toFixed(2)) : 0;
-    s.perf_stamp = {
-        at: now(),
-        ad_spend: spend,
-        views, engagement,
-        er: Number(((engagement / views) * 100).toFixed(2)),
-        total_cost: totalCost,
-        cpm, cpe,
-        verdict: (cpm > 0 && cpm <= GOOD_CPM && cpe > 0 && cpe <= GOOD_CPE) ? 'Pass' : 'Fail'
-    };
-    return s.perf_stamp;
-}
+// ค่าแอดสะสมถึง AD_STAMP_AT (ประกาศใน logic.js) เมื่อไหร่ ให้เก็บภาพนิ่งของผลงาน ณ ตอนนั้นไว้ถาวร
+// เดิมไฟล์นี้มีตัวห่อ maybeStamp + สำเนาตรรกะไว้กันบั๊ก "logic.js ไม่ได้ประกาศ AD_STAMP_AT"
+// ตอนนี้ logic.js ประกาศแล้ว สำเนานั้นจึงไม่เคยถูกเรียกอีก (โค้ดตาย) และไม่มีเงื่อนไข "รอค่าตัว"
+// จึงตัดทิ้ง ให้ adsSync ใช้กฎชุดเดียวกับ submissions.updateOne เป๊ะ
 
 // ============================ ads (ติดตามการยิงแอด + สรุปค่าแอด) ============================
 // รับข้อมูลจากระบบยิงแอดของบริษัท — จับคู่ด้วย Gencode หรือ ID Post
@@ -147,6 +112,8 @@ const ads = {
                 const team = p ? snap.teams.find(t => t.id === p.team_id) : null;
                 const spend = Number(s.ad_spend) || 0;
                 const reach = Number(s.ad_reach) || 0;
+                // ค่าแอดถึงเกณฑ์แล้วแต่ยังสแตมป์ไม่ได้เพราะรออะไร: 'views' ยอดวิว / 'fee' ค่าตัว (ไม่ได้รอ = null)
+                const waitReason = stampWaitReason(s);
                 // กลุ่มโฆษณาที่ KOL คนนี้สังกัด (ผูก Target/Content Type จาก Project อัตโนมัติ)
                 const grp = (p && Array.isArray(p.ad_groups)) ? p.ad_groups.find(g => g.key === s.group_key) : null;
                 // Content Type ผูกกับคน (1 Platform ในกลุ่มเดียวมีได้หลายอย่าง) แถวเก่าค่อยถอยไปใช้ของกลุ่ม
@@ -196,7 +163,8 @@ const ads = {
                                 ? ((cCpm > 0 && cCpm <= GOOD_CPM && cCpe > 0 && cCpe <= GOOD_CPE) ? 'Good' : 'Improve')
                                 : null,
                             perf_stamp: s.perf_stamp ? clone(s.perf_stamp) : null,
-                            stamp_waiting: !s.perf_stamp && spend >= AD_STAMP_AT && views <= 0
+                            stamp_waiting: waitReason !== null,
+                            stamp_wait_reason: waitReason
                         };
                     })(),
                     // Performance ของคอนเทนต์ — ใช้ตัดสินว่าควรยิงต่อหรือหยุด
@@ -214,7 +182,8 @@ const ads = {
                                 ? ((cCpm > 0 && cCpm <= GOOD_CPM && cCpe > 0 && cCpe <= GOOD_CPE) ? 'Good' : 'Improve')
                                 : null,
                             perf_stamp: s.perf_stamp ? clone(s.perf_stamp) : null,
-                            stamp_waiting: !s.perf_stamp && spend >= AD_STAMP_AT && views <= 0
+                            stamp_waiting: waitReason !== null,
+                            stamp_wait_reason: waitReason
                         };
                     })()
                 };

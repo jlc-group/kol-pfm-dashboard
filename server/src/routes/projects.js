@@ -526,6 +526,95 @@ router.put('/:id/submissions/:subId', async (req, res, next) => {
     } catch (err) { next(err); }
 });
 
+// ---------- ค่าตัว KOL (ต่อคลิป) — ทีมตั้งเองจากหน้า Dashboard ไม่ต้องรอเอเจนซี่ ----------
+// คำนำหน้าในประวัติ แยกตามวิธีที่ตั้งค่าตัว
+const FEE_REASONS = { manual: 'แก้ค่าตัว: ', divide: 'หารเฉลี่ย: ', clear: 'ล้างค่าตัว: ' };
+const FEE_MAX = 10000000;      // ค่าตัวต่อคลิปสูงสุดที่รับ (กันพิมพ์ศูนย์เกิน)
+const FEE_BATCH_MAX = 500;     // แถวต่อคำขอ — หารเฉลี่ยทั้งกลุ่มยังไม่ถึงหลักร้อย
+const baht = n => '฿' + Number(n || 0).toLocaleString('en-US', { maximumFractionDigits: 2 });
+
+// ตรวจรูปคำขอก่อนแตะฐานข้อมูล — คืน { items, reason } ที่ปัดสตางค์แล้ว หรือ { error } เป็นข้อความภาษาไทย
+function parseFeeBody(body) {
+    const { items, reason } = body || {};
+    if (typeof reason !== 'string' || !Object.prototype.hasOwnProperty.call(FEE_REASONS, reason)) {
+        return { error: 'รูปแบบการตั้งค่าตัวไม่ถูกต้อง' };
+    }
+    if (!Array.isArray(items) || items.length < 1 || items.length > FEE_BATCH_MAX) {
+        return { error: `ส่งรายการค่าตัวได้ครั้งละ 1-${FEE_BATCH_MAX} รายการ` };
+    }
+    const seen = new Set();
+    const out = [];
+    for (const it of items) {
+        if (!it || typeof it !== 'object') return { error: 'รายการค่าตัวไม่ถูกต้อง' };
+        const { sub_id, budget, from } = it;
+        if (!Number.isInteger(sub_id) || sub_id <= 0) return { error: 'รหัสรายการไม่ถูกต้อง' };
+        if (seen.has(sub_id)) return { error: 'มีรายการซ้ำกันในคำขอเดียว' };
+        seen.add(sub_id);
+        // ตัวเลขเท่านั้น — '' / null / สตริง ห้ามแปลงเป็น 0 เงียบ ๆ ไม่งั้นค่าตัวจะถูกล้างโดยไม่ตั้งใจ
+        if (typeof budget !== 'number' || !Number.isFinite(budget) || budget < 0 || budget > FEE_MAX) {
+            return { error: `ค่าตัวต้องเป็นตัวเลข 0 ถึง ${FEE_MAX.toLocaleString('en-US')} บาท` };
+        }
+        if (from !== undefined && (typeof from !== 'number' || !Number.isFinite(from))) {
+            return { error: 'ค่าตัวเดิมที่ส่งมาไม่ถูกต้อง กรุณารีเฟรช' };
+        }
+        const item = { sub_id, budget: Math.round(budget * 100) / 100 };
+        if (from !== undefined) item.from = from;
+        out.push(item);
+    }
+    return { items: out, reason };
+}
+
+// สรุปลงประวัติ 1 บรรทัดต่อคำขอ — รวมคลิปของคนเดียวกัน (person_key) เป็นคนเดียว แสดงไม่เกิน 10 คน
+// byId = รายชื่อทั้งแคมเปญ (ใช้หา person_key เพราะ changed ไม่มีช่องนี้)
+function feeSummary(reason, changed, byId) {
+    const people = new Map();
+    for (const c of changed) {
+        const sub = byId.get(Number(c.id));
+        const key = (sub && sub.person_key) || `#${c.id}`;   // ไม่มี person_key = คนที่มีคลิปเดียว
+        let p = people.get(key);
+        if (!p) { p = { name: c.account_name || '-', from: new Set(), to: new Set(), clips: 0 }; people.set(key, p); }
+        p.from.add(Number(c.from) || 0);
+        p.to.add(Number(c.to) || 0);
+        p.clips++;
+    }
+    const list = [...people.values()];
+    const text = list.slice(0, 10).map(p =>
+        `${p.name} ${[...p.from].map(n => baht(n)).join('/')}→${[...p.to].map(n => baht(n)).join('/')}`
+        + (p.clips > 1 ? ` (${p.clips} คลิป)` : ''));
+    const more = list.length > 10 ? ` และอีก ${list.length - 10} คน` : '';
+    return FEE_REASONS[reason] + text.join(', ') + more;
+}
+
+// PUT /api/projects/:id/fees — ตั้งค่าตัวต่อคลิปหลายแถวในคำขอเดียว (กรอกรายคน / หารเฉลี่ย / ล้างค่าตัว)
+// body: { items: [{ sub_id, budget, from? }], reason: 'manual' | 'divide' | 'clear' }
+// from = ค่าที่หน้าเว็บเห็นก่อนแก้ ถ้าในฐานไม่ตรงแล้ว (มีคนแก้แทรก) ตอบ 409 ให้รีเฟรช ไม่เขียนทับ
+router.put('/:id/fees', async (req, res, next) => {
+    try {
+        const check = await canEditProject(req, req.params.id);
+        if (!check.ok) return res.status(check.code).json({ status: 'error', message: check.message });
+        const parsed = parseFeeBody(req.body);
+        if (parsed.error) return res.status(400).json({ status: 'error', message: parsed.error });
+        // ทุกแถวต้องเป็นของแคมเปญนี้ — กันยิง sub_id ของแคมเปญ/แบรนด์อื่นเข้ามาแก้ผ่านแคมเปญที่ตัวเองมีสิทธิ์
+        const all = await store.submissions.listByProject(req.params.id);
+        const byId = new Map(all.map(s => [Number(s.id), s]));
+        if (parsed.items.some(it => !byId.has(it.sub_id))) {
+            return res.status(400).json({ status: 'error', message: 'มีรายการที่ไม่ได้อยู่ในแคมเปญนี้ กรุณารีเฟรช' });
+        }
+        const user = await store.users.findById(req.user.id);
+        const byName = user ? (user.full_name || user.username) : null;
+        const { rows, changed } = await store.submissions.setFees(req.params.id, parsed.items, byName);
+        // บันทึกประวัติครั้งเดียวต่อคำขอ (ส่งค่าเดิมมาทั้งชุด = ไม่มีอะไรเปลี่ยน ไม่ต้องบันทึก)
+        if (changed.length) await record(req, req.params.id, 'fee', feeSummary(parsed.reason, changed, byId));
+        res.json({ status: 'success', data: { changed, rows } });
+    } catch (err) {
+        // 400/409 จาก store = ตั้งใจปฏิเสธ (ข้อมูลเปลี่ยนระหว่างทาง) ไม่ใช่บั๊กของระบบ
+        if (err.status === 400 || err.status === 409) {
+            return res.status(err.status).json({ status: 'error', message: err.message });
+        }
+        next(err);
+    }
+});
+
 // DELETE /api/projects/:id/submissions/:subId — ลบรายชื่อออกจากแคมเปญถาวร
 router.delete('/:id/submissions/:subId', async (req, res, next) => {
     try {

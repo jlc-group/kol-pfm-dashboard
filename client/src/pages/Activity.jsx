@@ -13,7 +13,8 @@ const ACTION_META = {
     add_kol: { icon: 'star', cls: 'act-create', label: 'เพิ่ม KOL' },
     update_kol: { icon: 'edit', cls: 'act-update', label: 'แก้ผลงาน' },
     remove_kol: { icon: 'trash', cls: 'act-delete', label: 'เอา KOL ออก' },
-    brief: { icon: 'file', cls: 'act-update', label: 'บรีฟ' }
+    brief: { icon: 'file', cls: 'act-update', label: 'บรีฟ' },
+    fee: { icon: 'coins', cls: 'act-update', label: 'ค่าตัว' }
 };
 
 function fmtTime(iso) {
