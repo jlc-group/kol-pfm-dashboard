@@ -36,23 +36,20 @@ const fmtNum = n => {
     if (v >= 1000) return (v / 1000).toFixed(1) + 'K';
     return String(v);
 };
-const emptyEntry = () => ({ account_name: '', platform: '', tier: '', product: '', agency: '', budget: '', link_account: '', saving: false });
+const emptyEntry = () => ({ account_name: '', platform: '', tier: '', product: '', agency: '', link_account: '', saving: false });
 
 // เลือก Product ได้หลายอันต่อ KOL 1 คน — เก็บค่าเป็นสตริงคั่นคอมมา, มีตัวเลือก "เลือกทุก Product"
 // ใช้ native <select> (ไม่โดน overflow ของตารางบัง) + ชิปสินค้าที่เลือกไว้ (ลบได้)
 
 // modal แก้ไขข้อมูล KOL ที่ส่งไปแล้ว
 function EditSubmissionModal({ token, sub, groups = [], products = [], onClose, onSaved, agencyName }) {
-    // ค่าตัวเก็บ "ต่อคลิป" แต่แถวที่ยุบรวม (คนเดียวหลายคลิป) มี budget เป็นยอดรวมทุกคลิป
-    // ถ้าส่งยอดรวมกลับไป server จะเขียนลงทุกคลิปจนค่าตัวทวีคูณ — ช่องนี้จึงแก้เป็นค่าต่อคลิป และส่งเฉพาะตอนแก้จริง
-    const clips = sub._clips || [sub];
-    const initialBudget = String(Number(clips[0]?.budget) || 0);
-    const unevenClips = new Set(clips.map(c => Number(c.budget) || 0)).size > 1;
+    // ไม่มีช่องค่าตัวแล้ว — ทีมเป็นคนกรอกค่าตัวที่หน้าแคมเปญ (ProjectDetail) ทางเดียว
+    // body ที่ส่งไปจึงไม่มี budget เลย เอเจนซี่แจ้งเรทที่เสนอผ่านแชท หรือช่อง "หมายเหตุถึงทีม" แทน
     const [f, setF] = useState({
         account_name: sub.account_name || '', platform: sub.platform || 'TikTok',
         content_type: sub.content_type || '', tier: sub.tier || '',
         followers: sub.followers ?? '', product: sub.product || '', agency: sub.agency || '',
-        budget: initialBudget, link_account: sub.link_account || ''
+        link_account: sub.link_account || ''
     });
     // กลุ่มที่ KOL คนนี้สังกัด — ใช้จำกัดตัวเลือก Content Type / Tier ให้ตรงกับที่กลุ่มเปิดรับ
     const grp = groups.find(x => x.key === sub.group_key) || null;
@@ -74,8 +71,7 @@ function EditSubmissionModal({ token, sub, groups = [], products = [], onClose, 
                     content_type: f.content_type || null, tier: f.tier || null,
                     followers: Number(f.followers) || 0,
                     product: f.product || null, agency: agencyName || f.agency || null,
-                    link_account: f.link_account || null,
-                    ...(String(f.budget).trim() !== initialBudget ? { budget: Number(f.budget) || 0, budget_per_clip: true } : {})
+                    link_account: f.link_account || null
                 }
             });
             onSaved();
@@ -133,18 +129,11 @@ function EditSubmissionModal({ token, sub, groups = [], products = [], onClose, 
                             <ProductMultiSelect value={f.product} options={products} onChange={v => up('product', v)} />
                         ) : <input value={f.product} onChange={e => up('product', e.target.value)} placeholder="สินค้า" />}
                     </div>
-                    <div className="field-row">
-                        <div className="field">
-                            <label>KOL Contact</label>
-                            {agencyName
-                                ? <input value={agencyName} readOnly className="agency-locked" title="ชื่อเอเจนซี่ (จากลิงก์)" />
-                                : <input value={f.agency} onChange={e => up('agency', e.target.value)} placeholder="KOL Contact" />}
-                        </div>
-                        <div className="field">
-                            <label>{clips.length > 1 ? 'Budget ต่อคลิป (฿) · ' + clips.length + ' คลิป' : 'Budget (฿)'}</label>
-                            <input type="number" min="0" value={f.budget} onChange={e => up('budget', e.target.value)} placeholder="งบค่าตัว" />
-                            {unevenClips && <small className="ag-field-hint">แต่ละคลิปค่าตัวไม่เท่ากัน ถ้าแก้ช่องนี้ ทุกคลิปจะเป็นยอดนี้</small>}
-                        </div>
+                    <div className="field">
+                        <label>KOL Contact</label>
+                        {agencyName
+                            ? <input value={agencyName} readOnly className="agency-locked" title="ชื่อเอเจนซี่ (จากลิงก์)" />
+                            : <input value={f.agency} onChange={e => up('agency', e.target.value)} placeholder="KOL Contact" />}
                     </div>
                     <div className="field">
                         <label>Link Account</label>
@@ -168,8 +157,7 @@ function SavedGridRow({ s, n, group, agencyName, boxType = null, showMeta = fals
     // Format ไม่ได้เก็บในแถว — อ่านจากที่ตั้งไว้ในกลุ่มตาม Platform + Content Type
     const fmt = mediaFor(group, s.platform, ctype).content_format;
     const st = STATUS[s.status] || STATUS.submitted;
-    const clips = s._clips || [s];          // แถวนี้ยุบมาจากกี่คลิป
-    const perClipBudget = Number(clips[0]?.budget) || 0;
+    const clips = s._clips || [s];          // แถวนี้ยุบมาจากกี่คลิป (ใช้โชว์ชิป "N คลิป")
     return (
         <>
             <div className={'ag-add-row ag-saved-row' + (s.team_note ? ' has-note' : '')}>
@@ -196,10 +184,7 @@ function SavedGridRow({ s, n, group, agencyName, boxType = null, showMeta = fals
                 <span className="ag-saved-cell">{Number(s.followers) > 0 ? Number(s.followers).toLocaleString('en-US') : '—'}</span>
                 <span className="ag-saved-cell"><ProductSummary value={s.product} max={2} /></span>
                 {!agencyName && <span className="ag-saved-cell">{s.agency || '—'}</span>}
-                <span className="ag-saved-cell">
-                    ฿{Number(s.budget || 0).toLocaleString('th-TH')}
-                    {clips.length > 1 && <small className="ag-budget-split">฿{perClipBudget.toLocaleString('th-TH')} × {clips.length}</small>}
-                </span>
+                {/* ไม่มีคอลัมน์ค่าตัว — ทีมกรอกที่หน้าแคมเปญ · เพิ่ม/ลดเซลล์ต้องแก้ grid-template ของ .ag-add-row ใน index.css ด้วย */}
                 <span className="ag-saved-cell">{s.link_account ? <a href={s.link_account} target="_blank" rel="noreferrer"><Icon name="eye" size={14} /> ลิงก์</a> : '—'}</span>
                 <div className="atr-action">
                     <button type="button" className="atr-edit" title="แก้ไขข้อมูล" onClick={() => onEdit(s)}><Icon name="edit" size={14} /></button>
@@ -207,11 +192,12 @@ function SavedGridRow({ s, n, group, agencyName, boxType = null, showMeta = fals
                 </div>
             </div>
             {s.team_note && <div className="ag-team-note-banner">📝 <b>หมายเหตุจากทีม:</b> {s.team_note}</div>}
-            {/* หมายเหตุของเอเจนซี่เอง — คนละช่องกับของทีม เขียนทับกันไม่ได้ */}
+            {/* หมายเหตุของเอเจนซี่เอง — คนละช่องกับของทีม เขียนทับกันไม่ได้
+                ใช้แจ้งเรทค่าตัวที่เสนอด้วย เพราะหน้านี้ไม่มีช่องค่าตัวแล้ว (ทีมกรอกค่าตัวจริงที่หน้าแคมเปญ) */}
             <div className="ag-note-row">
                 <span className="ag-note-lbl">📝 หมายเหตุถึงทีม</span>
                 <input className="ag-note-input" defaultValue={s.agency_note || ''}
-                    placeholder="เช่น คิวว่าง 20 ก.ย. / ขอเปลี่ยนสินค้า"
+                    placeholder="เช่น เรท ฿5,000/คลิป · คิวว่าง 20 ก.ย."
                     onBlur={e => { const v = e.target.value.trim(); if (v !== (s.agency_note || '')) onNote(s, v); }} />
             </div>
         </>
@@ -233,7 +219,6 @@ function SubItem({ s, onEdit }) {
                     {s.tier && <span>· {s.tier}</span>}
                     {s.product && <span>· <ProductSummary value={s.product} /></span>}
                     {s.agency && <span>· {s.agency}</span>}
-                    <span>· ฿{Number(s.budget).toLocaleString('th-TH')}</span>
                 </div>
                 {s.team_note && <div className="ag-team-note-banner">📝 <b>หมายเหตุจากทีม:</b> {s.team_note}</div>}
             </div>
@@ -246,11 +231,11 @@ function SubItem({ s, onEdit }) {
 }
 // กล่องกรอกรายชื่อของ 1 ช่อง = Platform + Content Type ที่ตายตัว
 // กรอกในกล่องไหน = เป็นของช่องนั้น ไม่ต้องเลือก Platform / Content Type ทีละคน
-function TypeBox({ token, group, platform, contentType, saved, quota, agencyName, autoBudget, startNo, onReload, onEdit, onDelete, onNote }) {
+function TypeBox({ token, group, platform, contentType, saved, quota, agencyName, startNo, onReload, onEdit, onDelete, onNote }) {
     const media = mediaFor(group, platform, contentType);
     const tierOpts = tiersOf(group, platform, contentType);
     const prodOpts = productsFor(group, platform);
-    const blank = () => ({ account_name: '', tier: tierOpts.length === 1 ? tierOpts[0] : '', followers: '', product: '', agency: '', budget: autoBudget, link_account: '', saving: false });
+    const blank = () => ({ account_name: '', tier: tierOpts.length === 1 ? tierOpts[0] : '', followers: '', product: '', agency: '', link_account: '', saving: false });
     // เริ่มต้นไม่มีแถวกรอก — ต้องกด "เพิ่มรายชื่อ" ก่อนช่องกรอกถึงจะขึ้น
     // กันแถวเปล่าค้างอยู่ทุกกล่องจนดูเหมือนมีงานรอกรอกทั้งที่ยังไม่มีใครตั้งใจกรอก
     const [rows, setRows] = useState([]);
@@ -268,14 +253,9 @@ function TypeBox({ token, group, platform, contentType, saved, quota, agencyName
         if (tierOpts.length > 1 && !filled(en.tier)) miss.push('Tier');
         if (!filled(en.followers)) miss.push('ยอดฟอล');
         if (!agencyName && !filled(en.agency)) miss.push('Contact');
-        if (!filled(en.budget)) miss.push('Budget');
         if (!filled(en.link_account)) miss.push('Link Account');
         return miss;
     };
-    // กดหารเฉลี่ย/ล้างงบที่หัวกลุ่ม -> ทับยอดในแถวที่ยังกรอกค้างอยู่ด้วย
-    useEffect(() => {
-        setRows(rs => rs.map(r => (r.saving ? r : { ...r, budget: autoBudget })));
-    }, [autoBudget]);
 
     async function saveRow(i) {
         const en = rows[i];
@@ -290,7 +270,8 @@ function TypeBox({ token, group, platform, contentType, saved, quota, agencyName
                     account_name: en.account_name.trim(), followers: Number(en.followers) || 0,
                     // Platform กับ Content Type มาจากกล่อง ไม่ได้ให้กรอก จะได้ไม่ใส่ผิดช่อง
                     platform, content_type: contentType || null, tier: tier || null,
-                    product: en.product || null, agency: agencyName || en.agency || null, budget: Number(en.budget) || 0,
+                    // ไม่ส่งค่าตัว — แถวใหม่เป็น 0 ไว้ก่อน ทีมกรอกค่าตัวจริงที่หน้าแคมเปญ
+                    product: en.product || null, agency: agencyName || en.agency || null,
                     link_account: en.link_account || null, group_key: group.key
                 }
             });
@@ -314,7 +295,7 @@ function TypeBox({ token, group, platform, contentType, saved, quota, agencyName
             {err && <div className="alert-error">{err}</div>}
             <div className="ag-add-scroll">
                 <div className={'ag-add-grid' + (agencyName ? ' no-agency' : '')}>
-                    <div className="ag-add-head"><span>NAME</span><span>CONTENT TYPE</span><span>FORMAT</span><span>TIER</span><span>FOLLOWER</span><span>PRODUCT</span>{!agencyName && <span>AGENCY</span>}<span>BUDGET</span><span>LINK ACCOUNT</span><span /></div>
+                    <div className="ag-add-head"><span>NAME</span><span>CONTENT TYPE</span><span>FORMAT</span><span>TIER</span><span>FOLLOWER</span><span>PRODUCT</span>{!agencyName && <span>AGENCY</span>}<span>LINK ACCOUNT</span><span /></div>
                     {saved.map((s, si) => <SavedGridRow key={s.id} s={s} n={startNo + si} group={group} agencyName={agencyName} boxType={contentType} onEdit={onEdit} onDelete={onDelete} onNote={onNote} />)}
                     {rows.map((en, i) => {
                         const miss = missingOf(en);
@@ -342,7 +323,6 @@ function TypeBox({ token, group, platform, contentType, saved, quota, agencyName
                             <ProductMultiSelect value={en.product} options={prodOpts} onChange={v => upRow(i, 'product', v)} />
                             {/* ลิงก์นี้ผูกเอเจนซี่ไว้แล้ว ไม่ต้องมีช่องให้กรอกซ้ำทุกแถว */}
                             {!agencyName && <input value={en.agency} onChange={e => upRow(i, 'agency', e.target.value)} placeholder="Contact" />}
-                            <input type="number" min="0" value={en.budget} onChange={e => upRow(i, 'budget', e.target.value)} placeholder="฿" />
                             <input type="url" value={en.link_account} onChange={e => upRow(i, 'link_account', e.target.value)} placeholder="https://..." />
                             <div className="atr-action">
                                 {/* กดบันทึกไม่ได้จนกว่าจะกรอกครบ — tooltip บอกว่าเหลือช่องไหน จะได้ไม่ต้องเดา */}
@@ -371,7 +351,7 @@ function LeftoverBox({ rows, group, agencyName, onEdit, onDelete, onNote }) {
             </div>
             <div className="ag-add-scroll">
                 <div className={'ag-add-grid' + (agencyName ? ' no-agency' : '')}>
-                    <div className="ag-add-head"><span>NAME</span><span>CONTENT TYPE</span><span>FORMAT</span><span>TIER</span><span>FOLLOWER</span><span>PRODUCT</span>{!agencyName && <span>AGENCY</span>}<span>BUDGET</span><span>LINK ACCOUNT</span><span /></div>
+                    <div className="ag-add-head"><span>NAME</span><span>CONTENT TYPE</span><span>FORMAT</span><span>TIER</span><span>FOLLOWER</span><span>PRODUCT</span>{!agencyName && <span>AGENCY</span>}<span>LINK ACCOUNT</span><span /></div>
                     {rows.map((s, si) => <SavedGridRow key={s.id} s={s} n={si + 1} group={group} agencyName={agencyName} showMeta onEdit={onEdit} onDelete={onDelete} onNote={onNote} />)}
                 </div>
             </div>
@@ -411,6 +391,8 @@ function GroupSection({ token, group, gi, subs, onReload, onEdit, onDelete, onNo
     const totalClips = scopePlats.reduce((s, p) => s + quotaOf(group, p) * clipCountFor(group, p), 0) || total;
     // แถบงบกลุ่ม + ปุ่มหารเฉลี่ย/ล้างงบ ย้ายไปอยู่หน้าแคมเปญฝั่งทีมแล้ว (ProjectDetail → DivideFeesModal)
     // ที่นั่นมีตัวอย่างก่อนบันทึก กันคนแก้ทับกัน และบันทึกประวัติ — หน้านี้จึงไม่มีปุ่มที่เขียนค่าตัวทั้งกลุ่มอีก
+    // รอบ 2: ค่าตัวรายคนก็ย้ายไปด้วย หน้านี้ไม่มีช่องกรอก/ไม่แสดงค่าตัวเลย (บัญชีเอเจนซี่ได้ budget เป็น null อยู่แล้ว)
+    // เอเจนซี่แจ้งเรทที่เสนอผ่านแชท หรือช่อง "หมายเหตุถึงทีม" ใต้แต่ละแถว
 
     let runningNo = 1;
     return (
@@ -449,7 +431,7 @@ function GroupSection({ token, group, gi, subs, onReload, onEdit, onDelete, onNo
                     <TypeBox key={key} token={token} group={group}
                         platform={c.platform} contentType={c.contentType}
                         saved={mine} quota={quotaOf(group, c.platform, c.contentType || null)}
-                        agencyName={agencyName} autoBudget="" startNo={startNo}
+                        agencyName={agencyName} startNo={startNo}
                         onReload={onReload} onEdit={onEdit} onDelete={onDelete} onNote={onNote} />
                 );
             })}
@@ -565,7 +547,6 @@ export default function AgencyPortal() {
         if (!entryFilled(en.platform)) miss.push('Platform');
         if (!entryFilled(en.tier)) miss.push('Tier');
         if (!info.agency_name && !entryFilled(en.agency)) miss.push('Agency');
-        if (!entryFilled(en.budget)) miss.push('Budget');
         if (!entryFilled(en.link_account)) miss.push('Link Account');
         return miss;
     }
@@ -585,7 +566,7 @@ export default function AgencyPortal() {
                     tier: en.tier || null,
                     product: en.product || null,
                     agency: info.agency_name || en.agency || null,
-                    budget: Number(en.budget) || 0,
+                    // ไม่ส่งค่าตัว — ทีมกรอกที่หน้าแคมเปญ
                     link_account: en.link_account || null
                 }
             });
@@ -799,7 +780,7 @@ export default function AgencyPortal() {
                                     <div className="agency-tbl">
                                         <div className="agency-tbl-head">
                                             <span>NAME</span><span>PLATFORM</span><span>TIER</span><span>PRODUCT</span><span>AGENCY</span>
-                                            <span>BUDGET</span><span>LINK ACCOUNT</span><span className="ta-c">ACTION</span>
+                                            <span>LINK ACCOUNT</span><span className="ta-c">ACTION</span>
                                         </div>
                                         {entries.map((en, i) => {
                                             const miss = missingEntry(en);
@@ -825,7 +806,6 @@ export default function AgencyPortal() {
                                                 {info.agency_name
                                                     ? <input value={info.agency_name} readOnly className="agency-locked" title="ชื่อเอเจนซี่ (จากลิงก์)" />
                                                     : <input value={en.agency} onChange={e => updateEntry(i, 'agency', e.target.value)} placeholder="KOL Contact" />}
-                                                <input type="number" min="0" value={en.budget} onChange={e => updateEntry(i, 'budget', e.target.value)} placeholder="฿ Budget" />
                                                 <input type="url" value={en.link_account} onChange={e => updateEntry(i, 'link_account', e.target.value)} placeholder="https://..." />
                                                 <div className="atr-action">
                                                     {/* กดบันทึกไม่ได้จนกว่าจะกรอกครบ (ยกเว้น Product) — tooltip บอกว่าเหลือช่องไหน */}

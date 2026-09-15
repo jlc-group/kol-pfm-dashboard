@@ -179,7 +179,9 @@ test('agency accounts get no team budgets, and only admin/manager get ad costs o
     assert.equal('budget' in seen.ad_groups[0], false);
     assert.equal('budget' in seen.ad_groups[0].blocks[0], false);
     assert.equal(seen.ad_groups[0].blocks[0].platform, 'TikTok');
-    assert.equal(seen.submissions[0].budget, '5000.00');
+    // ค่าตัว KOL: บัญชีเอเจนซี่ได้ null แต่คีย์ต้องยังอยู่ (แท็บเก่าทำ Number(s.budget) ไม่มีคีย์จะขึ้น ฿NaN)
+    assert.equal('budget' in seen.submissions[0], true);
+    assert.equal(seen.submissions[0].budget, null);
     assert.equal(seen.submissions[0].ad_status, 'ยิงแล้ว');
     assert.equal('ad_spend' in seen.submissions[0], false);
     assert.deepEqual(seen.submissions[0].perf_stamp, { views: 1000, verdict: 'Pass' });
@@ -188,42 +190,79 @@ test('agency accounts get no team budgets, and only admin/manager get ad costs o
     const staff = (await (await request('/api/agency/tok1')).json()).data;
     assert.deepEqual(staff.platform_budgets, { TikTok: 90000 });
     assert.equal(staff.ad_groups[0].blocks[0].budget, '90000');
+    assert.equal(staff.submissions[0].budget, '5000.00');
     assert.equal(staff.submissions[0].ad_spend, '12000.00');
     user({ role: 'member', brands: ['Jdent'] });
     const member = (await (await request('/api/agency/tok1')).json()).data;
     assert.deepEqual(member.platform_budgets, { TikTok: 90000 });
+    assert.equal(member.submissions[0].budget, '5000.00');
     assert.equal('ad_spend' in member.submissions[0], false);
     assert.deepEqual(member.submissions[0].perf_stamp, { views: 1000, verdict: 'Pass' });
 });
 
-test('agency person edits cannot multiply clip fees, and stale pages are told to refresh', async () => {
-    const { row } = agencyFixture();
-    const person = [], single = [];
+test('agency routes never write KOL fees', async () => {
+    const { project, row } = agencyFixture();
+    const added = [], person = [], single = [];
+    store.submissions.addPerson = async (fields) => { added.push(fields); return [{ ...row, id: 90, budget: fields.budget.toFixed(2) }]; };
     store.submissions.updatePerson = async (id, pid, fields) => { person.push(fields); return row; };
     store.submissions.update = async (id, pid, fields) => { single.push(fields); return row; };
-    const put = body => request('/api/agency/tok1/submissions/5', adminToken, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    const send = (url, method, body) => request(url, adminToken, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    const put = body => send('/api/agency/tok1/submissions/5', 'PUT', body);
+    const FEE_MOVED = { status: 'error', code: 'FEE_MOVED', message: 'ค่าตัว KOL ย้ายไปให้ทีมกรอกที่หน้าแคมเปญแล้ว กรุณารีเฟรชหน้า (กด F5)' };
     user({ role: 'agency', agency_tokens: ['tok1'] });
-    // หน้าเก่า + คนคลิปเดียว: ยอดที่ส่งมาคือค่าต่อคลิปอยู่แล้ว รับได้
-    const res = await put({ account_name: 'kol', budget: 8000 });
-    assert.equal(res.status, 200);
-    assert.equal('ad_spend' in (await res.json()).data, false);
-    assert.equal(person[0].budget, 8000);
-    assert.equal(person[0].account_name, 'kol');
-    // หน้าเก่า + คนหลายคลิป: ปฏิเสธทั้งคำขอ ไม่เขียนอะไรเลย
-    store.submissions.listByProject = async () => [row, { ...row, id: 6, clip_no: 2 }];
-    const stale = await put({ account_name: 'kol', budget: 10000 });
-    assert.equal(stale.status, 409);
-    assert.equal((await stale.json()).code, 'STALE_PAGE');
+
+    // ส่งรายชื่อ (ทีละคน / หลายคน): ค่าตัวที่แท็บเก่าส่งมาไม่ถูกใช้ แถวใหม่เริ่มที่ 0 เสมอ
+    const one = await send('/api/agency/tok1', 'POST', { account_name: 'kol', budget: 9000, platform: 'TikTok' });
+    assert.equal(one.status, 201);
+    assert.equal(added[0].budget, 0);
+    const oneBody = await one.json();
+    assert.equal(oneBody.data.budget, null);
+    assert.equal(oneBody.data_all[0].budget, null);
+    assert.equal('ad_spend' in oneBody.data, false);
+    const many = await send('/api/agency/tok1/batch', 'POST', { items: [{ account_name: 'kol', budget: 5 }] });
+    assert.equal(many.status, 201);
+    assert.equal(added[1].budget, 0);
+    assert.equal((await many.json()).data[0].budget, null);
+
+    // มีแต่ค่าตัว = แท็บเก่า: ตอบ 409 ให้รีเฟรช ไม่เรียก store เขียนอะไรเลย
+    for (const body of [{ budget: 4000 }, { budget: 4000, budget_per_clip: true }, { budget_per_clip: true }]) {
+        const res = await put(body);
+        assert.equal(res.status, 409, JSON.stringify(body));
+        assert.deepEqual(await res.json(), FEE_MOVED);
+    }
+    assert.equal(person.length + single.length, 0);
+
+    // มีช่องอื่นมาด้วย: ตัดค่าตัวทิ้ง บันทึกที่เหลือตามปกติ (แก้ตัวคน = updatePerson เหมือนเดิม)
+    const edited = await put({ account_name: 'kol', budget: 7000, budget_per_clip: true });
+    assert.equal(edited.status, 200);
     assert.equal(person.length, 1);
-    // หน้าใหม่ส่งค่าต่อคลิปพร้อมยืนยัน: รับได้แม้มีหลายคลิป
-    assert.equal((await put({ account_name: 'kol', budget: 7000, budget_per_clip: true })).status, 200);
-    assert.equal(person[1].budget, 7000);
-    // ปุ่มหารเฉลี่ย/ล้างงบส่งแค่ budget ต่อแถว ยังทำงานเหมือนเดิม
-    assert.equal((await put({ budget: 4000 })).status, 200);
-    assert.equal(single[0].budget, 4000);
-    // แก้ข้อมูลตัวคนโดยไม่แตะค่าตัว ไม่ถูกปฏิเสธ
-    assert.equal((await put({ account_name: 'kol2' })).status, 200);
-    assert.equal(person[2].budget, undefined);
+    assert.equal(person[0].account_name, 'kol');
+    assert.equal(person[0].budget, undefined);
+    assert.equal('budget_per_clip' in person[0], false);
+    assert.equal((await edited.json()).data.budget, null);
+    assert.equal((await put({ agency_note: 'ราคาตามแชท', budget: 3000 })).status, 200);
+    assert.equal(single.length, 1);
+    assert.equal(single[0].agency_note, 'ราคาตามแชท');
+    assert.equal(single[0].budget, undefined);
+
+    // ทีมที่เปิดลิงก์เดียวกันก็เขียนค่าตัวผ่านเส้นนี้ไม่ได้ แต่ยังเห็นค่าตัวจริง
+    user();
+    const staff = await put({ budget: 4000 });
+    assert.equal(staff.status, 409);
+    assert.equal((await staff.json()).code, 'FEE_MOVED');
+    const staffEdit = await put({ account_name: 'kol', budget: 6000 });
+    assert.equal(staffEdit.status, 200);
+    assert.equal(person[1].budget, undefined);
+    assert.equal((await staffEdit.json()).data.budget, '5000.00');
+    assert.equal(person.length + single.length, 3);
+
+    // PUT รายชื่อฝั่งทีมก็ไม่รับค่าตัวแล้ว — ตั้งผ่าน PUT /api/projects/:id/fees ที่เดียว
+    store.projects.findByIdFull = async () => project;
+    const team = await send('/api/projects/41/submissions/5', 'PUT', { budget: 7000, team_note: 'x' });
+    assert.equal(team.status, 200);
+    assert.equal(single.length, 2);
+    assert.equal('budget' in single[1], false);
+    assert.equal(single[1].team_note, 'x');
 });
 
 // ค่าตัวต่อคลิป: น้องเอมี 2 คลิป (person_key เดียวกัน), น้องบีมีคลิปเดียวและยังไม่มีค่าตัว

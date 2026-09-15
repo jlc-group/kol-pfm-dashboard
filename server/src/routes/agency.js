@@ -134,9 +134,9 @@ function scopedAdGroups(project, link) {
 }
 
 // ===== ตัวเลขเงินที่บัญชีเอเจนซี่ไม่ควรเห็น =====
-// งบที่ทีมตั้ง (งบต่อ Platform / งบกลุ่ม / งบของแต่ละ Platform ในกลุ่ม) และต้นทุนแอดของบริษัท
+// งบที่ทีมตั้ง (งบต่อ Platform / งบกลุ่ม / งบของแต่ละ Platform ในกลุ่ม), ค่าตัว KOL และต้นทุนแอดของบริษัท
 // ตัดเฉพาะตอนส่งให้บัญชี agency — ทีมที่เปิดลิงก์เดียวกันเพื่อตรวจงานยังเห็นครบ และข้อมูลใน DB ไม่ถูกแตะ
-// ค่าตัว KOL (budget ของแต่ละแถว) ยังส่งตามเดิม เพราะเอเจนซี่เป็นคนเสนอราคาเอง
+// ค่าตัว KOL (budget ของแต่ละแถว) ทีมเป็นคนตั้งที่หน้าแคมเปญแล้ว — เอเจนซี่แจ้งราคาทางแชท / หมายเหตุถึงทีม
 const hidesTeamMoney = req => (req.account || req.user || {}).role === 'agency';
 function withoutGroupBudgets(groups) {
     return groups.map(g => {
@@ -158,10 +158,19 @@ function withoutAdCost(row) {
     }
     return out;
 }
+// ค่าตัว KOL ของบัญชีเอเจนซี่ = null
+// ต้องคงคีย์ไว้ ห้ามลบทิ้ง: แท็บเก่าที่เปิดค้างทำ Number(s.budget) — ไม่มีคีย์จะขึ้น ฿NaN ส่วน null ได้ ฿0
+function withoutFee(row) {
+    return row ? { ...row, budget: null } : row;
+}
 // ต้นทุนแอดใช้กติกาเดียวกับหน้าโฆษณา/KOL Analytics — เห็นเฉพาะ admin/manager (member และเอเจนซี่ไม่เห็น)
-// ต่างจากงบที่ทีมตั้ง ซึ่งซ่อนเฉพาะบัญชีเอเจนซี่ (member ที่เปิดดูลิงก์ยังเห็นงบ)
+// ต่างจากงบที่ทีมตั้งและค่าตัว KOL ซึ่งซ่อนเฉพาะบัญชีเอเจนซี่ (member ที่เปิดดูลิงก์ยังเห็น)
 const hidesAdCost = req => !canSeeCostMetrics(req.account || req.user);
-const rowsFor = (req, rows) => (hidesAdCost(req) ? rows.map(withoutAdCost) : rows);
+// ทุกแถว submission ที่ส่งออกจากไฟล์นี้ต้องผ่านตัวนี้ (GET / POST / PUT / batch)
+const rowsFor = (req, rows) => rows.map(row => {
+    const out = hidesAdCost(req) ? withoutAdCost(row) : row;
+    return hidesTeamMoney(req) ? withoutFee(out) : out;
+});
 
 // GET /api/agency/:token — ข้อมูลแคมเปญ + รายชื่อที่ส่งไปแล้ว (พร้อมสถานะคัดเลือก)
 router.get('/:token', async (req, res, next) => {
@@ -200,7 +209,8 @@ router.post('/:token', async (req, res, next) => {
         const resolved = await store.projects.resolveToken(req.params.token);
         if (!resolved) return res.status(404).json({ status: 'error', message: 'ลิงก์ไม่ถูกต้องหรือหมดอายุ' });
         const { project, link } = resolved;
-        const { account_name, followers, platform, product, budget, agency, link_account, group_key, tier, content_type } = req.body;
+        // budget ที่แท็บเก่าส่งมาไม่ถูกใช้ — ค่าตัว KOL ทีมตั้งที่หน้าแคมเปญ
+        const { account_name, followers, platform, product, agency, link_account, group_key, tier, content_type } = req.body;
         if (!account_name) return res.status(400).json({ status: 'error', message: 'กรุณาระบุชื่อ Account' });
         // จำนวนวัน Gencode เริ่มต้น = ตามที่ตั้งไว้ในกลุ่มสินค้านั้น (ถ้ามี)
         const grp = (project.ad_groups || []).find(g => g.key === group_key);
@@ -211,7 +221,7 @@ router.post('/:token', async (req, res, next) => {
             followers: Number(followers) || 0,
             platform: platform || null,
             product: product || null,
-            budget: Number(budget) || 0,
+            budget: 0,                                  // ค่าตัวเริ่มที่ 0 เสมอ ทีมตั้งทีหลังที่หน้าแคมเปญ
             agency: agency || link.name || null,        // ค่าเริ่มต้น = ชื่อเจ้าของลิงก์
             link_account: link_account || null,
             group_key: group_key || null,
@@ -226,9 +236,27 @@ router.post('/:token', async (req, res, next) => {
     } catch (err) { next(err); }
 });
 
+// ช่องที่ PUT ด้านล่างรับบันทึก — ใช้แยกคำขอ "มีแต่ค่าตัว" ออกจากคำขอที่มีช่องอื่นมาด้วย
+// เพิ่มช่องใหม่ให้เส้นนั้นเมื่อไหร่ ต้องเพิ่มที่นี่ด้วย ไม่งั้นคำขอที่มีช่องใหม่ + budget จะโดนตอบ 409
+const AGENCY_PUT_FIELDS = [
+    'account_name', 'followers', 'platform', 'product', 'agency', 'link_account', 'agency_note', 'content_type', 'tier',
+    'draft_link', 'draft_link2', 'draft_link3', 'draft_link4', 'draft_link5',
+    'gencode', 'feedback', 'feedback2', 'feedback3', 'feedback4', 'feedback5',
+    'approved', 'draft_status', 'post_url', 'post_date', 'id_post', 'code_expire',
+    'views', 'likes', 'comments', 'saves', 'shares', 'reposts'
+];
+
 // PUT /api/agency/:token/submissions/:subId — Agency อัปเดตดราฟงาน (ลิงค์งาน/Gencode/feedback/approve)
 router.put('/:token/submissions/:subId', async (req, res, next) => {
     try {
+        // ค่าตัว KOL ย้ายไปให้ทีมตั้งที่หน้าแคมเปญแล้ว (PUT /api/projects/:id/fees) — เส้นนี้ไม่เขียนค่าตัว ไม่ว่าใครเปิดลิงก์
+        // คำขอที่มีแต่ budget / budget_per_clip = แท็บเก่าที่เปิดค้างไว้ก่อน deploy (ช่องกรอกค่าตัว / หารเฉลี่ย / ล้างงบ)
+        // ตอบ 409 ให้รีเฟรชทันที ไม่แตะฐานข้อมูล ดีกว่าตอบว่าบันทึกแล้วแต่ค่าตัวไม่เปลี่ยน
+        // ถ้ามีช่องอื่นมาด้วย (ฟอร์มแก้ข้อมูล KOL รุ่นเก่า) ตัดค่าตัวทิ้งแล้วบันทึกที่เหลือตามปกติ
+        const sentFee = req.body.budget !== undefined || req.body.budget_per_clip !== undefined;
+        if (sentFee && !AGENCY_PUT_FIELDS.some(f => req.body[f] !== undefined)) {
+            return res.status(409).json({ status: 'error', code: 'FEE_MOVED', message: 'ค่าตัว KOL ย้ายไปให้ทีมกรอกที่หน้าแคมเปญแล้ว กรุณารีเฟรชหน้า (กด F5)' });
+        }
         const resolved = await store.projects.resolveToken(req.params.token);
         if (!resolved) return res.status(404).json({ status: 'error', message: 'ลิงก์ไม่ถูกต้องหรือหมดอายุ' });
         const { project, link } = resolved;
@@ -240,7 +268,7 @@ router.put('/:token/submissions/:subId', async (req, res, next) => {
             }
         }
         const {
-            account_name, followers, platform, product, agency, budget, link_account, agency_note,
+            account_name, followers, platform, product, agency, link_account, agency_note,
             content_type, tier,   // ระบุย้อนหลังได้ สำหรับรายชื่อที่ส่งมาก่อนมีการแยกช่อง
             draft_link, draft_link2, draft_link3, draft_link4, draft_link5,
             gencode, feedback, feedback2, feedback3, feedback4, feedback5,
@@ -251,29 +279,15 @@ router.put('/:token/submissions/:subId', async (req, res, next) => {
             return res.status(400).json({ status: 'error', message: 'กรุณาระบุชื่อ Account' });
         }
         // ช่อง "ตัวคน" (ชื่อ/ยอดฟอล/Platform/สินค้า/ลิงก์ช่อง/ผู้ติดต่อ) แก้ทีเดียวให้ครบทุกคลิป
-        // ช่อง "ตัวงาน" (งบ/Gencode/ดราฟ/โพสต์/ยอดวิว) เป็นของแต่ละคลิป จึงแก้เฉพาะแถวนั้น
+        // ช่อง "ตัวงาน" (Gencode/ดราฟ/โพสต์/ยอดวิว) เป็นของแต่ละคลิป จึงแก้เฉพาะแถวนั้น
+        // ค่าตัว (budget / budget_per_clip) ไม่ส่งต่อให้ store เลย — ถึงหลุดมาก็ไม่เขียน (updateOne ตัดทิ้งอีกชั้น)
         const personFields = ['account_name', 'followers', 'platform', 'product', 'link_account', 'agency', 'content_type', 'tier'];
         const isPersonEdit = personFields.some(f => req.body[f] !== undefined);
         const writer = isPersonEdit ? store.submissions.updatePerson : store.submissions.update;
-        // ค่าตัวเก็บ "ต่อคลิป" แต่แถวที่ยุบรวมในหน้าเว็บมียอดรวมทุกคลิป — หน้าเว็บรุ่นเก่าส่งยอดรวมมากับการแก้ตัวคน
-        // แล้ว updatePerson เขียนยอดนั้นลงทุกคลิป ค่าตัวเลยทวีคูณทุกครั้งที่บันทึก
-        // หน้าเว็บรุ่นใหม่ยืนยันด้วย budget_per_clip — ถ้าไม่มี แปลว่าเป็นแท็บเก่าที่เปิดค้างไว้ก่อน deploy:
-        //   คนที่มีคลิปเดียว ยอดที่ส่งมาคือค่าต่อคลิปอยู่แล้ว รับได้ตามเดิม
-        //   คนที่มีหลายคลิป ปฏิเสธทั้งคำขอให้รีเฟรช ดีกว่าตอบว่าบันทึกแล้วแต่ค่าตัวไม่เปลี่ยน
-        if (isPersonEdit && budget !== undefined && req.body.budget_per_clip !== true) {
-            const target = await store.submissions.get(req.params.subId);
-            const clipCount = (target && target.person_key)
-                ? (await store.submissions.listByProject(project.id)).filter(s => s.person_key === target.person_key).length
-                : 1;
-            if (clipCount > 1) {
-                return res.status(409).json({ status: 'error', code: 'STALE_PAGE', message: 'หน้านี้เป็นเวอร์ชันเก่า กรุณารีเฟรชหน้า (กด F5) แล้วแก้ไขอีกครั้ง' });
-            }
-        }
         const data = await writer.call(store.submissions, req.params.subId, project.id, {
             account_name: account_name !== undefined ? String(account_name).trim() : undefined,
             followers: followers !== undefined ? (Number(followers) || 0) : undefined,
             platform, product, agency, content_type, tier,
-            budget: budget !== undefined ? (Number(budget) || 0) : undefined,
             link_account,
             agency_note: agency_note !== undefined ? ((agency_note && String(agency_note).trim()) ? String(agency_note).trim() : null) : undefined,
             draft_link, draft_link2, draft_link3, draft_link4, draft_link5,
@@ -326,7 +340,7 @@ router.post('/:token/batch', async (req, res, next) => {
                 followers: Number(it.followers) || 0,
                 platform: it.platform || null,
                 product: it.product || null,
-                budget: Number(it.budget) || 0,
+                budget: 0,                      // ค่าตัวทีมตั้งที่หน้าแคมเปญ ไม่รับจากเอเจนซี่
                 agency: link.name || null,
                 agency_token: link.scoped ? link.token : null,
                 group_key: it.group_key || null,

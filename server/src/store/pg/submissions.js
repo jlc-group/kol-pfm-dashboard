@@ -92,8 +92,16 @@ function newRow({ project_id, account_name, followers, platform, product, budget
 /**
  * แก้ 1 แถว ภายใน transaction ที่เปิดค้างไว้แล้ว
  * แยกออกมาเพื่อให้ updatePerson แก้พี่น้องหลายแถวได้ใน transaction เดียว
+ *
+ * opts.allowFee = true เท่านั้นที่เขียนค่าตัว (budget) ได้ — ส่งมาจาก setFees ที่เดียว
+ * ทางอื่นทั้งหมด (update / updatePerson → หน้าเอเจนซี่ / หน้าแคมเปญ / หน้าแอด) ส่ง budget มาก็ไม่เขียน
+ * กันค่าตัวถูกทับจากหน้าเว็บรุ่นเก่าที่ยังเปิดค้าง หรือ route ที่ลืมตัดช่องนี้ทิ้ง
  */
-async function updateOne(client, subId, projectId, fields, byName) {
+async function updateOne(client, subId, projectId, fields, byName, opts = {}) {
+    // คัดลอกก่อนตัดคีย์ ไม่แก้อ็อบเจกต์ของผู้เรียก (updatePerson ส่งอ็อบเจกต์เดียวกันวนเขียนทุกคลิป)
+    fields = { ...fields };
+    if (!opts || opts.allowFee !== true) delete fields.budget;
+
     const id = numOr(subId);
     if (id === null) return null;
     const pid = projectId == null ? null : numOr(projectId);
@@ -285,7 +293,7 @@ const submissions = {
         const cents = v => Math.round((Number(v) || 0) * 100);   // เทียบเป็นสตางค์ กันทศนิยมลอยของ JS
 
         return withTransaction(async (client) => {
-            // ล็อกทุกแถวก่อนเทียบค่าเดิม — กันอีกคน (หรือหน้าเอเจนซี่) แก้แทรกระหว่างทาง
+            // ล็อกทุกแถวก่อนเทียบค่าเดิม — กันทีมอีกคนแก้ค่าตัวแทรกระหว่างทาง
             // เรียงตาม id เสมอ สองคำขอที่ล็อกแถวชุดเดียวกันจะได้ไม่รอกันเองจนค้าง (deadlock)
             const r = await client.query(
                 'SELECT * FROM submissions WHERE project_id = $1 AND id = ANY($2::int[]) ORDER BY id FOR UPDATE',
@@ -306,7 +314,8 @@ const submissions = {
                 const cur = locked.get(ids[i]);
                 // ค่าเท่าเดิมไม่ต้องเขียน — ไม่งั้นประวัติจะมีรายการ "เปลี่ยน" ที่ไม่ได้เปลี่ยนอะไร
                 if (cents(cur.budget) === cents(fees[i])) { after.set(cur.id, cur); continue; }
-                const row = await updateOne(client, cur.id, pid, { budget: fees[i] }, byName);
+                // ทางเดียวที่เขียนค่าตัวได้ (allowFee) — ดูคำอธิบายที่ updateOne
+                const row = await updateOne(client, cur.id, pid, { budget: fees[i] }, byName, { allowFee: true });
                 after.set(cur.id, row);
                 diff.set(cur.id, {
                     id: cur.id, account_name: cur.account_name, clip_no: cur.clip_no,

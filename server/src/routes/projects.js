@@ -495,9 +495,10 @@ router.put('/:id/submissions/:subId', async (req, res, next) => {
             draft_link, draft_link2, draft_link3, draft_link4, draft_link5,
             feedback, feedback2, feedback3, feedback4, feedback5,
             post_url, post_date, id_post, code_expire,
-            account_name, platform, product, agency, budget, link_account, concept, gen_date, team_note,
+            account_name, platform, product, agency, link_account, concept, gen_date, team_note,
             views, likes, comments, saves, shares, reposts   // ผลงานคอนเทนต์ จากโมดัล Perf
         } = req.body;
+        // ค่าตัว (budget) ไม่รับที่เส้นนี้แล้ว — ตั้งผ่าน PUT /:id/fees ที่เดียว (มีเช็คค่าเดิม + ลงประวัติ)
         if (status !== undefined && !['confirmed', 'rejected', 'submitted'].includes(status)) {
             return res.status(400).json({ status: 'error', message: 'สถานะไม่ถูกต้อง' });
         }
@@ -509,7 +510,6 @@ router.put('/:id/submissions/:subId', async (req, res, next) => {
             feedback, feedback2, feedback3, feedback4, feedback5,
             post_url, post_date, id_post, code_expire,
             account_name, platform, product, agency,
-            budget: budget !== undefined ? (Number(budget) || 0) : undefined,
             link_account, concept, gen_date,
             team_note: team_note !== undefined ? ((team_note && String(team_note).trim()) ? String(team_note).trim() : null) : undefined,
             views: views !== undefined ? (Number(views) || 0) : undefined, likes: likes !== undefined ? (Number(likes) || 0) : undefined, comments: comments !== undefined ? (Number(comments) || 0) : undefined, saves: saves !== undefined ? (Number(saves) || 0) : undefined, shares: shares !== undefined ? (Number(shares) || 0) : undefined,
