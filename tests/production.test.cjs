@@ -379,6 +379,22 @@ test('a fee changed by someone else since the page loaded returns 409 and logs n
     assert.equal(logs.length, 0);
 });
 
+test('staff can only open agency links of brands they may see', async () => {
+    const { project } = agencyFixture();
+    project.brand = 'Beauterry';
+    user({ role: 'member', team_id: 2, brands: ['Jdent'] });
+    const denied = await request('/api/agency/tok1');
+    assert.equal(denied.status, 403);
+    assert.equal((await denied.json()).message, 'ไม่มีสิทธิ์เปิดลิงก์ของแบรนด์อื่น');
+    assert.equal((await request('/api/agency/tok1/messages')).status, 403);
+    user({ role: 'member', team_id: 2, brands: ['Beauterry'] });
+    assert.equal((await request('/api/agency/tok1')).status, 200);
+    user({ role: 'manager', team_id: 3, brands: [] });
+    assert.equal((await request('/api/agency/tok1')).status, 200);
+    user({ role: 'agency', agency_tokens: ['tok1'] });
+    assert.equal((await request('/api/agency/tok1')).status, 200);
+});
+
 test('production refuses missing settings, sample secrets and invalid ports', () => {
     assert.throws(() => validateRuntime({ NODE_ENV: 'production' }), /Missing production settings/);
     const env = { NODE_ENV: 'production', JWT_SECRET: process.env.JWT_SECRET, DB_HOST: 'fixture', DB_PORT: '5432',

@@ -5,7 +5,7 @@ const store = require('../store');
 const multer = require('multer');
 const chatHub = require('../services/chatHub');
 const { authenticate } = require('../middleware/auth');
-const { canSeeCostMetrics } = require('../data/roles');
+const { canSeeCostMetrics, canSeeBrand } = require('../data/roles');
 
 const { UPLOAD_DIR } = require('../config/uploads');
 const router = express.Router();
@@ -27,8 +27,17 @@ function requireAgencyAccess(req, res, next) {
         if ((req.account.status || 'active') !== 'active') {
             return res.status(403).json({ status: 'error', message: 'บัญชียังไม่ได้รับอนุมัติให้ใช้งาน', code: 'PENDING' });
         }
-        // ทีม/แอดมิน/Manager เปิดดูได้ทุกลิงก์ (ต้องเข้าไปตรวจงานอยู่แล้ว)
-        if (u.role !== 'agency') return next();
+        // ทีมเปิดดูได้เฉพาะลิงก์ของแบรนด์ที่ตัวเองมีสิทธิ์ — กติกาเดียวกับหน้าแคมเปญ (admin/manager ได้ทุกแบรนด์)
+        // member ของแบรนด์อื่นที่ได้ token มา (เช่นจากรายชื่อเอเจนซี่) จะเปิดหรือแก้ข้อมูลผ่านลิงก์ไม่ได้
+        if (u.role !== 'agency') {
+            const token = req.params.token || req.path.split('/')[1];
+            return store.projects.resolveToken(token).then(resolved => {
+                if (resolved && !canSeeBrand(req.account || u, resolved.project.brand)) {
+                    return res.status(403).json({ status: 'error', message: 'ไม่มีสิทธิ์เปิดลิงก์ของแบรนด์อื่น' });
+                }
+                next();
+            }).catch(next);
+        }
         // บัญชีเอเจนซี่ เปิดได้เฉพาะลิงก์ที่ admin ผูกไว้ให้
         store.users.findById(u.id).then(acc => {
             const own = (acc && acc.agency_tokens) || [];
