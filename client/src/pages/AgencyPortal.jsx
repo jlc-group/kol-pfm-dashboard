@@ -603,11 +603,7 @@ export default function AgencyPortal() {
     // บรีฟตาม Platform เลิกใช้แล้ว (ซ้ำกับบรีฟหลักของแคมเปญ) เหลือบรีฟหลัก + บรีฟต่อสินค้า
     const mainBrief = info.brief_link || null;   // บรีฟหลักของแคมเปญ (ทั้งแคมเปญ ไม่แยก Platform/สินค้า)
     const isAgencyLink = !!info.agency_name;                 // ลิงก์แยกต่อเจ้า (ไม่ใช่ลิงก์รวมเดิม)
-    // งบที่ทีมตั้งให้เห็นเฉพาะทีมที่เปิดดูลิงก์ — บัญชีเอเจนซี่ไม่เห็น (server ไม่ส่งมาให้อยู่แล้ว กันไว้อีกชั้น)
-    const seesTeamBudget = !!user && user.role !== 'agency';
-    const platformBudgets = seesTeamBudget ? (info.platform_budgets || {}) : {};     // งบต่อ Platform เฉพาะที่รับผิดชอบ
-    const budgetEntries = Object.entries(platformBudgets).filter(([, v]) => Number(v) > 0);
-    const fmtBaht = n => '฿' + (Number(n) || 0).toLocaleString('th-TH');
+    // การ์ดงบต่อ Platform เอาออกจากหน้านี้แล้วสำหรับทุกบัญชี — ทีมดูงบได้ที่หน้าแคมเปญ (ProjectDetail)
     const displayTarget = scopeKol > 0 ? scopeKol : (info.kol_target || 0); // เป้าหมาย KOL ที่เจ้านี้รับผิดชอบ
     const adGroups = info.ad_groups || [];
     const groupKeys = new Set(adGroups.map(g => g.key));
@@ -679,16 +675,6 @@ export default function AgencyPortal() {
                             <div className="agency-info-k">Platform ที่รับผิดชอบ</div>
                             <div>{scopePlatforms.length ? <div className="chip-list" style={{ marginTop: 4 }}>{scopePlatforms.map(p => <span className="chip-item" key={p} style={{ padding: '4px 11px' }}>{p}</span>)}</div> : <span className="muted">ทุก Platform</span>}</div>
                         </div>
-                        {seesTeamBudget && budgetEntries.length > 0 && (
-                            <div className="agency-info-item span2">
-                                <div className="agency-info-k">Budget (ต่อ Platform)</div>
-                                <div className="ag-budget-list" style={{ marginTop: 4 }}>
-                                    {budgetEntries.map(([pf, v]) => (
-                                        <span className="ag-budget-chip" key={pf}>{pf} · <b>{fmtBaht(v)}</b></span>
-                                    ))}
-                                </div>
-                            </div>
-                        )}
                     </div>
                 </div>
 

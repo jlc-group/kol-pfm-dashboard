@@ -571,10 +571,6 @@ a { text-decoration: none; color: inherit; }
 .ag-divide-btn:hover { transform: translateY(-1px); }
 .ag-divide-btn:disabled { opacity: .5; cursor: not-allowed; transform: none; }
 .ag-divide-btn.on { background: #fff; color: var(--mint-dark); border: 1px solid var(--mint); }
-/* Budget ต่อ Platform ในการ์ดข้อมูลแคมเปญ */
-.ag-budget-list { display: flex; flex-wrap: wrap; gap: 7px; }
-.ag-budget-chip { font-size: 12px; padding: 4px 11px; border-radius: 8px; background: #eef7f2; border: 1px solid var(--border); color: var(--text); }
-.ag-budget-chip b { color: var(--mint-dark); font-weight: 800; }
 /* Platform ย้ายไปเป็นหัวกล่อง · Content Type ยังอยู่ในตารางแต่ล็อกตามกล่อง
    NAME C_TYPE FORMAT TIER FOLLOWER PRODUCT AGENCY LINK จัดการ = 9 คอลัมน์ (no-agency ไม่มี AGENCY = 8)
    ไม่มีคอลัมน์ BUDGET แล้ว — ทีมกรอกค่าตัวที่หน้าแคมเปญ
