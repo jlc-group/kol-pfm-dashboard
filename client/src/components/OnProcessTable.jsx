@@ -203,7 +203,7 @@ const procHead = (showAds = false) => (
     <div className="proc-tbl-head">
         <span>KOL NAME</span><span>PRODUCT</span>
         {showAds && <span>TARGET</span>}
-        <span>CONTENT TYPE</span><span>CONTENT FORMAT</span>
+        <span>CONTENT TYPE</span><span>FORMAT / STYLE</span>
         <span>PLATFORM</span><span>CONTENT DRAFT</span>
         <span>POST</span><span>POST DATE</span><span>GENCODE</span>
         <span>ID POST</span><span>CODE EXPIRE IN</span><span className="ta-c">จัดการ</span>

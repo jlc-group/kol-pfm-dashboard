@@ -116,10 +116,10 @@ export default function Report() {
                 </div>
             </div>
 
-            {/* Content Format */}
+            {/* Style (content_format ที่บรีฟไว้ในกลุ่ม) */}
             {d.by_format && d.by_format.length > 0 && (
                 <div className="panel">
-                    <h3>🎬 ผลงานตาม Content Format</h3>
+                    <h3>🎬 ผลงานตาม Style</h3>
                     <div className="rpt-fmt-grid">
                         {d.by_format.map(f => (
                             <div className="rpt-fmt" key={f.format}>
@@ -140,7 +140,7 @@ export default function Report() {
                     <div className="panel-head"><h3>🏆 Top คลิป by Views</h3></div>
                     {(!d.top_videos || d.top_videos.length === 0) ? <div className="rank-empty" style={{ padding: 16 }}>— ยังไม่มีข้อมูลวิว</div> : (
                         <table className="data-table">
-                            <thead><tr><th>#</th><th>KOC</th><th>PRODUCT</th><th>FORMAT</th><th className="num">VIEWS</th><th className="num">LIKES</th></tr></thead>
+                            <thead><tr><th>#</th><th>KOC</th><th>PRODUCT</th><th>STYLE</th><th className="num">VIEWS</th><th className="num">LIKES</th></tr></thead>
                             <tbody>{d.top_videos.map((v, i) => (
                                 <tr key={i}>
                                     <td>{i + 1}</td>

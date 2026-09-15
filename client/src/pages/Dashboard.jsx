@@ -226,8 +226,8 @@ export default function Dashboard() {
                     <table className="data-table ti-table">
                         <thead>
                             <tr>
-                                <th>#</th><th>ชื่อ</th><th>คลิป</th><th>แพลตฟอร์ม</th><th>Brand</th><th>Product</th>
-                                <th className="num">ค่าตัวรวม</th>
+                                <th>#</th><th>Name</th><th>Clip</th><th>Platform</th><th>Brands</th><th>Products</th>
+                                <th className="num">Total Fee</th>
                                 <th className="num">Views</th><th className="num">Likes</th><th className="num">Comments</th>
                                 <th className="num">Bookmark</th><th className="num">Shares</th>
                                 <th className="num">Engagement</th>

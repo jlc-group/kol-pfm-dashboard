@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { api } from '../api/client.js';
 import Icon from '../components/Icon.jsx';
 import ProductChips from '../components/ProductChips.jsx';
+import ProductMultiSelect from '../components/ProductMultiSelect.jsx';
 
 const splitCodes = v => (v ? String(v).split(',').map(s => s.trim()).filter(Boolean) : []);
 
@@ -163,6 +164,7 @@ export default function Kols() {
     const [platform, setPlatform] = useState('');
     const [year, setYear] = useState('');
     const [month, setMonth] = useState('');
+    // สินค้าที่กรอง — เลือกได้หลายตัว เก็บเป็นรหัสคั่นด้วย , แบบเดียวกับ MultiSelect (ว่าง = ทุกสินค้า)
     const [product, setProduct] = useState('');
     // การเรียงลำดับตาราง — ทีละอย่าง ไม่ซ้อนกัน เริ่มต้นเรียงตามเดือนใหม่สุดก่อน
     const [sort, setSort] = useState('month-desc'); // month-desc | month-asc | perf-best | perf-worst
@@ -179,7 +181,8 @@ export default function Kols() {
         if (!ys.length) ys.push(new Date().getFullYear());
         return ys.sort((a, b) => b - a);
     }, [rows]);
-    const products = useMemo(() => [...new Set(rows.map(r => r.product).filter(Boolean))].sort(), [rows]);
+    // ตัวเลือกเป็นรหัสสินค้าทีละตัว — เดิมเป็นทั้งก้อนของแต่ละแถว ("BTA1-01,BTA1-02,...") เลยเลือกได้แค่ชุดเดียวที่ตรงเป๊ะ
+    const products = useMemo(() => [...new Set(rows.flatMap(r => splitCodes(r.product)))].sort(), [rows]);
     // เอาเฉพาะแพลตฟอร์มที่มีข้อมูลจริง จะได้ไม่ขึ้นปุ่มที่กดแล้วว่างเปล่า
     const platforms = useMemo(() => [...new Set(rows.map(r => r.platform).filter(Boolean))].sort(), [rows]);
 
@@ -192,12 +195,16 @@ export default function Kols() {
             .some(v => String(v ?? '').toLowerCase().includes(q));
     };
 
+    // แถวที่มีสินค้าตัวใดตัวหนึ่งที่เลือกไว้ = แสดง (เลือก 2 ตัว = เห็นคนที่ทำตัวแรก หรือตัวที่สอง หรือทั้งคู่)
+    const pickedProducts = splitCodes(product);
+    // เลือกครบทุกตัว (กด "เลือกทุก Product") = เท่ากับไม่กรอง — ไม่งั้น KOL ที่ยังไม่ระบุสินค้าจะหายไป ทั้งที่ชิปบอกว่าทุก Product
+    const allProductsPicked = products.length > 0 && products.every(c => pickedProducts.includes(c));
     const shown = rows.filter(r =>
         (!brand || r.brand === brand) &&
         (!platform || r.platform === platform) &&
         (!year || String(r.year) === String(year)) &&
         (!month || r.month === month) &&
-        (!product || r.product === product) &&
+        (!pickedProducts.length || allProductsPicked || splitCodes(r.product).some(c => pickedProducts.includes(c))) &&
         matchSearch(r));
 
     // คีย์เวลา = ปี*100 + เดือน เทียบข้ามปีได้ถูก (ธ.ค. 25 ต้องมาก่อน ม.ค. 26 ไม่ใช่ดูแค่ชื่อเดือน)
@@ -264,10 +271,7 @@ export default function Kols() {
                             <button type="button" className="ka-search-x" onClick={() => setSearch('')} title="ล้างคำค้นหา">✕</button>
                         )}
                     </div>
-                    <select value={product} onChange={e => setProduct(e.target.value)}>
-                        <option value="">All Products</option>
-                        {products.map(p => <option key={p} value={p}>{p}</option>)}
-                    </select>
+                    <ProductMultiSelect value={product} options={products} onChange={setProduct} placeholder="All Products" />
                 </div>
             </header>
 

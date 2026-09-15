@@ -96,6 +96,18 @@ function resolveGroupMedia(g, platform, contentType) {
     };
 }
 
+// Campaign (VDO View / Reach / Consideration Ads) ของ (Platform + Content Type) — ตั้งไว้ที่ชุด Content Type ในฟอร์มแคมเปญ
+// ต้องตรง Content Type จริง — ชุดที่ยังไม่เลือก Content Type ห้ามแจก Campaign ให้ KOL ทุก Content Type ใน Platform นั้น
+// (ต่างจาก resolveGroupMedia ที่ถือว่าแถวไม่มี Content Type ใช้ได้กับทุกอัน) · KOL ที่ไม่มี Content Type เลยถึงจะหยิบชุดแรกที่มี Campaign
+// กลุ่มที่บันทึกก่อนมีช่องนี้ = null
+function resolveGroupCampaign(g, platform, contentType) {
+    if (!g) return null;
+    const hit = (g.allocations || []).find(a => a.campaign
+        && (!platform || !a.platform || a.platform === platform)
+        && (!contentType || a.content_type === contentType));
+    return hit ? hit.campaign : null;
+}
+
 function engagementOf(s) {
     return (Number(s.likes) || 0) + (Number(s.comments) || 0) + (Number(s.saves) || 0)
         + (Number(s.shares) || 0) + (Number(s.reposts) || 0);
@@ -205,7 +217,7 @@ module.exports = {
     GOOD_CPM, GOOD_CPE, TARGET_PLATFORMS, AD_STAMP_AT, now, clone,
     duplicateError, inScope, scopeProjects,
     linkGroupPlatforms, resolveGroupClips, resolveGroupTarget,
-    resolveGroupProducts, resolveGroupCtype, resolveGroupMedia,
+    resolveGroupProducts, resolveGroupCtype, resolveGroupMedia, resolveGroupCampaign,
     engagementOf, maybeStamp, stampWaitReason,
     feeMissing, clipCostMetrics, costAxisRange, costAxisNorm, perfVerdict, feeCostAverages
 };

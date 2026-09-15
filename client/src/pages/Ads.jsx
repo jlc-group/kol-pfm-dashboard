@@ -235,20 +235,27 @@ function AdRow({ row, onSaved }) {
             <div className="ads-cell ads-stack">
                 <ProductSummary value={row.product} max={2} />
             </div>
+            {/* CAMPAIGN (อยู่หน้า TARGET) — ตั้งไว้ที่ชุด Content Type ของกลุ่ม · แคมเปญที่บันทึกก่อนมีช่องนี้จะเป็น — */}
+            <div className="ads-cell ads-stack">
+                {row.campaign ? <span className="proc-ctype-chip camp">{row.campaign}</span> : <span className="muted">—</span>}
+            </div>
             {/* Target ตั้งต่อ Platform และมีเฉพาะ Platform ที่ใช้ยิงแอด — ช่องว่างโชว์ — เหมือนหน้า On Process */}
             <div className="ads-cell ads-stack">
                 {asTargetArray(row.target).length > 0
                     ? asTargetArray(row.target).map(t => <span className="proc-ads-tgt" key={t} title={t}>🎯 {t}</span>)
                     : <span className="muted">—</span>}
             </div>
+            {/* CONTENT TYPE / FORMAT (Photo-VDO) / STYLE — แยกคอลัมน์ละเรื่อง ไม่กองรวมในช่องเดียว */}
             <div className="ads-cell ads-stack">
-                {row.content_type || row.media_type || row.group_format ? (
-                    <>
-                        {row.content_type && <span className="proc-ctype-chip">{row.content_type}</span>}
-                        {row.media_type && <span className="proc-ctype-chip media">{row.media_type}</span>}
-                        {splitCsv(row.group_format).map(x => <span className="proc-ctype-chip fmt" key={x}>{x}</span>)}
-                    </>
-                ) : <span className="muted">—</span>}
+                {row.content_type ? <span className="proc-ctype-chip">{row.content_type}</span> : <span className="muted">—</span>}
+            </div>
+            <div className="ads-cell ads-stack">
+                {row.media_type ? <span className="proc-ctype-chip media">{row.media_type}</span> : <span className="muted">—</span>}
+            </div>
+            <div className="ads-cell ads-stack">
+                {splitCsv(row.group_format).length
+                    ? splitCsv(row.group_format).map(x => <span className="proc-ctype-chip fmt" key={x}>{x}</span>)
+                    : <span className="muted">—</span>}
             </div>
             {/* POST — ลิงก์โพสต์จริง (ไอคอนอย่างเดียว คอลัมน์จึงแคบสุดในตาราง) */}
             <div className="ads-cell">
@@ -464,7 +471,7 @@ export default function Ads() {
                                         options={[{ value: '', label: 'ทุก Platform', count: countIf('platform', () => true) },
                                         ...platformOptions.map(p => ({ value: p, label: p, count: countIf('platform', r => r.platform === p) }))]} />
                                 </span>
-                                <span>แคมเปญ</span><span>PRODUCT</span><span>TARGET</span><span>CONTENT</span>
+                                <span>BRANDS</span><span>PRODUCTS</span><span>CAMPAIGN</span><span>TARGET</span><span>CONTENT TYPE</span><span>FORMAT</span><span>STYLE</span>
                                 <span>POST</span><span>GENCODE</span><span>ID POST</span><span>วันลงงาน</span><span>วันยิงแอด</span>
                                 <span>สถานะ
                                     <ColumnFilter label="สถานะยิงแอด" value={status} onPick={setStatus}
@@ -477,7 +484,7 @@ export default function Ads() {
                                         ...LATE_OPTS.map(([v, l]) => ({ value: v, label: l, dot: v, count: countIf('late', r => lateBucket(r) === v) }))]} />
                                 </span>
                                 <span title="ผลที่ระบบล็อกไว้ตอนค่ายิงแอดสะสมถึง 10,000 บาท — แก้ไม่ได้">STAMPED PFM 🔒</span>
-                                <span title="ผลตอนนี้ คำนวณสดจากข้อมูลล่าสุด — ใช้ตัดสินว่าควรยิงต่อหรือหยุด">LIVE PFM</span>
+                                <span title="ผลตอนนี้ คำนวณสดจากข้อมูลล่าสุด — ใช้ตัดสินว่าควรยิงต่อหรือหยุด">PFM</span>
                                 <span>หมายเหตุ</span>
                             </div>
                             {rows.map(r => <AdRow key={r.sub_id} row={r} onSaved={load} />)}

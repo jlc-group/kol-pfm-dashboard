@@ -178,14 +178,14 @@ function AddSubmissionModal({ projectId, products = [], groups = [], onClose, on
                                                 {m.media_type && <span className="proc-ctype-chip media">{m.media_type}</span>}
                                                 {m.content_format && <span className="proc-ctype-chip fmt">{m.content_format}</span>}
                                                 {tg.map(t => <span className="proc-ads-tgt" key={t}>🎯 {t}</span>)}
-                                                {empty && <span className="muted">เลือก Platform กับ Content Type แล้วจะขึ้น Photo-VDO / Content Format ให้เอง</span>}
+                                                {empty && <span className="muted">เลือก Platform กับ Content Type แล้วจะขึ้น Format / Style ให้เอง</span>}
                                             </div>
                                         );
                                     })()}
                                 </div>
                             ) : (
                                 <div className="addsub-warn">
-                                    ยังไม่เลือกกลุ่ม — KOL คนนี้จะไม่มี Target / Content Type / Photo-VDO / Content Format ติดมาด้วย
+                                    ยังไม่เลือกกลุ่ม — KOL คนนี้จะไม่มี Target / Content Type / Format / Style ติดมาด้วย
                                 </div>
                             )}
                         </div>
@@ -649,7 +649,7 @@ export default function ProjectDetail() {
                 )}
             </td>
             <td>{s.platform ? <span className="tag">{s.platform}</span> : '—'}</td>
-            {/* Content Type เก็บรายคน ส่วน Format อ่านจากที่ตั้งไว้ในกลุ่ม */}
+            {/* Content Type เก็บรายคน ส่วน Style อ่านจากที่ตั้งไว้ในกลุ่ม */}
             <td className="sub-ctype">
                 {s.content_type ? <>
                     <span className="proc-ctype-chip">{s.content_type}</span>

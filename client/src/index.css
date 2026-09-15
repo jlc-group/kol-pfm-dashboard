@@ -683,7 +683,8 @@ a { text-decoration: none; color: inherit; }
 }
 .ti-more:hover { background: #dcefe5; }
 
-.ka-top-filters { display: flex; gap: 10px; }
+/* align-items: flex-start — ช่องกรองสินค้าสูงขึ้นตอนมีชิป ช่องค้นหาต้องไม่ยืดตาม (ใช้กับ grid ตอนจอแคบด้วย) */
+.ka-top-filters { display: flex; gap: 10px; align-items: flex-start; }
 .ka-top-filters select { padding: 9px 12px; border: 1px solid var(--border); border-radius: 10px; background: #fff; font-size: 12.5px; color: var(--text); cursor: pointer; }
 /* ช่องค้นหาในหน้า KOL Analytics */
 .ka-search {
@@ -1030,6 +1031,8 @@ a { text-decoration: none; color: inherit; }
 .proc-ctypefilter { margin-top: -2px; padding-left: 14px; }
 .ctype-none { color: #9aa1ad; font-size: 11px; font-style: italic; }
 .proc-ctype-chip.fmt { background: #fff4e6; color: #b45309; }
+/* ป้าย Campaign (VDO View / Reach / Consideration Ads) ในหน้า Ads — สีฟ้า แยกจากป้าย Content Type / Format / Style */
+.proc-ctype-chip.camp { background: #e0f2fe; color: #0369a1; }
 /* Content Type + Photo/VDO อยู่แถวบน, Content Format เต็มแถวล่าง
    (วาง 3 ช่องในแถวเดียวแล้วช่องที่ 3 แคบจนตัวหนังสือชนลูกศร) */
 .ctype-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
@@ -1133,10 +1136,11 @@ a { text-decoration: none; color: inherit; }
 /* ตารางยิงแอด (แถวแนวนอน) */
 .ads-tbl-scroll { overflow-x: auto; }
 /* ให้คอลัมน์กว้างพอจะอ่าน Target/Product ได้ครบ แล้วเลื่อนซ้ายขวาเอา (ตัวห่อ .ads-tbl-scroll เลื่อนให้)
-   1700px = ค่าต่ำสุดที่วัดแล้วว่า Target ("F_Beauty-Make up_18-44" ต้องการ 158px) แสดงครบไม่โดนตัด
+   Target ("F_Beauty-Make up_18-44") ต้องการ 158px — เดิม 15 คอลัมน์ใช้ 1700px พอดี
+   แยก CONTENT เป็น CONTENT TYPE / FORMAT / STYLE และเพิ่ม CAMPAIGN แล้ว (18 คอลัมน์) จึงขยายเป็น 1990px ให้ Target ได้ความกว้างเท่าเดิม
    ต่ำกว่านี้ Target จะโดนตัดเป็น ... / สูงกว่านี้ Target ไม่ได้กว้างขึ้นแล้ว มีแต่เลื่อนไกลขึ้นเปล่า ๆ
-   หมายเหตุ: body ตั้ง zoom 1.2 (--app-zoom) ค่านี้จึงกลายเป็น ~2040px จริงบนจอ */
-.ads-tbl { min-width: 1700px; }
+   หมายเหตุ: --app-zoom ตอนนี้เป็น 1 (เปลี่ยนจาก 1.2 ใน edb8dc7) ความกว้างบนจอจึงเท่ากับค่านี้ */
+.ads-tbl { min-width: 1990px; }
 /* ปุ่มกรองเล็กบนหัวคอลัมน์ (แบบตาราง Excel) */
 .colf { position: relative; display: inline-flex; vertical-align: middle; }
 .colf-btn {
@@ -1177,9 +1181,9 @@ a { text-decoration: none; color: inherit; }
 .colf-dot.none { background: #c3cdc8; }
 .ads-tbl-head, .ads-row {
     display: grid;
-    /* KOL แคมเปญ PRODUCT TARGET CONTENT POST GENCODE ID-POST วันลงงาน วันยิงแอด สถานะ ยิงช้า STAMPED LIVE หมายเหตุ */
+    /* KOL BRANDS PRODUCT CAMPAIGN TARGET CONTENT-TYPE FORMAT STYLE POST GENCODE ID-POST วันลงงาน วันยิงแอด สถานะ ยิงช้า STAMPED LIVE หมายเหตุ */
     /* POST เป็นไอคอนอย่างเดียวจึงให้แคบสุด เพื่อเก็บพื้นที่ไว้ให้คอลัมน์ที่มีข้อความยาว */
-    grid-template-columns: 1fr 0.95fr 0.85fr 1.25fr 0.75fr 0.3fr 1fr 0.95fr 0.8fr 0.65fr 0.65fr 0.6fr 0.7fr 0.7fr 0.9fr;
+    grid-template-columns: 1fr 0.95fr 0.85fr 0.85fr 1.25fr 0.7fr 0.5fr 0.75fr 0.3fr 1fr 0.95fr 0.8fr 0.65fr 0.65fr 0.6fr 0.7fr 0.7fr 0.9fr;
     gap: 10px; align-items: center;
 }
 .ads-note input { width: 100%; }
@@ -2702,7 +2706,8 @@ a { text-decoration: none; color: inherit; }
 .ctype-set { border-radius: 12px; background: #fff; padding: 10px; margin-bottom: 8px; box-shadow: inset 0 0 0 1px var(--border); }
 .plat-blk.single .ctype-set { box-shadow: none; padding: 0; background: none; }
 .ctype-set-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
-.ctype-set-row > select, .ctype-set-row > .ms { flex: 1; min-width: 140px; }
+/* ช่อง Style เป็น MultiSelect ที่ห่อด้วย .pms-cell (ไม่ใช่ .ms) — ต้องใส่ด้วย ไม่งั้นช่อง Style ไม่ยืดเท่าช่องอื่นในแถว */
+.ctype-set-row > select, .ctype-set-row > .ms, .ctype-set-row > .pms-cell { flex: 1; min-width: 140px; }
 .tier-rows { display: flex; flex-direction: column; gap: 6px; margin-top: 9px; padding-left: 14px; border-left: 2px solid #e8f0ed; }
 .tier-row { display: flex; align-items: center; gap: 8px; }
 .tier-row select { flex: 1; min-width: 150px; margin: 0; }
@@ -2823,6 +2828,8 @@ button { color: inherit; }
 .ka-top-filters { min-width: 0; }
 .ka-top-filters .ka-search { min-width: 220px; }
 .ka-top-filters select { width: 180px; min-width: 0; }
+/* ช่องกรองสินค้าแบบหลายตัว (MultiSelect) — กว้างเท่าช่องเดิม ให้ dropdown อยู่บนแถวเดียวกับช่องค้นหา แล้วชิปที่เลือกไว้ตกลงไปข้างล่าง */
+.ka-top-filters .pms-cell { width: 180px; flex-direction: column-reverse; }
 
 .card-grid { grid-template-columns: repeat(auto-fill, minmax(min(100%, 280px), 1fr)); }
 .pcard {
@@ -2885,7 +2892,7 @@ button { color: inherit; }
     .page-head.with-action { flex-direction: column; align-items: stretch; }
     .page-head.with-action > :last-child { width: 100%; }
     .ka-top-filters { display: grid; grid-template-columns: minmax(0, 1fr) minmax(140px, 180px); }
-    .ka-top-filters .ka-search, .ka-top-filters select { width: 100%; min-width: 0; }
+    .ka-top-filters .ka-search, .ka-top-filters select, .ka-top-filters .pms-cell { width: 100%; min-width: 0; }
     .filter-controls { width: 100%; }
     .filter-controls > * { flex: 1; }
     .campaign-select { max-width: none; }

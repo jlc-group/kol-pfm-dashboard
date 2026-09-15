@@ -20,7 +20,7 @@ export function groupPlatforms(g) {
 
 // ===== การแบ่งงานในกลุ่ม 3 ชั้น =====
 // บล็อก Platform (มี Target ของ Platform นั้น)
-//   -> ชุด Content Type (Content Type / Photo-VDO / Content Format)
+//   -> ชุด Content Type (Campaign / Content Type / Format / Style)
 //      -> แถว Tier (Tier / จำนวน KOL)   <- จำนวนคนอยู่ชั้นนี้ที่เดียว
 //
 // เก็บลงฐานข้อมูลเป็น g.blocks และแบนออกเป็น g.allocations ให้โค้ดเดิมอ่านได้ด้วย
@@ -33,8 +33,9 @@ export const needTarget = p => TARGET_PLATFORMS.includes(p);
 export const CONTENT_TYPES_DEFAULT = ['Review', 'Sale'];
 export const CONTENT_TYPES_BY_PLATFORM = {
     Facebook: ['Awareness', 'Engagement', 'Reels'],
-    // TikTok ใช้ค่า default เดิมทั้งสองตัว แล้วเพิ่ม C-ADS ที่มีเฉพาะ Platform นี้
-    TikTok: [...CONTENT_TYPES_DEFAULT, 'C-ADS'],
+    // TikTok ใช้ค่า default เดิมทั้งสองตัว แล้วเพิ่ม Branding ที่มีเฉพาะ Platform นี้
+    // (เดิมชื่อ C-ADS — ณ วันที่เปลี่ยนชื่อยังไม่มีกลุ่มหรือ KOL ไหนบันทึกค่านี้ไว้)
+    TikTok: [...CONTENT_TYPES_DEFAULT, 'Branding'],
 };
 // ค่าที่เคยบันทึกไว้ต้องคงอยู่ในลิสต์เสมอ ไม่งั้น dropdown จะเด้งเป็นค่าว่างแล้วข้อมูลหายเงียบ ๆ
 export function contentTypesFor(platformCsv, current) {
@@ -47,8 +48,13 @@ export function contentTypesFor(platformCsv, current) {
     return out;
 }
 
+// Campaign ของการยิงแอด — ตั้งต่อชุด Content Type (หน้า Ads แสดงเป็นคอลัมน์ CAMPAIGN)
+export const CAMPAIGN_TYPES = ['VDO View', 'Reach', 'Consideration Ads'];
+// ค่าที่เคยบันทึกไว้ต้องคงอยู่ในลิสต์เสมอ (กติกาเดียวกับ contentTypesFor)
+export const campaignTypesFor = current => (current && !CAMPAIGN_TYPES.includes(current) ? [...CAMPAIGN_TYPES, current] : CAMPAIGN_TYPES);
+
 export const emptyTier = () => ({ tier: '', kols: '' });
-export const emptySet = (over = {}) => ({ content_type: '', media_type: '', content_format: '', tiers: [emptyTier()], ...over });
+export const emptySet = (over = {}) => ({ campaign: '', content_type: '', media_type: '', content_format: '', tiers: [emptyTier()], ...over });
 export const emptyBlock = platform => ({ platform, target: [], budget: '', products: [], clips: [], sets: [emptySet()] });
 
 export const setKol = s => (s.tiers || []).reduce((n, t) => n + (Number(t.kols) || 0), 0);
@@ -101,6 +107,7 @@ export function toBlocks(g, platformCsv) {
                 products: [...(b.products || [])],
                 clips: [...(b.clips || [])],
                 sets: (b.sets && b.sets.length ? b.sets : [emptySet()]).map(s => ({
+                    campaign: s.campaign || '',
                     content_type: s.content_type || '',
                     media_type: s.media_type || '',
                     content_format: s.content_format || '',
@@ -145,6 +152,7 @@ export function flattenBlocks(blocks) {
             platform: b.platform,
             tier: t.tier,
             kols: Number(t.kols) || 0,
+            campaign: s.campaign || null,
             content_type: s.content_type || null,
             media_type: s.media_type || null,
             content_format: s.content_format || null
@@ -229,7 +237,7 @@ export function contentTypesOf(g, platform) {
     return out;
 }
 
-// Photo/VDO + Content Format ของ (Platform + Content Type) — ไม่ต้องให้คนกรอกซ้ำ
+// Format (Photo/VDO) + Style (content_format) ของ (Platform + Content Type) — ไม่ต้องให้คนกรอกซ้ำ
 export function mediaFor(g, platform, contentType) {
     const rows = (g.allocations || []).filter(a =>
         (!platform || !a.platform || a.platform === platform)

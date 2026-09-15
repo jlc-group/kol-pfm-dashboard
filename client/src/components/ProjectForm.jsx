@@ -8,7 +8,7 @@ import MultiSelect from './MultiSelect.jsx';
 import { useAuth } from '../auth/AuthContext.jsx';
 import { visibleBrands } from '../data/brands.js';
 import {
-    groupPlatforms, splitCsv, needTarget, contentTypesFor,
+    groupPlatforms, splitCsv, needTarget, contentTypesFor, campaignTypesFor,
     emptyTier, emptySet, emptyBlock, blockKol, blocksKol, toBlocks, flattenBlocks,
     num, blocksBudget, platformBudgets, blocksProducts
 } from '../data/adGroups.js';
@@ -21,6 +21,8 @@ import {
 // Content Type ต่างกันตาม Platform — Facebook ใช้ชุดของแอด ไม่ใช่ Review/Sale เหมือนช่องทางอื่น
 // Content Type / Target / โครงการแบ่งงาน 3 ชั้น อยู่ที่ data/adGroups.js (ใช้ร่วมกับหน้าอื่น)
 // รูปแบบสื่อที่ต้องการจาก KOL กลุ่มนี้
+// ชื่อที่หน้าเว็บใช้: media_type (Photo / VDO) = "Format" · content_format (Review, Tie-in ...) = "Style" · campaign = "Campaign"
+// ชื่อช่องในฐานข้อมูลยังเป็นแบบเดิม เปลี่ยนแค่ป้ายที่คนเห็น
 const MEDIA_TYPES = ['Photo', 'VDO'];
 const CODE_EXPIRE_OPTS = [7, 30, 60, 180, 365]; // จำนวนวัน Gencode ให้เลือก
 const GROUP_PLATFORMS = ['TikTok', 'Instagram', 'Facebook', 'Lemon8', 'X', 'YouTube'];
@@ -71,7 +73,7 @@ function CheckMultiSelect({ options, selected, onToggle, disabled, disabledText,
 
 // โครงการแบ่งงานในกลุ่ม 3 ชั้น:
 //   บล็อก Platform (มี Target ของ Platform นั้น)
-//     -> ชุด Content Type (Content Type / Photo-VDO / Format)
+//     -> ชุด Content Type (Campaign / Content Type / Format / Style)
 //        -> แถว Tier (Tier / จำนวน KOL)  <- จำนวนคนอยู่ชั้นนี้ที่เดียว
 const emptyAlloc = () => ({ tier: '', kols: '' });
    // Platform ย้ายไปอยู่ระดับกลุ่มแล้ว (allocation เหลือแค่ Tier/จำนวน)
@@ -180,10 +182,10 @@ export default function ProjectForm({ editing, onClose, onSaved }) {
         ...b, target: asTargetArray(b.target).includes(t) ? asTargetArray(b.target).filter(v => v !== t) : [...asTargetArray(b.target), t]
     }));
     const removeBlockTarget = (i, bi, t) => mapBlock(i, bi, b => ({ ...b, target: asTargetArray(b.target).filter(v => v !== t) }));
-    // เพิ่มชุด Content Type — ก๊อป Photo/VDO กับ Format ของชุดก่อนหน้ามาให้ กรอกน้อยลง
+    // เพิ่มชุด Content Type — ก๊อป Campaign / Format (Photo/VDO) / Style ของชุดก่อนหน้ามาให้ กรอกน้อยลง
     const addSet = (i, bi) => mapBlock(i, bi, b => {
         const last = b.sets[b.sets.length - 1] || {};
-        return { ...b, sets: [...b.sets, emptySet({ media_type: last.media_type || '', content_format: last.content_format || '' })] };
+        return { ...b, sets: [...b.sets, emptySet({ campaign: last.campaign || '', media_type: last.media_type || '', content_format: last.content_format || '' })] };
     });
     const removeSet = (i, bi, si) => mapBlock(i, bi, b => ({ ...b, sets: b.sets.length > 1 ? b.sets.filter((_, j) => j !== si) : b.sets }));
     const setBlockBudget = (i, bi, v) => mapBlock(i, bi, b => ({ ...b, budget: v.replace(/[^0-9]/g, '') }));
@@ -507,6 +509,11 @@ export default function ProjectForm({ editing, onClose, onSaved }) {
                                             {(b.sets || []).map((s, si) => (
                                                 <div className="ctype-set" key={si}>
                                                     <div className="ctype-set-row">
+                                                        <select className="target-add" value={s.campaign || ''}
+                                                            onChange={e => setSetField(i, bi, si, 'campaign', e.target.value)}>
+                                                            <option value="">— Campaign —</option>
+                                                            {campaignTypesFor(s.campaign).map(c => <option key={c} value={c}>{c}</option>)}
+                                                        </select>
                                                         <select className="target-add" value={s.content_type}
                                                             onChange={e => setSetField(i, bi, si, 'content_type', e.target.value)}>
                                                             <option value="">— Content Type —</option>
@@ -514,12 +521,12 @@ export default function ProjectForm({ editing, onClose, onSaved }) {
                                                         </select>
                                                         <select className="target-add" value={s.media_type}
                                                             onChange={e => setSetField(i, bi, si, 'media_type', e.target.value)}>
-                                                            <option value="">— Photo / VDO —</option>
+                                                            <option value="">— Format —</option>
                                                             {MEDIA_TYPES.map(c => <option key={c} value={c}>{c}</option>)}
                                                         </select>
                                                         <MultiSelect value={s.content_format} options={CONTENT_FORMATS}
                                                             onChange={v => setSetField(i, bi, si, 'content_format', v)}
-                                                            placeholder="— Content Format —" itemName="Content Format" />
+                                                            placeholder="— Style —" itemName="Style" />
                                                         {(b.sets || []).length > 1 && (
                                                             <button type="button" className="alloc-rm" title="ลบชุดนี้"
                                                                 onClick={() => removeSet(i, bi, si)}>×</button>

@@ -154,7 +154,7 @@ function EditSubmissionModal({ token, sub, groups = [], products = [], onClose, 
 function SavedGridRow({ s, n, group, agencyName, boxType = null, showMeta = false, onEdit, onDelete, onNote }) {
     // อยู่ในกล่องไหนก็เป็น Content Type นั้น — แถวเก่าที่ยังไม่ระบุจึงขึ้นตามกล่องได้เลย
     const ctype = s.content_type || boxType || null;
-    // Format ไม่ได้เก็บในแถว — อ่านจากที่ตั้งไว้ในกลุ่มตาม Platform + Content Type
+    // Style (content_format) ไม่ได้เก็บในแถว — อ่านจากที่ตั้งไว้ในกลุ่มตาม Platform + Content Type
     const fmt = mediaFor(group, s.platform, ctype).content_format;
     const st = STATUS[s.status] || STATUS.submitted;
     const clips = s._clips || [s];          // แถวนี้ยุบมาจากกี่คลิป (ใช้โชว์ชิป "N คลิป")
@@ -169,7 +169,7 @@ function SavedGridRow({ s, n, group, agencyName, boxType = null, showMeta = fals
                     {/* ปกติ Platform/Content Type ดูจากหัวกล่องอยู่แล้ว — โชว์ในแถวเฉพาะกล่องที่ยังไม่ระบุ */}
                     {showMeta && <span className="ag-saved-meta">{s.platform || '—'}</span>}
                 </div>
-                {/* Content Type กับ Format คนละเรื่องกัน แยกคอลัมน์ไม่ให้อ่านสับสน */}
+                {/* Content Type กับ Style คนละเรื่องกัน แยกคอลัมน์ไม่ให้อ่านสับสน */}
                 <span className="ag-saved-cell ag-ctype-cell">
                     {ctype
                         ? <span className="proc-ctype-chip">{ctype}</span>
@@ -295,14 +295,14 @@ function TypeBox({ token, group, platform, contentType, saved, quota, agencyName
             {err && <div className="alert-error">{err}</div>}
             <div className="ag-add-scroll">
                 <div className={'ag-add-grid' + (agencyName ? ' no-agency' : '')}>
-                    <div className="ag-add-head"><span>NAME</span><span>CONTENT TYPE</span><span>FORMAT</span><span>TIER</span><span>FOLLOWER</span><span>PRODUCT</span>{!agencyName && <span>AGENCY</span>}<span>LINK ACCOUNT</span><span /></div>
+                    <div className="ag-add-head"><span>NAME</span><span>CONTENT TYPE</span><span>STYLE</span><span>TIER</span><span>FOLLOWER</span><span>PRODUCT</span>{!agencyName && <span>AGENCY</span>}<span>LINK ACCOUNT</span><span /></div>
                     {saved.map((s, si) => <SavedGridRow key={s.id} s={s} n={startNo + si} group={group} agencyName={agencyName} boxType={contentType} onEdit={onEdit} onDelete={onDelete} onNote={onNote} />)}
                     {rows.map((en, i) => {
                         const miss = missingOf(en);
                         return (
                         <div className={'ag-add-row' + (miss.length ? ' incomplete' : '')} key={i}>
                             <div className="atr-name"><span className="atr-num">{startNo + saved.length + i}</span><input value={en.account_name} onChange={e => upRow(i, 'account_name', e.target.value)} placeholder="ชื่อ Account" onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); saveRow(i); } }} /></div>
-                            {/* Content Type กับ Format ล็อกตามกล่อง โชว์ไว้ให้เห็นว่ากรอกอยู่ช่องไหน */}
+                            {/* Content Type กับ Style ล็อกตามกล่อง โชว์ไว้ให้เห็นว่ากรอกอยู่ช่องไหน */}
                             {contentType
                                 ? <div className="ag-fixed-cell" title={contentType + ' (ล็อกตามกล่องนี้)'}>{contentType}</div>
                                 : <div className="ag-fixed-cell muted">—</div>}
@@ -351,7 +351,7 @@ function LeftoverBox({ rows, group, agencyName, onEdit, onDelete, onNote }) {
             </div>
             <div className="ag-add-scroll">
                 <div className={'ag-add-grid' + (agencyName ? ' no-agency' : '')}>
-                    <div className="ag-add-head"><span>NAME</span><span>CONTENT TYPE</span><span>FORMAT</span><span>TIER</span><span>FOLLOWER</span><span>PRODUCT</span>{!agencyName && <span>AGENCY</span>}<span>LINK ACCOUNT</span><span /></div>
+                    <div className="ag-add-head"><span>NAME</span><span>CONTENT TYPE</span><span>STYLE</span><span>TIER</span><span>FOLLOWER</span><span>PRODUCT</span>{!agencyName && <span>AGENCY</span>}<span>LINK ACCOUNT</span><span /></div>
                     {rows.map((s, si) => <SavedGridRow key={s.id} s={s} n={si + 1} group={group} agencyName={agencyName} showMeta onEdit={onEdit} onDelete={onDelete} onNote={onNote} />)}
                 </div>
             </div>

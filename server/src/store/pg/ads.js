@@ -14,7 +14,7 @@ const logic = require('../logic');
 const { shouldApplyOrganicMetrics, shouldApplyCumulativeMetric } = require('../metricSync');
 const {
     now, clone, scopeProjects,
-    resolveGroupTarget, resolveGroupProducts, resolveGroupCtype, resolveGroupMedia,
+    resolveGroupTarget, resolveGroupProducts, resolveGroupCtype, resolveGroupMedia, resolveGroupCampaign,
     engagementOf, clipCostMetrics, perfVerdict,
     maybeStamp, stampWaitReason
 } = logic;
@@ -158,6 +158,7 @@ const ads = {
                     platform: s.platform || null,
                     product: s.product || (resolveGroupProducts(grp, s.platform).join(', ') || null),
                     target: resolveGroupTarget(grp, s.platform),
+                    campaign: resolveGroupCampaign(grp, s.platform, ct),   // คอลัมน์ CAMPAIGN (ตั้งต่อชุด Content Type)
                     content_type: ct,
                     media_type: media.media_type,
                     group_format: media.content_format,
