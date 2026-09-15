@@ -57,6 +57,7 @@ Content-Type: application/json
 | `ad_spend` | ตัวเลข | **ค่าแอดสะสม** ไม่ใช่ยอดของรอบนั้น · ระบบรับเฉพาะค่าที่มากกว่าเดิม กันข้อมูลย้อนหลังมาลบยอด |
 | `ad_reach` | ตัวเลข | reach จากระบบยิงแอด |
 | `views` `likes` `comments` `saves` `shares` `reposts` | ตัวเลข | ผลงานคอนเทนต์ ใช้คิด CPM/CPE และใช้ตัดสินตอนสแตมป์ |
+| `source_updated_at` | ISO datetime | เวลาที่ต้นทางอัปเดต Organic metrics ระบบจะไม่รับข้อมูลที่เก่ากว่ารอบล่าสุด |
 
 ส่งเฉพาะฟิลด์ที่มี ฟิลด์ที่ไม่ส่งมาจะไม่ถูกแตะ
 
@@ -98,3 +99,24 @@ Content-Type: application/json
 
 CPM คำนวณจาก `(ค่าตัว + ค่าแอด) ÷ (วิว/1000)` ซึ่งถอดกลับเป็นค่าแอดได้
 จึงปิดตัวเลข CPM/CPE ไม่ให้ member เห็นด้วย
+
+## ดึงข้อมูลจาก Beauterry PFM
+
+เซิร์ฟเวอร์ดึงข้อมูลจาก Beauterry อัตโนมัติทุก 1 ชั่วโมง โดยใช้ `id_post` ของรายการ
+TikTok ที่มีใน Dashboard และจะดึงครั้งแรกหลังเปิดเซิร์ฟเวอร์ 30 วินาที
+Organic metrics จาก PFM จะไม่ถูกเขียนทับเมื่อ snapshot เก่ากว่ารอบล่าสุด หรือเมื่อตัวเลข
+สะสมลดลง ส่วนค่าโฆษณายังคงใช้กฎเดิมที่รับเฉพาะค่าที่เพิ่มขึ้น
+
+ตัวแปรตั้งค่า:
+
+| ตัวแปร | ค่าเริ่มต้น |
+|---|---|
+| `BEAUTERRY_PFM_SYNC_ENABLED` | `true` |
+| `BEAUTERRY_PFM_BASE_URL` | `http://127.0.0.1:8202` |
+| `BEAUTERRY_PFM_EXPORT_KEY` | ถ้าไม่กำหนดจะใช้ `ADS_SYNC_KEY` |
+| `BEAUTERRY_PFM_SYNC_INTERVAL_SECONDS` | `3600` |
+| `BEAUTERRY_PFM_SYNC_INITIAL_DELAY_SECONDS` | `30` |
+
+สั่งดึงทันทีได้ที่ `POST /api/ads-sync/pull-beauterry` และดูรอบล่าสุดที่
+`GET /api/ads-sync/beauterry-status` โดยทั้งสอง endpoint ใช้ header
+`X-Ads-Sync-Key` เหมือน endpoint รับข้อมูลเดิม

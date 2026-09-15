@@ -15,14 +15,17 @@ async function start() {
     const app = require('./app');
     const port = Number(process.env.PORT || 4000);
     const host = process.env.HOST || '127.0.0.1';
+    let stopPfmSync = () => {};
     const server = app.listen(port, host, () => {
         console.log(`KOL Dashboard listening on http://${host}:${port}`);
+        stopPfmSync = require('./services/beauterryPfmSync').startScheduler();
         if (process.send) process.send('ready');
     });
     let stopping = false;
     function shutdown() {
         if (stopping) return;
         stopping = true;
+        stopPfmSync();
         const deadline = setTimeout(() => process.exit(1), 10000);
         deadline.unref();
         server.close(async () => {

@@ -1,6 +1,7 @@
 const express = require('express');
 const crypto = require('crypto');
 const store = require('../store');
+const beauterryPfm = require('../services/beauterryPfmSync');
 
 const router = express.Router();
 
@@ -30,6 +31,18 @@ router.post('/sync', checkSyncKey, express.json({ limit: '2mb' }), async (req, r
         const result = await store.adsSync.apply(rows);
         res.json({ status: 'success', data: result });
     } catch (err) { next(err); }
+});
+
+// POST /api/ads-sync/pull-beauterry — สั่งดึงข้อมูลทันทีนอกเหนือจากรอบอัตโนมัติ
+router.post('/pull-beauterry', checkSyncKey, async (req, res, next) => {
+    try {
+        const result = await beauterryPfm.runSync();
+        res.status(result.skipped ? 409 : 200).json({ status: 'success', data: result });
+    } catch (err) { next(err); }
+});
+
+router.get('/beauterry-status', checkSyncKey, (req, res) => {
+    res.json({ status: 'success', data: beauterryPfm.getStatus() });
 });
 
 module.exports = router;

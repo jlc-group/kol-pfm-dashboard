@@ -11,6 +11,7 @@
 const { query, withTransaction, updateRow, asJson } = require('./_base');
 const { loadSnapshot } = require('./_snapshot');
 const logic = require('../logic');
+const { shouldApplyOrganicMetrics, shouldApplyCumulativeMetric } = require('../metricSync');
 const {
     now, clone, scopeProjects,
     resolveGroupTarget, resolveGroupProducts, resolveGroupCtype, resolveGroupMedia,
@@ -30,8 +31,20 @@ const {
 const METRIC_KEYS = ['views', 'likes', 'comments', 'saves', 'shares', 'reposts'];
 
 const adsSync = {
+    async itemIds() {
+        const result = await query(
+            `SELECT DISTINCT btrim(id_post) AS id_post
+             FROM submissions
+             WHERE platform ILIKE 'tiktok%'
+               AND nullif(btrim(id_post), '') IS NOT NULL
+             ORDER BY id_post`
+        );
+        return result.rows.map(row => String(row.id_post));
+    },
+
     async apply(rows) {
-        const out = { updated: 0, stamped: 0, not_found: [], skipped: 0 };
+        const out = { updated: 0, stale: 0, regressed_metrics: 0,
+            stamped: 0, not_found: [], skipped: 0 };
         if (!rows || !rows.length) return out;
 
         const snap = await loadSnapshot(['submissions']);
@@ -57,8 +70,28 @@ const adsSync = {
                 if (next > (Number(s.ad_spend) || 0)) { s.ad_spend = next; mark(s, 'ad_spend'); }
             }
             if (r.ad_reach !== undefined) { s.ad_reach = Number(r.ad_reach) || 0; mark(s, 'ad_reach'); }
-            for (const k of METRIC_KEYS) {
-                if (r[k] !== undefined) { s[k] = Number(r[k]) || 0; mark(s, k); }
+            const hasOrganicMetrics = METRIC_KEYS.some(k => r[k] !== undefined);
+            // แหล่งข้อมูลเดิมที่ยังไม่ส่ง source timestamp ต้องทำงานเหมือนเดิม
+            // ส่วน PFM adapter ต้องผ่าน freshness guard ก่อนเขียน organic metrics
+            const acceptOrganic = !hasOrganicMetrics || !r.pfm_source
+                || shouldApplyOrganicMetrics(r.source_updated_at, s.perf_synced_at);
+            if (acceptOrganic) {
+                for (const k of METRIC_KEYS) {
+                    if (r[k] === undefined) continue;
+                    const next = Number(r[k]) || 0;
+                    if (!shouldApplyCumulativeMetric(next, s[k], Boolean(r.pfm_source))) {
+                        out.regressed_metrics++;
+                        continue;
+                    }
+                    s[k] = next;
+                    mark(s, k);
+                }
+                if (hasOrganicMetrics && r.source_updated_at) {
+                    s.perf_synced_at = new Date(r.source_updated_at).toISOString();
+                    mark(s, 'perf_synced_at');
+                }
+            } else {
+                out.stale++;
             }
             s.ad_synced_at = now();
             s.updated_at = now();
