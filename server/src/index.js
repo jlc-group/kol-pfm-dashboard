@@ -39,8 +39,13 @@ async function start() {
     process.on('message', message => { if (message === 'shutdown') shutdown(); });
     server.on('error', async error => {
         console.error(`Server failed to listen (${error.code || 'unknown'})`);
-        await pool.end();
-        process.exitCode = 1;
+        try {
+            await pool.end();
+        } finally {
+            // Exit explicitly so PM2 can restart the service. Merely setting
+            // exitCode can leave the instrumented process alive without a port.
+            process.exit(1);
+        }
     });
     return server;
 }
@@ -48,7 +53,9 @@ async function start() {
 if (require.main === module) {
     start().catch(error => {
         console.error(error.message);
-        process.exitCode = 1;
+        // PM2 must see a real process exit when PostgreSQL is not ready during
+        // boot; otherwise it may report "online" while nothing listens on PORT.
+        process.exit(1);
     });
 }
 module.exports = { start };

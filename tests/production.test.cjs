@@ -5,6 +5,7 @@ const os = require('node:os');
 const path = require('node:path');
 const crypto = require('node:crypto');
 const { once } = require('node:events');
+const { spawn } = require('node:child_process');
 
 // Never connect tests to an operator's database, even when a local .env exists.
 process.env.NODE_ENV = 'test';
@@ -402,4 +403,29 @@ test('production refuses missing settings, sample secrets and invalid ports', ()
     assert.doesNotThrow(() => validateRuntime(env));
     assert.throws(() => validateRuntime({ ...env, JWT_SECRET: 'change_this_to_a_long_random_secret' }), /JWT_SECRET/);
     assert.throws(() => validateRuntime({ ...env, PORT: '0' }), /PORT/);
+});
+
+test('production process exits when its database is unavailable so PM2 can restart it', { timeout: 15000 }, async () => {
+    const child = spawn(process.execPath, [path.resolve(__dirname, '../server/src/index.js')], {
+        cwd: path.resolve(__dirname, '..'),
+        env: {
+            ...process.env,
+            NODE_ENV: 'production',
+            JWT_SECRET: crypto.randomBytes(48).toString('hex'),
+            DB_HOST: '127.0.0.1',
+            DB_PORT: '1',
+            DB_NAME: 'unavailable',
+            DB_USER: 'unavailable',
+            DB_PASSWORD: 'unavailable',
+            PORT: '3080',
+            HOST: '127.0.0.1',
+            UPLOAD_DIR: process.env.UPLOAD_DIR
+        },
+        stdio: ['ignore', 'pipe', 'pipe']
+    });
+    let stderr = '';
+    child.stderr.on('data', chunk => { stderr += chunk; });
+    const [code] = await once(child, 'exit');
+    assert.equal(code, 1);
+    assert.match(stderr, /Database is not ready/);
 });
