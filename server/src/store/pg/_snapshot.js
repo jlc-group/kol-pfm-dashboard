@@ -96,7 +96,7 @@ async function loadSnapshot(only) {
     const snap = {
         teams: [], users: [], kols: [], projects: [], project_kols: [],
         submissions: [], payments: [], installments: [], pay_batches: [],
-        rate_requests: [], activity_logs: []
+        rate_requests: [], activity_logs: [], other_projects: []
     };
     const simple = {
         teams: 'SELECT * FROM teams ORDER BY id',
@@ -108,6 +108,8 @@ async function loadSnapshot(only) {
         installments: 'SELECT *, "of" AS of FROM installments ORDER BY id',
         pay_batches: 'SELECT * FROM pay_batches ORDER BY id',
         rate_requests: 'SELECT * FROM rate_requests ORDER BY id',
+        // หน้างานจ้างอื่น ๆ / งานจัดหา / ตัวเลขแดงบนเมนู ใช้แค่นี้ — ไม่ต้องโหลดลิงก์/แชทเอเจนซี่ทั้งฐานแบบ projects
+        other_projects: "SELECT id, name, brand, start_date, end_date, campaign_type, hire_items FROM projects WHERE campaign_type = 'other' ORDER BY id",
         activity_logs: 'SELECT * FROM activity_logs ORDER BY id'
     };
     const jobs = [];

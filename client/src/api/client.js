@@ -48,6 +48,22 @@ export async function uploadFile(path, file) {
     return json;
 }
 
+// โหลดไฟล์ที่ต้องใช้ token มาเป็น blob URL ไว้แสดงในหน้าเว็บเอง
+// (เปิดแท็บใหม่แบบ openFile ด้านล่างมักโดนเบราว์เซอร์บล็อก เพราะ window.open ถูกเรียกหลัง await ไม่นับเป็นการกดของผู้ใช้)
+export async function fileBlobUrl(path) {
+    const headers = {};
+    const token = getToken();
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+    const res = await fetch(`/api${path}`, { headers });
+    if (!res.ok) {
+        let msg = 'เปิดไฟล์ไม่สำเร็จ';
+        try { const j = await res.json(); if (j && j.message) msg = j.message; } catch { /* ไฟล์ไม่ใช่ JSON */ }
+        throw new Error(msg);
+    }
+    const blob = await res.blob();
+    return { url: URL.createObjectURL(blob), type: blob.type };
+}
+
 // เปิดไฟล์ที่ต้องใช้ token (โหลดเป็น blob แล้วเปิดแท็บใหม่)
 export async function openFile(path) {
     const headers = {};

@@ -11,7 +11,9 @@ const MAIN_NAV = [
     { to: '/projects', label: 'แคมเปญ', icon: 'folder' },
     { to: '/ads', label: 'โฆษณา', icon: 'target' },
     { to: '/budget', label: 'รายงานแคมเปญ', icon: 'bars' },
-    { to: '/kols', label: 'อินฟลูเอนเซอร์', icon: 'star' }
+    { to: '/kols', label: 'อินฟลูเอนเซอร์', icon: 'star' },
+    { to: '/hire-tasks', label: 'งานจัดหา', icon: 'search' },
+    { to: '/hires', label: 'งานจ้างอื่น ๆ', icon: 'team' }
 ];
 
 const ADMIN_NAV = [
@@ -41,6 +43,21 @@ export default function Layout() {
         return () => { alive = false; clearInterval(t); window.removeEventListener('kol:users-changed', load); };
     }, [user]);
 
+    // งานจัดหาที่รอเราทำ (ใบที่เราต้องหาคน + ชื่อที่รอเราตัดสิน) — ระบบไม่มีอีเมลแจ้ง ต้องเห็นจากตัวเลขบนเมนู
+    const [taskCount, setTaskCount] = useState(0);
+    useEffect(() => {
+        if (!user || user.role === 'agency') return;
+        let alive = true;
+        const load = () => api('/hires/tasks/count')
+            .then(r => { if (alive) setTaskCount(r.data?.total || 0); })
+            .catch(() => {});
+        load();
+        const t = setInterval(load, 60000);
+        // เสนอ/เลือกชื่อเสร็จ หน้างานจัดหาจะยิง event นี้มา ตัวเลขจะได้เปลี่ยนทันทีไม่ต้องรอครบนาที
+        window.addEventListener('kol:hire-tasks-changed', load);
+        return () => { alive = false; clearInterval(t); window.removeEventListener('kol:hire-tasks-changed', load); };
+    }, [user]);
+
     useEffect(() => {
         setNavOpen(false);
     }, [location.pathname]);
@@ -68,6 +85,9 @@ export default function Layout() {
                 {item.label}
                 {item.to === '/users' && pendingCount > 0 && (
                     <span className="nav-badge" title={`มี ${pendingCount} คนรออนุมัติ`}>{pendingCount}</span>
+                )}
+                {item.to === '/hire-tasks' && taskCount > 0 && (
+                    <span className="nav-badge" title={`มีงานจัดหารอคุณ ${taskCount} ใบ`}>{taskCount}</span>
                 )}
             </NavLink>
         );

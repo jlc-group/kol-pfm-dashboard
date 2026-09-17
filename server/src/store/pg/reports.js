@@ -19,6 +19,8 @@ const reports = {
 
         let projs = snap.projects.slice();
         projs = scopeProjects(projs, scopeBrands);
+        // งานจ้างอื่น ๆ (campaign_type = 'other') ไม่มีคลิป/ยอดวิว จึงไม่มีรายงานแคมเปญ — ตัดออกตั้งแต่รายการ
+        projs = projs.filter(p => (p.campaign_type || 'kol') !== 'other');
         if (brand) projs = projs.filter(p => p.brand === brand);
 
         return projs
@@ -46,6 +48,8 @@ const reports = {
         const p = snap.projects.find(x => x.id === Number(projectId));
         if (!p) return null;
         if (!inScope(p, scopeBrands)) return null;
+        // งานจ้างอื่น ๆ ไม่มีรายงาน — คืน null ให้ route ตอบ 404 เหมือนหาแคมเปญไม่เจอ
+        if ((p.campaign_type || 'kol') === 'other') return null;
 
         const subs = snap.submissions.filter(s => s.project_id === p.id && s.status === 'confirmed');
         const rows = subs.map((s, i) => {

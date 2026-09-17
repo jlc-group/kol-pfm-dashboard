@@ -69,6 +69,10 @@ export default function Dashboard() {
     // คลิปที่ทีมยังไม่ใส่ค่าตัว (ค่าตัว 0) — ยอดค่าจ้างที่ใช้ไปจึงยังไม่รวมคลิปพวกนี้
     // server เก่าไม่ส่งช่องนี้มา = 0 ไม่ต้องโชว์อะไรเพิ่ม
     const feeMissingClips = Number(data?.fee_missing_clips) || 0;
+    // งานจ้างอื่น ๆ (นางแบบ/นักแสดง/Live สด) — งบก้อนนี้รวมอยู่ในงบด้านบนแล้ว บรรทัดป้ายแค่บอกที่มา ห้ามเอาไปบวกซ้ำ
+    const otherProjects = Number(data?.other_projects) || 0;
+    const otherHires = Number(data?.other_hires) || 0;
+    const otherBudget = Number(data?.other_budget) || 0;
     const maxBrandBudget = Math.max(1, ...(data?.brand_summary || []).map(b => b.budget));
 
     return (
@@ -119,6 +123,12 @@ export default function Dashboard() {
                     {extra > 0 && (
                         <div className="bento-hero-extra">
                             ตั้งไว้ {fmtMoney(planned)} · เพิ่มระหว่างทาง {fmtMoney(extra)}
+                        </div>
+                    )}
+                    {/* งบด้านบนรวมงานจ้างอื่น ๆ ไว้แล้ว — บรรทัดนี้บอกว่ามาจากงานพวกนั้นเท่าไร */}
+                    {otherProjects > 0 && (
+                        <div className="bento-hero-extra">
+                            รวมงานจ้างอื่น ๆ {otherProjects} งาน · {otherHires} คน · {fmtMoney(otherBudget)}
                         </div>
                     )}
                     <div className="bento-hero-stats">

@@ -429,3 +429,49 @@ test('production process exits when its database is unavailable so PM2 can resta
     assert.equal(code, 1);
     assert.match(stderr, /Database is not ready/);
 });
+
+// ประเภทแคมเปญ (campaign_type) — 'kol' เข้าหน้าโฆษณา/รายงาน ส่วน 'other' ไม่เข้า
+// ถ้าสลับประเภทของแคมเปญที่มีรายชื่อและค่าแอดอยู่แล้วได้ ข้อมูลพวกนั้นจะหายจากสองหน้านั้นเงียบ ๆ
+test('campaign type is fixed at creation and cannot be switched afterwards', async () => {
+    const updates = [];
+    store.projects.findByIdFull = async () => ({ id: 61, name: 'KOL Sep', brand: 'Jdent', team_id: 1, campaign_type: 'kol' });
+    store.projects.update = async (id, fields) => { updates.push({ id, fields }); return { id: Number(id), name: 'KOL Sep', team_id: 1 }; };
+    store.activity.log = async () => {};
+    const put = body => request('/api/projects/61', adminToken, {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+
+    user();
+    const blocked = await put({ campaign_type: 'other', name: 'KOL Sep' });
+    assert.equal(blocked.status, 400);
+    assert.equal(updates.length, 0);   // ต้องไม่เขียนอะไรเลย ไม่ใช่เขียนบางส่วนแล้วค่อยตีกลับ
+
+    // ส่งประเภทเดิมมาด้วย (ฟอร์มส่งทั้งก้อน) ต้องผ่านตามปกติ ไม่ใช่โดนบล็อกไปด้วย
+    assert.equal((await put({ campaign_type: 'kol', name: 'KOL Sep' })).status, 200);
+    assert.equal(updates.length, 1);
+
+    // แคมเปญเก่าที่ยังไม่มีคอลัมน์นี้ = แบบ KOL — แก้ต่อได้เหมือนเดิม
+    store.projects.findByIdFull = async () => ({ id: 61, name: 'KOL Sep', brand: 'Jdent', team_id: 1 });
+    assert.equal((await put({ campaign_type: 'kol', name: 'KOL Sep' })).status, 200);
+    assert.equal((await put({ campaign_type: 'other', name: 'KOL Sep' })).status, 400);
+    assert.equal(updates.length, 2);
+});
+
+// ค่าประเภทที่ไม่รู้จักต้องถอยเป็น 'kol' ไม่ใช่ลงฐานตรง ๆ
+// (ไม่งั้นแคมเปญจะหายจากหน้าโฆษณา/รายงาน เพราะสองหน้านั้นกรองด้วย campaign_type)
+test('unknown campaign types fall back to kol in the store', async () => {
+    const jsonStore = require('../server/src/store/jsonStore');
+    // jsonStore เขียนลง server/data/db.json จริง — เครื่องที่ยังไม่มีไฟล์นี้ต้องไม่มีไฟล์ค้างหลังเทส
+    const dataFile = path.resolve(__dirname, '../server/data/db.json');
+    const hadFile = fs.existsSync(dataFile);
+    try {
+        for (const [sent, expected] of [['other', 'other'], ['kol', 'kol'], ['OTHER', 'kol'], [undefined, 'kol'], ['', 'kol'], [{}, 'kol']]) {
+            const created = await jsonStore.projects.create({ team_id: 1, created_by: 7, name: 'ทดสอบประเภทแคมเปญ', campaign_type: sent });
+            assert.equal(created.campaign_type, expected, `create ${JSON.stringify(sent)}`);
+            const updated = await jsonStore.projects.update(created.id, { campaign_type: sent });
+            assert.equal(updated.campaign_type, expected, `update ${JSON.stringify(sent)}`);
+            await jsonStore.projects.remove(created.id);
+        }
+    } finally {
+        if (!hadFile) fs.rmSync(dataFile, { force: true });
+    }
+});

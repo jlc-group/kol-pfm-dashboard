@@ -12,6 +12,7 @@ router.use(authenticate, requireRole('admin'));
 
 // ---------- ตั้งค่าที่เก็บไฟล์อัปโหลด ----------
 const { UPLOAD_DIR } = require('../config/uploads');
+const { safeId, safeSlug } = require('../store/logic');
 if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 
 const storage = multer.diskStorage({
@@ -19,7 +20,7 @@ const storage = multer.diskStorage({
     filename: (req, file, cb) => {
         // ตั้งชื่อไฟล์แบบไม่ซ้ำ (เดาไม่ได้)
         const ext = path.extname(file.originalname);
-        const unique = `${req.params.projectId}_${req.params.type}_${Date.now()}${ext}`;
+        const unique = `${safeId(req.params.projectId)}_${safeSlug(req.params.type)}_${Date.now()}${ext}`;
         cb(null, unique);
     }
 });
@@ -28,7 +29,7 @@ const slipStorage = multer.diskStorage({
     destination: (req, file, cb) => cb(null, UPLOAD_DIR),
     filename: (req, file, cb) => {
         const ext = path.extname(file.originalname);
-        cb(null, `batch${req.params.id}_slip_${Date.now()}${ext}`);
+        cb(null, `batch${safeId(req.params.id)}_slip_${Date.now()}${ext}`);
     }
 });
 const fileOk = (req, file, cb) => {
@@ -40,7 +41,7 @@ const slipUpload = multer({ storage: slipStorage, limits: { fileSize: 15 * 1024 
 const invUpload = multer({
     storage: multer.diskStorage({
         destination: (req, file, cb) => cb(null, UPLOAD_DIR),
-        filename: (req, file, cb) => cb(null, `inst${req.params.id}_invoice_${Date.now()}${path.extname(file.originalname)}`)
+        filename: (req, file, cb) => cb(null, `inst${safeId(req.params.id)}_invoice_${Date.now()}${path.extname(file.originalname)}`)
     }),
     limits: { fileSize: 15 * 1024 * 1024 }, fileFilter: fileOk
 });

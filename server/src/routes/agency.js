@@ -7,7 +7,7 @@ const chatHub = require('../services/chatHub');
 const { authenticate } = require('../middleware/auth');
 const { canSeeCostMetrics, canSeeBrand } = require('../data/roles');
 
-const { UPLOAD_DIR } = require('../config/uploads');
+const { UPLOAD_DIR, uploadPath } = require('../config/uploads');
 const router = express.Router();
 
 // ===== ต้องล็อกอินก่อนถึงจะเปิดลิงก์งานได้ =====
@@ -375,8 +375,9 @@ router.get('/:token/product-brief/:code/file', async (req, res, next) => {
         const pb = project.product_briefs || {};
         const meta = pb[code] && pb[code].file;
         if (!meta) return res.status(404).json({ status: 'error', message: 'ไม่พบไฟล์บรีฟ' });
-        const filePath = path.join(UPLOAD_DIR, meta.filename);
-        if (!fs.existsSync(filePath)) return res.status(404).json({ status: 'error', message: 'ไฟล์หายไป' });
+        // ชื่อไฟล์บรีฟมาจาก JSON ของแคมเปญ ต้องเป็นชื่อไฟล์ล้วนในโฟลเดอร์อัปโหลดเท่านั้น
+        const filePath = uploadPath(meta.filename);
+        if (!filePath || !fs.existsSync(filePath)) return res.status(404).json({ status: 'error', message: 'ไฟล์หายไป' });
         res.sendFile(filePath);
     } catch (err) { next(err); }
 });
@@ -394,8 +395,9 @@ router.get('/:token/platform-brief/:platform/file', async (req, res, next) => {
         const pb = project.platform_briefs || {};
         const meta = pb[pf] && pb[pf].file;
         if (!meta) return res.status(404).json({ status: 'error', message: 'ไม่พบไฟล์บรีฟ' });
-        const filePath = path.join(UPLOAD_DIR, meta.filename);
-        if (!fs.existsSync(filePath)) return res.status(404).json({ status: 'error', message: 'ไฟล์หายไป' });
+        // ชื่อไฟล์บรีฟมาจาก JSON ของแคมเปญ ต้องเป็นชื่อไฟล์ล้วนในโฟลเดอร์อัปโหลดเท่านั้น
+        const filePath = uploadPath(meta.filename);
+        if (!filePath || !fs.existsSync(filePath)) return res.status(404).json({ status: 'error', message: 'ไฟล์หายไป' });
         res.sendFile(filePath);
     } catch (err) { next(err); }
 });

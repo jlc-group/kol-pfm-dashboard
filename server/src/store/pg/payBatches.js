@@ -212,8 +212,8 @@ const rateRequests = {
         const r = await query(
             `INSERT INTO rate_requests
                 (kol_name, link_account, brand, products, platforms, scope, budget, no_budget,
-                 brief_link, brief_note, status, created_by, team_id, created_at)
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) RETURNING *`,
+                 brief_link, brief_note, status, created_by, team_id, created_at, request_type, contract_period)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16) RETURNING *`,
             [
                 fields.kol_name || null,
                 fields.link_account || null,
@@ -228,7 +228,9 @@ const rateRequests = {
                 'open',
                 fields.created_by || null,
                 asNumOrNull(fields.team_id ?? null),
-                now()
+                now(),
+                fields.request_type === 'presenter' ? 'presenter' : 'kol',
+                fields.contract_period || null
             ]);
         return clone(r.rows[0]);
     },
@@ -237,6 +239,31 @@ const rateRequests = {
         let rows = (await query('SELECT * FROM rate_requests ORDER BY id')).rows;
         rows = scopeProjects(rows, scopeBrands);
         return rows.sort((a, b) => (b.created_at || '').localeCompare(a.created_at || '')).map(clone);
+    },
+
+    async findById(id) {
+        const n = Number(id);
+        if (!Number.isInteger(n)) return null;
+        const r = await query('SELECT * FROM rate_requests WHERE id = $1', [n]);
+        return r.rows.length ? clone(r.rows[0]) : null;
+    },
+
+    // ตอบราคา / เปลี่ยนสถานะ — ส่งมาเฉพาะคีย์ที่จะแก้ คีย์ที่ไม่ส่งคงค่าเดิม
+    async update(id, fields) {
+        const n = Number(id);
+        if (!Number.isInteger(n)) return null;
+        const set = [];
+        const vals = [];
+        const put = (col, val) => { vals.push(val); set.push(`${col} = $${vals.length}`); };
+        if (fields.status !== undefined) put('status', fields.status);
+        if (fields.quoted_rate !== undefined) put('quoted_rate', fields.quoted_rate === null ? null : Number(fields.quoted_rate) || 0);
+        if (fields.answer_note !== undefined) put('answer_note', fields.answer_note || null);
+        if (fields.answered_by !== undefined) put('answered_by', fields.answered_by || null);
+        if (fields.answered_at !== undefined) put('answered_at', fields.answered_at || null);
+        if (!set.length) return await rateRequests.findById(n);
+        vals.push(n);
+        const r = await query(`UPDATE rate_requests SET ${set.join(', ')} WHERE id = $${vals.length} RETURNING *`, vals);
+        return r.rows.length ? clone(r.rows[0]) : null;
     }
 };
 

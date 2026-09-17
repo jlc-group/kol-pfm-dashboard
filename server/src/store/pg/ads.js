@@ -139,7 +139,9 @@ const ads = {
         snap.projects.forEach(p => { projById[p.id] = p; });
 
         let rows = snap.submissions
-            .filter(s => s.post_url && String(s.post_url).trim())     // เฉพาะโพสต์ที่มีลิงก์แล้ว
+            // เฉพาะโพสต์ที่มีลิงก์แล้ว และเฉพาะแคมเปญ KOL — งานจ้างอื่น ๆ ไม่เข้าหน้ายิงแอด
+            .filter(s => s.post_url && String(s.post_url).trim()
+                && ((projById[s.project_id] || {}).campaign_type || 'kol') !== 'other')
             .map(s => {
                 const p = projById[s.project_id];
                 const team = p ? snap.teams.find(t => t.id === p.team_id) : null;

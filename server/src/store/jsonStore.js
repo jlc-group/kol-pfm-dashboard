@@ -425,6 +425,10 @@ function enrichProject(p) {
     const sub_confirmed = subs.filter(s => s.status === 'confirmed').length;
     return {
         ...p,
+        // แถวที่บันทึกไว้ก่อนมีประเภทแคมเปญไม่มีคีย์นี้ — เติมให้เป็น 'kol' ตรงนี้ที่เดียว
+        // (ฝั่ง Postgres คอลัมน์มี DEFAULT 'kol' อยู่แล้ว จึงไม่ต้องเติมซ้ำ)
+        campaign_type: p.campaign_type === 'other' ? 'other' : 'kol',
+        hire_items: Array.isArray(p.hire_items) ? p.hire_items : [],
         team_name: team ? team.name : null,
         created_by_name: creator ? (creator.full_name || creator.username) : null,
         updated_by_name: editor ? (editor.full_name || editor.username) : null,
@@ -519,6 +523,9 @@ const projects = {
             product: fields.product || null,
             products: Array.isArray(fields.products) ? fields.products : [],
             ad_groups: Array.isArray(fields.ad_groups) ? fields.ad_groups : [],
+            // ค่าที่ไม่รู้จักถอยไปเป็น 'kol' เสมอ — แคมเปญที่หลุดเป็นประเภทประหลาดจะหายจากหน้าโฆษณา/รายงานโดยไม่มีใครรู้
+            campaign_type: fields.campaign_type === 'other' ? 'other' : 'kol',
+            hire_items: Array.isArray(fields.hire_items) ? fields.hire_items : [],
             owner: fields.owner || null,
             creator: fields.creator || null,   // ชื่อคนสร้างโปรเจค (ทีมใช้บัญชีร่วมกัน created_by จึงบอกไม่ได้ว่าใคร)
             brief_link: fields.brief_link || null,
@@ -537,10 +544,12 @@ const projects = {
     async update(id, fields) {
         const p = db.projects.find(p => p.id === Number(id));
         if (!p) return null;
-        for (const key of ['name', 'brand', 'objective', 'product', 'products', 'ad_groups', 'owner', 'creator', 'brief_link', 'product_briefs', 'platform_briefs', 'platform_budgets', 'kol_target', 'budget', 'start_date', 'end_date', 'status', 'description', 'updated_by']) {
+        for (const key of ['name', 'brand', 'objective', 'product', 'products', 'ad_groups', 'hire_items', 'owner', 'creator', 'brief_link', 'product_briefs', 'platform_briefs', 'platform_budgets', 'kol_target', 'budget', 'start_date', 'end_date', 'status', 'description', 'updated_by']) {
             // null = ผู้ใช้ล้างค่าออกจริง ๆ (route ส่งเฉพาะคีย์ที่ client ส่งมา คีย์ที่ไม่ได้แก้จะเป็น undefined)
             if (fields[key] !== undefined) p[key] = fields[key];
         }
+        // ประเภทแคมเปญกรองค่าแยก ไม่ปล่อยให้ค่าดิบจาก body ลงฐานตรง ๆ (ให้ตรงกับฝั่ง Postgres)
+        if (fields.campaign_type !== undefined) p.campaign_type = fields.campaign_type === 'other' ? 'other' : 'kol';
         p.updated_at = now(); persist();
         return clone(p);
     },

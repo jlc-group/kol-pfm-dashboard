@@ -155,6 +155,7 @@ app.use('/api/activity', authenticate, blockPending, blockAgency, require('./rou
 app.use('/api/ads-sync', require('./routes/adsSync'));
 app.use('/api/ads', authenticate, blockPending, blockAgency, require('./routes/ads'));
 app.use('/api/rate-requests', authenticate, blockPending, blockAgency, require('./routes/rateRequests'));
+app.use('/api/hires', authenticate, blockPending, blockAgency, require('./routes/hires'));
 app.use('/api/agency', require('./routes/agency')); // สาธารณะ (Agency ใช้ลิงก์)
 
 // Missing API routes and missing assets must not return successful HTML.

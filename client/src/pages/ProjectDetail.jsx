@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { api, openFile } from '../api/client.js';
 import Icon from '../components/Icon.jsx';
 import ProjectForm from '../components/ProjectForm.jsx';
+import OtherProjectDetail from './OtherProjectDetail.jsx';
 import OnProcessTable from '../components/OnProcessTable.jsx';
 import ProductChips, { ProductSummary } from '../components/ProductChips.jsx';
 import ProductMultiSelect from '../components/ProductMultiSelect.jsx';
@@ -351,6 +352,8 @@ export default function ProjectDetail() {
     const [submissions, setSubmissions] = useState([]);
     const [agencyLinks, setAgencyLinks] = useState([]);
     const [chatUnread, setChatUnread] = useState({});    // { token: จำนวนที่ยังไม่ได้อ่าน }
+    // งานจ้างอื่น ๆ ใช้หน้าคนละหน้า (ไม่มีเอเจนซี่/คลิป/ค่าแอด) — เช็คหลังโหลดข้อมูลเสร็จเท่านั้น
+    const isOther = (project?.campaign_type || 'kol') === 'other';
 
     // นับข้อความที่เอเจนซี่ส่งมาแล้วเรายังไม่ได้เปิดอ่าน — เช็คซ้ำทุก 30 วิ เหมือนในห้องแชท
     const loadChatUnread = useCallback(async () => {
@@ -366,10 +369,11 @@ export default function ProjectDetail() {
     }, [agencyLinks, id]);
 
     useEffect(() => {
+        if (isOther) return;            // งานจ้างอื่น ๆ ไม่มีลิงก์เอเจนซี่ จึงไม่มีแชทให้นับ
         loadChatUnread();
         const t = setInterval(loadChatUnread, 30000);
         return () => clearInterval(t);
-    }, [loadChatUnread]);
+    }, [loadChatUnread, isOther]);
     const { user } = useAuth();                 // ปุ่มสร้างบัญชีเอเจนซี่ขึ้นเฉพาะ admin
     const [showLinks, setShowLinks] = useState(false);
     const [showCreate, setShowCreate] = useState(false);
@@ -421,9 +425,10 @@ export default function ProjectDetail() {
 
     // โหลดข้อมูลซ้ำเป็นระยะ เพื่อให้เห็นอัปเดตจากฝั่ง Agency แบบไม่ต้องรีเฟรช
     useEffect(() => {
+        if (isOther) return;            // ไม่มีรายชื่อ KOL ให้รีเฟรช
         const t = setInterval(loadSubs, 20000);
         return () => clearInterval(t);
-    }, [id]);
+    }, [id, isOther]);
 
     // token ของลิงก์เอเจนซี่ที่ยังใช้งานอยู่ — ใช้ดูว่าแถวไหนกลายเป็นกำพร้า
     const liveTokens = new Set(agencyLinks.map(l => l.token));
@@ -612,6 +617,8 @@ export default function ProjectDetail() {
 
     if (error) return <div className="alert-error">{error}</div>;
     if (!project) return <div className="empty">กำลังโหลด...</div>;
+    // แยกที่นี่ที่เดียว — ลิงก์ /projects/:id เดิมทั้งหมด (หน้าแคมเปญ, ประวัติการแก้ไข, บุ๊กมาร์ก) จึงยังใช้ได้เหมือนเดิม
+    if (isOther) return <OtherProjectDetail project={project} reload={load} onDeleted={() => navigate('/projects')} />;
 
     const kols = project.kols || [];
     // สินค้าที่เลือกได้ = เฉพาะสินค้าของ Platform ที่รับผิดชอบ (เลือก Platform ก่อน)

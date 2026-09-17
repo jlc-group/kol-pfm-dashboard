@@ -192,6 +192,9 @@ const kols = {
         const MONTHS_EN = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
         let projs = snap.projects;
         projs = scopeProjects(projs, scopeBrands);
+        // งานจ้างอื่น ๆ ไม่มีรายชื่อ KOL — กันไม่ให้หลุดเข้าหน้าอินฟลูเอนเซอร์
+        // ใช้ filter สร้างอาร์เรย์ใหม่เสมอ เพราะ scopeProjects คืนตัวเดิมเมื่อไม่มีขอบเขตแบรนด์ (ห้ามแก้ snapshot ทับ)
+        projs = projs.filter(p => (p.campaign_type || 'kol') !== 'other');
         const projById = {};
         projs.forEach(p => { projById[p.id] = p; });
         const projIds = new Set(projs.map(p => p.id));

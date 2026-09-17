@@ -26,7 +26,7 @@ const {
 const {
     loadSnapshot, loadAgencyLinks, messageOut, reportOut, linkOut
 } = require('./_snapshot');
-const { now, clone, inScope, scopeProjects, linkGroupPlatforms } = require('../logic');
+const { now, clone, inScope, scopeProjects, linkGroupPlatforms, hireRowFee, sameInstant } = require('../logic');
 
 // ช่วง INTEGER ของ Postgres — เกินนี้ส่งเข้า query ไม่ได้ (เดิมก็หาไม่เจออยู่แล้ว)
 const INT_MAX = 2147483647;
@@ -141,6 +141,9 @@ const projects = {
             product: fields.product || null,
             products: asJson(Array.isArray(fields.products) ? fields.products : [], []),
             ad_groups: asJson(Array.isArray(fields.ad_groups) ? fields.ad_groups : [], []),
+            // ค่าที่ไม่รู้จักถอยไปเป็น 'kol' เสมอ — แคมเปญที่หลุดเป็นประเภทประหลาดจะหายจากหน้าโฆษณา/รายงานโดยไม่มีใครรู้
+            campaign_type: fields.campaign_type === 'other' ? 'other' : 'kol',
+            hire_items: asJson(Array.isArray(fields.hire_items) ? fields.hire_items : [], []),
             owner: fields.owner || null,
             creator: fields.creator || null,   // ชื่อคนสร้างโปรเจค (ทีมใช้บัญชีร่วมกัน created_by จึงบอกไม่ได้ว่าใคร)
             brief_link: fields.brief_link || null,
@@ -170,6 +173,8 @@ const projects = {
         }
         put('products', v => asJson(v, []));
         put('ad_groups', v => asJson(v, []));
+        put('campaign_type', v => (v === 'other' ? 'other' : 'kol'));
+        put('hire_items', v => asJson(v, []));
         put('product_briefs', v => asJson(v, {}));
         put('platform_briefs', v => asJson(v, {}));
         put('platform_budgets', v => asJson(v, {}));
@@ -180,6 +185,47 @@ const projects = {
         put('updated_by', v => v);
         data.updated_at = now();
         return await updateRow('projects', n, data);
+    },
+
+    // บันทึก hire_items ทั้งก้อนจากฟอร์ม — ล็อกแถว แล้วเช็คว่าไม่มีใคร (หรืองานจัดหา) แก้ระหว่างที่หน้าเว็บเปิดค้างไว้
+    // expectedUpdatedAt ไม่ตรง = ข้อมูลที่หน้าเว็บถืออยู่เก่าแล้ว ถ้าเขียนทับจะทำชื่อที่เสนอ/คนที่เลือกไปแล้วหาย → คืน { conflict }
+    // build(current) คืนอาเรย์ใหม่ทั้งชุด · งบของแคมเปญคำนวณใหม่จากอาเรย์นั้นเสมอ
+    async replaceHireItems(id, expectedUpdatedAt, build) {
+        const n = intId(id);
+        if (n === null) return null;
+        return await withTransaction(async (c) => {
+            const r = await c.query('SELECT hire_items, updated_at FROM projects WHERE id = $1 FOR UPDATE', [n]);
+            if (!r.rows.length) return null;
+            const cur = r.rows[0];
+            if (!sameInstant(cur.updated_at, expectedUpdatedAt)) return { conflict: true };
+            const next = build(Array.isArray(cur.hire_items) ? cur.hire_items : []);
+            if (!Array.isArray(next)) return null;
+            const budget = next.reduce((s, it) => s + hireRowFee(it), 0);
+            await c.query('UPDATE projects SET hire_items = $1, budget = $2, updated_at = $3 WHERE id = $4',
+                [asJson(next, []), budget, now(), n]);
+            return { items: clone(next), budget };
+        });
+    },
+
+    // แก้ hire_items ทีละแถวแบบล็อกแถวไว้ — งานจัดหามีสองฝั่งแตะงานเดียวกันคนละเวลา
+    // (คนขอแก้แคมเปญอยู่ / คนจัดหาเสนอชื่อเข้ามา) ถ้าต่างคนต่างส่งทั้งก้อนแบบหน้าเว็บ ฝั่งที่บันทึกทีหลังจะทับอีกฝั่ง
+    // fn(row, items) ต้องคืน "อาเรย์ใหม่ทั้งชุด" หรือ null ถ้าไม่ให้แก้ · งบของแคมเปญคำนวณใหม่จากอาเรย์นั้นเสมอ
+    async patchHireItems(id, key, fn) {
+        const n = intId(id);
+        if (n === null) return null;
+        return await withTransaction(async (c) => {
+            const r = await c.query('SELECT hire_items FROM projects WHERE id = $1 FOR UPDATE', [n]);
+            if (!r.rows.length) return null;
+            const items = Array.isArray(r.rows[0].hire_items) ? r.rows[0].hire_items : [];
+            const row = items.find(it => String(it.key) === String(key));
+            if (!row) return null;
+            const next = fn(clone(row), clone(items));
+            if (!Array.isArray(next)) return null;
+            const budget = next.reduce((s, it) => s + hireRowFee(it), 0);
+            await c.query('UPDATE projects SET hire_items = $1, budget = $2, updated_at = $3 WHERE id = $4',
+                [asJson(next, []), budget, now(), n]);
+            return clone(next);
+        });
     },
 
     // บันทึกไฟล์บรีฟของสินค้าหนึ่งตัว (เก็บใน product_briefs[code].file)

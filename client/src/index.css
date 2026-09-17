@@ -1425,7 +1425,10 @@ a { text-decoration: none; color: inherit; }
 .acc-Cancelled { background: linear-gradient(90deg, #fb7185, #e11d48); }
 
 .pcard-body { padding: 20px 22px; display: flex; flex-direction: column; flex: 1; }
-.pcard-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; }
+/* ป้ายเรียงชิดซ้ายแล้วดันป้ายทีมไปขวา — เดิมใช้ space-between ซึ่งพอมีป้ายที่ 3 (ประเภทงาน)
+   ป้ายจะกระจายเต็มความกว้างจนดูเหมือนไม่เกี่ยวกัน */
+.pcard-head { display: flex; align-items: center; gap: 6px; margin-bottom: 14px; }
+.pcard-head .team-chip { margin-left: auto; }
 .pcard-brand { font-size: 11.5px; font-weight: 700; color: var(--mint-dark); text-transform: uppercase; letter-spacing: .4px; }
 .pcard-name { font-size: 17.5px; line-height: 1.35; margin: 4px 0 12px; }
 .pcard-sub { display: flex; flex-direction: column; gap: 5px; font-size: 12px; color: var(--muted); margin-bottom: 16px; }
@@ -1468,8 +1471,8 @@ a { text-decoration: none; color: inherit; }
 }
 .pd-del-btn:hover { background: var(--danger); border-color: var(--danger); transform: translateY(-1px); }
 
-.pd-metrics { display: grid; grid-template-columns: repeat(4, 1fr); gap: 18px; margin-bottom: 20px; }
-@media (max-width: 900px) { .pd-metrics { grid-template-columns: repeat(2, 1fr); } }
+.pd-metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 18px; margin-bottom: 20px; }
+@media (max-width: 900px) { .pd-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 520px) { .pd-metrics { grid-template-columns: 1fr; } }
 .pd-metric { background: var(--card); border-radius: var(--radius); padding: 20px; box-shadow: var(--shadow); display: flex; align-items: center; gap: 14px; }
 .pd-metric-icon { width: 48px; height: 48px; border-radius: 13px; display: grid; place-items: center; flex-shrink: 0; }
@@ -3092,3 +3095,157 @@ button { color: inherit; }
     .fee-modal-actions > button { flex: 1 1 0; }
     .fee-input input { width: 78px; }
 }
+
+/* ---------- เลือกประเภทแคมเปญ (KOL / Other) ---------- */
+.modal.ctype-modal { max-width: 620px; }
+.ctype-lead { margin: -4px 0 16px; font-size: 12.5px; color: var(--muted); line-height: 1.6; }
+.ctype-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.ctype-card {
+    display: flex; flex-direction: column; align-items: flex-start; gap: 5px;
+    padding: 18px 16px; text-align: left; cursor: pointer;
+    border: 1.5px solid var(--border); border-radius: var(--radius); background: var(--card);
+    transition: border-color .15s, box-shadow .15s, transform .15s;
+}
+.ctype-card:hover { border-color: var(--mint); box-shadow: var(--shadow); transform: translateY(-2px); }
+.ctype-card.other:hover { border-color: #8b5cf6; }
+.ctype-emoji { font-size: 26px; line-height: 1; margin-bottom: 4px; }
+.ctype-name { font-size: 15.5px; font-weight: 700; color: var(--text); }
+.ctype-desc { font-size: 12.5px; color: var(--text); line-height: 1.5; }
+.ctype-has { font-size: 11px; color: var(--mint-dark); line-height: 1.5; }
+.ctype-has.muted { color: var(--muted); }
+/* ป้ายบนการ์ดแคมเปญ — สีม่วงให้ต่างจากป้ายสถานะและป้ายทีมที่เป็นโทนเขียวทั้งคู่ */
+.ctype-chip { font-size: 10.5px; padding: 3px 9px; border-radius: 20px; background: #f3efff; color: #7c3aed; font-weight: 700; }
+.kol-badge.other { background: #f3efff; color: #7c3aed; }
+
+/* ---------- รายการจ้างในฟอร์มงาน Other ---------- */
+.hire-row { border: 1px solid var(--border); border-radius: 13px; padding: 12px 13px; margin-bottom: 10px; background: #f8fcfa; }
+.hire-row-head { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+.hire-row-no { font-size: 12px; font-weight: 700; color: var(--muted); }
+.hire-row-head .hire-status { width: auto; min-width: 128px; padding: 6px 10px; font-size: 12.5px; border-radius: 9px; }
+.hire-del {
+    margin-left: auto; display: grid; place-items: center; width: 28px; height: 28px; cursor: pointer;
+    border: 1px solid #fbd5dc; border-radius: 9px; background: #fff; color: var(--danger);
+}
+.hire-del:hover { background: #fdecef; }
+.hire-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.hire-f { display: flex; flex-direction: column; gap: 4px; }
+.hire-f.wide { grid-column: span 3; }
+.hire-f > span {
+    font-size: 10.5px; font-weight: 700; letter-spacing: .4px;
+    color: var(--muted); text-transform: uppercase;
+}
+.hire-f input, .hire-f select { width: 100%; padding: 9px 11px; font-size: 13px; border-radius: 9px; }
+.hire-add { margin-top: 2px; }
+.hire-total {
+    display: flex; justify-content: flex-end; align-items: baseline; gap: 8px;
+    margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--border);
+    font-size: 12.5px; color: var(--muted);
+}
+.hire-total b { font-size: 16px; color: var(--mint-dark); }
+@media (max-width: 720px) {
+    .ctype-grid { grid-template-columns: 1fr; }
+    .hire-grid { grid-template-columns: 1fr; }
+    .hire-f.wide { grid-column: span 1; }
+}
+
+/* ตารางหน้างานจ้างอื่น ๆ — 10 คอลัมน์ ถ้าไม่กำหนดความกว้างขั้นต่ำ หัวคอลัมน์กับชื่อคนจะถูกบีบจนตกบรรทัดทุกช่อง (กรอบ .ka-table-scroll เลื่อนแนวนอนให้) */
+.hires-table { min-width: 1040px; }
+
+/* หัวคอลัมน์ 10 ช่องของหน้างานจ้างอื่น ๆ ไม่ต้องตกบรรทัด — กรอบตารางเลื่อนแนวนอนอยู่แล้ว */
+.hires-table th { white-space: nowrap; }
+/* รูปแบบการจ้างรายแถว (ระบุคนเอง / ให้ช่วยจัดหา) */
+.hire-row-head { flex-wrap: wrap; }
+.hire-mode-hint { font-size: 11px; color: var(--muted); }
+@media (max-width: 760px) { .hire-mode-hint { display: none; } }
+.hire-row.casting { background: #faf8ff; border-color: #ddd6fe; }
+.hire-row-sum { margin-left: auto; font-size: 12px; font-weight: 700; color: var(--mint-dark); }
+.hire-row-sum-x { font-weight: 500; color: var(--muted); }
+.hire-f textarea { width: 100%; padding: 9px 11px; font-size: 13px; border-radius: 9px; resize: vertical; font-family: inherit; }
+.hire-total-note { display: block; margin-top: 3px; font-size: 11px; font-weight: 500; color: var(--muted); }
+.cast-chip { display: inline-block; padding: 2px 9px; font-size: 11px; font-weight: 700; color: #6d28d9; background: #f3e8ff; border-radius: 999px; }
+.cast-sub { display: block; margin-top: 2px; font-size: 10.5px; font-weight: 500; color: var(--muted); }
+.cast-fill-btn { display: block; margin-top: 4px; padding: 3px 9px; font-size: 11px; font-weight: 600; color: #6d28d9; background: #f5f3ff; border: 1px solid #ddd6fe; border-radius: 8px; cursor: pointer; }
+.cast-fill-btn:hover { background: #ede9fe; }
+/* ใบขอจัดหา (งานจัดหา) */
+.tasks-table { min-width: 1120px; }
+.tasks-table th { white-space: nowrap; }
+.req-hint { margin: 0 0 12px; padding: 9px 13px; font-size: 12.5px; font-weight: 600; color: #92400e; background: #fffbeb; border: 1px solid #fde68a; border-radius: 10px; }
+.req-late { color: #b91c1c; font-weight: 700; font-size: 12.5px; }
+.tag.warn { color: #92400e; background: #fef3c7; }
+.agency-tab-count.warn { color: #92400e; background: #fde68a; }
+.req-facts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-bottom: 12px; }
+.req-facts > div { padding: 9px 12px; background: var(--soft, #f6faf8); border: 1px solid var(--border); border-radius: 11px; }
+.req-facts span { display: block; font-size: 11px; font-weight: 600; color: var(--muted); }
+.req-facts b { font-size: 13.5px; }
+.req-spec { padding: 10px 13px; margin-bottom: 12px; font-size: 12.5px; line-height: 1.6; background: #faf8ff; border: 1px solid #ddd6fe; border-radius: 11px; }
+.req-assign { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 14px; }
+.req-assign-lbl { font-size: 12px; font-weight: 700; color: var(--muted); }
+.req-assign select { min-width: 200px; padding: 8px 11px; font-size: 13px; border-radius: 9px; }
+.req-cands-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 8px; font-size: 13px; font-weight: 700; }
+.req-add { padding: 12px; margin-bottom: 12px; border: 1px solid var(--border); border-radius: 13px; background: #f8fcfa; }
+.req-add-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 10px; }
+.req-empty { padding: 18px; text-align: center; font-size: 12.5px; color: var(--muted); border: 1px dashed var(--border); border-radius: 12px; }
+.req-cands { display: flex; flex-direction: column; gap: 8px; }
+.req-cand { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 11px 13px; border: 1px solid var(--border); border-radius: 12px; background: #fff; }
+.req-cand.st-ok { border-color: var(--mint); background: #f2fbf7; }
+.req-cand.st-no { opacity: .6; }
+.req-cand-name { display: flex; align-items: center; gap: 8px; }
+.req-cand-st { padding: 2px 8px; font-size: 10.5px; font-weight: 700; color: var(--muted); background: var(--soft, #f1f5f4); border-radius: 999px; }
+.req-cand.st-ok .req-cand-st { color: #047857; background: #d1fae5; }
+.req-cand-meta { margin-top: 3px; font-size: 11.5px; color: var(--muted); }
+.req-cand-note { margin-top: 3px; font-size: 11.5px; }
+.req-cand-links { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 5px; }
+.req-cand-actions { display: flex; align-items: center; gap: 6px; flex: none; }
+.req-cand-actions .btn-primary, .req-cand-actions .btn-ghost { padding: 6px 12px; font-size: 12px; }
+.req-cand-done { font-size: 11.5px; font-weight: 700; color: #047857; }
+.hire-assignee { display: block; margin-top: 3px; font-size: 10.5px; font-weight: 600; color: #6d28d9; }
+@media (max-width: 720px) { .req-facts { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+/* การ์ดใบขอจัดหาที่ฝังอยู่ในหน้ารายละเอียดงานจ้าง */
+.req-card { padding: 14px 16px; margin-bottom: 12px; border-left: 4px solid #a78bfa; }
+.req-card-head { display: flex; align-items: center; flex-wrap: wrap; gap: 9px; margin-bottom: 11px; }
+.req-card-kind { font-size: 14.5px; }
+.req-need { padding: 3px 10px; font-size: 11.5px; font-weight: 700; color: #92400e; background: #fef3c7; border-radius: 999px; }
+.req-need.done { color: #047857; background: #d1fae5; }
+.req-money { margin-left: auto; font-size: 13.5px; font-weight: 800; color: var(--mint-dark); }
+.req-cand-no { min-width: 18px; font-size: 11.5px; font-weight: 800; color: var(--muted); font-variant-numeric: tabular-nums; }
+.req-cand-actions .btn-reject { padding: 6px 12px; font-size: 12px; }
+/* ตารางผู้รับงานในหน้ารายละเอียด — บีบช่องกรอกให้ทั้งตารางพอดีจอ ไม่ต้องเลื่อนซ้ายขวา */
+.hire-detail-table .sub-note-input { min-width: 0; width: 128px; }
+.hire-file-cell { display: flex; flex-direction: column; align-items: flex-start; gap: 5px; }
+/* ช่องวางลิงก์ใต้ปุ่มอัปโหลด (คอมการ์ด / คลิปแนะนำตัว) */
+.hire-link-input { width: 100%; margin-top: 6px; padding: 8px 11px; font-size: 12.5px; border: 1px solid var(--border); border-radius: 9px; background: #fff; }
+.hire-link-input:focus { outline: none; border-color: var(--mint); }
+.req-edit { border-color: var(--mint); background: #f2fbf7; }
+.req-edit-lbl { margin-bottom: 9px; font-size: 12.5px; font-weight: 700; color: var(--mint-dark); }
+.req-edit-btn { padding: 6px 11px; font-size: 12px; }
+
+/* ดูไฟล์แนบในหน้า (รูป / PDF / คลิป) */
+.modal.file-prev { max-width: 860px; }
+.file-prev-body { display: flex; align-items: center; justify-content: center; min-height: 220px; padding: 10px; background: #0f2620; border-radius: 12px; }
+.file-prev-body img, .file-prev-body video { max-width: 100%; max-height: 66vh; border-radius: 9px; }
+.file-prev-body iframe { width: 100%; height: 66vh; border: 0; border-radius: 9px; background: #fff; }
+.file-prev-wait { font-size: 12.5px; color: #cfe9de; }
+.modal.file-prev .modal-actions a.btn-ghost { display: inline-flex; align-items: center; gap: 6px; text-decoration: none; }
+/* การ์ด "สอบถามราคา" ในหน้าต่างเลือกสิ่งที่จะสร้าง */
+.ctype-card.rate:hover { border-color: #0ea5e9; }
+.rate-answered { margin: 4px 0 2px; font-size: 11.5px; color: var(--muted); }
+/* ตัวช่วยอ่านใต้ dropdown ประเภทคำขอสอบถามราคา */
+.rc-type-hint { display: block; margin-top: 5px; font-size: 11.5px; color: var(--muted); }
+.rate-type-chip { display: inline-block; padding: 2px 9px; font-size: 10.5px; font-weight: 700; color: #6d28d9; background: #f3e8ff; border-radius: 999px; }
+.rate-type-chip.kol { color: var(--mint-dark); background: var(--bg-soft); }
+/* แจ้งผลหลังส่งคำขอสอบถามราคาจากในฟอร์มงานจ้าง */
+.rate-sent-note { margin: 0 0 12px; padding: 9px 13px; font-size: 12.5px; font-weight: 600; color: #047857; background: #ecfdf5; border: 1px solid #a7f3d0; border-radius: 10px; }
+/* รายชื่อในฟอร์มสอบถามราคา — 1 คนต่อ 1 แถว */
+.rate-person { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.rate-person-no { min-width: 22px; font-size: 11.5px; font-weight: 800; color: var(--muted); font-variant-numeric: tabular-nums; }
+.rate-person input { flex: 1 1 auto; min-width: 0; }
+.rate-person input.rate-person-name { flex: 0 0 38%; }
+@media (max-width: 640px) {
+    .rate-person { flex-wrap: wrap; }
+    .rate-person input.rate-person-name { flex: 1 1 100%; }
+}
+/* ปุ่มจัดการใบขอจัดหาบนหัวการ์ด */
+.req-card-actions { margin-left: auto; }
+.req-card-head .req-money + .req-card-actions { margin-left: 4px; }
+.req-edit-warn { font-weight: 600; color: #b45309; }
+.req-cand-actions .sub-del:disabled { opacity: .35; cursor: not-allowed; }

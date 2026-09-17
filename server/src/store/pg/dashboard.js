@@ -10,7 +10,7 @@
  * ไม่เอามาคิด CPM และแกนคะแนน CPM/CPE — ใช้กฎกลางจาก logic.js ชุดเดียวกับหน้า Report
  */
 const { loadSnapshot } = require('./_snapshot');
-const { scopeProjects, feeMissing, clipCostMetrics, costAxisRange, costAxisNorm } = require('../logic');
+const { scopeProjects, feeMissing, clipCostMetrics, costAxisRange, costAxisNorm, hireRemaining } = require('../logic');
 
 // ============================ dashboard (สรุปตามตัวกรอง) ============================
 const dashboard = {
@@ -201,11 +201,24 @@ const dashboard = {
             .sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''))
             .map(p => ({ id: p.id, name: p.name, brand: p.brand }));
 
+        // งานจ้างอื่น ๆ — ยังนับรวมใน total_budget / total_campaigns เหมือนเดิม แค่แยกตัวเลขไว้ให้หน้าเว็บติดป้ายได้
+        // ตัวกรองช่วงวันของหน้านี้ใช้กับคลิป ไม่ได้ใช้กับแคมเปญ ตัวเลขชุดนี้จึงไม่ขึ้นกับช่วงวันเหมือน total_budget
+        const otherProjects = projects.filter(p => (p.campaign_type || 'kol') === 'other');
+        // นับเป็น "คน" — ใบขอจัดหาหนึ่งใบขอได้หลายคน จึงนับตามจำนวนคนที่ "ยังต้องหา"
+        // คนที่หาได้แล้วถูกย้ายไปเป็นแถวของตัวเองแล้ว ถ้านับเต็มจำนวนที่ขอจะนับซ้ำ
+        const otherHires = otherProjects.reduce((n, p) => n + (Array.isArray(p.hire_items) ? p.hire_items : [])
+            .reduce((k, it) => k + (it && it.mode === 'casting' ? hireRemaining(it) : 1), 0), 0);
+        const otherBudget = otherProjects.reduce((s, p) => s + (Number(p.budget) || 0), 0);
+
         return {
             total_kols: totalKols,
             total_clips: totalClips,
             total_campaigns: projects.length,   // จำนวนแคมเปญที่เอางบมารวมกัน
             total_budget: totalBudget,
+            // ส่วนที่มาจากงานจ้างอื่น ๆ (รวมอยู่ในสองบรรทัดบนแล้ว — มีไว้ติดป้ายแยกเท่านั้น ห้ามเอาไปบวกซ้ำ)
+            other_projects: otherProjects.length,
+            other_hires: otherHires,
+            other_budget: otherBudget,
             total_spent: totalFee,
             fee_missing_clips: feeMissingClips,   // คลิปที่ยังไม่ใส่ค่าตัว (ไม่ได้รวมใน total_spent และไม่ได้คิด CPM)
             total_views: totalViews,

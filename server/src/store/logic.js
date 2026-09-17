@@ -43,6 +43,131 @@ function scopeProjects(list, scope) {
     return list.filter(p => scope.includes(p.brand));
 }
 
+// ===== งบของรายการจ้าง (แคมเปญงานจ้างอื่น ๆ) =====
+// แถว "ระบุคนเอง" = ค่าตัวของคนนั้น · ใบขอจัดหา = งบต่อคน × จำนวนคนที่ "ยังต้องหา"
+// คนที่หาได้แล้วจะถูกย้ายออกไปเป็นแถวของตัวเอง ถ้ายังนับซ้ำในใบขอจัดหา งบจะบวกสองรอบ
+// ต้องตรงกับ rowFee ฝั่งหน้าเว็บ (client/src/components/OtherProjectForm.jsx) เป๊ะ ๆ
+function hireRemaining(it) {
+    if (!it || it.mode !== 'casting') return 0;
+    return Math.max(0, (Number(it.headcount) || 1) - (Number(it.filled) || 0));
+}
+
+function hireRowFee(it) {
+    if (!it) return 0;
+    const fee = Number(it.fee) || 0;
+    return it.mode === 'casting' ? fee * hireRemaining(it) : fee;
+}
+
+// ===== ไฟล์อัปโหลด: แปลงชื่อที่เก็บในฐานเป็น path จริงอย่างปลอดภัย =====
+// ชื่อไฟล์ใน hire_items / product_briefs มาจาก JSON ที่หน้าเว็บส่งมาทั้งก้อนได้ จึงห้ามเชื่อ
+// รับเฉพาะ "ชื่อไฟล์ล้วน" ที่อยู่ในโฟลเดอร์อัปโหลดตรง ๆ — มีโฟลเดอร์/../ ปนมา = null ห้ามอ่านห้ามลบเด็ดขาด
+function resolveInside(dir, name) {
+    const path = require('node:path');
+    if (typeof name !== 'string' || !name) return null;
+    const base = path.basename(name);
+    if (!base || base === '.' || base === '..' || base !== name || name.includes('/') || name.includes('\\')) return null;
+    const root = path.resolve(dir);
+    const full = path.resolve(root, base);
+    return path.dirname(full) === root ? full : null;
+}
+
+// เวลาสองค่าคือจังหวะเดียวกันไหม (สตริง ISO / Date) — ใช้เช็คว่ามีใครแก้ข้อมูลระหว่างที่หน้าเว็บเปิดค้างไว้
+function sameInstant(a, b) {
+    const t = v => (v === null || v === undefined || v === '' ? NaN : new Date(v).getTime());
+    const x = t(a), y = t(b);
+    return Number.isFinite(x) && x === y;
+}
+
+// ===== ชื่อที่ใช้ตั้งชื่อไฟล์จาก route param — req.params ถูก decode แล้ว (%2F กลายเป็น /) จึงต้องกรองก่อนเสมอ =====
+const safeId = v => (/^\d+$/.test(String(v == null ? '' : v)) ? String(v) : '0');
+const safeSlug = v => (/^[a-z0-9_-]{1,40}$/i.test(String(v == null ? '' : v)) ? String(v) : 'file');
+
+// ===== ค่าตัว / จำนวนคน จากหน้าเว็บ — ตัดค่าติดลบ ไม่ใช่ตัวเลข และค่ามหาศาลทิ้ง ไม่ให้งบติดลบหรือพังตอนคำนวณ =====
+const FEE_MAX = 100000000;      // 100 ล้านต่อแถว (เกินนี้ถือว่าพิมพ์ผิด)
+const HEADCOUNT_MAX = 999;
+function cleanFee(v) {
+    const n = Number(v);
+    if (!Number.isFinite(n) || n <= 0) return 0;
+    return Math.min(Math.round(n * 100) / 100, FEE_MAX);
+}
+function cleanHeadcount(v) {
+    const n = Math.floor(Number(v));
+    if (!Number.isFinite(n) || n < 1) return 1;
+    return Math.min(n, HEADCOUNT_MAX);
+}
+
+// ===== บรีฟที่มีไฟล์แนบ (product_briefs / platform_briefs) จากฟอร์มแคมเปญ =====
+// ฟอร์มส่ง file meta เดิมกลับมาทุกครั้ง แต่ชื่อไฟล์ต้องมาจากเส้นอัปโหลดเท่านั้น (ถ้าเชื่อ body จะชี้ไปเปิดไฟล์อะไรก็ได้)
+// กติกา: ส่ง file เป็น null = เอาไฟล์ออกได้ · ส่งเป็นอะไรก็ตาม = ใช้ของในฐาน (ไม่มีในฐาน = null)
+function mergeBriefFiles(current, incoming) {
+    if (!incoming || typeof incoming !== 'object' || Array.isArray(incoming)) return {};
+    const cur = current && typeof current === 'object' && !Array.isArray(current) ? current : {};
+    const out = {};
+    for (const [k, v] of Object.entries(incoming)) {
+        const entry = v && typeof v === 'object' && !Array.isArray(v) ? v : {};
+        const keepFile = entry.file != null && cur[k] && cur[k].file ? cur[k].file : null;
+        out[k] = { ...entry, file: keepFile };
+    }
+    return out;
+}
+
+// ===== รวม hire_items ที่ฟอร์มส่งมาทั้งก้อน เข้ากับของในฐาน =====
+// ฟิลด์ที่ "ระบบเป็นคนตั้ง" ห้ามเชื่อจากหน้าเว็บ เพราะหน้าเว็บส่งกลับมาทั้งก้อนและปลอมได้:
+//   image (ชื่อไฟล์) · candidates · filled · requested_by_id / requested_at · from_request
+// แถวที่มีอยู่ในฐาน → ยึดค่าพวกนี้จากฐาน · แถวใหม่ → ล้างทิ้ง (ไฟล์ต้องมาจากเส้นอัปโหลดเท่านั้น)
+// ผู้รับผิดชอบจัดหาเลือกในฟอร์มได้ แต่ต้องเป็นคนที่ route ตรวจกับฐานผู้ใช้แล้ว (users) ชื่อก็เอาจากฐาน
+function mergeHireItems(current, incoming, { userId = null, at = now(), users = {} } = {}) {
+    const byKey = new Map((Array.isArray(current) ? current : [])
+        .filter(it => it && it.key)
+        .map(it => [String(it.key), it]));
+    const seen = new Set();
+    return (Array.isArray(incoming) ? incoming : [])
+        .filter(it => it && typeof it === 'object' && !Array.isArray(it))
+        .map(raw => {
+            let key = raw.key ? String(raw.key) : '';
+            // key ซ้ำในก้อนเดียวกัน (ปลอมมา) ให้ถือเป็นแถวใหม่ ไม่งั้นแถวที่สองจะได้ไฟล์/รายชื่อของแถวแรกไป
+            if (!key || seen.has(key)) key = 'h' + Math.random().toString(36).slice(2, 9);
+            seen.add(key);
+            const prev = byKey.get(key) || null;
+            const casting = raw.mode === 'casting';
+            const out = { ...raw, key, mode: casting ? 'casting' : 'direct', fee: cleanFee(raw.fee) };
+
+            out.image = prev && prev.image ? prev.image : null;
+            out.from_request = prev && prev.from_request ? prev.from_request : null;
+
+            if (!casting) {
+                out.candidates = null; out.filled = null; out.headcount = null;
+                out.assignee_id = null; out.assignee_name = null; out.assigned_at = null;
+                out.requested_by_id = null; out.requested_at = null;
+                return out;
+            }
+
+            const prevCasting = prev && prev.mode === 'casting' ? prev : null;
+            out.candidates = prevCasting && Array.isArray(prevCasting.candidates) ? prevCasting.candidates : [];
+            out.filled = prevCasting ? (Number(prevCasting.filled) || 0) : 0;
+            out.requested_by_id = prevCasting && prevCasting.requested_by_id != null ? prevCasting.requested_by_id : (userId || null);
+            out.requested_at = prevCasting && prevCasting.requested_at ? prevCasting.requested_at : at;
+            // ลดจำนวนที่ขอต่ำกว่าคนที่หาได้แล้วไม่ได้ — งบจะติดลบและใบจะค้างสถานะแปลก ๆ
+            out.headcount = Math.max(cleanHeadcount(raw.headcount), out.filled);
+
+            const want = raw.assignee_id === null || raw.assignee_id === undefined || raw.assignee_id === '' ? null : String(raw.assignee_id);
+            const had = prevCasting && prevCasting.assignee_id != null ? String(prevCasting.assignee_id) : null;
+            if (want === had) {
+                // ไม่ได้เปลี่ยนคน — คงของเดิมทั้งชุด (แม้คนนั้นจะถูกปิดบัญชีไปแล้วก็ไม่ถอดงานเงียบ ๆ)
+                out.assignee_id = prevCasting ? prevCasting.assignee_id : null;
+                out.assignee_name = prevCasting ? (prevCasting.assignee_name || null) : null;
+                out.assigned_at = prevCasting ? (prevCasting.assigned_at || null) : null;
+            } else if (want && users[want]) {
+                out.assignee_id = users[want].id;
+                out.assignee_name = users[want].name;
+                out.assigned_at = at;
+            } else {
+                out.assignee_id = null; out.assignee_name = null; out.assigned_at = null;
+            }
+            return out;
+        });
+}
+
 // Platform ของกลุ่ม — รองรับทั้ง platforms[] แบบใหม่ และ platform เดี่ยว/ที่ติดอยู่กับ allocation แบบเดิม
 function linkGroupPlatforms(g) {
     const set = new Set();
@@ -215,7 +340,8 @@ function feeCostAverages(rows) {
 
 module.exports = {
     GOOD_CPM, GOOD_CPE, TARGET_PLATFORMS, AD_STAMP_AT, now, clone,
-    duplicateError, inScope, scopeProjects,
+    duplicateError, inScope, scopeProjects, hireRemaining, hireRowFee,
+    resolveInside, sameInstant, mergeHireItems, mergeBriefFiles, cleanFee, cleanHeadcount, safeId, safeSlug,
     linkGroupPlatforms, resolveGroupClips, resolveGroupTarget,
     resolveGroupProducts, resolveGroupCtype, resolveGroupMedia, resolveGroupCampaign,
     engagementOf, maybeStamp, stampWaitReason,

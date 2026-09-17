@@ -101,6 +101,16 @@ CREATE INDEX IF NOT EXISTS idx_projects_brand   ON projects(brand);
 CREATE INDEX IF NOT EXISTS idx_projects_status  ON projects(status);
 CREATE INDEX IF NOT EXISTS idx_projects_created ON projects(created_at DESC);
 
+-- campaign_type = 'kol' (จ้าง KOL ลงคลิป — มีเอเจนซี่ ยิงแอด มีรายงาน)
+--               | 'other' (จ้างนางแบบ/นักแสดง/Live สด ฯลฯ — ไม่เข้าหน้าโฆษณาและรายงานแคมเปญ)
+-- default 'kol' เพราะแคมเปญเดิมทั้งหมดคือแบบ KOL — เพิ่มคอลัมน์แล้วของเก่าต้องทำงานเหมือนเดิมทุกอย่าง
+-- hire_items = รายการจ้างของแคมเปญ 'other' (ประเภทงาน/ชื่อผู้รับงาน/ค่าตัว/วันใช้งาน ...)
+--              รูปทรงยังไม่นิ่ง และถูกอ่าน-เขียนทั้งก้อนพร้อมแคมเปญเสมอ → JSONB เหมือน ad_groups
+-- ALTER แบบ IF NOT EXISTS: ฐานที่มีข้อมูลอยู่แล้วรัน `npm run setup-db` ซ้ำได้ ไม่กระทบข้อมูลเดิม
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS campaign_type VARCHAR(20) NOT NULL DEFAULT 'kol';
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS hire_items    JSONB       NOT NULL DEFAULT '[]'::jsonb;
+CREATE INDEX IF NOT EXISTS idx_projects_type ON projects(campaign_type);
+
 -- ---------- project_kols (KOL ส่วนกลางที่ถูกหยิบเข้าแคมเปญ) ----------
 CREATE TABLE IF NOT EXISTS project_kols (
     id          SERIAL PRIMARY KEY,
@@ -323,6 +333,16 @@ CREATE TABLE IF NOT EXISTS rate_requests (
     created_at   TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS idx_rate_requests_brand ON rate_requests(brand);
+-- ช่องคำตอบของคำขอเรต (ของเดิมสร้างได้อย่างเดียว ตอบกลับหรือปิดงานไม่ได้)
+-- ใช้ ADD COLUMN IF NOT EXISTS เพื่อให้รันซ้ำกับฐานที่มีข้อมูลอยู่แล้วได้ ไม่กระทบแถวเดิม
+ALTER TABLE rate_requests ADD COLUMN IF NOT EXISTS quoted_rate NUMERIC(18,2);
+ALTER TABLE rate_requests ADD COLUMN IF NOT EXISTS answer_note TEXT;
+ALTER TABLE rate_requests ADD COLUMN IF NOT EXISTS answered_by VARCHAR(255);
+ALTER TABLE rate_requests ADD COLUMN IF NOT EXISTS answered_at TIMESTAMPTZ;
+CREATE INDEX IF NOT EXISTS idx_rate_requests_status ON rate_requests(status);
+-- คำขอสอบถามราคามี 2 แบบที่กรอกคนละชุด: KOL (จ้างลงคลิปเป็นครั้ง) กับ Presenter (ใช้ภาพตามสัญญา)
+ALTER TABLE rate_requests ADD COLUMN IF NOT EXISTS request_type VARCHAR(20) NOT NULL DEFAULT 'kol';
+ALTER TABLE rate_requests ADD COLUMN IF NOT EXISTS contract_period VARCHAR(255);
 
 -- ---------- activity_logs (ประวัติการแก้ไข) ----------
 -- เก็บชื่อผู้ใช้/แคมเปญเป็นข้อความซ้ำไว้ด้วย เพราะประวัติต้องอ่านออกแม้ต้นทางถูกลบไปแล้ว

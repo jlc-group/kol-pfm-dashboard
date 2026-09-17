@@ -66,6 +66,8 @@ function inYear(p, y) {
     if (!s) return false;
     return s <= `${y}-12-31` && e >= `${y}-01-01`;
 }
+// แคมเปญที่บันทึกไว้ก่อนมีประเภท = แคมเปญ KOL ทั้งหมด
+const typeOf = p => (p.campaign_type === 'other' ? 'other' : 'kol');
 function matchSearch(p, q) {
     const s = q.trim().toLowerCase();
     if (!s) return true;
@@ -84,6 +86,7 @@ export default function Projects() {
     const [month, setMonth] = useState(''); // '' = ทุกเดือน
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
+    // หน้านี้สร้างได้อย่างเดียวคือแคมเปญ KOL — งานจ้างอื่น ๆ กับคำขอสอบถามราคาไปสร้างที่หน้า "งานจัดหา"
     const [showForm, setShowForm] = useState(false);
 
     function load() {
@@ -100,13 +103,16 @@ export default function Projects() {
         navigate(`/projects/${project.id}`);
     }
 
+    // หน้านี้เหลือเฉพาะแคมเปญ KOL — งานจ้างอื่น ๆ ย้ายไปอยู่เมนู "งานจ้างอื่น ๆ" (รายชื่อผู้รับงาน)
+    // และ "งานจัดหา" (ใบขอจัดหาที่ยังไม่ได้ตัวคน) ตัดออกตั้งแต่ต้นทางเพื่อให้ตัวนับทุกตัวไม่รวมของที่ไม่ได้โชว์
+    const kolProjects = projects.filter(p => typeOf(p) !== 'other');
     // กรองด้วย search + ปี + เดือน ก่อน แล้วค่อยกรองแบรนด์ (นับจำนวนในชิปแบรนด์ให้ตรงกับตัวกรองปัจจุบัน)
-    const base = projects.filter(p => inYear(p, year) && inMonth(p, month) && matchSearch(p, search));
+    const base = kolProjects.filter(p => inYear(p, year) && inMonth(p, month) && matchSearch(p, search));
     const shown = brand ? base.filter(p => p.brand === brand) : base;
     const countOf = b => base.filter(p => p.brand === b).length;
     const hasFilter = brand || search.trim() || month || year;
     // รายการเดือนสำหรับ dropdown (จากช่วงวันของทุก project) — ถ้าเลือกปีไว้ ให้เหลือเฉพาะเดือนของปีนั้น
-    const allMonths = [...new Set(projects.flatMap(monthsOfProject))].sort().reverse();
+    const allMonths = [...new Set(kolProjects.flatMap(monthsOfProject))].sort().reverse();
     const monthOptions = year ? allMonths.filter(mm => mm.startsWith(year + '-')) : allMonths;
     const yearOptions = [...new Set(allMonths.map(mm => mm.slice(0, 4)))].sort().reverse();
 
@@ -177,7 +183,7 @@ export default function Projects() {
             {/* ฟิลเตอร์ตามแบรนด์ (dropdown) + ปุ่มสร้าง (ซ้ายสุด) */}
             <div className="brand-filter">
                 <button className="btn-primary" style={{ marginRight: 6 }} onClick={() => setShowForm(true)}>
-                    <Icon name="plus" size={17} /> สร้างแคมเปญ
+                    <Icon name="plus" size={17} /> สร้างแคมเปญ KOL
                 </button>
                 <span className="brand-filter-label">แบรนด์</span>
                 <select aria-label="กรองตามแบรนด์" className="campaign-select" value={brand} onChange={e => setBrand(e.target.value)}>
