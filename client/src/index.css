@@ -3269,6 +3269,8 @@ button { color: inherit; }
 .stage-chip.st-finding { color: #1d4ed8; background: #dbeafe; }
 .stage-chip.st-deciding { color: #92400e; background: #fef3c7; }
 .stage-chip.st-full { color: #047857; background: #d1fae5; }
+.stage-chip.st-booking { color: #6d28d9; background: #ede9fe; }
+.stage-chip.st-fee { color: #9a3412; background: #ffedd5; }
 .stage-chip.st-closed { color: #64748b; background: #f1f5f9; }
 .stage-chip.st-late { color: #b91c1c; background: #fee2e2; }
 .tasks-table tr.row-todo td:first-child { box-shadow: inset 3px 0 0 #ef4444; }
@@ -3292,6 +3294,17 @@ button { color: inherit; }
 .req-reject input { flex: 1 1 220px; padding: 7px 10px; border: 1px solid #fca5a5; border-radius: 8px; font-size: 12.5px; }
 .req-card { scroll-margin-top: 90px; transition: box-shadow .3s ease; }
 .req-card.req-flash { box-shadow: 0 0 0 3px #fbbf24, 0 6px 20px rgba(251, 191, 36, .35); }
+
+/* การ์ดใบขอจัดหา: คนที่อนุมัติแล้วรอคอนเฟิร์มคิว */
+.req-bookings { margin: 4px 0 12px; }
+.req-book { padding: 10px 12px; margin-bottom: 8px; border: 1px solid #ddd6fe; border-radius: 10px; background: #faf8ff; }
+.req-book.st-fee_review { border-color: #fed7aa; background: #fff7ed; }
+.req-book-top { display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-start; justify-content: space-between; }
+.req-book .req-cand-name { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.req-book-fee { margin-top: 4px; font-size: 12.5px; color: #9a3412; }
+.req-book-warn { margin: 8px 0 0; padding: 7px 10px; font-size: 12px; font-weight: 600; color: #9a3412; background: #ffedd5; border-radius: 8px; }
+.req-book .req-add { margin-top: 10px; }
+.req-del-block { display: block; margin-top: 6px; font-weight: 700; color: #b91c1c; }
 
 /* ฟอร์มงานจ้าง: ใบขอจัดหาที่บันทึกแล้ว (ล็อก) + รูปแบบของแถวที่บันทึกแล้ว */
 .hire-locked { padding: 10px 12px; border: 1px dashed #c4b5fd; border-radius: 10px; background: #faf5ff; }

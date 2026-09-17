@@ -2,7 +2,10 @@ import { useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { api } from '../api/client.js';
 import Icon from '../components/Icon.jsx';
-import OtherProjectForm, { HIRE_STATUS, HIRE_JOB_CLOSED, isCasting, statusesOf, rowFee, hireLeft, hireStage, hireWaiting, STAGE_LABEL } from '../components/OtherProjectForm.jsx';
+import OtherProjectForm, {
+    HIRE_STATUS, HIRE_JOB_CLOSED, isCasting, statusesOf, rowFee, hireLeft, hireStage, hireWaiting, STAGE_LABEL,
+    BOOKING_LABEL, bookingOpen, bookingState, hireBookings
+} from '../components/OtherProjectForm.jsx';
 import HireRequestCard from '../components/HireRequestCard.jsx';
 import FilePreviewModal from '../components/FilePreviewModal.jsx';
 import { fmtRange } from '../utils/date.js';
@@ -19,7 +22,7 @@ const fmtD = d => {
     return `${Number(dd)}/${Number(m)}/${String(y).slice(2)}`;
 };
 // ตัวกรองสถานะ: ใบขอจัดหาใช้ "ขั้นตอน" ที่คิดจากข้อมูล (ชุดเดียวกับการ์ดและแท็บใบขอจัดหา) · ผู้รับงานใช้สถานะของคน
-const CHIP_ORDER = [...Object.values(STAGE_LABEL), ...HIRE_STATUS];
+const CHIP_ORDER = [...new Set([...Object.values(STAGE_LABEL), ...Object.values(BOOKING_LABEL), ...HIRE_STATUS])];
 // แถวเก่าที่บันทึกก่อนมี key ต้องมีรหัสประจำแถวเสมอ ไม่งั้น React จะสลับแถวตอนแก้ไขในตาราง
 const rowsOf = p => (Array.isArray(p.hire_items) ? p.hire_items : []).map((it, i) => ({ ...it, key: it.key || 'h' + i }));
 
@@ -51,10 +54,18 @@ export default function OtherProjectDetail({ project, reload, onDeleted }) {
     const jobClosed = HIRE_JOB_CLOSED.includes(project.status);
     const castingHeads = jobClosed ? 0 : castingRows.reduce((n, it) => n + hireLeft(it), 0);
     const waitingNames = jobClosed ? 0 : castingRows.reduce((n, it) => n + (hireLeft(it) > 0 ? hireWaiting(it) : 0), 0);
+    // คนที่อนุมัติแล้วค้างคอนเฟิร์ม — นับเฉพาะที่ใบต้นทางยังอยู่ (ใบหายไปแล้วถือว่าไม่ค้างขั้นนี้ ให้แก้สถานะเองได้)
+    // งานปิดแล้วก็ยังโชว์ ให้ทีมเห็นว่ามีคนค้างต้องเก็บ
+    const liveReq = new Set(castingRows.map(r => String(r.key)));
+    const bookingLive = it => !isCasting(it) && it.from_request != null && liveReq.has(String(it.from_request)) && bookingOpen(it);
+    const bookingPeople = items.filter(it => bookingLive(it) && bookingState(it) === 'pending').length;
+    const feePeople = items.filter(it => bookingLive(it) && bookingState(it) === 'fee_review').length;
     // ใบขอจัดหาใบหนึ่ง + ข้อมูลงานที่การ์ดต้องใช้ (สถานะงานใช้คิดขั้นตอน "งานปิดแล้ว")
     const reqOf = it => ({
         ...it, project_id: project.id, project_name: project.name, brand: project.brand,
-        job_status: project.status, remaining: hireLeft(it), in_brand: true, is_assignee: true
+        job_status: project.status, remaining: hireLeft(it), in_brand: true, is_assignee: true,
+        // คนที่อนุมัติจากใบนี้แล้วยังรอคอนเฟิร์มคิว — การ์ดเป็นที่เดียวที่คอนเฟิร์ม/คิวไม่ว่าง/อนุมัติค่าตัวใหม่
+        bookings: hireBookings(items, it.key)
     });
 
     // มาจากแท็บใบขอจัดหา / ลิงก์ที่คัดลอกไว้ (#req-<ใบ>) → เลื่อนไปที่การ์ดของใบนั้นแล้วไฮไลต์ให้เห็น
@@ -67,14 +78,15 @@ export default function OtherProjectDetail({ project, reload, onDeleted }) {
         el.classList.add('req-flash');
         const t = setTimeout(() => el.classList.remove('req-flash'), 2600);
         return () => clearTimeout(t);
-    }, [location.hash, project.id]);
+    }, [location.hash, location.key, project.id]);   // location.key: กดไปที่ใบเดิมซ้ำก็เลื่อนให้อีกครั้ง
     const useDates = items.map(it => it.use_date).filter(Boolean).sort();
     const rangeText = useDates.length
         ? fmtRange(useDates[0], useDates[useDates.length - 1], ' → ')
         : fmtRange(project.start_date, project.end_date, ' → ');
 
     const statusOf = it => it.status || statusesOf(it)[0];
-    const labelOf = it => (isCasting(it) ? STAGE_LABEL[hireStage(it, project.status)] : statusOf(it));
+    const labelOf = it => (isCasting(it) ? STAGE_LABEL[hireStage(it, project.status, items)]
+        : bookingLive(it) ? BOOKING_LABEL[bookingState(it)] : statusOf(it));
     const countStatus = s => view.filter(it => labelOf(it) === s).length;
     const shown = statusPick ? view.filter(it => labelOf(it) === statusPick) : view;
 
@@ -102,7 +114,7 @@ export default function OtherProjectDetail({ project, reload, onDeleted }) {
         try {
             // ส่งช่องที่แก้ได้ + เวลาแก้ล่าสุดของข้อมูลที่เปิดอยู่
             // ฟิลด์ที่ระบบเป็นคนตั้ง (รายชื่อที่เสนอ / ไฟล์ / จำนวนที่หาได้แล้ว / งบ) server ยึดของในฐานเอง ไม่ต้องส่ง
-            const hire_items = items.map(({ candidates, image, filled, requested_by_id, requested_at, from_request, ...it }) =>
+            const hire_items = items.map(({ candidates, image, filled, requested_by_id, requested_at, from_request, from_candidate, booking, ...it }) =>
                 ({ ...it, ...(draft[it.key] || {}) }));
             await api(`/projects/${project.id}`, {
                 method: 'PUT',
@@ -122,6 +134,9 @@ export default function OtherProjectDetail({ project, reload, onDeleted }) {
     }
 
     async function changeStatus(status) {
+        // ปิดงานตอนยังมีคนค้างคอนเฟิร์ม — เตือนก่อน (ปิดแล้วคนหาแตะไม่ได้ ทีมต้องเก็บเอง)
+        if (HIRE_JOB_CLOSED.includes(status) && (bookingPeople + feePeople) > 0
+            && !window.confirm(`ยังมี ${bookingPeople + feePeople} คนที่อนุมัติแล้วรอคอนเฟิร์มคิว/รออนุมัติค่าตัว — ปิดงานแล้วคนหาจะแตะไม่ได้ ทีมแบรนด์ต้องจัดการเองที่การ์ดของใบ ต้องการปิดงานไหม?`)) return;
         try { await api(`/projects/${project.id}`, { method: 'PUT', body: { status } }); reload(); }
         catch (e) { alert(e.message); }
     }
@@ -187,6 +202,8 @@ export default function OtherProjectDetail({ project, reload, onDeleted }) {
                             {byKind.length} ประเภทงาน
                             {castingHeads > 0 && ` · รอจัดหาอีก ${castingHeads} คน`}
                             {waitingNames > 0 && ` · รออนุมัติ ${waitingNames} ชื่อ`}
+                            {bookingPeople > 0 && ` · รอคอนเฟิร์มคิว ${bookingPeople} คน`}
+                            {feePeople > 0 && ` · รออนุมัติค่าตัวใหม่ ${feePeople} คน`}
                         </div>
                     </div>
                 </div>
@@ -315,7 +332,10 @@ export default function OtherProjectDetail({ project, reload, onDeleted }) {
                                                                 {it.place && <span className="cast-sub">📍 {it.place}</span>}
                                                             </td>
                                                             <td className="num">{B(rowFee(it))}</td>
-                                                            <td className="muted">{fmtD(it.use_date)}</td>
+                                                            <td className="muted">
+                                                                {fmtD(it.use_date)}
+                                                                {it.use_time && <span className="cast-sub">{it.use_time}</span>}
+                                                            </td>
                                                             <td>
                                                                 <div className="hire-file-cell">
                                                                 {it.image && (
@@ -329,10 +349,27 @@ export default function OtherProjectDetail({ project, reload, onDeleted }) {
                                                                 </div>
                                                             </td>
                                                             <td>
-                                                                <select className="users-inline-sel" value={statusOf(it)}
-                                                                    onChange={e => setField(it.key, 'status', e.target.value)}>
-                                                                    {statusesOf(it).map(s => <option key={s} value={s}>{s}</option>)}
-                                                                </select>
+                                                                {bookingLive(it) ? (
+                                                                    // ระหว่างรอคอนเฟิร์มคิว สถานะเดินตามขั้นตอนบนการ์ด เปลี่ยนเองจากตารางไม่ได้
+                                                                    <>
+                                                                        <span className={'stage-chip st-' + (bookingState(it) === 'fee_review' ? 'fee' : 'booking')}>
+                                                                            {BOOKING_LABEL[bookingState(it)]}
+                                                                        </span>
+                                                                        <button type="button" className="work-link"
+                                                                            onClick={() => {
+                                                                                // ล้างตัวกรองก่อน ไม่งั้นการ์ดของใบอาจถูกกรองซ่อนอยู่ แล้วกดแล้วไม่ไปไหน
+                                                                                setStatusPick('');
+                                                                                navigate({ hash: '#req-' + it.from_request }, { replace: true });
+                                                                            }}>
+                                                                            ไปที่ใบ
+                                                                        </button>
+                                                                    </>
+                                                                ) : (
+                                                                    <select className="users-inline-sel" value={statusOf(it)}
+                                                                        onChange={e => setField(it.key, 'status', e.target.value)}>
+                                                                        {statusesOf(it).map(s => <option key={s} value={s}>{s}</option>)}
+                                                                    </select>
+                                                                )}
                                                             </td>
                                                             <td>
                                                                 <input className="sub-note-input" value={it.note || ''} placeholder="📝 หมายเหตุ"

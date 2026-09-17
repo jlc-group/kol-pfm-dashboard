@@ -380,6 +380,82 @@ test('a fee changed by someone else since the page loaded returns 409 and logs n
     assert.equal(logs.length, 0);
 });
 
+
+test('booking steps: the finder confirms or releases, only the brand team decides a higher fee', async () => {
+    let saved = [
+        { key: 'r1', mode: 'casting', kind: 'นางแบบ', fee: 5000, headcount: 2, filled: 2, assignee_id: 7,
+          candidates: [{ key: 'c1', name: 'มะลิ', status: 'เลือกแล้ว' }, { key: 'c2', name: 'ชบา', status: 'เลือกแล้ว' }] },
+        { key: 'p1', mode: 'direct', name: 'มะลิ', fee: 5000, status: 'ทาบทาม', from_request: 'r1', from_candidate: 'c1', booking: { state: 'pending' } },
+        { key: 'p2', mode: 'direct', name: 'ชบา', fee: 5000, status: 'ทาบทาม', from_request: 'r1', from_candidate: 'c2', booking: { state: 'pending' } },
+        { key: 'x1', mode: 'direct', name: 'คนของงานอื่น', fee: 1, status: 'ตกลงแล้ว' }
+    ];
+    const logs = [];
+    store.projects.findByIdFull = async () => ({ id: 61, name: 'งานจ้าง', brand: 'Beauterry', team_id: 1, campaign_type: 'other', hire_items: saved });
+    store.projects.patchHireItems = async (id, key, fn) => {
+        const row = saved.find(it => it.key === key);
+        if (!row) return null;
+        const next = fn(structuredClone(row), structuredClone(saved));
+        if (!Array.isArray(next)) return null;
+        saved = next;
+        return structuredClone(next);
+    };
+    store.activity.log = async entry => { logs.push(entry); };
+    const post = (tail, body, token = adminToken) => request(`/api/projects/61/hires/r1/bookings/${tail}`, token, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body || {})
+    });
+
+    // คนหา (user 7) ไม่มีสิทธิ์แบรนด์: คอนเฟิร์มด้วยค่าตัวสูงกว่า → รอทีมอนุมัติ · เห็นเฉพาะใบของตัวเอง + คนที่ได้จากใบนี้
+    user({ role: 'member', team_id: 2, brands: [] });
+    let res = await post('p1/confirm', { fee: 7000, use_time: '10:00', name: 'ปลอม' });
+    assert.equal(res.status, 200);
+    assert.deepEqual((await res.json()).data.map(it => it.key).sort(), ['p1', 'p2', 'r1']);
+    assert.equal(saved.find(it => it.key === 'p1').booking.state, 'fee_review');
+    assert.equal(saved.find(it => it.key === 'p1').name, 'มะลิ');
+    // คนหาอนุมัติ/ไม่อนุมัติค่าตัวให้ตัวเองไม่ได้ — รวมถึงเปลี่ยนตัวพิมพ์ชื่อคำสั่งเพื่อหลบด่าน
+    assert.equal((await post('p1/fee-approve', { expected_fee: 7000 })).status, 403);
+    assert.equal((await post('p1/Fee-Reject', { expected_fee: 7000 })).status, 404);
+    assert.equal((await post('p1/CONFIRM', { fee: 1 })).status, 404);
+    assert.equal(saved.find(it => it.key === 'p1').booking.state, 'fee_review');
+
+    // คนนอก (ไม่ใช่คนหา ไม่มีสิทธิ์แบรนด์) แตะอะไรไม่ได้เลย
+    const stranger = jwt.sign({ id: 99, role: 'member', team_id: 2 }, process.env.JWT_SECRET);
+    assert.equal((await post('p2/confirm', {}, stranger)).status, 403);
+    assert.equal((await post('p2/unavailable', {}, stranger)).status, 403);
+
+    // คนหาแจ้งคิวไม่ว่าง → หลุดจากงาน คืนที่ว่างให้ใบ
+    res = await post('p2/unavailable', { reason: 'ติดงาน' });
+    assert.equal(res.status, 200);
+    assert.ok(!saved.some(it => it.key === 'p2'));
+    assert.equal(saved.find(it => it.key === 'r1').filled, 1);
+
+    // ทีมแบรนด์อนุมัติค่าตัวใหม่ — ต้องเป็นยอดที่เห็นบนจอ
+    user({ role: 'member', team_id: 2, brands: ['Beauterry'] });
+    assert.equal((await post('p1/fee-approve', { expected_fee: 5000 })).status, 409);
+    // ลบใบตอนยังมีคนรอค่าตัวใหม่ไม่ได้
+    assert.equal((await request('/api/projects/61/hires/r1', adminToken, { method: 'DELETE' })).status, 409);
+    assert.ok(saved.some(it => it.key === 'r1'));
+    res = await post('p1/fee-approve', { expected_fee: 7000 });
+    assert.equal(res.status, 200);
+    const p1 = saved.find(it => it.key === 'p1');
+    assert.equal(p1.fee, 7000);
+    assert.equal(p1.status, 'ตกลงแล้ว');
+    // คอนเฟิร์มแล้วใช้ปุ่มคิวไม่ว่างไม่ได้ · กดซ้ำขั้นเดิมได้ 409 ไม่เขียนซ้ำ
+    assert.equal((await post('p1/unavailable', { reason: 'x' })).status, 409);
+    assert.equal((await post('p1/confirm', { fee: 1 })).status, 409);
+    // action อื่นไม่มีเส้นให้เรียก
+    assert.equal((await post('p1/delete')).status, 404);
+    assert.equal(logs.length, 3, 'บันทึกประวัติเฉพาะครั้งที่สำเร็จ');
+
+    // งานปิดแล้ว: คนหาแตะไม่ได้ ทีมแบรนด์ยังเก็บงานค้างได้
+    saved.push({ key: 'p3', mode: 'direct', name: 'ส้ม', fee: 5000, status: 'ทาบทาม', from_request: 'r1', booking: { state: 'pending' } });
+    store.projects.findByIdFull = async () => ({ id: 61, name: 'งานจ้าง', brand: 'Beauterry', team_id: 1, campaign_type: 'other', status: 'Completed', hire_items: saved });
+    user({ role: 'member', team_id: 2, brands: [] });
+    assert.equal((await post('p3/confirm', {})).status, 409);
+    user({ role: 'member', team_id: 2, brands: ['Beauterry'] });
+    assert.equal((await post('p3/confirm', {})).status, 200);
+    assert.equal(saved.find(it => it.key === 'p3').status, 'ตกลงแล้ว');
+});
+
 test('staff can only open agency links of brands they may see', async () => {
     const { project } = agencyFixture();
     project.brand = 'Beauterry';

@@ -24,7 +24,16 @@ const MINE = [
 
 // ข้อความ "รอใคร" ของแต่ละใบ — เป็นเราเองให้เขียนว่า "คุณ" จะได้เห็นทันทีว่าต้องทำอะไร
 function waitingText(r) {
-    if (r.stage === 'deciding' && (r.todo || []).includes('find')) return `คุณ · หาเพิ่มอีก ${r.need_more} คน`;
+    const todo = r.todo || [];
+    if (todo.includes('fee')) return `คุณ · อนุมัติค่าตัวใหม่ ${r.fee_review} คน`;
+    if (todo.includes('confirm') && !todo.includes('find')) return `คุณ · คอนเฟิร์มคิว ${r.booking_pending} คน`;
+    if (r.stage === 'deciding' && todo.includes('find')) return `คุณ · หาเพิ่มอีก ${r.need_more} คน`;
+    if (r.stage === 'booking') {
+        // ใบที่ไม่มีคนหา → ทีมแบรนด์ (คนขอ) คอนเฟิร์มเอง
+        const noFinder = r.assignee_id == null || r.assignee_id === '';
+        return `${r.is_assignee || (noFinder && r.is_requester) ? 'คุณ' : noFinder ? 'ทีมแบรนด์' : (r.assignee_name || 'คนหา')} · คอนเฟิร์มคิว`;
+    }
+    if (r.stage === 'fee') return 'ทีมแบรนด์ · อนุมัติค่าตัวใหม่';
     if (r.waiting_on === 'assign') return r.is_requester ? 'คุณ · มอบหมายคนหา' : 'ทีมแบรนด์ · มอบหมายคนหา';
     if (r.waiting_on === 'finder') return r.is_assignee ? 'คุณ · หาคน' : `${r.assignee_name || 'คนหา'} · หาคน`;
     if (r.waiting_on === 'team') return r.is_requester ? 'คุณ · อนุมัติชื่อ' : 'ทีมแบรนด์ · อนุมัติชื่อ';
@@ -95,7 +104,8 @@ export default function RequestsTab({ counts, hasBrand = true }) {
     }
 
     const reason = counts
-        ? [counts.to_find ? `หาคน ${counts.to_find}` : '', counts.to_decide ? `อนุมัติชื่อ ${counts.to_decide}` : '', counts.to_assign ? `มอบหมายคนหา ${counts.to_assign}` : '']
+        ? [counts.to_find ? `หาคน ${counts.to_find}` : '', counts.to_decide ? `อนุมัติชื่อ ${counts.to_decide}` : '', counts.to_assign ? `มอบหมายคนหา ${counts.to_assign}` : '',
+            counts.to_confirm ? `คอนเฟิร์มคิว ${counts.to_confirm}` : '', counts.to_fee ? `อนุมัติค่าตัวใหม่ ${counts.to_fee}` : '']
             .filter(Boolean).join(' · ')
         : '';
 
@@ -203,6 +213,12 @@ export default function RequestsTab({ counts, hasBrand = true }) {
                                         ) : r.stage === 'deciding' && r.need_more > 0 ? (
                                             <span className="cast-sub">คนหายังต้องหาเพิ่มอีก {r.need_more} คน</span>
                                         ) : null}
+                                        {/* ใบที่ยังขาดคนแต่มีคนที่อนุมัติแล้วรอคอนเฟิร์มอยู่ด้วย — บอกไว้ไม่ให้หลุดสายตา */}
+                                        {r.stage !== 'booking' && r.stage !== 'fee' && r.stage !== 'closed' && (r.booking_pending > 0 || r.fee_review > 0) && (
+                                            <span className="cast-sub">
+                                                {[r.booking_pending ? `รอคอนเฟิร์มคิว ${r.booking_pending} คน` : '', r.fee_review ? `รออนุมัติค่าตัวใหม่ ${r.fee_review} คน` : ''].filter(Boolean).join(' · ')}
+                                            </span>
+                                        )}
                                     </td>
                                     <td>
                                         {r.in_brand

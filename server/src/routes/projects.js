@@ -12,7 +12,12 @@ router.use(authenticate);
 
 // ---------- ที่เก็บไฟล์บรีฟ (ใช้โฟลเดอร์ uploads ร่วมกัน) ----------
 const { UPLOAD_DIR, uploadPath } = require('../config/uploads');
-const { mergeHireItems, mergeBriefFiles, hireRowFee, cleanFee, cleanHeadcount, safeId } = require('../store/logic');
+const {
+    mergeHireItems, mergeBriefFiles, hireRowFee, cleanFee, cleanHeadcount, safeId,
+    HIRE_BOOKED, BOOK_PENDING, BOOK_FEE, HIRE_JOB_CLOSED, hireBookings,
+    releaseToRequest, bookingConfirm, bookingFeeDecision, bookingUnavailable
+} = require('../store/logic');
+const BOOKING_ACTIONS = ['confirm', 'unavailable', 'fee-approve', 'fee-reject'];
 if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 // รูปแนบในแชทกับเอเจนซี่ — รูปเท่านั้น
 const chatImage = multer({
@@ -185,7 +190,7 @@ router.post('/', async (req, res, next) => {
         if (req.body.platform_briefs !== undefined) createFields.platform_briefs = mergeBriefFiles({}, req.body.platform_briefs);
         if (Array.isArray(req.body.hire_items)) {
             const users = await resolveAssignees(req.body.hire_items);
-            createFields.hire_items = mergeHireItems([], req.body.hire_items, { userId: req.user.id, users });
+            createFields.hire_items = mergeHireItems([], req.body.hire_items, { userId: req.user.id, users, actor: actorName(req) });
             // งบของงานจ้างอื่น ๆ = ผลรวมรายการจ้าง คำนวณฝั่งนี้ ไม่เชื่อตัวเลขที่หน้าเว็บส่งมา
             if (req.body.campaign_type === 'other') {
                 createFields.budget = createFields.hire_items.reduce((s, it) => s + hireRowFee(it), 0);
@@ -240,7 +245,7 @@ router.put('/:id', async (req, res, next) => {
             }
             const users = await resolveAssignees(req.body.hire_items);
             const saved = await store.projects.replaceHireItems(req.params.id, req.body.expected_updated_at,
-                current => mergeHireItems(current, req.body.hire_items, { userId: req.user.id, users }));
+                current => mergeHireItems(current, req.body.hire_items, { userId: req.user.id, users, actor: actorName(req) }));
             if (!saved) return res.status(404).json({ status: 'error', message: 'ไม่พบ Project' });
             if (saved.conflict) {
                 return res.status(409).json({ status: 'error', code: 'STALE', message: 'ข้อมูลของงานนี้เพิ่งเปลี่ยนระหว่างที่เปิดอยู่ — โหลดค่าล่าสุดแล้วบันทึกอีกครั้ง' });
@@ -435,7 +440,8 @@ async function castingRow(req, projectId, key) {
 
 // เส้นที่คนจัดหาเรียกได้คืน hire_items กลับไป — ถ้าคนเรียกไม่มีสิทธิ์แบรนด์นี้ ให้เห็นแค่ใบที่ถูกมอบหมาย ไม่ใช่ทั้งแคมเปญ
 const visibleItems = (items, acc, key) =>
-    (acc.isOwner ? items : (Array.isArray(items) ? items : []).filter(it => String(it.key) === String(key)));
+    (acc.isOwner ? items : (Array.isArray(items) ? items : []).filter(it => it
+        && (String(it.key) === String(key) || (it.from_request != null && String(it.from_request) === String(key)))));
 
 // PUT /api/projects/:id/hires/:key/assign — มอบหมาย / เปลี่ยน / ถอนคนรับผิดชอบจัดหา
 router.put('/:id/hires/:key/assign', async (req, res, next) => {
@@ -513,10 +519,22 @@ router.delete('/:id/hires/:key', async (req, res, next) => {
         if (!check.ok) return res.status(check.code).json({ status: 'error', message: check.message });
 
         let gone = null;
+        let openBookings = 0;
         const items = await store.projects.patchHireItems(req.params.id, req.params.key, (row, list) => {
             gone = row;
-            return list.filter(it => String(it.key) !== String(req.params.key));
+            if (row.mode === 'casting') {
+                openBookings = hireBookings(list, row.key).rows.length;
+                if (openBookings > 0) return null;
+            }
+            const rest = list.filter(it => String(it.key) !== String(req.params.key));
+            // คนที่ได้จากใบขอจัดหา → คืนที่ว่างให้ใบนั้น ไม่งั้นใบค้างว่าได้ครบทั้งที่คนหายไปแล้ว
+            return row.mode !== 'casting' && row.from_request != null
+                ? releaseToRequest(rest, row, { reason: 'ถูกลบออกจากรายชื่อผู้รับงาน', actor: actorName(req), at: new Date().toISOString() })
+                : rest;
         });
+        if (openBookings > 0) {
+            return res.status(409).json({ status: 'error', message: `ใบนี้ยังมี ${openBookings} คนที่อนุมัติแล้วรอคอนเฟิร์มคิว/รออนุมัติค่าตัว — คอนเฟิร์ม หรือกดคิวไม่ว่าง ให้ครบก่อนจึงลบใบได้` });
+        }
         if (!items) return res.status(404).json({ status: 'error', message: 'ไม่พบรายการนี้' });
 
         // เก็บกวาดไฟล์ของใบที่ถูกลบ — แต่ข้ามไฟล์ที่ยังมีแถวอื่นใช้อยู่ (คนที่เลือกไปแล้วใช้คอมการ์ดไฟล์เดียวกัน)
@@ -606,10 +624,12 @@ router.patch('/:id/hires/:key/candidates/:ckey', async (req, res, next) => {
                 qty: row.qty || null,
                 // ค่าตัวจริงของคนที่เลือกมาแทนงบที่ตั้งไว้ต่อคน (ถ้าไม่ได้ระบุ ใช้งบต่อคนไปก่อน)
                 fee: Number(cand.fee) || Number(row.fee) || 0,
-                use_date: row.use_date || null, place: row.place || null,
+                use_date: row.use_date || null, use_time: null, place: row.place || null,
                 link: cand.link || null, image: cand.image || null,
-                status: CAST_DONE, note: cand.note || null,
-                from_request: row.key
+                // ยังไม่ตกลง — คนหาต้องคอนเฟิร์มคิว/ค่าตัวจริงก่อน (ขั้นนี้เดินด้วยปุ่มบนการ์ดใบขอจัดหา)
+                status: HIRE_BOOKED, note: cand.note || null,
+                booking: { state: BOOK_PENDING, approved_by: actorName(req), approved_at: new Date().toISOString() },
+                from_request: row.key, from_candidate: cand.key
             };
             const out = [];
             list.forEach(it => {
@@ -627,6 +647,58 @@ router.patch('/:id/hires/:key/candidates/:ckey', async (req, res, next) => {
                 ? `ไม่ผ่าน ${candName || ''} ในใบขอจัดหา${reason ? ' — ' + reason : ''}`
                 : `ดึง ${candName || ''} กลับมาพิจารณาในใบขอจัดหา`);
         res.json({ status: 'success', data: items });
+    } catch (err) { next(err); }
+});
+
+// POST /api/projects/:id/hires/:key/bookings/:rowKey/:action — ขั้นคอนเฟิร์มคิวของคนที่อนุมัติแล้วจากใบ :key
+//  confirm      คนหา (หรือทีมแบรนด์) คอนเฟิร์มคิว + ค่าตัวจริง → ตกลงแล้ว หรือรอทีมอนุมัติค่าตัวใหม่ถ้าแพงกว่าที่อนุมัติ
+//  unavailable  คิวไม่ว่าง / ถอนตัว → เอาออกจากงาน คืนที่ว่างให้คนหาหาใหม่
+//  fee-approve / fee-reject  ทีมแบรนด์ตัดสินค่าตัวใหม่
+router.post('/:id/hires/:key/bookings/:rowKey/:action', async (req, res, next) => {
+    try {
+        const { id, key, rowKey } = req.params;
+        // ต้องตรงตัวอักษรเป๊ะ — router ของ Express ไม่สนตัวพิมพ์เล็ก/ใหญ่ ถ้าเทียบหลวม ๆ คนหาจะเรียกขั้นของทีมได้ (เช่น Fee-Reject)
+        const action = String(req.params.action);
+        if (!BOOKING_ACTIONS.includes(action)) return res.status(404).json({ status: 'error', message: 'ไม่พบคำสั่งนี้' });
+        const feeDecision = action === 'fee-approve' || action === 'fee-reject';
+
+        const acc = await castingRow(req, id, key);
+        if (!acc.ok) return res.status(acc.code).json({ status: 'error', message: acc.message });
+        // ค่าตัวเป็นเรื่องงบของแบรนด์ — คนหาอนุมัติ/ไม่อนุมัติค่าตัวเองไม่ได้
+        if (feeDecision && !acc.isOwner) {
+            return res.status(403).json({ status: 'error', message: 'การอนุมัติค่าตัวต้องเป็นทีมของแบรนด์นี้' });
+        }
+        // งานที่ปิดแล้ว (เสร็จสิ้น/ยกเลิก) เหลือให้ทีมแบรนด์เก็บคนที่ค้างอยู่ได้อย่างเดียว
+        if (HIRE_JOB_CLOSED.includes(acc.project.status) && !acc.isOwner) {
+            return res.status(409).json({ status: 'error', message: 'งานนี้ปิดแล้ว — ให้ทีมแบรนด์เป็นคนจัดการคนที่ยังค้างคอนเฟิร์ม' });
+        }
+        const b = req.body || {};
+        const who = { actor: actorName(req), at: new Date().toISOString() };
+        let result = null;
+        const items = await store.projects.patchHireItems(id, key, (row, list) => {
+            result = action === 'confirm' ? bookingConfirm(list, key, rowKey, b, who)
+                : action === 'unavailable' ? bookingUnavailable(list, key, rowKey, b.reason, who)
+                    // ต้องตัดสินยอดเดียวกับที่เห็นบนหน้าจอ (expected_fee) — ยอดเปลี่ยนระหว่างนั้นได้ 409 ให้โหลดใหม่
+                    : bookingFeeDecision(list, key, rowKey, action === 'fee-approve', b.note,
+                        { ...who, expected_fee: b.expected_fee, expected_confirmed_at: b.expected_confirmed_at });
+            return result.error ? null : result.list;
+        });
+        if (result && result.error) return res.status(result.error.code).json({ status: 'error', message: result.error.message });
+        if (!items) return res.status(404).json({ status: 'error', message: 'ไม่พบใบขอจัดหานี้' });
+
+        const r = result.row || {};
+        const baht = n => '฿' + (Number(n) || 0).toLocaleString('th-TH');
+        const summary = action === 'confirm'
+            ? (r.booking && r.booking.state === BOOK_FEE
+                ? `คอนเฟิร์มคิว ${r.name} — ขอค่าตัวใหม่ ${baht(r.booking.requested_fee)} (อนุมัติไว้ ${baht(r.fee)}) รอทีมอนุมัติ`
+                : `คอนเฟิร์มคิว ${r.name} แล้ว (ค่าตัว ${baht(r.fee)})`)
+            : action === 'unavailable'
+                ? `${r.name} คิวไม่ว่าง — คืนที่ว่างให้ใบขอจัดหา${txt(b.reason) ? ' (' + String(txt(b.reason)).slice(0, 300) + ')' : ''}`
+                : action === 'fee-approve'
+                    ? `อนุมัติค่าตัวใหม่ของ ${r.name} ${baht(r.booking && r.booking.requested_fee)}`
+                    : `ไม่อนุมัติค่าตัวใหม่ของ ${r.name}${txt(b.note) ? ' — ' + String(txt(b.note)).slice(0, 300) : ''}`;
+        await record(req, id, 'update', summary);
+        res.json({ status: 'success', data: acc.isOwner ? items : visibleItems(items, acc, key) });
     } catch (err) { next(err); }
 });
 

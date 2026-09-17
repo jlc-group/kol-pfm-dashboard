@@ -43,15 +43,30 @@ export const hireWaiting = it => (isCasting(it)
     : 0);
 // คนหายังต้องหาเพิ่มอีกกี่คน (ชื่อที่รออนุมัติอยู่นับว่าหามาให้แล้ว)
 export const hireNeedMore = it => Math.max(0, hireLeft(it) - hireWaiting(it));
-export const hireStage = (it, jobStatus) => {
+// ขั้นคอนเฟิร์มคิวของคนที่อนุมัติจากใบขอจัดหา (hire_items[].booking) — แถวเก่าที่ไม่มี booking ถือว่าคอนเฟิร์มแล้ว
+export const BOOK_PENDING = 'pending';
+export const BOOK_FEE = 'fee_review';
+export const bookingState = it => (it && it.booking && it.booking.state) || null;
+export const bookingOpen = it => bookingState(it) === BOOK_PENDING || bookingState(it) === BOOK_FEE;
+export const BOOKING_LABEL = { pending: 'รอคอนเฟิร์มคิว', fee_review: 'รออนุมัติค่าตัวใหม่' };
+// คนที่ได้จากใบ key และยังค้างขั้นคอนเฟิร์ม (items = hire_items ทั้งงาน)
+export const hireBookings = (items, key) => (Array.isArray(items) ? items : []).filter(it => it && it.mode !== 'casting'
+    && it.from_request != null && key != null && String(it.from_request) === String(key) && bookingOpen(it));
+export const hireStage = (it, jobStatus, items) => {
     if (HIRE_JOB_CLOSED.includes(jobStatus)) return 'closed';
-    if (hireLeft(it) <= 0) return 'full';
+    if (hireLeft(it) <= 0) {
+        const b = hireBookings(items, it && it.key);
+        if (b.some(r => bookingState(r) === BOOK_FEE)) return 'fee';
+        if (b.length > 0) return 'booking';
+        return 'full';
+    }
     if (hireWaiting(it) > 0) return 'deciding';
     if (!it || it.assignee_id === null || it.assignee_id === undefined || it.assignee_id === '') return 'unassigned';
     return 'finding';
 };
 export const STAGE_LABEL = {
-    unassigned: 'รอมอบหมายคนหา', finding: 'กำลังหา', deciding: 'รอทีมอนุมัติ', full: 'ได้ครบแล้ว', closed: 'งานปิดแล้ว'
+    unassigned: 'รอมอบหมายคนหา', finding: 'กำลังหา', deciding: 'รอทีมอนุมัติ',
+    booking: 'รอคอนเฟิร์มคิว', fee: 'รออนุมัติค่าตัวใหม่', full: 'ได้ครบแล้ว', closed: 'งานปิดแล้ว'
 };
 // ชื่อที่โชว์ของสถานะชื่อที่เสนอ (ในฐานยังเก็บคำเดิม ไม่ต้องย้ายข้อมูล)
 export const CAND_LABEL = { 'เสนอ': 'รออนุมัติ', 'เลือกแล้ว': 'อนุมัติแล้ว', 'ไม่เอา': 'ไม่ผ่าน' };
@@ -59,7 +74,7 @@ export const CAND_LABEL = { 'เสนอ': 'รออนุมัติ', 'เ�
 const newItem = (mode = '') => ({
     key: genKey(), mode: (mode === 'casting' || mode === 'direct') ? mode : '',
     kind: '', name: '', contact: '', agency: '',
-    qty: '', fee: '', use_date: '', place: '', link: '', note: '', image: null,
+    qty: '', fee: '', use_date: '', use_time: '', place: '', link: '', note: '', image: null,
     // เฉพาะใบขอจัดหา
     headcount: mode === 'casting' ? '1' : '', spec: '', deadline: '',
     status: mode === 'casting' ? CASTING_STATUS[0] : (mode === 'direct' ? HIRE_STATUS[0] : '')
@@ -73,7 +88,7 @@ const toItem = it => {
         mode: base.mode,
         kind: S(it.kind), name: S(it.name), contact: S(it.contact), agency: S(it.agency),
         qty: S(it.qty), fee: it.fee == null ? '' : String(it.fee),
-        use_date: S(it.use_date), place: S(it.place), link: S(it.link), note: S(it.note),
+        use_date: S(it.use_date), use_time: S(it.use_time), place: S(it.place), link: S(it.link), note: S(it.note),
         spec: S(it.spec), deadline: S(it.deadline),
         headcount: it.headcount == null ? base.headcount : String(it.headcount),
         image: it.image || null, status: S(it.status) || base.status
@@ -200,6 +215,8 @@ export default function OtherProjectForm({ editing, onClose, onSaved, onConflict
                         // ไม่ต้องส่ง: server ยึดของในฐานเสมอ (ป้องกันหน้าเว็บที่ถือข้อมูลเก่าเขียนทับงานของคนอื่น)
                         assignee_id: casting ? (it.assignee_id == null ? null : it.assignee_id) : null,
                         use_date: it.use_date || null, place: it.place.trim() || null,
+                        // เวลาใช้งาน (คนหาใส่ตอนคอนเฟิร์มคิว) — ใบขอจัดหาไม่ส่ง server จะคงของเดิมไว้
+                        use_time: casting ? undefined : (it.use_time.trim() || null),
                         link: casting ? null : (it.link.trim() || null),
                         status: it.status || (casting ? CASTING_STATUS[0] : HIRE_STATUS[0]),
                         note: it.note.trim() || null
@@ -323,6 +340,8 @@ export default function OtherProjectForm({ editing, onClose, onSaved, onConflict
                                     <span className="hire-mode-hint">
                                         {isLocked(it)
                                             ? 'ใบขอจัดหาที่บันทึกแล้ว'
+                                            : bookingOpen(it)
+                                            ? `อนุมัติจากใบขอจัดหาแล้ว · ${BOOKING_LABEL[bookingState(it)]} (สถานะจะเปลี่ยนเองเมื่อคอนเฟิร์ม)`
                                             : !hasMode(it)
                                             ? 'เลือกรูปแบบการจ้างก่อน แล้วช่องกรอกจะขึ้นให้'
                                             : isCasting(it)
@@ -336,7 +355,12 @@ export default function OtherProjectForm({ editing, onClose, onSaved, onConflict
                                         </span>
                                     )}
                                     {items.length > 1 && !isLocked(it) && (
-                                        <button type="button" className="hire-del" title="ลบแถวนี้" onClick={() => removeItem(i)}>
+                                        <button type="button" className="hire-del" title="ลบแถวนี้" onClick={() => {
+                                            // คนที่ได้จากใบขอจัดหา — ลบแล้วที่ว่างจะคืนให้ใบ (บอกก่อน จะได้ไม่ตกใจว่าใบกลับมาต้องหาคน)
+                                            if (it.from_request && savedKeys.has(String(it.key))
+                                                && !window.confirm(`"${it.name || 'คนนี้'}" ได้มาจากใบขอจัดหา — ลบแล้วที่ว่างจะคืนให้ใบนั้นหาคนใหม่ (บันทึกฟอร์มแล้วจึงมีผล) ต้องการลบไหม?`)) return;
+                                            removeItem(i);
+                                        }}>
                                             <Icon name="trash" size={14} />
                                         </button>
                                     )}
@@ -405,6 +429,10 @@ export default function OtherProjectForm({ editing, onClose, onSaved, onConflict
                                                 <span>วันที่ใช้งาน</span>
                                                 <DatePicker value={it.use_date} onChange={v => setItem(i, 'use_date', v)} />
                                             </div>
+                                            <label className="hire-f">
+                                                <span>เวลา</span>
+                                                <input value={it.use_time} maxLength={60} onChange={e => setItem(i, 'use_time', e.target.value)} placeholder="เช่น 09:00-17:00" />
+                                            </label>
                                         </>
                                     ) : (
                                         <>

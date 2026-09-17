@@ -140,6 +140,11 @@ export default function JobsTab() {
                                                         ต้องหาอีก {r.remaining}{r.waiting > 0 ? ` · รออนุมัติ ${r.waiting}` : ''}
                                                     </span>
                                                 )}
+                                        {!r.closed && (r.booking_pending > 0 || r.fee_review > 0) && (
+                                            <span className="tag warn">
+                                                {[r.booking_pending ? `รอคอนเฟิร์มคิว ${r.booking_pending}` : '', r.fee_review ? `รออนุมัติค่าตัว ${r.fee_review}` : ''].filter(Boolean).join(' · ')}
+                                            </span>
+                                        )}
                                     </td>
                                     <td className="num">{B(r.total_fee)}</td>
                                     <td className="muted">{r.contact || '—'}</td>

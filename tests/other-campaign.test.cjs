@@ -444,6 +444,194 @@ test('a request that already has proposed names cannot be wiped by switching it 
     assert.equal(out[1].name, 'มะลิ');
 });
 
+
+// งานจำลองหนึ่งงาน: ใบขอจัดหา r1 (ขอ 2 คน หาได้แล้ว 2) + คนที่อนุมัติจากใบนี้ 2 คน (รอคอนเฟิร์ม / รออนุมัติค่าตัวใหม่)
+const bookingJob = () => ([
+    { key: 'r1', mode: 'casting', kind: 'นางแบบ', fee: 5000, headcount: 2, filled: 2, assignee_id: 7, requested_by_id: 3,
+      candidates: [
+          { key: 'c1', name: 'มะลิ', status: 'เลือกแล้ว' },
+          { key: 'c2', name: 'กุหลาบ', status: 'เลือกแล้ว' },
+          { key: 'c3', name: 'ชบา', status: 'เสนอ' }
+      ] },
+    { key: 'p1', mode: 'direct', kind: 'นางแบบ', name: 'มะลิ', fee: 5000, status: 'ทาบทาม', from_request: 'r1', from_candidate: 'c1',
+      use_date: '2026-09-20', place: 'สตูดิโอ', booking: { state: 'pending', approved_by: 'แพรว' } },
+    { key: 'p2', mode: 'direct', kind: 'นางแบบ', name: 'กุหลาบ', fee: 6000, status: 'ทาบทาม', from_request: 'r1', from_candidate: 'c2',
+      booking: { state: 'fee_review', requested_fee: 8000, approved_fee: 6000 } },
+    { key: 'd1', mode: 'direct', kind: 'ช่างภาพ', name: 'ต้น', fee: 9000, status: 'ตกลงแล้ว' }
+]);
+
+test('finder confirms the booking: same or lower fee is agreed, a higher fee goes back to the team', () => {
+    const { bookingConfirm, hireRowFee } = require(path.join(SRC, 'store/logic'));
+    const who = { actor: 'ฟ้า', at: '2026-09-18T00:00:00.000Z' };
+
+    const ok = bookingConfirm(bookingJob(), 'r1', 'p1',
+        { use_date: '2026-09-21', use_time: '09:00-17:00', place: 'สตูดิโอ B', contact: '081', fee: 4500, note: 'ชุดมาเอง', name: 'ปลอมชื่อ' }, who);
+    const p1 = ok.list.find(it => it.key === 'p1');
+    assert.equal(p1.status, 'ตกลงแล้ว');
+    assert.equal(p1.booking.state, 'confirmed');
+    assert.equal(p1.booking.confirmed_by, 'ฟ้า');
+    assert.equal(p1.fee, 4500, 'ถูกกว่าที่อนุมัติ ใช้ค่าตัวจริงได้เลย');
+    assert.equal(p1.use_date, '2026-09-21');
+    assert.equal(p1.use_time, '09:00-17:00');
+    assert.equal(p1.place, 'สตูดิโอ B');
+    assert.equal(p1.name, 'มะลิ', 'ชื่อแก้จากขั้นคอนเฟิร์มไม่ได้');
+
+    // ไม่ส่งค่าตัว = ใช้ค่าตัวที่อนุมัติ · วันที่ผิดรูปแบบ = ล้างเป็นว่าง
+    const keep = bookingConfirm(bookingJob(), 'r1', 'p1', { use_date: '21/9/26' }, who).list.find(it => it.key === 'p1');
+    assert.equal(keep.fee, 5000);
+    assert.equal(keep.use_date, null);
+
+    // แพงกว่าที่อนุมัติ → รอทีมอนุมัติค่าตัวใหม่ งบยังเป็นค่าตัวเดิม
+    const high = bookingConfirm(bookingJob(), 'r1', 'p1', { fee: 7000, use_time: '10:00' }, who);
+    const h1 = high.list.find(it => it.key === 'p1');
+    assert.equal(h1.status, 'ทาบทาม');
+    assert.equal(h1.booking.state, 'fee_review');
+    assert.equal(h1.booking.requested_fee, 7000);
+    assert.equal(h1.booking.approved_fee, 5000);
+    assert.equal(hireRowFee(h1), 5000);
+    assert.equal(h1.use_time, '10:00', 'ข้อมูลนัดหมายบันทึกไว้แม้ค่าตัวยังรออนุมัติ');
+
+    // ขั้นผิด / แถวที่ไม่ได้มาจากใบนี้
+    assert.equal(bookingConfirm(bookingJob(), 'r1', 'p2', { fee: 1 }, who).error.code, 409);
+    assert.equal(bookingConfirm(bookingJob(), 'r1', 'd1', {}, who).error.code, 404);
+    assert.equal(bookingConfirm(bookingJob(), 'nope', 'p1', {}, who).error.code, 404);
+});
+
+test('team decides the new fee: approve uses it, reject sends the booking back to the finder', () => {
+    const { bookingFeeDecision } = require(path.join(SRC, 'store/logic'));
+    const who = { actor: 'แพรว', at: '2026-09-18T00:00:00.000Z' };
+    const yes = bookingFeeDecision(bookingJob(), 'r1', 'p2', true, null, { ...who, expected_fee: 8000 }).list.find(it => it.key === 'p2');
+    assert.equal(yes.fee, 8000);
+    assert.equal(yes.status, 'ตกลงแล้ว');
+    assert.equal(yes.booking.state, 'confirmed');
+    assert.equal(yes.booking.reviewed_by, 'แพรว');
+
+    const no = bookingFeeDecision(bookingJob(), 'r1', 'p2', false, 'งบไม่พอ ต่อรองได้ไม่เกิน 6,500', { ...who, expected_fee: 8000 }).list.find(it => it.key === 'p2');
+    assert.equal(no.fee, 6000);
+    assert.equal(no.status, 'ทาบทาม');
+    assert.equal(no.booking.state, 'pending');
+    assert.equal(no.booking.rejected_fee, 8000);
+    assert.equal(no.booking.requested_fee, null);
+    assert.equal(no.booking.team_note, 'งบไม่พอ ต่อรองได้ไม่เกิน 6,500');
+
+    assert.equal(bookingFeeDecision(bookingJob(), 'r1', 'p1', true, null, who).error.code, 409, 'ไม่มีค่าตัวใหม่รออยู่');
+    // ยอดบนจอไม่ตรงกับที่ขออยู่ตอนนี้ (หรือไม่ส่งยอดมา) → ห้ามตัดสิน ให้โหลดใหม่
+    assert.equal(bookingFeeDecision(bookingJob(), 'r1', 'p2', true, null, { ...who, expected_fee: 7000 }).error.code, 409);
+    assert.equal(bookingFeeDecision(bookingJob(), 'r1', 'p2', true, null, who).error.code, 409);
+    const reconfirmed = bookingJob().map(it => (it.key === 'p2' ? { ...it, booking: { ...it.booking, confirmed_at: '2026-09-18T05:00:00.000Z' } } : it));
+    assert.equal(bookingFeeDecision(reconfirmed, 'r1', 'p2', true, null, { ...who, expected_fee: 8000, expected_confirmed_at: '2026-09-18T04:00:00.000Z' }).error.code, 409,
+        'คนหาคอนเฟิร์มรอบใหม่ด้วยยอดเดิม ก็ต้องให้โหลดใหม่');
+    assert.ok(bookingFeeDecision(reconfirmed, 'r1', 'p2', true, null, { ...who, expected_fee: 8000, expected_confirmed_at: '2026-09-18T05:00:00.000Z' }).list);
+});
+
+test('queue not available releases the slot back to the finder; confirmed people cannot be dropped this way', () => {
+    const { bookingUnavailable, bookingConfirm, hireStage, hireNeedMore } = require(path.join(SRC, 'store/logic'));
+    const who = { actor: 'ฟ้า', at: '2026-09-18T00:00:00.000Z' };
+    const res = bookingUnavailable(bookingJob(), 'r1', 'p1', 'ติดงานอื่นวันนั้น', who);
+    assert.ok(!res.list.some(it => it.key === 'p1'), 'คนที่คิวไม่ว่างหลุดจากงาน');
+    const r1 = res.list.find(it => it.key === 'r1');
+    assert.equal(r1.filled, 1);
+    const c1 = r1.candidates.find(c => c.key === 'c1');
+    assert.equal(c1.status, 'ไม่เอา');
+    assert.equal(c1.decided_note, 'คิวไม่ว่าง: ติดงานอื่นวันนั้น');
+    // ที่ว่างกลับมา: มีชื่อรออนุมัติ 1 (ชบา) ครอบที่ว่าง 1 → ทีมต้องตัดสิน
+    assert.equal(hireStage(r1, 'Active', res.list), 'deciding');
+    assert.equal(hireNeedMore(r1), 0);
+
+    // คอนเฟิร์มแล้วใช้ปุ่มคิวไม่ว่างไม่ได้
+    const confirmed = bookingConfirm(bookingJob(), 'r1', 'p1', {}, who).list;
+    assert.equal(bookingUnavailable(confirmed, 'r1', 'p1', 'x', who).error.code, 409);
+});
+
+test('request stage and badge include people still waiting for booking confirmation', async () => {
+    const { hireStage } = require(path.join(SRC, 'store/logic'));
+    const job = bookingJob();
+    const r1 = job[0];
+    assert.equal(hireStage(r1, 'Active', job), 'fee', 'มีค่าตัวใหม่รออนุมัติ มาก่อนรอคอนเฟิร์ม');
+    assert.equal(hireStage(r1, 'Active', job.filter(it => it.key !== 'p2')), 'booking');
+    assert.equal(hireStage(r1, 'Active', job.filter(it => it.key !== 'p1' && it.key !== 'p2')), 'full');
+    assert.equal(hireStage(r1, 'Active'), 'full', 'ไม่ส่งรายการทั้งงานมา = ดูจากใบอย่างเดียว');
+    assert.equal(hireStage(r1, 'Cancelled', job), 'closed');
+
+    const saved = FIXTURE.other_projects;
+    FIXTURE.other_projects = [{ id: 95, name: 'งานคอนเฟิร์มคิว', brand: 'Jdent', status: 'Active', campaign_type: 'other', hire_items: bookingJob() }];
+    try {
+        // คนหา (ไม่มีสิทธิ์แบรนด์) ต้องเห็นคนที่รอคอนเฟิร์ม และนับเป็นงานของตัวเอง
+        const finder = await hires.tasks({ userId: 7, scopeBrands: [] });
+        const row = finder.rows[0];
+        assert.equal(row.stage, 'fee');
+        assert.equal(row.waiting_on, 'team');
+        assert.deepEqual(row.todo, ['confirm']);
+        assert.equal(row.booking_pending, 1);
+        assert.equal(row.fee_review, 1);
+        assert.deepEqual(row.bookings.map(b => b.key).sort(), ['p1', 'p2']);
+        assert.ok(!row.bookings.some(b => b.key === 'd1'), 'ไม่เห็นแถวอื่นของงาน');
+        assert.equal(finder.counts.to_confirm, 1);
+        assert.equal(finder.counts.total, 1);
+
+        // คนขอ: ค่าตัวใหม่รออนุมัติเป็นงานของตัวเอง
+        const asker = await hires.tasks({ userId: 3, scopeBrands: ['Jdent'] });
+        assert.deepEqual(asker.rows[0].todo, ['fee']);
+        assert.equal(asker.counts.to_fee, 1);
+        assert.equal(asker.counts.total, 1);
+
+        const jobs = await hires.jobs({ scopeBrands: ['Jdent'] });
+        assert.equal(jobs.rows[0].booking_pending, 1);
+        assert.equal(jobs.rows[0].fee_review, 1);
+    } finally {
+        FIXTURE.other_projects = saved;
+    }
+});
+
+test('saving the job form keeps booking state and gives the slot back when an approved person is removed', () => {
+    const { mergeHireItems } = require(path.join(SRC, 'store/logic'));
+    const current = bookingJob();
+    // หน้าเว็บส่งมาทั้งก้อน: ลบมะลิ (p1) ออก · พยายามเปลี่ยนสถานะกุหลาบเป็นตกลงแล้วเอง + ปลอม booking · ไม่ส่ง use_time
+    const incoming = current
+        .filter(it => it.key !== 'p1')
+        .map(it => (it.key === 'p2' ? { ...it, status: 'ตกลงแล้ว', booking: { state: 'confirmed' }, from_candidate: 'zzz' }
+            : it.key === 'd1' ? { ...it, booking: { state: 'pending' } } : it))
+        .map(({ use_time, ...it }) => it);
+    const currentWithTime = current.map(it => (it.key === 'd1' ? { ...it, use_time: '13:00' } : it));
+    const out = mergeHireItems(currentWithTime, incoming, { at: '2026-09-18T00:00:00.000Z', actor: 'แพรว' });
+
+    const r1 = out.find(it => it.key === 'r1');
+    assert.equal(r1.filled, 1, 'ลบคนที่มาจากใบ = คืนที่ว่าง');
+    assert.equal(r1.candidates.find(c => c.key === 'c1').status, 'ไม่เอา');
+    assert.equal(r1.candidates.find(c => c.key === 'c1').decided_note, 'ถูกลบออกจากรายชื่อผู้รับงาน');
+    const p2 = out.find(it => it.key === 'p2');
+    assert.equal(p2.status, 'ทาบทาม', 'ระหว่างรออนุมัติค่าตัว เปลี่ยนสถานะเองไม่ได้');
+    assert.equal(p2.booking.state, 'fee_review', 'booking ยึดจากฐาน');
+    assert.equal(p2.from_candidate, 'c2');
+    const d1 = out.find(it => it.key === 'd1');
+    assert.equal(d1.booking, null, 'แถวที่ไม่ได้มาจากใบปลอม booking ไม่ได้');
+    assert.equal(d1.use_time, '13:00', 'หน้าเว็บที่ไม่ส่งเวลามา ต้องไม่ล้างเวลาทิ้ง');
+
+    // แถวเก่าก่อนมี from_candidate: หาชื่อที่อนุมัติแล้วที่ตรงกัน
+    const legacy = [
+        { key: 'r9', mode: 'casting', headcount: 1, filled: 1, candidates: [{ key: 'k1', name: 'ต้นน้ำ', status: 'เลือกแล้ว' }] },
+        { key: 'h9', mode: 'direct', name: 'ต้นน้ำ', fee: 1000, status: 'ตกลงแล้ว', from_request: 'r9' }
+    ];
+    const cut = mergeHireItems(legacy, [legacy[0]], {});
+    assert.equal(cut[0].filled, 0);
+    assert.equal(cut[0].candidates[0].status, 'ไม่เอา');
+
+    // แถวเก่าที่ถูกแก้ชื่อหลังอนุมัติ: เหลือชื่อที่อนุมัติแล้วที่ไม่มีใครอ้างอยู่ชื่อเดียว = คนนี้
+    const renamed = [
+        { key: 'r8', mode: 'casting', headcount: 2, filled: 2, candidates: [{ key: 'a', name: 'Mali (IG)', status: 'เลือกแล้ว' }, { key: 'b', name: 'ชบา', status: 'เลือกแล้ว' }] },
+        { key: 'h8', mode: 'direct', name: 'มะลิ', fee: 1000, status: 'ตกลงแล้ว', from_request: 'r8' },
+        { key: 'h7', mode: 'direct', name: 'ชบา', fee: 1000, status: 'ตกลงแล้ว', from_request: 'r8' }
+    ];
+    const cut2 = mergeHireItems(renamed, [renamed[0], renamed[2]], {});
+    assert.equal(cut2[0].filled, 1);
+    assert.equal(cut2[0].candidates.find(c => c.key === 'a').status, 'ไม่เอา');
+    assert.equal(cut2[0].candidates.find(c => c.key === 'b').status, 'เลือกแล้ว');
+
+    // ใบต้นทางหายไปแล้ว → ไม่ล็อกสถานะคนที่ค้างคอนเฟิร์ม (ไม่งั้นแก้ไม่ได้ตลอดกาล)
+    const orphan = [{ key: 'q1', mode: 'direct', name: 'ส้ม', fee: 1, status: 'ทาบทาม', from_request: 'gone', booking: { state: 'pending' } }];
+    assert.equal(mergeHireItems(orphan, [{ ...orphan[0], status: 'ตกลงแล้ว' }], {})[0].status, 'ตกลงแล้ว');
+});
+
 test('hires list filters by kind, brand, search and date range', async () => {
     assert.deepEqual((await hires.list({ kind: 'Live สด' })).rows.map(r => r.name), ['มะลิ']);
     assert.deepEqual((await hires.list({ brand: 'Code Lab' })).rows.map(r => r.name), ['ต้นกล้า']);

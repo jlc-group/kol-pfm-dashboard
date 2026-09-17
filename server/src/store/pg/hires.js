@@ -8,7 +8,7 @@
  * คนเดิมที่ถูกจ้างสองงานจะมีสองแถวคนละ key เสมอ
  */
 const { loadSnapshot } = require('./_snapshot');
-const { clone, scopeProjects, inScope, hireRemaining, hireRowFee, hireWaiting, hireNeedMore, hireStage, HIRE_JOB_CLOSED } = require('../logic');
+const { clone, scopeProjects, inScope, hireRemaining, hireRowFee, hireWaiting, hireNeedMore, hireStage, HIRE_JOB_CLOSED, hireBookings, bookingOpen } = require('../logic');
 
 const isOther = p => (p.campaign_type || 'kol') === 'other';
 const str = v => String(v == null ? '' : v).trim();
@@ -106,13 +106,16 @@ const hires = {
         const rows = [];
         snap.other_projects.filter(isOther).forEach(p => {
             const inBrand = inScope(p, scopeBrands);
-            (Array.isArray(p.hire_items) ? p.hire_items : []).forEach(it => {
+            const all = Array.isArray(p.hire_items) ? p.hire_items : [];
+            all.forEach(it => {
                 if (!it || it.mode !== 'casting') return;
                 const isAssignee = uid !== null && it.assignee_id != null && String(it.assignee_id) === uid;
                 const isRequester = inBrand && uid !== null && it.requested_by_id != null && String(it.requested_by_id) === uid;
                 if (!inBrand && !isAssignee) return;
                 const cands = Array.isArray(it.candidates) ? it.candidates : [];
-                const stage = hireStage(it, p.status);
+                const stage = hireStage(it, p.status, all);
+                const bk = hireBookings(all, it.key);
+                const noAssignee = it.assignee_id === null || it.assignee_id === undefined || it.assignee_id === '';
                 const remaining = hireRemaining(it);
                 const waiting = hireWaiting(it);
                 const needMore = hireNeedMore(it);
@@ -121,7 +124,10 @@ const hires = {
                 const todo = [];
                 if (open && isAssignee && needMore > 0) todo.push('find');
                 if (open && isRequester && waiting > 0) todo.push('decide');
-                if (open && isRequester && waiting === 0 && (it.assignee_id === null || it.assignee_id === undefined || it.assignee_id === '')) todo.push('assign');
+                if (open && isRequester && waiting === 0 && noAssignee) todo.push('assign');
+                // คนที่อนุมัติแล้วรอคอนเฟิร์มคิว = งานของคนหา (ใบที่ไม่มีคนหา → คนขอคอนเฟิร์มเอง) · ค่าตัวใหม่ = งานของคนขอ
+                if (stage !== 'closed' && bk.pending > 0 && (isAssignee || (isRequester && noAssignee))) todo.push('confirm');
+                if (stage !== 'closed' && isRequester && bk.fee_review > 0) todo.push('fee');
                 rows.push({
                     project_id: p.id, project_name: p.name, brand: p.brand || null,
                     key: it.key, kind: str(it.kind) || null, spec: str(it.spec) || null,
@@ -142,7 +148,19 @@ const hires = {
                     job_status: p.status || 'Draft',
                     stage,
                     // ลูกบอลอยู่ที่ใคร: assign = ทีมต้องมอบหมายคนหา · finder = คนหา · team = ทีมแบรนด์ต้องอนุมัติ
-                    waiting_on: stage === 'unassigned' ? 'assign' : stage === 'finding' ? 'finder' : stage === 'deciding' ? 'team' : 'none',
+                    waiting_on: stage === 'unassigned' ? 'assign'
+                        : stage === 'finding' ? 'finder'
+                            : stage === 'booking' ? (noAssignee ? 'team' : 'finder')
+                            : (stage === 'deciding' || stage === 'fee') ? 'team' : 'none',
+                    booking_pending: bk.pending,
+                    fee_review: bk.fee_review,
+                    // คนที่อนุมัติแล้วรอคอนเฟิร์ม — คนหาต้องเห็นเพื่อคอนเฟิร์มคิว (เฉพาะคนที่ได้จากใบนี้ ไม่ใช่ทั้งงาน)
+                    bookings: bk.rows.map(r => ({
+                        key: r.key, mode: 'direct', from_request: r.from_request, from_candidate: r.from_candidate || null,
+                        kind: r.kind || null, name: r.name || null, agency: r.agency || null, contact: r.contact || null,
+                        fee: Number(r.fee) || 0, use_date: r.use_date || null, use_time: r.use_time || null,
+                        place: r.place || null, note: r.note || null, status: r.status || null, booking: r.booking
+                    })),
                     overdue: !!(open && it.deadline && needMore > 0 && String(it.deadline) < today),
                     todo, my_todo: todo.length > 0,
                     is_assignee: isAssignee, is_requester: isRequester, in_brand: inBrand
@@ -175,6 +193,8 @@ const hires = {
         const toFind = rows.filter(r => r.todo.includes('find')).length;
         const toDecide = rows.filter(r => r.todo.includes('decide')).length;
         const toAssign = rows.filter(r => r.todo.includes('assign')).length;
+        const toConfirm = rows.filter(r => r.todo.includes('confirm')).length;
+        const toFee = rows.filter(r => r.todo.includes('fee')).length;
 
         return clone({
             summary: {
@@ -187,6 +207,8 @@ const hires = {
                 to_find: toFind,
                 to_decide: toDecide,
                 to_assign: toAssign,
+                to_confirm: toConfirm,
+                to_fee: toFee,
                 unassigned: rows.filter(r => r.stage === 'unassigned' && r.in_brand).length,
                 total: rows.filter(r => r.my_todo).length
             },
@@ -220,6 +242,9 @@ const hires = {
                 remaining: openReq.reduce((s, it) => s + hireRemaining(it), 0),
                 // ชื่อที่รออนุมัติของใบที่ครบแล้วเป็นแค่ตัวสำรอง ไม่นับว่ารอทีม
                 waiting: openReq.reduce((s, it) => s + hireWaiting(it), 0),
+                // คนที่อนุมัติแล้วแต่ยังไม่คอนเฟิร์มคิว / ค่าตัวใหม่รอทีมอนุมัติ (งานปิดแล้วไม่นับ)
+                booking_pending: closed ? 0 : items.filter(it => it.mode !== 'casting' && it.from_request != null && bookingOpen(it) && it.booking.state === 'pending').length,
+                fee_review: closed ? 0 : items.filter(it => it.mode !== 'casting' && it.from_request != null && bookingOpen(it) && it.booking.state === 'fee_review').length,
                 total_fee: items.reduce((s, it) => s + hireRowFee(it), 0),
                 closed,
                 created_at: p.created_at || null, updated_at: p.updated_at || null
@@ -228,7 +253,8 @@ const hires = {
         // งานที่ยังไม่จบและมีเรื่องค้าง (รออนุมัติ / ยังต้องหา) ขึ้นก่อน แล้วงานใหม่สุดก่อน
         rows.sort((a, b) =>
             (a.closed ? 1 : 0) - (b.closed ? 1 : 0)
-            || ((b.waiting > 0 || b.remaining > 0) ? 1 : 0) - ((a.waiting > 0 || a.remaining > 0) ? 1 : 0)
+            || ((b.waiting > 0 || b.remaining > 0 || b.booking_pending > 0 || b.fee_review > 0) ? 1 : 0)
+                - ((a.waiting > 0 || a.remaining > 0 || a.booking_pending > 0 || a.fee_review > 0) ? 1 : 0)
             || String(b.created_at || '').localeCompare(String(a.created_at || ''))
             || (Number(b.id) || 0) - (Number(a.id) || 0));
         const open = rows.filter(r => !r.closed);

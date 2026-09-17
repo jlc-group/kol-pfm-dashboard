@@ -57,7 +57,9 @@ export default function Layout() {
                 setTaskTip([
                     c.to_find ? `หาคน ${c.to_find}` : '',
                     c.to_decide ? `อนุมัติชื่อ ${c.to_decide}` : '',
-                    c.to_assign ? `มอบหมายคนหา ${c.to_assign}` : ''
+                    c.to_assign ? `มอบหมายคนหา ${c.to_assign}` : '',
+                    c.to_confirm ? `คอนเฟิร์มคิว ${c.to_confirm}` : '',
+                    c.to_fee ? `อนุมัติค่าตัวใหม่ ${c.to_fee}` : ''
                 ].filter(Boolean).join(' · '));
             })
             .catch(() => {});

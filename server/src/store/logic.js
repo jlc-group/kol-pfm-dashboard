@@ -71,13 +71,158 @@ function hireWaiting(it) {
 function hireNeedMore(it) {
     return Math.max(0, hireRemaining(it) - hireWaiting(it));
 }
-// closed = งานเสร็จ/ยกเลิกแล้ว · full = ได้ครบ · deciding = มีชื่อรออนุมัติ · unassigned = ยังไม่มีคนหา · finding = คนหากำลังหา
-function hireStage(it, jobStatus) {
+// ===== ขั้นคอนเฟิร์มคิว — คนที่ทีมอนุมัติจากใบขอจัดหา ยังไม่ถือว่า "ตกลงแล้ว" จนกว่าคนหาคอนเฟิร์มคิว/ค่าตัวจริง =====
+// เก็บไว้ในแถวผู้รับงานเอง (hire_items[].booking) ไม่ต้องเพิ่มคอลัมน์ · แถวเก่าที่ไม่มี booking ถือว่าคอนเฟิร์มแล้ว
+const BOOK_PENDING = 'pending';     // รอคนหาคอนเฟิร์มคิว
+const BOOK_FEE = 'fee_review';      // คนหาคอนเฟิร์มแล้วแต่ค่าตัวจริงสูงกว่าที่อนุมัติ → รอทีมอนุมัติค่าตัวใหม่
+const BOOK_OK = 'confirmed';
+const HIRE_BOOKED = 'ทาบทาม';
+const HIRE_AGREED = 'ตกลงแล้ว';
+const bookingState = it => (it && it.booking && it.booking.state) || null;
+const bookingOpen = it => bookingState(it) === BOOK_PENDING || bookingState(it) === BOOK_FEE;
+// คนที่ได้จากใบนี้และยังค้างขั้นคอนเฟิร์ม (items = hire_items ทั้งงาน)
+function hireBookings(items, key) {
+    const rows = (Array.isArray(items) ? items : []).filter(it => it && it.mode !== 'casting'
+        && it.from_request != null && key != null && String(it.from_request) === String(key) && bookingOpen(it));
+    return {
+        rows,
+        pending: rows.filter(r => bookingState(r) === BOOK_PENDING).length,
+        fee_review: rows.filter(r => bookingState(r) === BOOK_FEE).length
+    };
+}
+
+// closed = งานเสร็จ/ยกเลิกแล้ว · fee = ได้ครบแต่มีค่าตัวใหม่รอทีมอนุมัติ · booking = ได้ครบแต่ยังรอคนหาคอนเฟิร์มคิว
+// full = ได้ครบ · deciding = มีชื่อรออนุมัติ · unassigned = ยังไม่มีคนหา · finding = คนหากำลังหา
+// items (ไม่บังคับ) = hire_items ทั้งงาน ใช้ดูว่าคนที่ได้จากใบนี้คอนเฟิร์มครบหรือยัง
+function hireStage(it, jobStatus, items) {
     if (HIRE_JOB_CLOSED.includes(jobStatus)) return 'closed';
-    if (hireRemaining(it) <= 0) return 'full';
+    if (hireRemaining(it) <= 0) {
+        const b = hireBookings(items, it && it.key);
+        if (b.fee_review > 0) return 'fee';
+        if (b.pending > 0) return 'booking';
+        return 'full';
+    }
     if (hireWaiting(it) > 0) return 'deciding';
     if (!it || it.assignee_id === null || it.assignee_id === undefined || it.assignee_id === '') return 'unassigned';
     return 'finding';
+}
+
+// ----- การเปลี่ยนขั้นคอนเฟิร์มคิว (ฟังก์ชันบริสุทธิ์: รับ hire_items ทั้งงาน คืน { list, row } หรือ { error }) -----
+const isDateStr = v => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v);
+const clipText = (v, n) => { const s = v == null ? '' : String(v).trim(); return s ? s.slice(0, n) : null; };
+
+function bookingTarget(list, reqKey, rowKey) {
+    const arr = Array.isArray(list) ? list : [];
+    const req = arr.find(it => it && String(it.key) === String(reqKey));
+    if (!req || req.mode !== 'casting') return { error: { code: 404, message: 'ไม่พบใบขอจัดหานี้' } };
+    const idx = arr.findIndex(it => it && String(it.key) === String(rowKey));
+    const row = idx >= 0 ? arr[idx] : null;
+    if (!row || row.mode === 'casting' || row.from_request == null || String(row.from_request) !== String(reqKey)) {
+        return { error: { code: 404, message: 'ไม่พบคนที่อนุมัติจากใบขอจัดหานี้' } };
+    }
+    return { arr, req, row, idx };
+}
+
+// คืนที่ว่างให้ใบขอจัดหา เมื่อคนที่ได้จากใบนี้หลุดออกจากงาน (คิวไม่ว่าง / ถอนตัว / ทีมลบแถวทิ้ง)
+// ใบ: จำนวนที่หาได้ −1 · ชื่อที่เสนอคนนั้น: กลับเป็น "ไม่ผ่าน" พร้อมเหตุผล (ถ้าคิวกลับมาว่าง ทีมกดดึงกลับมาพิจารณาได้)
+function releaseToRequest(list, person, { reason = null, actor = null, at = now() } = {}) {
+    const arr = Array.isArray(list) ? list : [];
+    if (!person || person.from_request == null) return arr;
+    return arr.map(it => {
+        if (!it || it.mode !== 'casting' || String(it.key) !== String(person.from_request)) return it;
+        const cands = Array.isArray(it.candidates) ? it.candidates : [];
+        // ผูกด้วย from_candidate (แถวที่อนุมัติหลังมีขั้นนี้) · แถวเก่าใช้ชื่อที่อนุมัติแล้วตรงกัน
+        let hitKey = person.from_candidate ? String(person.from_candidate) : null;
+        if (!hitKey) {
+            const nm = v => String(v || '').trim();
+            const fileOf = v => (v && v.image && v.image.filename) || null;
+            const picked = cands.filter(c => c && c.status === 'เลือกแล้ว');
+            let m = picked.find(c => nm(c.name) === nm(person.name))
+                || (fileOf(person) ? picked.find(c => fileOf(c) === fileOf(person)) : null);
+            if (!m) {
+                // ชื่อถูกแก้ไปแล้ว: ตัดชื่อที่ยังมีคนในงานอ้างอยู่ออก ถ้าเหลือชื่อเดียวก็คือคนนี้ (เหลือหลายชื่อ = ไม่เดา)
+                const others = arr.filter(r => r && r.mode !== 'casting' && r.from_request != null && String(r.from_request) === String(it.key));
+                const claimed = c => others.some(r => (r.from_candidate && String(r.from_candidate) === String(c.key))
+                    || (fileOf(r) && fileOf(r) === fileOf(c)) || nm(r.name) === nm(c.name));
+                const free = picked.filter(c => !claimed(c));
+                if (free.length === 1) m = free[0];
+            }
+            hitKey = m ? String(m.key) : null;
+        }
+        return {
+            ...it,
+            filled: Math.max(0, (Number(it.filled) || 0) - 1),
+            candidates: cands.map(c => (c && hitKey && String(c.key) === hitKey && c.status === 'เลือกแล้ว'
+                ? { ...c, status: 'ไม่เอา', decided_by: actor, decided_at: at, decided_note: reason }
+                : c))
+        };
+    });
+}
+
+// คนหาคอนเฟิร์มคิว — บันทึกวันที่/เวลา/สถานที่/ติดต่อ/ค่าตัวจริง/โน้ต (ชื่อและสังกัดแก้ไม่ได้)
+// ค่าตัวไม่เกินที่อนุมัติ → ตกลงแล้ว (จบงานคนหา) · สูงกว่า → รอทีมอนุมัติค่าตัวใหม่ (งบยังใช้ค่าตัวเดิมจนกว่าทีมอนุมัติ)
+function bookingConfirm(list, reqKey, rowKey, body = {}, { actor = null, at = now() } = {}) {
+    const t = bookingTarget(list, reqKey, rowKey);
+    if (t.error) return t;
+    if (bookingState(t.row) !== BOOK_PENDING) {
+        return { error: { code: 409, message: 'คนนี้ไม่ได้อยู่ในขั้นรอคอนเฟิร์มคิวแล้ว — โหลดหน้าใหม่เพื่อดูสถานะล่าสุด' } };
+    }
+    const b = body && typeof body === 'object' ? body : {};
+    const approved = Number(t.row.fee) || 0;
+    const asked = cleanFee(b.fee);
+    const fee = asked > 0 ? asked : approved;
+    const patch = {
+        use_date: b.use_date === undefined ? (t.row.use_date || null) : (isDateStr(b.use_date) ? b.use_date : null),
+        use_time: b.use_time === undefined ? (t.row.use_time || null) : clipText(b.use_time, 60),
+        place: b.place === undefined ? (t.row.place || null) : clipText(b.place, 200),
+        contact: b.contact === undefined ? (t.row.contact || null) : clipText(b.contact, 200),
+        note: b.note === undefined ? (t.row.note || null) : clipText(b.note, 500)
+    };
+    const base = { ...(t.row.booking || {}), confirmed_by: actor, confirmed_at: at };
+    const next = fee > approved
+        ? { ...t.row, ...patch, status: HIRE_BOOKED,
+            booking: { ...base, state: BOOK_FEE, requested_fee: fee, approved_fee: approved } }
+        : { ...t.row, ...patch, fee, status: HIRE_AGREED,
+            booking: { ...base, state: BOOK_OK, requested_fee: null } };
+    const out = t.arr.slice();
+    out[t.idx] = next;
+    return { list: out, row: next };
+}
+
+// ทีมตัดสินค่าตัวใหม่ — อนุมัติ: ใช้ค่าตัวใหม่ + ตกลงแล้ว · ไม่อนุมัติ: กลับไปรอคนหาคอนเฟิร์ม (พร้อมโน้ตของทีม)
+function bookingFeeDecision(list, reqKey, rowKey, approve, note, { actor = null, at = now(), expected_fee, expected_confirmed_at } = {}) {
+    const t = bookingTarget(list, reqKey, rowKey);
+    if (t.error) return t;
+    if (bookingState(t.row) !== BOOK_FEE) {
+        return { error: { code: 409, message: 'ไม่มีค่าตัวใหม่ที่รออนุมัติสำหรับคนนี้แล้ว — โหลดหน้าใหม่เพื่อดูสถานะล่าสุด' } };
+    }
+    const bk = t.row.booking || {};
+    // ต้องเป็นยอดเดียวกับที่ทีมเห็นบนหน้าจอ — ไม่ส่งยอดมา หรือคนหาคอนเฟิร์มรอบใหม่ไปแล้ว = ให้โหลดใหม่ก่อน
+    if (cleanFee(expected_fee) !== cleanFee(bk.requested_fee)
+        || (bk.confirmed_at && expected_confirmed_at !== undefined && !sameInstant(bk.confirmed_at, expected_confirmed_at))) {
+        return { error: { code: 409, message: 'ค่าตัวที่ขอเปลี่ยนไประหว่างที่หน้าเปิดอยู่ — โหลดหน้าใหม่เพื่อดูยอดล่าสุดก่อนตัดสิน' } };
+    }
+    const stamp = { reviewed_by: actor, reviewed_at: at, team_note: clipText(note, 500) };
+    const next = approve
+        ? { ...t.row, fee: cleanFee(bk.requested_fee) || Number(t.row.fee) || 0, status: HIRE_AGREED,
+            booking: { ...bk, ...stamp, state: BOOK_OK } }
+        : { ...t.row, status: HIRE_BOOKED,
+            booking: { ...bk, ...stamp, state: BOOK_PENDING, rejected_fee: bk.requested_fee || null, requested_fee: null } };
+    const out = t.arr.slice();
+    out[t.idx] = next;
+    return { list: out, row: next };
+}
+
+// คิวไม่ว่าง / คนนั้นถอนตัว — เอาออกจากงาน แล้วคืนที่ว่างให้คนหาหาใหม่ (ทำได้ระหว่างยังไม่คอนเฟิร์มเท่านั้น)
+function bookingUnavailable(list, reqKey, rowKey, reason, { actor = null, at = now() } = {}) {
+    const t = bookingTarget(list, reqKey, rowKey);
+    if (t.error) return t;
+    if (!bookingOpen(t.row)) {
+        return { error: { code: 409, message: 'คนนี้คอนเฟิร์มคิวแล้ว — ถ้าหลุดงานภายหลัง ให้ทีมแบรนด์ลบออกจากรายชื่อผู้รับงาน (ที่ว่างจะคืนให้ใบเอง)' } };
+    }
+    const why = clipText(reason, 300);
+    const without = t.arr.filter((_, i) => i !== t.idx);
+    return { list: releaseToRequest(without, t.row, { reason: 'คิวไม่ว่าง' + (why ? ': ' + why : ''), actor, at }), row: t.row };
 }
 
 // ===== ไฟล์อัปโหลด: แปลงชื่อที่เก็บในฐานเป็น path จริงอย่างปลอดภัย =====
@@ -138,12 +283,12 @@ function mergeBriefFiles(current, incoming) {
 //   image (ชื่อไฟล์) · candidates · filled · requested_by_id / requested_at · from_request
 // แถวที่มีอยู่ในฐาน → ยึดค่าพวกนี้จากฐาน · แถวใหม่ → ล้างทิ้ง (ไฟล์ต้องมาจากเส้นอัปโหลดเท่านั้น)
 // ผู้รับผิดชอบจัดหาเลือกในฟอร์มได้ แต่ต้องเป็นคนที่ route ตรวจกับฐานผู้ใช้แล้ว (users) ชื่อก็เอาจากฐาน
-function mergeHireItems(current, incoming, { userId = null, at = now(), users = {} } = {}) {
+function mergeHireItems(current, incoming, { userId = null, at = now(), users = {}, actor = null } = {}) {
     const byKey = new Map((Array.isArray(current) ? current : [])
         .filter(it => it && it.key)
         .map(it => [String(it.key), it]));
     const seen = new Set();
-    return (Array.isArray(incoming) ? incoming : [])
+    const merged = (Array.isArray(incoming) ? incoming : [])
         .filter(it => it && typeof it === 'object' && !Array.isArray(it))
         .map(raw => {
             let key = raw.key ? String(raw.key) : '';
@@ -162,8 +307,18 @@ function mergeHireItems(current, incoming, { userId = null, at = now(), users = 
 
             out.image = prev && prev.image ? prev.image : null;
             out.from_request = prev && prev.from_request ? prev.from_request : null;
+            // ขั้นคอนเฟิร์มคิวเป็นของระบบ (เดินผ่านปุ่มบนการ์ดเท่านั้น) — ห้ามเชื่อจากหน้าเว็บ
+            out.from_candidate = prev && prev.from_candidate ? prev.from_candidate : null;
+            out.booking = !casting && prev && prev.mode !== 'casting' && prev.booking ? prev.booking : null;
+            // เวลาใช้งานคนหาใส่ตอนคอนเฟิร์ม — หน้าเว็บเก่าที่ไม่ส่งช่องนี้มาต้องไม่ล้างทิ้ง
+            out.use_time = raw.use_time === undefined ? ((prev && prev.use_time) || null) : clipText(raw.use_time, 60);
 
             if (!casting) {
+                // ระหว่างรอคอนเฟิร์มคิว / รออนุมัติค่าตัวใหม่ สถานะเดินตามขั้นตอน ห้ามเปลี่ยนเองจากตารางหรือฟอร์ม
+                if (bookingOpen(out) && (Array.isArray(current) ? current : [])
+                    .some(c => c && c.mode === 'casting' && String(c.key) === String(out.from_request))) {
+                    out.status = (prev && prev.status) || HIRE_BOOKED;
+                }
                 out.candidates = null; out.filled = null; out.headcount = null;
                 out.assignee_id = null; out.assignee_name = null; out.assigned_at = null;
                 out.requested_by_id = null; out.requested_at = null;
@@ -194,6 +349,14 @@ function mergeHireItems(current, incoming, { userId = null, at = now(), users = 
             }
             return out;
         });
+    // คนที่ได้จากใบขอจัดหาแล้วถูกลบออกจากฟอร์ม → คืนที่ว่างให้ใบนั้น (ไม่งั้นใบค้าง "ได้ครบแล้ว" ทั้งที่คนหายไป)
+    const kept = new Set(merged.map(it => String(it.key)));
+    let result = merged;
+    (Array.isArray(current) ? current : []).forEach(prev => {
+        if (!prev || !prev.key || prev.mode === 'casting' || prev.from_request == null || kept.has(String(prev.key))) return;
+        result = releaseToRequest(result, prev, { reason: 'ถูกลบออกจากรายชื่อผู้รับงาน', actor, at });
+    });
+    return result;
 }
 
 // Platform ของกลุ่ม — รองรับทั้ง platforms[] แบบใหม่ และ platform เดี่ยว/ที่ติดอยู่กับ allocation แบบเดิม
@@ -370,6 +533,8 @@ module.exports = {
     GOOD_CPM, GOOD_CPE, TARGET_PLATFORMS, AD_STAMP_AT, now, clone,
     duplicateError, inScope, scopeProjects, hireRemaining, hireRowFee,
     HIRE_JOB_CLOSED, hireWaiting, hireNeedMore, hireStage,
+    BOOK_PENDING, BOOK_FEE, BOOK_OK, HIRE_BOOKED, HIRE_AGREED, bookingState, bookingOpen, hireBookings,
+    releaseToRequest, bookingConfirm, bookingFeeDecision, bookingUnavailable,
     resolveInside, sameInstant, mergeHireItems, mergeBriefFiles, cleanFee, cleanHeadcount, safeId, safeSlug,
     linkGroupPlatforms, resolveGroupClips, resolveGroupTarget,
     resolveGroupProducts, resolveGroupCtype, resolveGroupMedia, resolveGroupCampaign,

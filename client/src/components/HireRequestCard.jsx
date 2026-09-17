@@ -4,7 +4,11 @@ import { useAuth } from '../auth/AuthContext.jsx';
 import Icon from './Icon.jsx';
 import FilePreviewModal from './FilePreviewModal.jsx';
 import HireRequestEditModal from './HireRequestEditModal.jsx';
-import { hireStage, hireNeedMore, STAGE_LABEL, CAND_LABEL } from './OtherProjectForm.jsx';
+import DatePicker from './DatePicker.jsx';
+import {
+    hireStage, hireNeedMore, STAGE_LABEL, CAND_LABEL,
+    BOOK_PENDING, BOOK_FEE, BOOKING_LABEL, bookingState, hireBookings
+} from './OtherProjectForm.jsx';
 
 // การ์ด "ใบขอจัดหา" หนึ่งใบ พร้อมรายชื่อที่เสนอเข้ามาทั้งหมด — ที่เดียวที่ทำอะไรกับใบได้
 // ใช้ 2 ที่ด้วยหน้าตาเดียวกัน: ฝังตรง ๆ ในหน้ารายละเอียดงาน (ทีมแบรนด์) และในกล่องจากแท็บใบขอจัดหา (คนหาที่ไม่มีสิทธิ์แบรนด์)
@@ -97,6 +101,205 @@ function CandFields({ form, setForm, feeHint, img, setImg, vid, setVid, current,
     );
 }
 
+// ===== ส่วน "อนุมัติแล้ว · รอคอนเฟิร์มคิว" ของการ์ด =====
+// คนหา (หรือทีมแบรนด์แทน) คอนเฟิร์มคิว/ค่าตัวจริง หรือแจ้งคิวไม่ว่าง · ทีมแบรนด์อนุมัติค่าตัวใหม่เมื่อแพงกว่าที่อนุมัติไว้
+const bookingsOf = r => (Array.isArray(r && r.bookings) ? r.bookings : []);
+const BOOK_EMPTY = { use_date: '', use_time: '', place: '', contact: '', fee: '', note: '' };
+const digits = v => Number(String(v == null ? '' : v).replace(/[^0-9]/g, '')) || 0;
+
+function BookingSection({ rows, pid, rowKey, canAct, canFee, busy, run, applyItems, onStale }) {
+    const [confirmKey, setConfirmKey] = useState('');
+    const [bf, setBf] = useState(BOOK_EMPTY);
+    const [dropKey, setDropKey] = useState('');
+    const [dropReason, setDropReason] = useState('');
+    const [feeNoKey, setFeeNoKey] = useState('');
+    const [feeNote, setFeeNote] = useState('');
+    const set = (k, v) => setBf(f => ({ ...f, [k]: v }));
+    const url = (b, action) => `/projects/${pid}/hires/${rowKey}/bookings/${b.key}/${action}`;
+    const closeAll = () => { setConfirmKey(''); setDropKey(''); setFeeNoKey(''); };
+    // แถวเปลี่ยนขั้นไปแล้ว (อีกคนกดไปก่อน / โหลดใหม่) → ปิดกล่องที่ไม่ตรงขั้นทิ้ง ไม่ให้ส่งค่าเก่า
+    useEffect(() => {
+        const stOf = k => { const r = rows.find(x => String(x.key) === String(k)); return r ? bookingState(r) : null; };
+        if (confirmKey && stOf(confirmKey) !== BOOK_PENDING) setConfirmKey('');
+        if (feeNoKey && stOf(feeNoKey) !== BOOK_FEE) setFeeNoKey('');
+        if (dropKey && !stOf(dropKey)) setDropKey('');
+    }, [rows]);   // eslint-disable-line react-hooks/exhaustive-deps
+    // ข้อมูลในหน้าเก่ากว่าในฐาน (409) → ให้หน้าแม่โหลดใหม่ จะได้เห็นขั้น/ยอดล่าสุด
+    const act = (b, fn) => run('b' + b.key, async () => {
+        try { await fn(); }
+        catch (e) { if (e.status === 409 && onStale) onStale(); throw e; }
+    });
+
+    function openConfirm(b) {
+        closeAll();
+        setConfirmKey(b.key);
+        setBf({
+            use_date: S(b.use_date), use_time: S(b.use_time), place: S(b.place), contact: S(b.contact),
+            fee: b.fee == null ? '' : String(b.fee), note: S(b.note)
+        });
+    }
+    // ปิดเฉพาะกล่องของคนนี้หลังทำเสร็จ — ถ้ากำลังกรอกของอีกคนค้างไว้ ต้องไม่หาย
+    const confirm = b => act(b, async () => {
+        const res = await api(url(b, 'confirm'), {
+            method: 'POST',
+            body: { use_date: bf.use_date || null, use_time: bf.use_time, place: bf.place, contact: bf.contact, fee: digits(bf.fee), note: bf.note }
+        });
+        applyItems(res.data);
+        setConfirmKey(k => (k === b.key ? '' : k));
+    });
+    const drop = b => act(b, async () => {
+        const res = await api(url(b, 'unavailable'), { method: 'POST', body: { reason: dropReason } });
+        applyItems(res.data);
+        setDropKey(k => (k === b.key ? '' : k));
+    });
+    const feeDecide = (b, ok) => act(b, async () => {
+        const bk = b.booking || {};
+        // ส่งยอดที่เห็นบนจอไปด้วย — ถ้าคนหาคอนเฟิร์มใหม่ระหว่างนั้น server จะตีกลับแทนการอนุมัติยอดที่ไม่เคยเห็น
+        const res = await api(url(b, ok ? 'fee-approve' : 'fee-reject'), {
+            method: 'POST',
+            body: { note: ok ? null : feeNote, expected_fee: bk.requested_fee, expected_confirmed_at: bk.confirmed_at || null }
+        });
+        applyItems(res.data);
+        setFeeNoKey(k => (k === b.key ? '' : k));
+    });
+
+    if (!rows.length) return null;
+    return (
+        <div className="req-bookings">
+            <div className="req-cands-head">
+                <span>
+                    อนุมัติแล้ว · {[
+                        rows.some(r => bookingState(r) === BOOK_PENDING) ? `รอคอนเฟิร์มคิว ${rows.filter(r => bookingState(r) === BOOK_PENDING).length}` : '',
+                        rows.some(r => bookingState(r) === BOOK_FEE) ? `รออนุมัติค่าตัวใหม่ ${rows.filter(r => bookingState(r) === BOOK_FEE).length}` : ''
+                    ].filter(Boolean).join(' · ')}
+                </span>
+            </div>
+            {rows.map(b => {
+                const st = bookingState(b);
+                const bk = b.booking || {};
+                const isBusy = busy === 'b' + b.key;
+                const approved = Number(b.fee) || 0;
+                const higher = confirmKey === b.key && digits(bf.fee) > approved;
+                return (
+                    <div className={'req-book st-' + st} key={b.key}>
+                        <div className="req-book-top">
+                            <div className="req-cand-main">
+                                <div className="req-cand-name">
+                                    <strong>{b.name}</strong>
+                                    <span className={'stage-chip st-' + (st === BOOK_FEE ? 'fee' : 'booking')}>{BOOKING_LABEL[st]}</span>
+                                </div>
+                                <div className="req-cand-meta">
+                                    ค่าตัวที่อนุมัติ {B(approved)}
+                                    {b.use_date ? ` · ${fmtD(b.use_date)}` : ''}{b.use_time ? ` ${b.use_time}` : ''}
+                                    {b.place ? ` · ${b.place}` : ''}{b.contact ? ` · ${b.contact}` : ''}
+                                    {bk.approved_by ? ` · อนุมัติโดย ${bk.approved_by}` : ''}
+                                </div>
+                                {st === BOOK_FEE && (
+                                    <div className="req-book-fee">
+                                        ขอค่าตัวใหม่ <b>{B(bk.requested_fee)}</b> (อนุมัติไว้ {B(approved)})
+                                        {bk.confirmed_by ? ` · คอนเฟิร์มคิวโดย ${bk.confirmed_by}` : ''}
+                                    </div>
+                                )}
+                                {st === BOOK_PENDING && bk.rejected_fee != null && (
+                                    <div className="req-cand-reason">
+                                        ทีมไม่อนุมัติค่าตัว {B(bk.rejected_fee)}{bk.reviewed_by ? ` (${bk.reviewed_by})` : ''}
+                                        {bk.team_note ? ` — ${bk.team_note}` : ''} · คุยใหม่แล้วคอนเฟิร์มอีกครั้ง หรือกดคิวไม่ว่าง
+                                    </div>
+                                )}
+                            </div>
+                            <div className="req-cand-actions">
+                                {st === BOOK_PENDING && canAct && confirmKey !== b.key && dropKey !== b.key && (
+                                    <button type="button" className="btn-primary" disabled={isBusy} onClick={() => openConfirm(b)}>
+                                        คอนเฟิร์มคิว
+                                    </button>
+                                )}
+                                {st === BOOK_FEE && canFee && feeNoKey !== b.key && dropKey !== b.key && (
+                                    <>
+                                        <button type="button" className="btn-primary" disabled={isBusy} onClick={() => feeDecide(b, true)}>
+                                            ✓ อนุมัติค่าตัวใหม่
+                                        </button>
+                                        <button type="button" className="btn-reject" disabled={isBusy}
+                                            onClick={() => { closeAll(); setFeeNoKey(b.key); setFeeNote(''); }}>✕ ไม่อนุมัติ</button>
+                                    </>
+                                )}
+                                {canAct && dropKey !== b.key && confirmKey !== b.key && feeNoKey !== b.key && (
+                                    <button type="button" className="btn-ghost" disabled={isBusy}
+                                        onClick={() => { closeAll(); setDropKey(b.key); setDropReason(''); }}>คิวไม่ว่าง / ถอนตัว</button>
+                                )}
+                            </div>
+                        </div>
+
+                        {confirmKey === b.key && st === BOOK_PENDING && (
+                            <div className="req-add">
+                                <div className="hire-grid">
+                                    <div className="hire-f">
+                                        <span>วันที่ใช้งาน</span>
+                                        <DatePicker value={bf.use_date} onChange={v => set('use_date', v)} />
+                                    </div>
+                                    <label className="hire-f">
+                                        <span>เวลา</span>
+                                        <input value={bf.use_time} maxLength={60} onChange={e => set('use_time', e.target.value)} placeholder="เช่น 09:00-17:00" />
+                                    </label>
+                                    <label className="hire-f">
+                                        <span>สถานที่</span>
+                                        <input value={bf.place} maxLength={200} onChange={e => set('place', e.target.value)} placeholder="เช่น สตูดิโอ ลาดพร้าว" />
+                                    </label>
+                                    <label className="hire-f">
+                                        <span>ช่องทางติดต่อ</span>
+                                        <input value={bf.contact} maxLength={200} onChange={e => set('contact', e.target.value)} placeholder="เบอร์ / LINE / IG" />
+                                    </label>
+                                    <label className="hire-f">
+                                        <span>ค่าตัวที่ตกลงจริง (บาท)</span>
+                                        <input inputMode="numeric" value={bf.fee} placeholder={String(approved)}
+                                            onChange={e => set('fee', e.target.value.replace(/[^0-9]/g, ''))} />
+                                    </label>
+                                    <label className="hire-f wide">
+                                        <span>โน้ต</span>
+                                        <input value={bf.note} maxLength={500} onChange={e => set('note', e.target.value)} placeholder="เงื่อนไขที่ตกลงกัน เช่น เตรียมชุดมาเอง" />
+                                    </label>
+                                </div>
+                                {higher && (
+                                    <div className="req-book-warn">
+                                        ค่าตัวสูงกว่าที่อนุมัติไว้ ({B(approved)}) — กดส่งแล้วต้องรอทีมแบรนด์อนุมัติค่าตัวใหม่ก่อน ถึงจะเป็น "ตกลงแล้ว"
+                                    </div>
+                                )}
+                                <div className="req-add-actions">
+                                    <button type="button" className="btn-ghost" disabled={isBusy} onClick={() => setConfirmKey('')}>ยกเลิก</button>
+                                    <button type="button" className="btn-primary" disabled={isBusy} onClick={() => confirm(b)}>
+                                        {isBusy ? 'กำลังบันทึก...' : higher ? 'ส่งให้ทีมอนุมัติค่าตัวใหม่' : 'ยืนยันคอนเฟิร์มคิว'}
+                                    </button>
+                                </div>
+                            </div>
+                        )}
+
+                        {dropKey === b.key && (
+                            <div className="req-reject">
+                                <input value={dropReason} autoFocus maxLength={300} onChange={e => setDropReason(e.target.value)}
+                                    placeholder="เหตุผล เช่น ติดงานอื่นวันนั้น (ทีมจะเห็น) — ที่ว่างจะคืนให้หาคนใหม่" />
+                                <button type="button" className="btn-ghost" disabled={isBusy} onClick={() => setDropKey('')}>ยกเลิก</button>
+                                <button type="button" className="btn-reject" disabled={isBusy} onClick={() => drop(b)}>
+                                    {isBusy ? 'กำลังบันทึก...' : 'ยืนยันคิวไม่ว่าง'}
+                                </button>
+                            </div>
+                        )}
+
+                        {feeNoKey === b.key && st === BOOK_FEE && (
+                            <div className="req-reject">
+                                <input value={feeNote} autoFocus maxLength={500} onChange={e => setFeeNote(e.target.value)}
+                                    placeholder="เหตุผล / งบที่รับได้ (ไม่บังคับ) — คนหาจะเห็นข้อความนี้" />
+                                <button type="button" className="btn-ghost" disabled={isBusy} onClick={() => setFeeNoKey('')}>ยกเลิก</button>
+                                <button type="button" className="btn-reject" disabled={isBusy} onClick={() => feeDecide(b, false)}>
+                                    {isBusy ? 'กำลังบันทึก...' : 'ยืนยันไม่อนุมัติค่าตัว'}
+                                </button>
+                            </div>
+                        )}
+                    </div>
+                );
+            })}
+        </div>
+    );
+}
+
 export default function HireRequestCard({ request, canDecide = false, canPropose = false, heading = true, onChanged, onDeleted }) {
     const pid = request.project_id;
     const rowKey = request.key;
@@ -108,9 +311,11 @@ export default function HireRequestCard({ request, canDecide = false, canPropose
     const sig = JSON.stringify([
         request.key, request.kind, request.headcount, request.fee, request.use_date, request.deadline,
         request.place, request.spec, request.note, request.status, request.filled, request.assignee_id,
-        candsOf(request)
+        candsOf(request), bookingsOf(request)
     ]);
-    useEffect(() => { setRow(request); }, [sig]);   // eslint-disable-line react-hooks/exhaustive-deps
+    // คนที่อนุมัติจากใบนี้แล้วยังรอคอนเฟิร์มคิว (หน้าแม่ส่งมา / เส้นที่กดคืน hire_items ชุดใหม่มา)
+    const [bookRows, setBookRows] = useState(() => bookingsOf(request));
+    useEffect(() => { setRow(request); setBookRows(bookingsOf(request)); }, [sig]);   // eslint-disable-line react-hooks/exhaustive-deps
 
     const [err, setErr] = useState('');
     const [busy, setBusy] = useState('');
@@ -148,8 +353,12 @@ export default function HireRequestCard({ request, canDecide = false, canPropose
     }, [canDecide]);
 
     function applyItems(items) {
-        const hit = (Array.isArray(items) ? items : []).find(it => String(it.key) === String(rowKey));
-        if (hit) setRow(r => ({ ...r, ...hit }));
+        const arr = Array.isArray(items) ? items : [];
+        const hit = arr.find(it => String(it.key) === String(rowKey));
+        if (hit) {
+            setRow(r => ({ ...r, ...hit }));
+            setBookRows(hireBookings(arr, rowKey));
+        }
         // ตัวเลขแดงบนเมนูอ่านจากเส้นนับของตัวเอง ต้องบอกให้โหลดใหม่ ไม่งั้นต้องรอครบนาที
         window.dispatchEvent(new CustomEvent('kol:hire-tasks-changed'));
         if (onChanged) onChanged();
@@ -282,12 +491,20 @@ export default function HireRequestCard({ request, canDecide = false, canPropose
     const spares = left > 0 ? [] : pending;
     // ข้อมูลจากคิว (GET /hires/tasks) ไม่มีฟิลด์ mode — การ์ดนี้เป็นใบขอจัดหาเสมอ ต้องบอกตัวคิดขั้นตอนให้ชัด
     const castRow = { ...row, mode: 'casting' };
-    const stage = hireStage(castRow, request.job_status);
+    const stage = hireStage(castRow, request.job_status, bookRows);
+    const nPending = bookRows.filter(b => bookingState(b) === BOOK_PENDING).length;
+    const nFee = bookRows.filter(b => bookingState(b) === BOOK_FEE).length;
     const needMore = hireNeedMore(castRow);
     const waitingText = stage === 'unassigned' ? 'รอทีมแบรนด์มอบหมายคนหา'
         : stage === 'finding' ? `รอ ${row.assignee_name || 'คนหา'} หาคน`
             : stage === 'deciding' ? `รอทีมแบรนด์อนุมัติชื่อที่เสนอ${needMore > 0 ? ` · คนหายังต้องหาเพิ่มอีก ${needMore} คน` : ''}`
-                : stage === 'full' ? 'ได้คนครบตามที่ขอแล้ว' : 'งานนี้ปิดแล้ว — เสนอหรืออนุมัติชื่อเพิ่มไม่ได้';
+                : stage === 'booking' ? (row.assignee_id == null || row.assignee_id === ''
+                    ? `รอทีมแบรนด์คอนเฟิร์มคิว ${nPending} คน (ใบนี้ไม่มีคนหา)`
+                    : `รอ ${row.assignee_name || 'คนหา'} คอนเฟิร์มคิว ${nPending} คน`)
+                    : stage === 'fee' ? `รอทีมแบรนด์อนุมัติค่าตัวใหม่ ${nFee} คน${nPending ? ` · รอคอนเฟิร์มคิวอีก ${nPending} คน` : ''}`
+                        : stage === 'full' ? 'ได้คนครบตามที่ขอแล้ว'
+                            : bookRows.length ? `งานนี้ปิดแล้ว · ยังมี ${bookRows.length} คนค้างคอนเฟิร์ม — ทีมแบรนด์จัดการต่อได้`
+                                : 'งานนี้ปิดแล้ว — เสนอหรืออนุมัติชื่อเพิ่มไม่ได้';
     const closed = stage === 'closed';
 
     return (
@@ -357,6 +574,10 @@ export default function HireRequestCard({ request, canDecide = false, canPropose
                     <b>{row.assignee_name || '— ยังไม่มอบหมาย —'}</b>
                 )}
             </div>
+
+            <BookingSection rows={bookRows} pid={pid} rowKey={rowKey}
+                canAct={canPropose && (!closed || canDecide)} canFee={canDecide}
+                busy={busy} run={run} applyItems={applyItems} onStale={onChanged} />
 
             <div className="req-cands-head">
                 <span>รายชื่อที่เสนอ ({cands.length}{waiting.length ? ` · รออนุมัติ ${waiting.length}` : ''}{spares.length ? ` · ตัวสำรอง ${spares.length}` : ''})</span>
@@ -458,7 +679,12 @@ export default function HireRequestCard({ request, canDecide = false, canPropose
                                 <div className="req-cand-actions">
                                     {st === CAND_PICKED && (
                                         <span className="req-cand-done"
-                                            title={canDecide ? 'แก้ข้อมูลคนนี้ที่ปุ่ม แก้ไข / เพิ่มคน ในหน้างาน' : 'ทีมแบรนด์อนุมัติคนนี้แล้ว'}>อยู่ในรายชื่อผู้รับงานแล้ว</span>
+                                            title={canDecide ? 'แก้ข้อมูลคนนี้ที่ปุ่ม แก้ไข / เพิ่มคน ในหน้างาน' : 'ทีมแบรนด์อนุมัติคนนี้แล้ว'}>
+                                            {(() => {
+                                                const hitBk = bookRows.find(bk => bk.from_candidate != null && String(bk.from_candidate) === String(c.key));
+                                                return hitBk ? `อนุมัติแล้ว · ${BOOKING_LABEL[bookingState(hitBk)] || 'รอคอนเฟิร์มคิว'}` : 'อยู่ในรายชื่อผู้รับงานแล้ว';
+                                            })()}
+                                        </span>
                                     )}
                                     {/* คนที่อนุมัติแล้วเป็นแถวผู้รับงานไปแล้ว — แก้ที่นี่ไม่ไปถึงแถวนั้น จึงแก้ได้เฉพาะชื่อที่ยังไม่อนุมัติ */}
                                     {canPropose && canTouch(c) && st !== CAND_PICKED && (
@@ -513,11 +739,14 @@ export default function HireRequestCard({ request, canDecide = false, canPropose
                         <p>
                             {row.kind || 'ใบขอจัดหา'}
                             {cands.length > 0 ? ` · รายชื่อที่เสนอไว้ ${cands.length} ชื่อจะหายไปด้วย` : ''}
-                            {Number(row.filled) > 0 ? ` · คนที่อนุมัติไปแล้ว ${Number(row.filled)} คนยังอยู่ในงานจ้างตามเดิม` : ''}
+                            {Number(row.filled) > 0 && !bookRows.length ? ` · คนที่อนุมัติไปแล้ว ${Number(row.filled)} คนยังอยู่ในงานจ้างตามเดิม` : ''}
+                            {bookRows.length > 0 && (
+                                <span className="req-del-block"> · ยังลบไม่ได้: มี {bookRows.length} คนที่อนุมัติแล้วรอคอนเฟิร์มคิว/รออนุมัติค่าตัว — คอนเฟิร์ม หรือกดคิวไม่ว่าง ให้ครบก่อน</span>
+                            )}
                         </p>
                         <div className="modal-actions">
                             <button type="button" className="btn-ghost" disabled={deleting} onClick={() => setDel(false)}>ยกเลิก</button>
-                            <button type="button" className="btn-danger" disabled={deleting} onClick={removeRequest}>
+                            <button type="button" className="btn-danger" disabled={deleting || bookRows.length > 0} onClick={removeRequest}>
                                 {deleting ? 'กำลังลบ...' : 'ลบถาวร'}
                             </button>
                         </div>
