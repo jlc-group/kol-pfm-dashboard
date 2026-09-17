@@ -1,8 +1,8 @@
 import { useState } from 'react';
 import HireRequestCard from './HireRequestCard.jsx';
 
-// กล่องเปิดใบขอจัดหาจากหน้า "งานจัดหา" — เนื้อในเป็นการ์ดใบเดียวกับที่ฝังอยู่ในหน้ารายละเอียดงานจ้าง
-// แยกเป็นกล่องเฉพาะหน้างานจัดหา เพราะหน้านั้นรวมใบจากหลายแคมเปญ ถ้ากางทุกใบพร้อมกันจะยาวเกินอ่าน
+// กล่องเปิดใบขอจัดหาจากแท็บ "ใบขอจัดหา" — เนื้อในเป็นการ์ดใบเดียวกับที่ฝังอยู่ในหน้ารายละเอียดงาน
+// ใช้กับคนหาที่ไม่มีสิทธิ์แบรนด์ของงานนั้น (เปิดหน้างานไม่ได้) — คนที่มีสิทธิ์แบรนด์ถูกพาไปที่การ์ดในหน้างานแทน
 export default function HireRequestModal({ request, canDecide = false, canPropose = false, onClose, onSaved }) {
     const [dirty, setDirty] = useState(false);
 
@@ -19,7 +19,7 @@ export default function HireRequestModal({ request, canDecide = false, canPropos
                     <button type="button" className="modal-x" onClick={close}>×</button>
                 </div>
                 <p className="ctype-lead">
-                    {request.project_name}{request.brand ? ` · ${request.brand}` : ''} — คนจัดหาเสนอชื่อได้หลายคน คนขอเป็นคนเลือก
+                    {request.project_name}{request.brand ? ` · ${request.brand}` : ''} — คนหาเสนอชื่อได้หลายคน ทีมแบรนด์เป็นคนอนุมัติ
                 </p>
 
                 <HireRequestCard request={request} canDecide={canDecide} canPropose={canPropose}

@@ -618,7 +618,7 @@ export default function ProjectDetail() {
     if (error) return <div className="alert-error">{error}</div>;
     if (!project) return <div className="empty">กำลังโหลด...</div>;
     // แยกที่นี่ที่เดียว — ลิงก์ /projects/:id เดิมทั้งหมด (หน้าแคมเปญ, ประวัติการแก้ไข, บุ๊กมาร์ก) จึงยังใช้ได้เหมือนเดิม
-    if (isOther) return <OtherProjectDetail project={project} reload={load} onDeleted={() => navigate('/projects')} />;
+    if (isOther) return <OtherProjectDetail project={project} reload={load} onDeleted={() => navigate('/hires?tab=jobs')} />;
 
     const kols = project.kols || [];
     // สินค้าที่เลือกได้ = เฉพาะสินค้าของ Platform ที่รับผิดชอบ (เลือก Platform ก่อน)

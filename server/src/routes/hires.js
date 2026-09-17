@@ -24,15 +24,23 @@ router.get('/', async (req, res, next) => {
 });
 
 
+// GET /api/hires/jobs — รายการงานจ้างอื่น ๆ รายงาน (เห็นเฉพาะแบรนด์ที่ตัวเองมีสิทธิ์)
+router.get('/jobs', async (req, res, next) => {
+    try {
+        const data = await store.hires.jobs({ scopeBrands: allowedBrands(req.account || req.user) });
+        res.json({ status: 'success', data });
+    } catch (err) { next(err); }
+});
+
 // GET /api/hires/tasks — ใบขอจัดหา (งานที่ต้องหาคน) เท่าที่ตัวเองมีสิทธิ์เห็น
-// mine=find (งานที่ฉันต้องหา) · mine=ask (ใบที่ฉันขอไว้) · ไม่ส่ง = ทั้งหมดที่เห็นได้
+// mine=todo (ถึงตาฉัน) · mine=find (งานที่ฉันต้องหา) · mine=ask (ใบที่ฉันขอไว้) · ไม่ส่ง = ทั้งหมดที่เห็นได้
 router.get('/tasks', async (req, res, next) => {
     try {
         const { mine, status, search, brand } = req.query;
         const data = await store.hires.tasks({
             userId: req.user.id,
             scopeBrands: allowedBrands(req.account || req.user),
-            mine: (mine === 'find' || mine === 'ask') ? mine : '',
+            mine: (mine === 'find' || mine === 'ask' || mine === 'todo') ? mine : '',
             status: status || undefined,
             search: search || undefined,
             brand: brand || undefined

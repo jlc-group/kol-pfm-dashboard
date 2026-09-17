@@ -4,10 +4,11 @@ import { useAuth } from '../auth/AuthContext.jsx';
 import Icon from './Icon.jsx';
 import FilePreviewModal from './FilePreviewModal.jsx';
 import HireRequestEditModal from './HireRequestEditModal.jsx';
+import { hireStage, hireNeedMore, STAGE_LABEL, CAND_LABEL } from './OtherProjectForm.jsx';
 
-// การ์ด "ใบขอจัดหา" หนึ่งใบ พร้อมรายชื่อที่เสนอเข้ามาทั้งหมด
-// ใช้ 2 ที่ด้วยหน้าตาเดียวกัน: ฝังตรง ๆ ในหน้ารายละเอียดงานจ้าง และอยู่ในกล่องของหน้างานจัดหา
-// งานของใบนี้มีสองฝั่ง — คนจัดหาเสนอชื่อได้หลายคน คนขอเป็นคนกดเลือก/ไม่เอา
+// การ์ด "ใบขอจัดหา" หนึ่งใบ พร้อมรายชื่อที่เสนอเข้ามาทั้งหมด — ที่เดียวที่ทำอะไรกับใบได้
+// ใช้ 2 ที่ด้วยหน้าตาเดียวกัน: ฝังตรง ๆ ในหน้ารายละเอียดงาน (ทีมแบรนด์) และในกล่องจากแท็บใบขอจัดหา (คนหาที่ไม่มีสิทธิ์แบรนด์)
+// งานของใบนี้มีสองฝั่ง — คนหาเสนอชื่อได้หลายคน ทีมแบรนด์เป็นคนกดอนุมัติ / ไม่ผ่าน (พร้อมเหตุผลให้คนหาเห็น)
 // ทุกปุ่มยิงเส้นที่แก้ทีละแถวในฐาน (ไม่ใช่ PUT ทั้งแคมเปญ) สองฝั่งจึงทำงานพร้อมกันได้โดยไม่ทับกัน
 const B = n => '฿' + (Number(n) || 0).toLocaleString('th-TH');
 const fmtD = d => {
@@ -125,6 +126,9 @@ export default function HireRequestCard({ request, canDecide = false, canPropose
     const [editing, setEditing] = useState(false);
     const [del, setDel] = useState(false);
     const [deleting, setDeleting] = useState(false);
+    const [rejectKey, setRejectKey] = useState('');   // ชื่อที่กำลังกด "ไม่ผ่าน" (รอใส่เหตุผล)
+    const [rejectNote, setRejectNote] = useState('');
+    const [copied, setCopied] = useState(false);
 
     const [adding, setAdding] = useState(false);
     const [form, setForm] = useState(EMPTY);
@@ -229,10 +233,27 @@ export default function HireRequestCard({ request, canDecide = false, canPropose
         setEditKey('');
     });
 
-    const decide = (cand, status) => run('c' + cand.key, async () => {
-        const res = await api(`/projects/${pid}/hires/${rowKey}/candidates/${cand.key}`, { method: 'PATCH', body: { status } });
+    // note = เหตุผลตอนไม่ผ่าน (ไม่บังคับ) — server เก็บเป็น decided_note แล้วคนหาเห็นบนการ์ด
+    const decide = (cand, status, note) => run('c' + cand.key, async () => {
+        const res = await api(`/projects/${pid}/hires/${rowKey}/candidates/${cand.key}`,
+            { method: 'PATCH', body: { status, note: note && note.trim() ? note.trim() : null } });
         applyItems(res.data);
+        // ปิดเฉพาะกล่องเหตุผลของชื่อนี้ — ถ้ากำลังพิมพ์เหตุผลของอีกชื่อค้างไว้ ต้องไม่หาย
+        setRejectKey(k => (k === cand.key ? '' : k));
     });
+
+    // ลิงก์ของใบนี้ไว้ส่งทาง LINE — ลิงก์เดียวใช้ได้ทุกคน: ทีมแบรนด์ถูกพาไปที่การ์ดในหน้างาน คนหาเปิดใบในกล่อง
+    // (ห้ามส่งลิงก์หน้างานตรง ๆ ให้คนหา — คนที่ไม่มีสิทธิ์แบรนด์เปิดหน้างานไม่ได้)
+    async function copyLink() {
+        const url = `${window.location.origin}/hires?tab=requests&open=${pid}~${rowKey}`;
+        try {
+            await navigator.clipboard.writeText(url);
+            setCopied(true);
+            setTimeout(() => setCopied(false), 2000);
+        } catch {
+            window.prompt('คัดลอกลิงก์ใบนี้', url);
+        }
+    }
 
     const drop = cand => {
         const files = [cand.image && 'คอมการ์ด', cand.video && 'คลิปแนะนำตัว'].filter(Boolean).join(' และ ');
@@ -256,10 +277,21 @@ export default function HireRequestCard({ request, canDecide = false, canPropose
 
     const cands = candsOf(row);
     const left = leftOf(row);
-    const waiting = cands.filter(c => (c.status || CAND_NEW) === CAND_NEW);
+    const pending = cands.filter(c => (c.status || CAND_NEW) === CAND_NEW);
+    const waiting = left > 0 ? pending : [];
+    const spares = left > 0 ? [] : pending;
+    // ข้อมูลจากคิว (GET /hires/tasks) ไม่มีฟิลด์ mode — การ์ดนี้เป็นใบขอจัดหาเสมอ ต้องบอกตัวคิดขั้นตอนให้ชัด
+    const castRow = { ...row, mode: 'casting' };
+    const stage = hireStage(castRow, request.job_status);
+    const needMore = hireNeedMore(castRow);
+    const waitingText = stage === 'unassigned' ? 'รอทีมแบรนด์มอบหมายคนหา'
+        : stage === 'finding' ? `รอ ${row.assignee_name || 'คนหา'} หาคน`
+            : stage === 'deciding' ? `รอทีมแบรนด์อนุมัติชื่อที่เสนอ${needMore > 0 ? ` · คนหายังต้องหาเพิ่มอีก ${needMore} คน` : ''}`
+                : stage === 'full' ? 'ได้คนครบตามที่ขอแล้ว' : 'งานนี้ปิดแล้ว — เสนอหรืออนุมัติชื่อเพิ่มไม่ได้';
+    const closed = stage === 'closed';
 
     return (
-        <div className="panel req-card">
+        <div className="panel req-card" id={'req-' + rowKey}>
             {(heading || canDecide) && (
                 <div className="req-card-head">
                     {heading && (
@@ -285,6 +317,14 @@ export default function HireRequestCard({ request, canDecide = false, canPropose
                     )}
                 </div>
             )}
+
+            <div className="req-stage-line">
+                <span className={'stage-chip st-' + stage}>{STAGE_LABEL[stage]}</span>
+                <span className="req-stage-text">{waitingText}</span>
+                <button type="button" className="btn-ghost req-copy" onClick={copyLink} title="คัดลอกลิงก์ไว้ส่งให้คนหา / ทีม">
+                    <Icon name={copied ? 'check' : 'copy'} size={13} /> {copied ? 'คัดลอกแล้ว' : 'คัดลอกลิงก์ใบนี้'}
+                </button>
+            </div>
 
             {err && <div className="alert-error">{err}</div>}
 
@@ -319,8 +359,8 @@ export default function HireRequestCard({ request, canDecide = false, canPropose
             </div>
 
             <div className="req-cands-head">
-                <span>รายชื่อที่เสนอ ({cands.length}{waiting.length ? ` · รอเลือก ${waiting.length}` : ''})</span>
-                {canPropose && !adding && (
+                <span>รายชื่อที่เสนอ ({cands.length}{waiting.length ? ` · รออนุมัติ ${waiting.length}` : ''}{spares.length ? ` · ตัวสำรอง ${spares.length}` : ''})</span>
+                {canPropose && !adding && !closed && (
                     <button type="button" className="btn-ghost" onClick={() => { setAdding(true); setForm(EMPTY); setImg(null); setVid(null); }}>
                         <Icon name="plus" size={14} /> เสนอชื่อ
                     </button>
@@ -346,15 +386,11 @@ export default function HireRequestCard({ request, canDecide = false, canPropose
                 <div className="req-cands">
                     {cands.map((c, i) => {
                         const st = c.status || CAND_NEW;
+                        const spare = st === CAND_NEW && left <= 0;
                         if (editKey === c.key) {
                             return (
                                 <div className="req-add req-edit" key={c.key}>
-                                    <div className="req-edit-lbl">
-                                        แก้ไขชื่อที่เสนอ #{i + 1}
-                                        {st === CAND_PICKED && (
-                                            <span className="req-edit-warn"> · คนนี้เข้าเป็นผู้รับงานแล้ว แก้ตรงนี้ไม่เปลี่ยนข้อมูลในแถวผู้รับงาน</span>
-                                        )}
-                                    </div>
+                                    <div className="req-edit-lbl">แก้ไขชื่อที่เสนอ #{i + 1}</div>
                                     <CandFields form={editForm} setForm={setEditForm} feeHint={Number(row.fee) || 0}
                                         img={editImg} setImg={setEditImg} vid={editVid} setVid={setEditVid}
                                         current={c} clearImg={clearImg} setClearImg={setClearImg}
@@ -374,7 +410,7 @@ export default function HireRequestCard({ request, canDecide = false, canPropose
                                     <div className="req-cand-name">
                                         <span className="req-cand-no">{i + 1}</span>
                                         <strong>{c.name}</strong>
-                                        <span className="req-cand-st">{st}</span>
+                                        <span className="req-cand-st">{spare ? 'ตัวสำรอง' : (CAND_LABEL[st] || st)}</span>
                                     </div>
                                     <div className="req-cand-meta">
                                         {B(c.fee)}
@@ -383,6 +419,24 @@ export default function HireRequestCard({ request, canDecide = false, canPropose
                                         {c.by_name ? ` · เสนอโดย ${c.by_name}` : ''}
                                     </div>
                                     {c.note && <div className="req-cand-note">📝 {c.note}</div>}
+                                    {st === CAND_DROPPED && (c.decided_note || c.decided_by) && (
+                                        <div className="req-cand-reason">
+                                            ไม่ผ่าน{c.decided_by ? ` โดย ${c.decided_by}` : ''}{c.decided_note ? ` — ${c.decided_note}` : ''}
+                                        </div>
+                                    )}
+                                    {rejectKey === c.key && (
+                                        <div className="req-reject">
+                                            <input value={rejectNote} autoFocus maxLength={300}
+                                                onChange={e => setRejectNote(e.target.value)}
+                                                placeholder="เหตุผลที่ไม่ผ่าน (ไม่บังคับ) — คนหาจะเห็นข้อความนี้" />
+                                            <button type="button" className="btn-ghost" disabled={busy === 'c' + c.key}
+                                                onClick={() => { setRejectKey(''); setRejectNote(''); }}>ยกเลิก</button>
+                                            <button type="button" className="btn-reject" disabled={busy === 'c' + c.key}
+                                                onClick={() => decide(c, CAND_DROPPED, rejectNote)}>
+                                                {busy === 'c' + c.key ? 'กำลังบันทึก...' : 'ยืนยันไม่ผ่าน'}
+                                            </button>
+                                        </div>
+                                    )}
                                     <div className="req-cand-links">
                                         {c.image && (
                                             <button type="button" className="work-link"
@@ -402,30 +456,34 @@ export default function HireRequestCard({ request, canDecide = false, canPropose
                                     </div>
                                 </div>
                                 <div className="req-cand-actions">
-                                    {st === CAND_PICKED && <span className="req-cand-done">เข้าเป็นผู้รับงานแล้ว</span>}
-                                    {/* แก้ไขได้ทุกแถว รวมถึงคนที่ถูกเลือกไปแล้ว (แก้ชื่อ/ค่าตัว/ติดต่อ/ไฟล์ที่แนบผิด) */}
-                                    {canPropose && canTouch(c) && (
+                                    {st === CAND_PICKED && (
+                                        <span className="req-cand-done"
+                                            title={canDecide ? 'แก้ข้อมูลคนนี้ที่ปุ่ม แก้ไข / เพิ่มคน ในหน้างาน' : 'ทีมแบรนด์อนุมัติคนนี้แล้ว'}>อยู่ในรายชื่อผู้รับงานแล้ว</span>
+                                    )}
+                                    {/* คนที่อนุมัติแล้วเป็นแถวผู้รับงานไปแล้ว — แก้ที่นี่ไม่ไปถึงแถวนั้น จึงแก้ได้เฉพาะชื่อที่ยังไม่อนุมัติ */}
+                                    {canPropose && canTouch(c) && st !== CAND_PICKED && (
                                         <button type="button" className="btn-ghost req-edit-btn" title="แก้ไขข้อมูลของคนนี้"
                                             disabled={busy === 'c' + c.key} onClick={() => startEdit(c)}>
                                             <Icon name="edit" size={13} /> แก้ไข
                                         </button>
                                     )}
-                                    {st === CAND_NEW && canDecide && left > 0 && (
+                                    {st === CAND_NEW && canDecide && left > 0 && !closed && rejectKey !== c.key && (
                                         <button type="button" className="btn-primary" disabled={busy === 'c' + c.key}
-                                            onClick={() => decide(c, CAND_PICKED)}>✓ เลือกคนนี้</button>
+                                            onClick={() => decide(c, CAND_PICKED)}>✓ อนุมัติ</button>
                                     )}
-                                    {st === CAND_NEW && canDecide && (
+                                    {st === CAND_NEW && canDecide && !closed && rejectKey !== c.key && (
                                         <button type="button" className="btn-reject" disabled={busy === 'c' + c.key}
-                                            onClick={() => decide(c, CAND_DROPPED)}>✕ ไม่เอา</button>
+                                            onClick={() => { setRejectKey(c.key); setRejectNote(''); }}>✕ ไม่ผ่าน</button>
                                     )}
-                                    {/* คนที่ถูกเลือกแล้วถอนออกจากใบไม่ได้ — แถวผู้รับงานเกิดไปแล้ว ถ้าถอนตรงนี้ยอดคนกับงบจะไม่ตรงกัน
-                                        ปุ่มจึงยังอยู่แต่กดไม่ได้ พร้อมบอกว่าให้ไปลบที่ตารางผู้รับงานแทน */}
-                                    {canPropose && canTouch(c) && (
-                                        <button type="button" className="sub-del"
-                                            title={st === CAND_PICKED
-                                                ? 'คนนี้เข้าเป็นผู้รับงานแล้ว ถอนจากใบไม่ได้ — ให้ไปลบที่ตารางผู้รับงานแทน'
-                                                : 'ถอนชื่อนี้ออก'}
-                                            disabled={busy === 'c' + c.key || st === CAND_PICKED}
+                                    {st === CAND_DROPPED && canDecide && !closed && (
+                                        <button type="button" className="btn-ghost" disabled={busy === 'c' + c.key}
+                                            title="ย้ายชื่อนี้กลับไปรออนุมัติอีกครั้ง"
+                                            onClick={() => decide(c, CAND_NEW)}>↩ ดึงกลับมาพิจารณา</button>
+                                    )}
+                                    {/* คนที่อนุมัติแล้วถอนออกจากใบไม่ได้ — แถวผู้รับงานเกิดไปแล้ว ถ้าถอนตรงนี้ยอดคนกับงบจะไม่ตรงกัน */}
+                                    {canPropose && canTouch(c) && st !== CAND_PICKED && (
+                                        <button type="button" className="sub-del" title="ถอนชื่อนี้ออก"
+                                            disabled={busy === 'c' + c.key}
                                             onClick={() => drop(c)}>
                                             <Icon name="trash" size={14} />
                                         </button>
@@ -455,7 +513,7 @@ export default function HireRequestCard({ request, canDecide = false, canPropose
                         <p>
                             {row.kind || 'ใบขอจัดหา'}
                             {cands.length > 0 ? ` · รายชื่อที่เสนอไว้ ${cands.length} ชื่อจะหายไปด้วย` : ''}
-                            {Number(row.filled) > 0 ? ` · คนที่เลือกไปแล้ว ${Number(row.filled)} คนยังอยู่ในงานจ้างตามเดิม` : ''}
+                            {Number(row.filled) > 0 ? ` · คนที่อนุมัติไปแล้ว ${Number(row.filled)} คนยังอยู่ในงานจ้างตามเดิม` : ''}
                         </p>
                         <div className="modal-actions">
                             <button type="button" className="btn-ghost" disabled={deleting} onClick={() => setDel(false)}>ยกเลิก</button>

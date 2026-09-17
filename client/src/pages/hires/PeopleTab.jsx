@@ -1,15 +1,13 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { useNavigate } from 'react-router-dom';
-import { api } from '../api/client.js';
-import Icon from '../components/Icon.jsx';
-import OtherProjectForm from '../components/OtherProjectForm.jsx';
-import { useAuth } from '../auth/AuthContext.jsx';
-import { visibleBrands } from '../data/brands.js';
+import { api } from '../../api/client.js';
+import Icon from '../../components/Icon.jsx';
+import { useAuth } from '../../auth/AuthContext.jsx';
+import { visibleBrands } from '../../data/brands.js';
 
-// หน้ารวมรายชื่อผู้รับงานจากแคมเปญ "งานจ้างอื่น ๆ" ทุกใบ (นางแบบ/นักแสดง/Live สด ฯลฯ)
+// แท็บ "คนที่เคยจ้าง" — รวมรายชื่อผู้รับงานจากงานจ้างอื่น ๆ ทุกงาน (อ่านอย่างเดียว ไว้ค้นประวัติคน/ค่าตัว)
 // แยกจากหน้าอินฟลูเอนเซอร์ตั้งใจ — งานพวกนี้ไม่มียอดวิว/CPM ถ้าเอาไปปนกัน ค่าเฉลี่ยของหน้านั้นจะเพี้ยน
-// server รวมรายชื่อให้แล้ว (1 แถว = 1 คน) หน้านี้ทำแค่ค้นหา/กรอง/เรียง
+// server รวมรายชื่อให้แล้ว (1 แถว = 1 คน) · ชื่อที่ถูกเสนอแต่ยังไม่ผ่านการอนุมัติไม่อยู่ที่นี่
 const B = n => '฿' + (Number(n) || 0).toLocaleString('th-TH');
 const fmtD = d => {
     if (!d) return '—';
@@ -17,10 +15,8 @@ const fmtD = d => {
     return `${Number(dd)}/${Number(m)}/${String(y).slice(2)}`;
 };
 
-export default function OtherHires() {
+export default function PeopleTab() {
     const { user } = useAuth();
-    const navigate = useNavigate();
-    const [showForm, setShowForm] = useState(false);
     const BRANDS = visibleBrands(user);
     const [data, setData] = useState(null);
     const [error, setError] = useState('');
@@ -49,30 +45,21 @@ export default function OtherHires() {
     const brandOptions = BRANDS.filter(b => rows.some(r => (r.brands || []).includes(b)));
 
     return (
-        <div>
-            <header className="page-head with-action">
-                <div>
-                    <h1>งานจ้างอื่น ๆ</h1>
-                    <p className="page-sub">รายชื่อนางแบบ / นักแสดง / Live สด และงานจ้างที่ไม่ใช่ KOL</p>
+        <div className="hub-tab">
+            <div className="hub-toolbar">
+                <div className="ka-search">
+                    <Icon name="search" size={15} />
+                    <input value={search} onChange={e => setSearch(e.target.value)}
+                        placeholder="ค้นหาชื่อ / สังกัด / เบอร์ติดต่อ / งาน..." />
+                    {search && (
+                        <button type="button" className="ka-search-x" onClick={() => setSearch('')} title="ล้างคำค้นหา">✕</button>
+                    )}
                 </div>
-                <div className="ka-top-filters">
-                    <button className="btn-primary" onClick={() => setShowForm(true)}>
-                        <Icon name="plus" size={16} /> สร้างงานจ้าง
-                    </button>
-                    <div className="ka-search">
-                        <Icon name="search" size={15} />
-                        <input value={search} onChange={e => setSearch(e.target.value)}
-                            placeholder="ค้นหาชื่อ / สังกัด / เบอร์ติดต่อ / งาน..." />
-                        {search && (
-                            <button type="button" className="ka-search-x" onClick={() => setSearch('')} title="ล้างคำค้นหา">✕</button>
-                        )}
-                    </div>
-                    <select aria-label="กรองตามประเภทงาน" value={kind} onChange={e => setKind(e.target.value)}>
-                        <option value="">ทุกประเภทงาน</option>
-                        {kinds.map(k => <option key={k} value={k}>{k}</option>)}
-                    </select>
-                </div>
-            </header>
+                <select aria-label="กรองตามประเภทงาน" value={kind} onChange={e => setKind(e.target.value)}>
+                    <option value="">ทุกประเภทงาน</option>
+                    {kinds.map(k => <option key={k} value={k}>{k}</option>)}
+                </select>
+            </div>
 
             {error && <div className="alert-error">{error}</div>}
 
@@ -121,7 +108,7 @@ export default function OtherHires() {
                             <tr>
                                 <th>ชื่อผู้รับงาน</th><th>ประเภทงาน</th><th>สังกัด</th><th>ติดต่อ</th>
                                 <th className="num">จำนวนงาน</th><th className="num">ค่าตัวล่าสุด</th><th className="num">ค่าตัวเฉลี่ย</th>
-                                <th>งานล่าสุด</th><th>แบรนด์</th><th>แคมเปญ</th>
+                                <th>งานล่าสุด</th><th>แบรนด์</th><th>งาน</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -130,7 +117,7 @@ export default function OtherHires() {
                             ) : shown.length === 0 ? (
                                 <tr><td colSpan="10" className="empty">
                                     {rows.length === 0
-                                        ? 'ยังไม่มีงานจ้างอื่น ๆ — กดปุ่ม "สร้างงานจ้าง" มุมขวาบนได้เลย'
+                                        ? 'ยังไม่มีคนที่เคยจ้าง — คนที่ใส่ในงาน (ระบุคนเอง) หรือผ่านการอนุมัติจากใบขอจัดหาจะขึ้นที่นี่'
                                         : 'ไม่พบผู้รับงานตามเงื่อนไขที่เลือก'}
                                 </td></tr>
                             ) : shown.map(r => (
@@ -155,11 +142,6 @@ export default function OtherHires() {
                     </table>
                 </div>
             </div>
-
-            {showForm && (
-                <OtherProjectForm onClose={() => setShowForm(false)}
-                    onSaved={p => { setShowForm(false); navigate(`/projects/${p.id}`); }} />
-            )}
         </div>
     );
 }

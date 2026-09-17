@@ -58,6 +58,28 @@ function hireRowFee(it) {
     return it.mode === 'casting' ? fee * hireRemaining(it) : fee;
 }
 
+// ===== ขั้นตอนของใบขอจัดหา (คิดจากข้อมูลที่มีตอนอ่าน ไม่เก็บลงฐาน) =====
+// ต้องตรงกับ hireWaiting / hireNeedMore / hireStage ฝั่งหน้าเว็บ (client/src/components/OtherProjectForm.jsx)
+const HIRE_JOB_CLOSED = ['Completed', 'Cancelled'];
+// ชื่อที่เสนอมาแล้ว "รอทีมอนุมัติ" (เก็บในฐานเป็น 'เสนอ' — แถวเก่าที่ไม่มีสถานะถือเป็นรออนุมัติ)
+function hireWaiting(it) {
+    if (!it || it.mode !== 'casting') return 0;
+    return (Array.isArray(it.candidates) ? it.candidates : [])
+        .filter(c => c && (String(c.status || '').trim() || 'เสนอ') === 'เสนอ').length;
+}
+// คนหายังต้องหาเพิ่มอีกกี่คน — ชื่อที่รออนุมัติอยู่นับว่า "หามาให้แล้ว" จนกว่าทีมจะกดไม่ผ่าน
+function hireNeedMore(it) {
+    return Math.max(0, hireRemaining(it) - hireWaiting(it));
+}
+// closed = งานเสร็จ/ยกเลิกแล้ว · full = ได้ครบ · deciding = มีชื่อรออนุมัติ · unassigned = ยังไม่มีคนหา · finding = คนหากำลังหา
+function hireStage(it, jobStatus) {
+    if (HIRE_JOB_CLOSED.includes(jobStatus)) return 'closed';
+    if (hireRemaining(it) <= 0) return 'full';
+    if (hireWaiting(it) > 0) return 'deciding';
+    if (!it || it.assignee_id === null || it.assignee_id === undefined || it.assignee_id === '') return 'unassigned';
+    return 'finding';
+}
+
 // ===== ไฟล์อัปโหลด: แปลงชื่อที่เก็บในฐานเป็น path จริงอย่างปลอดภัย =====
 // ชื่อไฟล์ใน hire_items / product_briefs มาจาก JSON ที่หน้าเว็บส่งมาทั้งก้อนได้ จึงห้ามเชื่อ
 // รับเฉพาะ "ชื่อไฟล์ล้วน" ที่อยู่ในโฟลเดอร์อัปโหลดตรง ๆ — มีโฟลเดอร์/../ ปนมา = null ห้ามอ่านห้ามลบเด็ดขาด
@@ -129,6 +151,12 @@ function mergeHireItems(current, incoming, { userId = null, at = now(), users = 
             if (!key || seen.has(key)) key = 'h' + Math.random().toString(36).slice(2, 9);
             seen.add(key);
             const prev = byKey.get(key) || null;
+            // ใบขอจัดหาที่เดินงานไปแล้ว (มีชื่อเสนอ หรือหาได้แล้ว) สลับเป็นแถว "ระบุคนเอง" ไม่ได้
+            // ไม่งั้นรายชื่อที่เสนอและจำนวนคนที่หาได้จะถูกล้างทิ้ง — คงแถวเดิมจากฐานไว้ทั้งแถว (แก้/ลบใบให้ทำที่การ์ด)
+            if (prev && prev.mode === 'casting' && raw.mode !== 'casting'
+                && ((Number(prev.filled) || 0) > 0 || (Array.isArray(prev.candidates) && prev.candidates.length > 0))) {
+                return { ...prev, key };
+            }
             const casting = raw.mode === 'casting';
             const out = { ...raw, key, mode: casting ? 'casting' : 'direct', fee: cleanFee(raw.fee) };
 
@@ -341,6 +369,7 @@ function feeCostAverages(rows) {
 module.exports = {
     GOOD_CPM, GOOD_CPE, TARGET_PLATFORMS, AD_STAMP_AT, now, clone,
     duplicateError, inScope, scopeProjects, hireRemaining, hireRowFee,
+    HIRE_JOB_CLOSED, hireWaiting, hireNeedMore, hireStage,
     resolveInside, sameInstant, mergeHireItems, mergeBriefFiles, cleanFee, cleanHeadcount, safeId, safeSlug,
     linkGroupPlatforms, resolveGroupClips, resolveGroupTarget,
     resolveGroupProducts, resolveGroupCtype, resolveGroupMedia, resolveGroupCampaign,

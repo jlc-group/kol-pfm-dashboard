@@ -86,7 +86,7 @@ export default function Projects() {
     const [month, setMonth] = useState(''); // '' = ทุกเดือน
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
-    // หน้านี้สร้างได้อย่างเดียวคือแคมเปญ KOL — งานจ้างอื่น ๆ กับคำขอสอบถามราคาไปสร้างที่หน้า "งานจัดหา"
+    // หน้านี้สร้างได้อย่างเดียวคือแคมเปญ KOL — งานจ้างอื่น ๆ กับคำขอสอบถามราคาไปสร้างที่เมนู "งานจ้างอื่น ๆ"
     const [showForm, setShowForm] = useState(false);
 
     function load() {

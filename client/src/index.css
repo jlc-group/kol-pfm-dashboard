@@ -3249,3 +3249,57 @@ button { color: inherit; }
 .req-card-head .req-money + .req-card-actions { margin-left: 4px; }
 .req-edit-warn { font-weight: 600; color: #b45309; }
 .req-cand-actions .sub-del:disabled { opacity: .35; cursor: not-allowed; }
+
+/* ===== เมนูงานจ้างอื่น ๆ (รวมงานจัดหา) ===== */
+/* แถบแท็บ 4 อัน — จอแคบให้เลื่อนในแถบเอง ไม่ดันทั้งหน้าให้ล้น */
+.hub-tabs { overflow-x: auto; scrollbar-width: none; margin-bottom: 16px; }
+.hub-tabs::-webkit-scrollbar { display: none; }
+.hub-tabs button { white-space: nowrap; flex: 0 0 auto; }
+.agency-tab-count.danger { background: #ef4444; color: #fff; }
+.hub-toolbar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 14px; }
+.hub-toolbar .ka-search { flex: 1 1 260px; max-width: 420px; }
+.hub-toolbar select { padding: 9px 12px; border: 1px solid var(--border); border-radius: 10px; background: #fff; font-size: 12.5px; color: var(--text); cursor: pointer; }
+.hub-hint { font-size: 11.5px; color: var(--muted); }
+.hub-check { display: inline-flex; align-items: center; gap: 6px; margin-left: 6px; font-size: 12px; color: var(--muted); cursor: pointer; }
+.proc-plat-chip.alert:not(.on) { border-color: #fca5a5; color: #b91c1c; background: #fef2f2; }
+
+/* ขั้นตอนของใบขอจัดหา — สีเดียวกันทุกที่ (คิว / การ์ด / หน้างาน) */
+.stage-chip { display: inline-block; padding: 2px 9px; margin: 0 4px 2px 0; font-size: 11px; font-weight: 700; border-radius: 999px; white-space: nowrap; color: #475569; background: #f1f5f9; }
+.stage-chip.st-unassigned { color: #475569; background: #e2e8f0; }
+.stage-chip.st-finding { color: #1d4ed8; background: #dbeafe; }
+.stage-chip.st-deciding { color: #92400e; background: #fef3c7; }
+.stage-chip.st-full { color: #047857; background: #d1fae5; }
+.stage-chip.st-closed { color: #64748b; background: #f1f5f9; }
+.stage-chip.st-late { color: #b91c1c; background: #fee2e2; }
+.tasks-table tr.row-todo td:first-child { box-shadow: inset 3px 0 0 #ef4444; }
+/* ตารางคิว/รายการงานมีหลายคอลัมน์ — ให้เลื่อนซ้ายขวาในกรอบแทนการบีบจนข้อความหักทีละคำ */
+.hub-tab .tasks-table { min-width: 1120px; }
+.hub-tab .jobs-table { min-width: 900px; }
+.req-mine { font-weight: 700; color: #b91c1c; }
+.req-go { white-space: nowrap; text-decoration: none; display: inline-flex; align-items: center; }
+
+/* รายการงาน */
+.jobs-table tr.row-link { cursor: pointer; }
+.jobs-table tr.row-link:hover td { background: #f8fbfa; }
+
+/* การ์ดใบขอจัดหา: บรรทัดขั้นตอน / เหตุผลไม่ผ่าน / ช่องใส่เหตุผล / ไฮไลต์ตอนถูกพามา */
+.req-stage-line { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin: 2px 0 10px; }
+.req-stage-text { font-size: 12.5px; font-weight: 600; color: var(--text); }
+.req-copy { margin-left: auto; font-size: 12px; padding: 4px 10px; display: inline-flex; align-items: center; gap: 5px; }
+.req-cand.st-no .req-cand-st { color: #b91c1c; background: #fee2e2; }
+.req-cand-reason { margin-top: 4px; font-size: 12px; color: #b91c1c; }
+.req-reject { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 8px; }
+.req-reject input { flex: 1 1 220px; padding: 7px 10px; border: 1px solid #fca5a5; border-radius: 8px; font-size: 12.5px; }
+.req-card { scroll-margin-top: 90px; transition: box-shadow .3s ease; }
+.req-card.req-flash { box-shadow: 0 0 0 3px #fbbf24, 0 6px 20px rgba(251, 191, 36, .35); }
+
+/* ฟอร์มงานจ้าง: ใบขอจัดหาที่บันทึกแล้ว (ล็อก) + รูปแบบของแถวที่บันทึกแล้ว */
+.hire-locked { padding: 10px 12px; border: 1px dashed #c4b5fd; border-radius: 10px; background: #faf5ff; }
+.hire-locked-main { font-size: 13px; color: var(--text); }
+.hire-locked-note { margin-top: 4px; font-size: 11.5px; color: #6d28d9; }
+.hire-mode-fixed { padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; background: #f8fafc; font-size: 13px; color: var(--muted); }
+
+@media (max-width: 640px) {
+    .req-copy { margin-left: 0; }
+    .hub-toolbar .ka-search { max-width: none; }
+}

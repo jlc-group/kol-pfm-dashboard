@@ -312,6 +312,138 @@ test('fees and headcounts from the browser are clamped to sane values', () => {
     assert.equal(safeSlug('../../etc'), 'file');
 });
 
+
+test('request stage is worked out from the data the request already has', () => {
+    const { hireStage, hireWaiting, hireNeedMore } = require(path.join(SRC, 'store/logic'));
+    const req = extra => ({ mode: 'casting', fee: 1000, headcount: 2, filled: 0, candidates: [], assignee_id: 7, ...extra });
+    const cand = status => ({ key: 'c' + Math.random(), name: 'x', status });
+    assert.equal(hireStage(req({ assignee_id: null }), 'Active'), 'unassigned');
+    assert.equal(hireStage(req({}), 'Active'), 'finding');
+    assert.equal(hireStage(req({ candidates: [cand('เสนอ')] }), 'Active'), 'deciding');
+    // ชื่อที่ไม่ผ่านไม่นับว่ารออนุมัติ — ลูกบอลกลับไปที่คนหา
+    assert.equal(hireStage(req({ candidates: [cand('ไม่เอา')] }), 'Active'), 'finding');
+    assert.equal(hireStage(req({ filled: 2 }), 'Active'), 'full');
+    // งานเสร็จ/ยกเลิกแล้ว ใบค้างก็ไม่ใช่งานของใครอีก
+    assert.equal(hireStage(req({}), 'Completed'), 'closed');
+    assert.equal(hireStage(req({}), 'Cancelled'), 'closed');
+    // แถวเก่าที่ชื่อเสนอไม่มีสถานะ = รออนุมัติ
+    assert.equal(hireWaiting(req({ candidates: [{ key: 'a', name: 'a' }, cand('เลือกแล้ว')] })), 1);
+    // ขาด 2 คน มีชื่อรออนุมัติ 1 → คนหายังต้องหาเพิ่ม 1 · รอ 2 ชื่อ → ไม่ต้องหาเพิ่มแล้ว
+    assert.equal(hireNeedMore(req({ candidates: [cand('เสนอ')] })), 1);
+    assert.equal(hireNeedMore(req({ candidates: [cand('เสนอ'), cand('เสนอ')] })), 0);
+    assert.equal(hireNeedMore({ mode: 'direct', fee: 1 }), 0);
+});
+
+test('red badge counts each request once and only while it is really my turn', async () => {
+    const saved = FIXTURE.other_projects;
+    const R = (key, extra) => ({ key, mode: 'casting', kind: 'นางแบบ', fee: 1000, headcount: 1, filled: 0, candidates: [], ...extra });
+    const W = { key: 'w', name: 'รอ', status: 'เสนอ' };
+    FIXTURE.other_projects = [
+        { id: 81, name: 'งานเปิด', brand: 'Jdent', status: 'Active', campaign_type: 'other', hire_items: [
+            // ขอเองหาเอง + มีชื่อรออนุมัติครบจำนวนแล้ว → ต้องอนุมัติ (1 ใบ) แต่ไม่ต้องหาเพิ่ม
+            R('both', { requested_by_id: 3, assignee_id: 3, candidates: [W] }),
+            // ขอเองหาเอง ยังไม่มีชื่อ → ต้องหา (1 ใบ ไม่ใช่ 2)
+            R('self', { requested_by_id: 3, assignee_id: 3 }),
+            // ขอไว้แต่ยังไม่มอบหมายใคร → ต้องมอบหมาย
+            R('noone', { requested_by_id: 3, assignee_id: null }),
+            // ได้ครบแล้ว แม้มีชื่อสำรองรออยู่ ก็ไม่ใช่งานค้าง
+            R('full', { requested_by_id: 3, assignee_id: 3, filled: 1, candidates: [W] })
+        ] },
+        { id: 82, name: 'งานปิดแล้ว', brand: 'Jdent', status: 'Completed', campaign_type: 'other', hire_items: [
+            R('closed', { requested_by_id: 3, assignee_id: 3, candidates: [W] })
+        ] }
+    ];
+    try {
+        const t = await hires.tasks({ userId: 3, scopeBrands: ['Jdent'] });
+        const by = k => t.rows.find(r => r.key === k);
+        assert.deepEqual(by('both').todo, ['decide']);
+        assert.equal(by('both').need_more, 0);
+        assert.deepEqual(by('self').todo, ['find']);
+        assert.deepEqual(by('noone').todo, ['assign']);
+        assert.equal(by('noone').waiting_on, 'assign');
+        assert.deepEqual(by('full').todo, []);
+        assert.equal(by('full').stage, 'full');
+        assert.deepEqual(by('closed').todo, []);
+        assert.equal(by('closed').stage, 'closed');
+        assert.equal(t.counts.to_find, 1);
+        assert.equal(t.counts.to_decide, 1);
+        assert.equal(t.counts.to_assign, 1);
+        assert.equal(t.counts.total, 3, 'นับเป็นใบ ไม่บวกซ้ำ');
+        // ตัวกรอง "รอฉันทำ" ได้ชุดเดียวกับเลขแดง
+        const todo = await hires.tasks({ userId: 3, scopeBrands: ['Jdent'], mine: 'todo' });
+        assert.deepEqual(todo.rows.map(r => r.key).sort(), ['both', 'noone', 'self']);
+        // คนที่หลุดสิทธิ์แบรนด์ไม่ถูกนับว่าต้องอนุมัติ/มอบหมาย (แต่ยังเป็นคนหาของใบตัวเองได้)
+        const lost = await hires.tasks({ userId: 3, scopeBrands: [] });
+        assert.deepEqual(lost.rows.map(r => r.key).sort(), ['both', 'closed', 'full', 'self']);
+        assert.equal(lost.counts.total, 1);
+        assert.equal(lost.counts.to_find, 1);
+    } finally {
+        FIXTURE.other_projects = saved;
+    }
+});
+
+test('job list shows every Other job in brand scope, including jobs with no people yet', async () => {
+    const saved = FIXTURE.other_projects;
+    FIXTURE.other_projects = [
+        ...saved,
+        { id: 90, name: 'งานว่างยังไม่มีคน', brand: 'Jdent', status: 'Draft', campaign_type: 'other', hire_items: [], created_at: '2026-09-15T00:00:00.000Z' },
+        { id: 91, name: 'งานที่ยกเลิก', brand: 'Jdent', status: 'Cancelled', campaign_type: 'other',
+          hire_items: [
+              { key: 'z', mode: 'direct', kind: 'นางแบบ', name: 'ส้ม', fee: 7000 },
+              // ใบที่ยังขาดคนแต่งานยกเลิกไปแล้ว — ไม่นับว่าต้องหา/รออนุมัติ
+              { key: 'z2', mode: 'casting', kind: 'นางแบบ', fee: 1000, headcount: 2, filled: 0, candidates: [{ key: 'q', name: 'รอ', status: 'เสนอ' }] }
+          ], created_at: '2026-09-16T00:00:00.000Z' }
+    ];
+    try {
+        const all = await hires.jobs({});
+        assert.deepEqual(all.rows.map(r => r.id).sort((a, b) => a - b), [72, 73, 90, 91]);
+        const j72 = all.rows.find(r => r.id === 72);
+        // มะลิลงสองงาน (นางแบบ + Live สด) = คนเดียว · แถวที่ยังไม่ใส่ชื่อ (h4) ไม่นับเป็นคน
+        assert.equal(j72.people_count, 2);
+        assert.deepEqual(j72.names.sort(), ['กุหลาบ', 'มะลิ']);
+        assert.equal(j72.request_count, 1);
+        assert.equal(j72.remaining, 3);
+        assert.equal(j72.waiting, 1);
+        assert.equal(j72.total_fee, 15000 + 12000 + 8000 + 0 + 5000 * 3);
+        assert.equal(j72.start_date, '2026-09-10');
+        assert.equal(j72.end_date, '2026-09-20');
+        assert.equal(all.rows.find(r => r.id === 90).people_count, 0);
+        // งานที่มีเรื่องค้างขึ้นก่อน · งานปิดแล้วไปท้ายสุด
+        assert.equal(all.rows[0].id, 72);
+        assert.equal(all.rows[all.rows.length - 1].id, 91);
+        const j91 = all.rows.find(r => r.id === 91);
+        assert.equal(j91.closed, true);
+        assert.equal(j91.remaining, 0, 'งานยกเลิกแล้วไม่มีใครต้องหาต่อ');
+        assert.equal(j91.waiting, 0);
+        assert.equal(j91.request_count, 1);
+        // สรุปนับเฉพาะงานที่ยังไม่จบ
+        assert.equal(all.summary.jobs, 4);
+        assert.equal(all.summary.open_jobs, 3);
+        assert.equal(all.summary.remaining, 3);
+        // สิทธิ์แบรนด์: เห็นเฉพาะ Jdent · ไม่มีสิทธิ์แบรนด์เลย = ว่าง
+        assert.ok(!(await hires.jobs({ scopeBrands: ['Jdent'] })).rows.some(r => r.id === 73));
+        assert.equal((await hires.jobs({ scopeBrands: [] })).rows.length, 0);
+    } finally {
+        FIXTURE.other_projects = saved;
+    }
+});
+
+test('a request that already has proposed names cannot be wiped by switching it to a direct row', () => {
+    const { mergeHireItems } = require(path.join(SRC, 'store/logic'));
+    const busy = { key: 'r1', mode: 'casting', kind: 'นักแสดง', fee: 5000, headcount: 3, filled: 1,
+        candidates: [{ key: 'c1', name: 'ต้นน้ำ', status: 'เลือกแล้ว' }, { key: 'c2', name: 'ปลายฟ้า', status: 'เสนอ' }],
+        requested_by_id: 3, assignee_id: 7, assignee_name: 'ฟ้า' };
+    const fresh = { key: 'r2', mode: 'casting', kind: 'นางแบบ', fee: 1000, headcount: 1, filled: 0, candidates: [] };
+    const out = mergeHireItems([busy, fresh], [
+        { key: 'r1', mode: 'direct', name: 'ทับ', fee: 1 },
+        { key: 'r2', mode: 'direct', kind: 'นางแบบ', name: 'มะลิ', fee: 9000 }
+    ], {});
+    assert.deepEqual(out[0], busy, 'ใบที่เดินงานแล้วคงเดิมทั้งแถว');
+    // ใบที่ยังไม่มีใครเสนอชื่อ เปลี่ยนเป็นระบุคนเองได้ตามปกติ
+    assert.equal(out[1].mode, 'direct');
+    assert.equal(out[1].name, 'มะลิ');
+});
+
 test('hires list filters by kind, brand, search and date range', async () => {
     assert.deepEqual((await hires.list({ kind: 'Live สด' })).rows.map(r => r.name), ['มะลิ']);
     assert.deepEqual((await hires.list({ brand: 'Code Lab' })).rows.map(r => r.name), ['ต้นกล้า']);

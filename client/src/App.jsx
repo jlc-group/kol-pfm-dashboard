@@ -9,8 +9,7 @@ import Pending from './pages/Pending.jsx';
 import AgencyPortal from './pages/AgencyPortal.jsx';
 import Dashboard from './pages/Dashboard.jsx';
 import Kols from './pages/Kols.jsx';
-import OtherHires from './pages/OtherHires.jsx';
-import HireTasks from './pages/HireTasks.jsx';
+import OtherWork from './pages/OtherWork.jsx';
 import InfluencerDetail from './pages/InfluencerDetail.jsx';
 import Projects from './pages/Projects.jsx';
 import ProjectDetail from './pages/ProjectDetail.jsx';
@@ -44,8 +43,9 @@ export default function App() {
             >
                 <Route index element={<Dashboard />} />
                 <Route path="kols" element={<Kols />} />
-                <Route path="hires" element={<OtherHires />} />
-            <Route path="hire-tasks" element={<HireTasks />} />
+                <Route path="hires" element={<OtherWork />} />
+                {/* เมนู "งานจัดหา" เดิมรวมเข้าเมนูงานจ้างอื่น ๆ แล้ว — ลิงก์/บุ๊กมาร์กเก่าพาไปที่แท็บใบขอจัดหา */}
+                <Route path="hire-tasks" element={<Navigate to="/hires?tab=requests" replace />} />
                 <Route path="influencers/:id" element={<InfluencerDetail />} />
                 <Route path="projects" element={<Projects />} />
                 <Route path="projects/:id" element={<ProjectDetail />} />

@@ -8,11 +8,13 @@
  * คนเดิมที่ถูกจ้างสองงานจะมีสองแถวคนละ key เสมอ
  */
 const { loadSnapshot } = require('./_snapshot');
-const { clone, scopeProjects, inScope, hireRemaining, hireRowFee } = require('../logic');
+const { clone, scopeProjects, inScope, hireRemaining, hireRowFee, hireWaiting, hireNeedMore, hireStage, HIRE_JOB_CLOSED } = require('../logic');
 
 const isOther = p => (p.campaign_type || 'kol') === 'other';
 const str = v => String(v == null ? '' : v).trim();
 const personKey = it => str(it.name).toLowerCase() + '|' + str(it.kind).toLowerCase();
+// วันนี้ตามเวลาไทย (YYYY-MM-DD) — ใช้เทียบกับกำหนดส่งรายชื่อที่เก็บเป็นวันที่ล้วน
+const todayTH = () => new Date(Date.now() + 7 * 3600 * 1000).toISOString().slice(0, 10);
 
 const hires = {
     // 1 แถวที่คืนออกไป = 1 คน · summary.jobs = จำนวนครั้งที่จ้าง (คนหนึ่งอาจถูกจ้างหลายครั้ง)
@@ -100,6 +102,7 @@ const hires = {
     async tasks({ userId = null, scopeBrands = null, mine = '', status, search, brand } = {}) {
         const snap = await loadSnapshot(['other_projects']);
         const uid = userId == null ? null : String(userId);
+        const today = todayTH();
         const rows = [];
         snap.other_projects.filter(isOther).forEach(p => {
             const inBrand = inScope(p, scopeBrands);
@@ -109,12 +112,22 @@ const hires = {
                 const isRequester = inBrand && uid !== null && it.requested_by_id != null && String(it.requested_by_id) === uid;
                 if (!inBrand && !isAssignee) return;
                 const cands = Array.isArray(it.candidates) ? it.candidates : [];
+                const stage = hireStage(it, p.status);
+                const remaining = hireRemaining(it);
+                const waiting = hireWaiting(it);
+                const needMore = hireNeedMore(it);
+                const open = stage !== 'closed' && remaining > 0;
+                // "ถึงตาฉัน" — ต้องตรงกับที่เลขแดงบนเมนูนับ (ใบหนึ่งนับครั้งเดียวแม้เป็นทั้งคนขอและคนหา)
+                const todo = [];
+                if (open && isAssignee && needMore > 0) todo.push('find');
+                if (open && isRequester && waiting > 0) todo.push('decide');
+                if (open && isRequester && waiting === 0 && (it.assignee_id === null || it.assignee_id === undefined || it.assignee_id === '')) todo.push('assign');
                 rows.push({
                     project_id: p.id, project_name: p.name, brand: p.brand || null,
                     key: it.key, kind: str(it.kind) || null, spec: str(it.spec) || null,
                     fee: Number(it.fee) || 0,
                     headcount: Number(it.headcount) || 1, filled: Number(it.filled) || 0,
-                    remaining: hireRemaining(it), budget: hireRowFee(it),
+                    remaining, budget: hireRowFee(it),
                     use_date: it.use_date || null, deadline: it.deadline || null,
                     place: str(it.place) || null, note: str(it.note) || null,
                     status: str(it.status) || 'กำลังหา',
@@ -123,7 +136,15 @@ const hires = {
                     requested_by_id: it.requested_by_id == null ? null : it.requested_by_id,
                     candidates: cands,
                     candidate_count: cands.length,
-                    waiting_count: cands.filter(c => (str(c.status) || 'เสนอ') === 'เสนอ').length,
+                    waiting_count: waiting,
+                    rejected_count: cands.filter(c => str(c.status) === 'ไม่เอา').length,
+                    need_more: needMore,
+                    job_status: p.status || 'Draft',
+                    stage,
+                    // ลูกบอลอยู่ที่ใคร: assign = ทีมต้องมอบหมายคนหา · finder = คนหา · team = ทีมแบรนด์ต้องอนุมัติ
+                    waiting_on: stage === 'unassigned' ? 'assign' : stage === 'finding' ? 'finder' : stage === 'deciding' ? 'team' : 'none',
+                    overdue: !!(open && it.deadline && needMore > 0 && String(it.deadline) < today),
+                    todo, my_todo: todo.length > 0,
                     is_assignee: isAssignee, is_requester: isRequester, in_brand: inBrand
                 });
             });
@@ -133,21 +154,27 @@ const hires = {
         const picked = rows.filter(r =>
             (mine !== 'find' || r.is_assignee)
             && (mine !== 'ask' || r.is_requester)
+            && (mine !== 'todo' || r.my_todo)
             && (!brand || r.brand === brand)
             && (!status || r.status === status)
             && (!q || [r.project_name, r.brand, r.kind, r.spec, r.assignee_name, r.place]
                 .some(v => String(v == null ? '' : v).toLowerCase().includes(q))));
 
-        // งานที่ยังต้องหาขึ้นก่อน แล้วเรียงตามกำหนดส่งรายชื่อที่ใกล้ที่สุด (ใบที่ไม่ได้กำหนดไปท้ายสุด)
+        // งานที่ถึงตาเราขึ้นก่อน → เลยกำหนด → ยังต้องหา → กำหนดส่งรายชื่อที่ใกล้ที่สุด (ใบที่ไม่ได้กำหนดไปท้ายสุด)
         picked.sort((a, b) =>
-            (a.remaining > 0 ? 0 : 1) - (b.remaining > 0 ? 0 : 1)
+            (a.my_todo ? 0 : 1) - (b.my_todo ? 0 : 1)
+            || (a.overdue ? 0 : 1) - (b.overdue ? 0 : 1)
+            || (a.stage === 'closed' ? 1 : 0) - (b.stage === 'closed' ? 1 : 0)
+            || (a.remaining > 0 ? 0 : 1) - (b.remaining > 0 ? 0 : 1)
             || (a.deadline ? 0 : 1) - (b.deadline ? 0 : 1)
             || String(a.deadline || '').localeCompare(String(b.deadline || ''))
             || String(a.project_name || '').localeCompare(String(b.project_name || ''), 'th'));
 
         // ตัวเลขแดงนับเฉพาะงานที่ "รอเราทำ" จริง ๆ — ของคนอื่นไม่นับ ไม่งั้นตัวเลขจะไม่มีความหมาย
-        const toFind = rows.filter(r => r.is_assignee && r.remaining > 0).length;
-        const toDecide = rows.filter(r => r.is_requester && r.waiting_count > 0).length;
+        // total นับเป็น "ใบ" ไม่ใช่ผลบวกของแต่ละแบบ: เป็นทั้งคนขอและคนหาในใบเดียวกันก็นับครั้งเดียว
+        const toFind = rows.filter(r => r.todo.includes('find')).length;
+        const toDecide = rows.filter(r => r.todo.includes('decide')).length;
+        const toAssign = rows.filter(r => r.todo.includes('assign')).length;
 
         return clone({
             summary: {
@@ -159,11 +186,62 @@ const hires = {
             counts: {
                 to_find: toFind,
                 to_decide: toDecide,
-                unassigned: rows.filter(r => !r.assignee_id && r.remaining > 0 && r.in_brand).length,
-                total: toFind + toDecide
+                to_assign: toAssign,
+                unassigned: rows.filter(r => r.stage === 'unassigned' && r.in_brand).length,
+                total: rows.filter(r => r.my_todo).length
             },
             brands: [...new Set(rows.map(r => r.brand).filter(Boolean))].sort(),
             rows: picked
+        });
+    },
+
+    // งานจ้างอื่น ๆ รายงาน (1 แถว = 1 งาน) เฉพาะแบรนด์ที่มีสิทธิ์ — คนหาที่ไม่มีสิทธิ์แบรนด์ (scope = []) ได้รายการว่าง
+    async jobs({ scopeBrands = null } = {}) {
+        const snap = await loadSnapshot(['other_projects']);
+        const rows = scopeProjects(snap.other_projects.slice(), scopeBrands).filter(isOther).map(p => {
+            const items = (Array.isArray(p.hire_items) ? p.hire_items : []).filter(Boolean);
+            const people = items.filter(it => it.mode !== 'casting' && str(it.name));
+            // คนเดิมลงสองวันเป็นสองแถว แต่เป็นคนเดียว — นับชื่อไม่ซ้ำให้ตรงกับตัวเลข "ผู้รับงาน" ในหน้างาน
+            const names = [...new Set(people.map(it => str(it.name)))];
+            const requests = items.filter(it => it.mode === 'casting');
+            const closed = HIRE_JOB_CLOSED.includes(p.status);
+            // งานที่ปิดแล้วไม่มีใครต้องหา/อนุมัติต่อ (ตรงกับ hireStage = closed ที่คิว/การ์ดใช้)
+            const openReq = closed ? [] : requests.filter(it => hireRemaining(it) > 0);
+            const dates = items.map(it => it.use_date).filter(Boolean).map(String).sort();
+            return {
+                id: p.id, name: p.name, brand: p.brand || null, status: p.status || 'Draft',
+                contact: str(p.creator) || str(p.owner) || null,
+                start_date: dates[0] || p.start_date || null,
+                end_date: dates[dates.length - 1] || p.end_date || null,
+                item_count: items.length,
+                people_count: names.length,
+                names,
+                request_count: requests.length,
+                remaining: openReq.reduce((s, it) => s + hireRemaining(it), 0),
+                // ชื่อที่รออนุมัติของใบที่ครบแล้วเป็นแค่ตัวสำรอง ไม่นับว่ารอทีม
+                waiting: openReq.reduce((s, it) => s + hireWaiting(it), 0),
+                total_fee: items.reduce((s, it) => s + hireRowFee(it), 0),
+                closed,
+                created_at: p.created_at || null, updated_at: p.updated_at || null
+            };
+        });
+        // งานที่ยังไม่จบและมีเรื่องค้าง (รออนุมัติ / ยังต้องหา) ขึ้นก่อน แล้วงานใหม่สุดก่อน
+        rows.sort((a, b) =>
+            (a.closed ? 1 : 0) - (b.closed ? 1 : 0)
+            || ((b.waiting > 0 || b.remaining > 0) ? 1 : 0) - ((a.waiting > 0 || a.remaining > 0) ? 1 : 0)
+            || String(b.created_at || '').localeCompare(String(a.created_at || ''))
+            || (Number(b.id) || 0) - (Number(a.id) || 0));
+        const open = rows.filter(r => !r.closed);
+        return clone({
+            summary: {
+                jobs: rows.length,
+                open_jobs: open.length,
+                people: open.reduce((s, r) => s + r.people_count, 0),
+                remaining: open.reduce((s, r) => s + r.remaining, 0),
+                total_fee: open.reduce((s, r) => s + r.total_fee, 0)
+            },
+            brands: [...new Set(rows.map(r => r.brand).filter(Boolean))].sort(),
+            rows
         });
     }
 };

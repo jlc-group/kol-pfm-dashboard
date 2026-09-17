@@ -576,18 +576,22 @@ router.patch('/:id/hires/:key/candidates/:ckey', async (req, res, next) => {
         }
 
         let pickedName = null;
+        let candName = null;
         let full = false;
+        // เหตุผลตอนไม่ผ่าน — คนหาเห็นบนการ์ด (จำกัดความยาวไว้ ไม่ให้ประวัติ/การ์ดบวม)
+        const reason = (txt(req.body.note) || '').slice(0, 500) || null;
         const items = await store.projects.patchHireItems(req.params.id, req.params.key, (row, list) => {
             if (row.mode !== 'casting') return null;
             const cand = candsOf(row).find(c => String(c.key) === String(req.params.ckey));
             if (!cand) return null;
+            candName = cand.name;
             if (want === CAND_PICKED && leftOf(row) <= 0) { full = true; return null; }
             // เลือกไปแล้วย้อนไม่ได้ — แถวผู้รับงานจริงเกิดไปแล้ว ถ้าปล่อยให้ย้อนจะมีแถวค้างและงบเพี้ยน
             if ((cand.status || CAND_NEW) === CAND_PICKED) return null;
 
             const stamped = candsOf(row).map(c => (String(c.key) === String(req.params.ckey) ? {
                 ...c, status: want,
-                decided_by: actorName(req), decided_at: new Date().toISOString(), decided_note: txt(req.body.note)
+                decided_by: actorName(req), decided_at: new Date().toISOString(), decided_note: reason
             } : c));
             if (want !== CAND_PICKED) {
                 return list.map(it => (String(it.key) === String(row.key) ? { ...it, candidates: stamped } : it));
@@ -616,10 +620,12 @@ router.patch('/:id/hires/:key/candidates/:ckey', async (req, res, next) => {
             return out;
         });
         if (full) return res.status(409).json({ status: 'error', message: 'ใบนี้ได้คนครบจำนวนที่ขอแล้ว — ถ้าต้องการเพิ่มคน ให้แก้จำนวนคนที่ต้องการในใบก่อน' });
-        if (!items) return res.status(404).json({ status: 'error', message: 'ไม่พบชื่อที่เสนอนี้ หรือเลือกไปแล้ว' });
+        if (!items) return res.status(404).json({ status: 'error', message: 'ไม่พบชื่อที่เสนอนี้ หรืออนุมัติไปแล้ว' });
         await record(req, req.params.id, 'update', want === CAND_PICKED
-            ? `เลือก ${pickedName} จากใบขอจัดหา`
-            : `อัปเดตชื่อที่เสนอในใบขอจัดหา (${want})`);
+            ? `อนุมัติ ${pickedName} จากใบขอจัดหา`
+            : want === CAND_DROPPED
+                ? `ไม่ผ่าน ${candName || ''} ในใบขอจัดหา${reason ? ' — ' + reason : ''}`
+                : `ดึง ${candName || ''} กลับมาพิจารณาในใบขอจัดหา`);
         res.json({ status: 'success', data: items });
     } catch (err) { next(err); }
 });
@@ -632,7 +638,7 @@ router.delete('/:id/hires/:key/candidates/:ckey', async (req, res, next) => {
         const cand = candsOf(acc.row).find(c => String(c.key) === String(req.params.ckey));
         if (!cand) return res.status(404).json({ status: 'error', message: 'ไม่พบชื่อที่เสนอนี้' });
         if ((cand.status || CAND_NEW) === CAND_PICKED) {
-            return res.status(400).json({ status: 'error', message: 'คนที่ถูกเลือกแล้วถอนออกจากใบไม่ได้ — ให้ไปลบแถวผู้รับงานแทน' });
+            return res.status(400).json({ status: 'error', message: 'คนที่อนุมัติแล้วถอนออกจากใบไม่ได้ — ให้ไปลบแถวผู้รับงานแทน' });
         }
         // คนอื่นที่ไม่ใช่คนเสนอเองต้องมีสิทธิ์ในแคมเปญนี้ถึงจะถอนให้ได้
         if (String(cand.by_id) !== String(req.user.id) && !acc.isOwner) {
@@ -648,7 +654,7 @@ router.delete('/:id/hires/:key/candidates/:ckey', async (req, res, next) => {
                 : it));
         });
         if (pickedMeanwhile) {
-            return res.status(409).json({ status: 'error', message: 'คนนี้เพิ่งถูกเลือกเป็นผู้รับงานไปแล้ว ถอนจากใบไม่ได้' });
+            return res.status(409).json({ status: 'error', message: 'คนนี้เพิ่งได้รับอนุมัติเป็นผู้รับงานไปแล้ว ถอนจากใบไม่ได้' });
         }
         if (!items) return res.status(404).json({ status: 'error', message: 'ไม่พบใบขอจัดหานี้' });
         // เก็บกวาดไฟล์ของชื่อที่ถอนออก (ข้ามไฟล์ที่ยังมีแถวอื่นใช้อยู่)

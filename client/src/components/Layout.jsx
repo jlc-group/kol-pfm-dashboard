@@ -12,7 +12,7 @@ const MAIN_NAV = [
     { to: '/ads', label: 'โฆษณา', icon: 'target' },
     { to: '/budget', label: 'รายงานแคมเปญ', icon: 'bars' },
     { to: '/kols', label: 'อินฟลูเอนเซอร์', icon: 'star' },
-    { to: '/hire-tasks', label: 'งานจัดหา', icon: 'search' },
+    // รวมงานจัดหาไว้ในเมนูนี้แล้ว (แท็บใบขอจัดหา) — /hire-tasks เดิมพามาที่แท็บนั้นให้
     { to: '/hires', label: 'งานจ้างอื่น ๆ', icon: 'team' }
 ];
 
@@ -43,13 +43,23 @@ export default function Layout() {
         return () => { alive = false; clearInterval(t); window.removeEventListener('kol:users-changed', load); };
     }, [user]);
 
-    // งานจัดหาที่รอเราทำ (ใบที่เราต้องหาคน + ชื่อที่รอเราตัดสิน) — ระบบไม่มีอีเมลแจ้ง ต้องเห็นจากตัวเลขบนเมนู
+    // ใบขอจัดหาที่ถึงตาเรา (ต้องหาคน / ต้องอนุมัติชื่อ / ต้องมอบหมายคนหา) — ระบบไม่มีอีเมลแจ้ง ต้องเห็นจากตัวเลขบนเมนู
     const [taskCount, setTaskCount] = useState(0);
+    const [taskTip, setTaskTip] = useState('');
     useEffect(() => {
         if (!user || user.role === 'agency') return;
         let alive = true;
         const load = () => api('/hires/tasks/count')
-            .then(r => { if (alive) setTaskCount(r.data?.total || 0); })
+            .then(r => {
+                if (!alive) return;
+                const c = r.data || {};
+                setTaskCount(c.total || 0);
+                setTaskTip([
+                    c.to_find ? `หาคน ${c.to_find}` : '',
+                    c.to_decide ? `อนุมัติชื่อ ${c.to_decide}` : '',
+                    c.to_assign ? `มอบหมายคนหา ${c.to_assign}` : ''
+                ].filter(Boolean).join(' · '));
+            })
             .catch(() => {});
         load();
         const t = setInterval(load, 60000);
@@ -86,8 +96,8 @@ export default function Layout() {
                 {item.to === '/users' && pendingCount > 0 && (
                     <span className="nav-badge" title={`มี ${pendingCount} คนรออนุมัติ`}>{pendingCount}</span>
                 )}
-                {item.to === '/hire-tasks' && taskCount > 0 && (
-                    <span className="nav-badge" title={`มีงานจัดหารอคุณ ${taskCount} ใบ`}>{taskCount}</span>
+                {item.to === '/hires' && taskCount > 0 && (
+                    <span className="nav-badge" title={`ใบขอจัดหาที่ถึงตาคุณ ${taskCount} ใบ${taskTip ? ` (${taskTip})` : ''}`}>{taskCount}</span>
                 )}
             </NavLink>
         );

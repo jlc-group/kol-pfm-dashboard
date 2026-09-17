@@ -3,7 +3,7 @@ import { api } from '../api/client.js';
 import DatePicker from './DatePicker.jsx';
 import { HIRE_KINDS } from './OtherProjectForm.jsx';
 
-// แก้รายละเอียดของใบขอจัดหาหนึ่งใบ (จากหน้างานจัดหา ไม่ต้องเปิดฟอร์มทั้งแคมเปญ)
+// แก้รายละเอียดของใบขอจัดหาหนึ่งใบ (จากปุ่มดินสอบนการ์ดของใบ ไม่ต้องเปิดฟอร์มทั้งงาน)
 // แก้ได้เฉพาะสิ่งที่ "ขอ" — รายชื่อที่เสนอเข้ามาและคนที่เลือกไปแล้วมีเส้นของตัวเอง ที่นี่ไม่แตะ
 export default function HireRequestEditModal({ request, onClose, onSaved }) {
     const [f, setF] = useState({

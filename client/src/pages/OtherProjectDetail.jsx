@@ -1,8 +1,8 @@
-import { useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useEffect, useMemo, useState } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { api } from '../api/client.js';
 import Icon from '../components/Icon.jsx';
-import OtherProjectForm, { ALL_HIRE_STATUS, isCasting, statusesOf, rowFee, hireLeft } from '../components/OtherProjectForm.jsx';
+import OtherProjectForm, { HIRE_STATUS, HIRE_JOB_CLOSED, isCasting, statusesOf, rowFee, hireLeft, hireStage, hireWaiting, STAGE_LABEL } from '../components/OtherProjectForm.jsx';
 import HireRequestCard from '../components/HireRequestCard.jsx';
 import FilePreviewModal from '../components/FilePreviewModal.jsx';
 import { fmtRange } from '../utils/date.js';
@@ -18,11 +18,14 @@ const fmtD = d => {
     const [y, m, dd] = String(d).split('-');
     return `${Number(dd)}/${Number(m)}/${String(y).slice(2)}`;
 };
+// ตัวกรองสถานะ: ใบขอจัดหาใช้ "ขั้นตอน" ที่คิดจากข้อมูล (ชุดเดียวกับการ์ดและแท็บใบขอจัดหา) · ผู้รับงานใช้สถานะของคน
+const CHIP_ORDER = [...Object.values(STAGE_LABEL), ...HIRE_STATUS];
 // แถวเก่าที่บันทึกก่อนมี key ต้องมีรหัสประจำแถวเสมอ ไม่งั้น React จะสลับแถวตอนแก้ไขในตาราง
 const rowsOf = p => (Array.isArray(p.hire_items) ? p.hire_items : []).map((it, i) => ({ ...it, key: it.key || 'h' + i }));
 
 export default function OtherProjectDetail({ project, reload, onDeleted }) {
     const navigate = useNavigate();
+    const location = useLocation();
     const [tab, setTab] = useState('people');      // people = รายชื่อผู้รับงาน · days = ตารางงานตามวัน
     const [statusPick, setStatusPick] = useState('');
     // ช่องที่แก้ในตาราง (สถานะ/ลิงก์ Account/หมายเหตุ) เก็บไว้ก่อน แล้วกดบันทึกทีเดียว
@@ -44,22 +47,36 @@ export default function OtherProjectDetail({ project, reload, onDeleted }) {
     const totalFee = items.reduce((s, it) => s + rowFee(it), 0);
     const people = new Set(items.map(it => String(it.name || '').trim()).filter(Boolean)).size;
     const castingRows = items.filter(isCasting);
-    const castingHeads = castingRows.reduce((n, it) => n + hireLeft(it), 0);
-    const waitingNames = castingRows.reduce((n, it) =>
-        n + (Array.isArray(it.candidates) ? it.candidates.filter(c => (c.status || 'เสนอ') === 'เสนอ').length : 0), 0);
-    // ใบขอจัดหาใบหนึ่ง + ข้อมูลแคมเปญที่กล่องจัดการต้องใช้
+    // งานที่ปิดแล้ว (เสร็จสิ้น/ยกเลิก) ไม่มีใครต้องหา/อนุมัติต่อ — ให้ตรงกับการ์ดและแท็บใบขอจัดหา
+    const jobClosed = HIRE_JOB_CLOSED.includes(project.status);
+    const castingHeads = jobClosed ? 0 : castingRows.reduce((n, it) => n + hireLeft(it), 0);
+    const waitingNames = jobClosed ? 0 : castingRows.reduce((n, it) => n + (hireLeft(it) > 0 ? hireWaiting(it) : 0), 0);
+    // ใบขอจัดหาใบหนึ่ง + ข้อมูลงานที่การ์ดต้องใช้ (สถานะงานใช้คิดขั้นตอน "งานปิดแล้ว")
     const reqOf = it => ({
         ...it, project_id: project.id, project_name: project.name, brand: project.brand,
-        remaining: hireLeft(it), in_brand: true, is_assignee: true
+        job_status: project.status, remaining: hireLeft(it), in_brand: true, is_assignee: true
     });
+
+    // มาจากแท็บใบขอจัดหา / ลิงก์ที่คัดลอกไว้ (#req-<ใบ>) → เลื่อนไปที่การ์ดของใบนั้นแล้วไฮไลต์ให้เห็น
+    useEffect(() => {
+        const m = /^#req-(.+)$/.exec(location.hash || '');
+        if (!m) return undefined;
+        const el = document.getElementById('req-' + decodeURIComponent(m[1]));
+        if (!el) return undefined;
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        el.classList.add('req-flash');
+        const t = setTimeout(() => el.classList.remove('req-flash'), 2600);
+        return () => clearTimeout(t);
+    }, [location.hash, project.id]);
     const useDates = items.map(it => it.use_date).filter(Boolean).sort();
     const rangeText = useDates.length
         ? fmtRange(useDates[0], useDates[useDates.length - 1], ' → ')
         : fmtRange(project.start_date, project.end_date, ' → ');
 
     const statusOf = it => it.status || statusesOf(it)[0];
-    const countStatus = s => view.filter(it => statusOf(it) === s).length;
-    const shown = statusPick ? view.filter(it => statusOf(it) === statusPick) : view;
+    const labelOf = it => (isCasting(it) ? STAGE_LABEL[hireStage(it, project.status)] : statusOf(it));
+    const countStatus = s => view.filter(it => labelOf(it) === s).length;
+    const shown = statusPick ? view.filter(it => labelOf(it) === statusPick) : view;
 
     // จัดกลุ่มตามประเภทงาน (นางแบบ / Live สด ...) — กองถ่ายหนึ่งกองมักมีหลายประเภทในงานเดียว
     const byKind = [];
@@ -120,7 +137,7 @@ export default function OtherProjectDetail({ project, reload, onDeleted }) {
     return (
         <div>
             <div className="pd-hero">
-                <button className="pd-back" onClick={() => navigate('/projects')} title="กลับไปหน้าแคมเปญ">
+                <button className="pd-back" onClick={() => navigate('/hires?tab=jobs')} title="กลับไปหน้างานจ้างอื่น ๆ">
                     <Icon name="back" size={18} />
                 </button>
                 <div className="pd-hero-main">
@@ -141,7 +158,7 @@ export default function OtherProjectDetail({ project, reload, onDeleted }) {
                         if (dirty && !window.confirm(`ยังมีที่แก้ในตาราง ${Object.keys(draft).length} แถวที่ยังไม่ได้บันทึก — เปิดฟอร์มแก้ไขแล้วค่าเหล่านี้จะหาย ต้องการไปต่อไหม?`)) return;
                         setShowEdit(true);
                     }}>
-                        <Icon name="edit" size={15} /> แก้ไข
+                        <Icon name="edit" size={15} /> แก้ไข / เพิ่มคน
                     </button>
                     <button className="pd-del-btn" onClick={() => setShowDel(true)} title="ลบงานนี้">
                         <Icon name="trash" size={15} /> ลบ
@@ -169,7 +186,7 @@ export default function OtherProjectDetail({ project, reload, onDeleted }) {
                         <div className="pd-metric-extra">
                             {byKind.length} ประเภทงาน
                             {castingHeads > 0 && ` · รอจัดหาอีก ${castingHeads} คน`}
-                            {waitingNames > 0 && ` · มี ${waitingNames} ชื่อรอเลือก`}
+                            {waitingNames > 0 && ` · รออนุมัติ ${waitingNames} ชื่อ`}
                         </div>
                     </div>
                 </div>
@@ -215,7 +232,7 @@ export default function OtherProjectDetail({ project, reload, onDeleted }) {
                 <button type="button" className={'proc-plat-chip' + (statusPick === '' ? ' on' : '')}
                     onClick={() => setStatusPick('')}>ทั้งหมด ({view.length})</button>
                 {/* โชว์เฉพาะสถานะที่มีจริงในงานนี้ — สองรูปแบบใช้สถานะคนละชุด ถ้าโชว์หมดจะมีปุ่ม (0) เต็มไปหมด */}
-                {ALL_HIRE_STATUS.filter(s => countStatus(s) > 0 || statusPick === s).map(s => (
+                {CHIP_ORDER.filter(s => countStatus(s) > 0 || statusPick === s).map(s => (
                     <button type="button" key={s} className={'proc-plat-chip' + (statusPick === s ? ' on' : '')}
                         onClick={() => setStatusPick(s)}>{s} ({countStatus(s)})</button>
                 ))}
@@ -235,7 +252,7 @@ export default function OtherProjectDetail({ project, reload, onDeleted }) {
             {items.length === 0 ? (
                 <div className="panel empty-state">
                     <div className="empty-emoji">🎬</div>
-                    <p>ยังไม่มีรายการจ้าง — กดปุ่มแก้ไขเพื่อเพิ่มรายการจ้าง</p>
+                    <p>ยังไม่มีรายการจ้าง — กดปุ่ม "แก้ไข / เพิ่มคน" ด้านบน แล้วเลือก "ระบุคนเอง" (ดีลคนไว้แล้ว) หรือ "ให้ช่วยจัดหา"</p>
                 </div>
             ) : tab === 'people' ? (
                 byKind.map(g => {
@@ -355,12 +372,12 @@ export default function OtherProjectDetail({ project, reload, onDeleted }) {
                                                 <td className="sub-no">{i + 1}</td>
                                                 <td>
                                                     {isCasting(it)
-                                                        ? <span className="cast-chip">ใบขอจัดหา · {hireLeft(it) > 0 ? `ต้องหาอีก ${hireLeft(it)} คน` : 'ได้ครบแล้ว'}</span>
+                                                        ? <span className="cast-chip">ใบขอจัดหา{it.kind ? ` · ${it.kind}` : ''} · {hireLeft(it) > 0 ? `ต้องหาอีก ${hireLeft(it)} คน` : 'ได้ครบแล้ว'}</span>
                                                         : <strong>{it.name || '—'}</strong>}
                                                 </td>
                                                 <td>{it.kind ? <span className="proc-ctype-chip">{it.kind}</span> : <span className="ctype-none">— ยังไม่ระบุ —</span>}</td>
                                                 <td className="muted">{it.place || '—'}</td>
-                                                <td><span className="tag">{statusOf(it)}</span></td>
+                                                <td><span className="tag">{labelOf(it)}</span></td>
                                                 <td className="num">{B(rowFee(it))}</td>
                                                 <td className="tbl-spacer"></td>
                                             </tr>

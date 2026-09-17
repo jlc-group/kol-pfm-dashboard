@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react';
 import { api, uploadFile } from '../api/client.js';
-import RateCardForm from './RateCardForm.jsx';
 import Icon from './Icon.jsx';
 import DatePicker from './DatePicker.jsx';
 import { useAuth } from '../auth/AuthContext.jsx';
@@ -15,8 +14,6 @@ export const HIRE_KINDS = ['นางแบบ', 'นายแบบ', 'นั�
 export const HIRE_STATUS = ['ทาบทาม', 'ตกลงแล้ว', 'ถ่ายเสร็จ', 'ส่งงานแล้ว'];
 // ใบขอจัดหา (ยังไม่มีตัวคน) เดินสถานะคนละชุด — ต้องหาคนให้ได้ก่อนถึงจะเข้าเส้นเดียวกับแถวที่ระบุคนเอง
 export const CASTING_STATUS = ['กำลังหา', 'เสนอชื่อแล้ว', 'ตกลงแล้ว', 'ถ่ายเสร็จ', 'ส่งงานแล้ว'];
-// ใช้ตอนทำตัวกรองสถานะรวมทุกแถว (เรียงตามลำดับงานจริง ไม่ใช่เรียงตัวอักษร)
-export const ALL_HIRE_STATUS = ['กำลังหา', 'เสนอชื่อแล้ว', 'ทาบทาม', 'ตกลงแล้ว', 'ถ่ายเสร็จ', 'ส่งงานแล้ว'];
 // แถวเก่าที่บันทึกก่อนมีฟีเจอร์นี้ไม่มี mode — ถือเป็น "ระบุคนเอง" เสมอ
 export const isCasting = it => (it && it.mode) === 'casting';
 export const statusesOf = it => (isCasting(it) ? CASTING_STATUS : HIRE_STATUS);
@@ -37,6 +34,27 @@ const S = v => (v == null ? '' : String(v));
 export const hireLeft = it => (isCasting(it) ? Math.max(0, (num(it && it.headcount) || 1) - num(it && it.filled)) : 0);
 // ต้องตรงกับ hireRowFee ฝั่งเซิร์ฟเวอร์ (server/src/store/logic.js) ไม่งั้นงบสองฝั่งจะไม่ตรงกัน
 export const rowFee = it => num(it && it.fee) * (isCasting(it) ? hireLeft(it) : 1);
+
+// ===== ขั้นตอนของใบขอจัดหา — ต้องตรงกับ hireWaiting / hireNeedMore / hireStage ฝั่งเซิร์ฟเวอร์ (server/src/store/logic.js) =====
+export const HIRE_JOB_CLOSED = ['Completed', 'Cancelled'];
+// ชื่อที่เสนอมาแล้วรอทีมอนุมัติ (ในฐานเก็บเป็น 'เสนอ')
+export const hireWaiting = it => (isCasting(it)
+    ? (Array.isArray(it.candidates) ? it.candidates : []).filter(c => c && (String(c.status || '').trim() || 'เสนอ') === 'เสนอ').length
+    : 0);
+// คนหายังต้องหาเพิ่มอีกกี่คน (ชื่อที่รออนุมัติอยู่นับว่าหามาให้แล้ว)
+export const hireNeedMore = it => Math.max(0, hireLeft(it) - hireWaiting(it));
+export const hireStage = (it, jobStatus) => {
+    if (HIRE_JOB_CLOSED.includes(jobStatus)) return 'closed';
+    if (hireLeft(it) <= 0) return 'full';
+    if (hireWaiting(it) > 0) return 'deciding';
+    if (!it || it.assignee_id === null || it.assignee_id === undefined || it.assignee_id === '') return 'unassigned';
+    return 'finding';
+};
+export const STAGE_LABEL = {
+    unassigned: 'รอมอบหมายคนหา', finding: 'กำลังหา', deciding: 'รอทีมอนุมัติ', full: 'ได้ครบแล้ว', closed: 'งานปิดแล้ว'
+};
+// ชื่อที่โชว์ของสถานะชื่อที่เสนอ (ในฐานยังเก็บคำเดิม ไม่ต้องย้ายข้อมูล)
+export const CAND_LABEL = { 'เสนอ': 'รออนุมัติ', 'เลือกแล้ว': 'อนุมัติแล้ว', 'ไม่เอา': 'ไม่ผ่าน' };
 // แถวใหม่เริ่มที่ "ยังไม่เลือกรูปแบบ" — เลือกจาก dropdown ก่อน ช่องกรอกถึงจะขึ้น
 const newItem = (mode = '') => ({
     key: genKey(), mode: (mode === 'casting' || mode === 'direct') ? mode : '',
@@ -79,10 +97,11 @@ export default function OtherProjectForm({ editing, onClose, onSaved, onConflict
     // รูป/คอมการ์ดที่เพิ่งเลือกไว้ (ยังไม่ได้อัป) — คีย์คือ key ของแถว ค่าเป็นไฟล์
     // ต้องอัปหลังบันทึกงานเสร็จ เพราะตอนสร้างใหม่ยังไม่มีรหัสงานให้ผูกไฟล์
     const [rowFiles, setRowFiles] = useState({});
-    // "สอบถามราคา" ในดรอปดาวน์ไม่ใช่รูปแบบของแถว แต่เป็นทางลัดไปเปิดฟอร์มคำขอราคา
-    // คำขอเก็บแยกในตาราง rate_requests (ไปโผล่ที่เมนูงานจัดหา แท็บสอบถามราคา) แถวในงานจ้างจึงไม่เปลี่ยนอะไร
-    const [askRate, setAskRate] = useState(false);
-    const [rateSent, setRateSent] = useState(false);
+    // แถวที่มีอยู่ในฐานแล้วตอนเปิดฟอร์ม — สลับรูปแบบไม่ได้ และใบขอจัดหาที่บันทึกแล้วแก้ในฟอร์มไม่ได้
+    // (แก้/มอบหมาย/ลบใบทำที่การ์ดในหน้างานที่เดียว ไม่ให้สองที่แก้ของชิ้นเดียวกัน)
+    const [savedKeys] = useState(() => new Set((Array.isArray(editing?.hire_items) ? editing.hire_items : [])
+        .map(it => it && it.key).filter(Boolean).map(String)));
+    const isLocked = it => isCasting(it) && savedKeys.has(String(it.key));
     const [error, setError] = useState('');
     const [baseUpdatedAt] = useState(() => (editing && editing.updated_at) || null);
     const [saving, setSaving] = useState(false);
@@ -116,11 +135,7 @@ export default function OtherProjectForm({ editing, onClose, onSaved, onConflict
         return { ...x, assignee_id: id === '' ? null : Number(id), assignee_name: hit ? hit.name : null };
     }));
     // เลือก/สลับรูปแบบของแถว — ต้องย้ายสถานะไปอยู่ในชุดของรูปแบบใหม่ด้วย ไม่งั้นช่องสถานะจะว่าง
-    const setMode = (i, mode) => {
-        if (mode === 'rate') { setAskRate(true); return; }   // ไม่แตะรูปแบบของแถว ดรอปดาวน์จะเด้งกลับค่าเดิมเอง
-        setModeRow(i, mode);
-    };
-    const setModeRow = (i, mode) => setItems(list => list.map((x, idx) => {
+    const setMode = (i, mode) => setItems(list => list.map((x, idx) => {
         if (idx !== i || x.mode === mode) return x;
         if (mode !== 'direct' && mode !== 'casting') return { ...x, mode: '' };
         const allowed = mode === 'casting' ? CASTING_STATUS : HIRE_STATUS;
@@ -137,7 +152,11 @@ export default function OtherProjectForm({ editing, onClose, onSaved, onConflict
     const totalFee = items.reduce((s, it) => s + rowFee(it), 0);
 
     // แถวที่เริ่มกรอกแล้วเท่านั้นถึงจะบันทึก — แถวว่างที่กดเพิ่มไว้เฉย ๆ ไม่ต้องเก็บ
-    const rowFilled = it => !!(it.kind || it.name.trim() || num(it.fee) > 0 || it.spec.trim());
+    // แถวที่กดเพิ่มแล้วยังไม่เลือกรูปแบบ (ประเภทงานถูกก๊อปมาจากแถวก่อนให้อัตโนมัติ) ไม่นับว่ากรอกแล้ว — ไม่งั้นได้แถวคนว่าง ๆ ติดไป
+    // แถวที่มีอยู่ในฐานแล้วเก็บไว้เสมอ (ลบต้องกดถังขยะเอง ไม่ใช่หายไปเพราะช่องว่าง)
+    const rowFilled = it => savedKeys.has(String(it.key)) || (hasMode(it) && (isCasting(it)
+        ? !!(it.kind || num(it.fee) > 0 || it.spec.trim())
+        : !!(it.name.trim() || num(it.fee) > 0)));
     // แถวที่ครบพอจะนับเป็นรายการจ้างจริง — ต้องเลือกรูปแบบก่อน แล้วระบุคนเองต้องมีชื่อ ใบขอจัดหาต้องมีจำนวนคน
     const rowOk = it => hasMode(it) && (isCasting(it)
         ? !!(it.kind && num(it.headcount) > 0 && num(it.fee) > 0)
@@ -249,11 +268,6 @@ export default function OtherProjectForm({ editing, onClose, onSaved, onConflict
                     <button type="button" className="modal-x" onClick={onClose}>×</button>
                 </div>
                 <p className="ctype-lead">งานจ้างนอกเหนือจาก KOL — ไม่เข้าหน้าโฆษณาและรายงานแคมเปญ แต่ค่าตัวยังเข้ารอบทำจ่ายตามปกติ</p>
-                {rateSent && (
-                    <div className="rate-sent-note">
-                        ✓ ส่งคำขอสอบถามราคาแล้ว — ดูและตอบราคาได้ที่เมนู "งานจัดหา" แท็บสอบถามราคา
-                    </div>
-                )}
 
                 <form onSubmit={handleSubmit}>
                     {/* ทีมใช้บัญชีเดียวร่วมกัน ระบบจึงบันทึกได้แค่ "System Admin" ต้องเลือกชื่อจริงเอง */}
@@ -307,7 +321,9 @@ export default function OtherProjectForm({ editing, onClose, onSaved, onConflict
                                 <div className="hire-row-head">
                                     <span className="hire-row-no">#{i + 1}</span>
                                     <span className="hire-mode-hint">
-                                        {!hasMode(it)
+                                        {isLocked(it)
+                                            ? 'ใบขอจัดหาที่บันทึกแล้ว'
+                                            : !hasMode(it)
                                             ? 'เลือกรูปแบบการจ้างก่อน แล้วช่องกรอกจะขึ้นให้'
                                             : isCasting(it)
                                                 ? 'ยังไม่มีคนในใจ — ระบุสเปค จำนวนคน และงบต่อคนไว้ก่อน แล้วเติมชื่อทีหลัง'
@@ -319,23 +335,40 @@ export default function OtherProjectForm({ editing, onClose, onSaved, onConflict
                                             {isCasting(it) && num(it.headcount) > 1 && <span className="hire-row-sum-x"> ({num(it.fee).toLocaleString('th-TH')} × {num(it.headcount)})</span>}
                                         </span>
                                     )}
-                                    {items.length > 1 && (
+                                    {items.length > 1 && !isLocked(it) && (
                                         <button type="button" className="hire-del" title="ลบแถวนี้" onClick={() => removeItem(i)}>
                                             <Icon name="trash" size={14} />
                                         </button>
                                     )}
                                 </div>
 
+                                {isLocked(it) ? (
+                                    <div className="hire-locked">
+                                        <div className="hire-locked-main">
+                                            <b>{it.kind || 'ไม่ระบุประเภทงาน'}</b>
+                                            {' · '}{hireLeft(it) > 0 ? `ต้องหาอีก ${hireLeft(it)} จาก ${num(it.headcount) || 1} คน` : 'ได้ครบแล้ว'}
+                                            {' · '}฿{num(it.fee).toLocaleString('th-TH')} / คน
+                                            {' · '}{it.assignee_name ? `คนหา: ${it.assignee_name}` : 'ยังไม่มอบหมายคนหา'}
+                                        </div>
+                                        <div className="hire-locked-note">
+                                            แก้รายละเอียด มอบหมายคนหา หรือลบใบนี้ ได้ที่การ์ดของใบในหน้างาน (ปิดฟอร์มนี้แล้วเลื่อนไปที่ส่วน "ใบขอจัดหา")
+                                        </div>
+                                    </div>
+                                ) : (
                                 <div className="hire-grid">
                                     <label className="hire-f">
                                         <span>รูปแบบการจ้าง *</span>
-                                        <select value={it.mode} onChange={e => setMode(i, e.target.value)}>
-                                            {/* ตัวเลือกว่างมีเฉพาะตอนยังไม่ได้เลือก — เลือกแล้วย้อนกลับไปว่างไม่ได้ ข้อมูลที่กรอกจะได้ไม่หาย */}
-                                            {!hasMode(it) && <option value="">— เลือก —</option>}
-                                            <option value="direct">ระบุคนเอง</option>
-                                            <option value="casting">ให้ช่วยจัดหา</option>
-                                            <option value="rate">สอบถามราคา...</option>
-                                        </select>
+                                        {savedKeys.has(String(it.key)) ? (
+                                            // แถวที่บันทึกแล้วสลับรูปแบบไม่ได้ — ข้อมูลของรูปแบบเดิม (ชื่อ ไฟล์ ค่าตัว) จะหาย
+                                            <div className="hire-mode-fixed">ระบุคนเอง</div>
+                                        ) : (
+                                            <select value={it.mode} onChange={e => setMode(i, e.target.value)}>
+                                                {/* ตัวเลือกว่างมีเฉพาะตอนยังไม่ได้เลือก — เลือกแล้วย้อนกลับไปว่างไม่ได้ ข้อมูลที่กรอกจะได้ไม่หาย */}
+                                                {!hasMode(it) && <option value="">— เลือก —</option>}
+                                                <option value="direct">ระบุคนเอง</option>
+                                                <option value="casting">ให้ช่วยจัดหา</option>
+                                            </select>
+                                        )}
                                     </label>
                                     {hasMode(it) && (<>
                                     <label className="hire-f">
@@ -447,6 +480,7 @@ export default function OtherProjectForm({ editing, onClose, onSaved, onConflict
                                     </label>
                                     </>)}
                                 </div>
+                                )}
                             </div>
                         ))}
 
@@ -472,10 +506,6 @@ export default function OtherProjectForm({ editing, onClose, onSaved, onConflict
                     </div>
                 </form>
 
-                {askRate && (
-                    <RateCardForm defaultBrand={form.brand} onClose={() => setAskRate(false)}
-                        onSaved={() => { setAskRate(false); setRateSent(true); }} />
-                )}
             </div>
         </div>
     );

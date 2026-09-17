@@ -109,7 +109,7 @@ async function loadSnapshot(only) {
         pay_batches: 'SELECT * FROM pay_batches ORDER BY id',
         rate_requests: 'SELECT * FROM rate_requests ORDER BY id',
         // หน้างานจ้างอื่น ๆ / งานจัดหา / ตัวเลขแดงบนเมนู ใช้แค่นี้ — ไม่ต้องโหลดลิงก์/แชทเอเจนซี่ทั้งฐานแบบ projects
-        other_projects: "SELECT id, name, brand, start_date, end_date, campaign_type, hire_items FROM projects WHERE campaign_type = 'other' ORDER BY id",
+        other_projects: "SELECT id, name, brand, status, owner, creator, start_date, end_date, campaign_type, hire_items, created_at, updated_at FROM projects WHERE campaign_type = 'other' ORDER BY id",
         activity_logs: 'SELECT * FROM activity_logs ORDER BY id'
     };
     const jobs = [];

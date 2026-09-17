@@ -14,7 +14,7 @@ export default function AgencyRoute({ children }) {
     const loc = useLocation();
 
     if (loading) return <div className="page-loading">กำลังโหลด...</div>;
-    if (!user) return <Navigate to="/login" state={{ from: loc.pathname }} replace />;
+    if (!user) return <Navigate to="/login" state={{ from: loc.pathname + loc.search + loc.hash }} replace />;
 
     if (user.role === 'agency' && !(user.agency_tokens || []).includes(token)) {
         return (
