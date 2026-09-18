@@ -9,20 +9,21 @@ import { useNavSection } from '../utils/navSection.js';
 import PageErrorBoundary from './PageErrorBoundary.jsx';
 import { preloadPages } from '../pages/lazyPages.js';
 
+// เมนูด้านซ้ายเป็นภาษาอังกฤษตามที่ทีมขอ (เนื้อหาในแต่ละหน้ายังเป็นภาษาไทย)
 const MAIN_NAV = [
-    { to: '/', label: 'ภาพรวม', icon: 'dashboard', end: true },
-    { to: '/projects', label: 'แคมเปญ', icon: 'folder' },
-    { to: '/ads', label: 'โฆษณา', icon: 'target' },
-    { to: '/budget', label: 'รายงานแคมเปญ', icon: 'bars' },
-    { to: '/kols', label: 'อินฟลูเอนเซอร์', icon: 'star' },
-    // รวมงานจัดหาไว้ในเมนูนี้แล้ว (แท็บใบขอจัดหา) — /hire-tasks เดิมพามาที่แท็บนั้นให้
-    { to: '/hires', label: 'งานจ้างอื่น ๆ', icon: 'team' }
+    { to: '/', label: 'Overview', icon: 'dashboard', end: true },
+    { to: '/projects', label: 'Campaigns', icon: 'folder' },
+    { to: '/ads', label: 'Ads', icon: 'target' },
+    { to: '/budget', label: 'Campaign Reports', icon: 'bars' },
+    { to: '/kols', label: 'Influencers', icon: 'star' },
+    // Talent (เดิม "งานจ้างอื่น ๆ") = นางแบบ / นักแสดง / Live / พิธีกร — รวมงานจัดหาไว้แล้ว (แท็บใบขอจัดหา) /hire-tasks เดิมพามาที่แท็บนั้น
+    { to: '/hires', label: 'Talent', icon: 'team' }
 ];
 
 const ADMIN_NAV = [
-    { to: '/payments', label: 'รอบทำจ่าย', icon: 'wallet' },
-    { to: '/activity', label: 'ประวัติการแก้ไข', icon: 'history' },
-    { to: '/users', label: 'ผู้ใช้งาน', icon: 'users' }
+    { to: '/payments', label: 'Payouts', icon: 'wallet' },
+    { to: '/activity', label: 'Activity Log', icon: 'history' },
+    { to: '/users', label: 'Users', icon: 'users' }
 ];
 
 export default function Layout() {
@@ -165,7 +166,7 @@ export default function Layout() {
                     {MAIN_NAV.map(renderItem)}
                     {isAdmin && (
                         <>
-                            <div className="nav-group-label">ผู้ดูแลระบบ</div>
+                            <div className="nav-group-label">Admin</div>
                             {ADMIN_NAV.map(renderItem)}
                         </>
                     )}
@@ -184,10 +185,10 @@ export default function Layout() {
                         </div>
                     </div>
                     <button className="btn-changepw" onClick={() => setShowPw(true)}>
-                        <Icon name="edit" size={15} /> เปลี่ยนรหัสผ่าน
+                        <Icon name="edit" size={15} /> Change password
                     </button>
                     <button className="btn-logout" onClick={handleLogout}>
-                        <Icon name="logout" size={17} /> ออกจากระบบ
+                        <Icon name="logout" size={17} /> Log out
                     </button>
                 </div>
             </aside>

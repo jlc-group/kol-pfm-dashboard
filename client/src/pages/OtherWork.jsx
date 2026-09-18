@@ -64,7 +64,7 @@ export default function OtherWork() {
         <div>
             <header className="page-head">
                 <div>
-                    <h1>งานจ้างอื่น ๆ</h1>
+                    <h1>Talent</h1>
                     <p className="page-sub">นางแบบ / นักแสดง / Live สด / พิธีกร — ทั้งงานที่ดีลคนเองแล้ว และงานที่ขอให้ช่วยจัดหา</p>
                 </div>
             </header>

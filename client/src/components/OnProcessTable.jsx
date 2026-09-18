@@ -7,6 +7,8 @@ import PerfModal from './PerfModal.jsx';
 import { asTargetArray } from '../data/products.js';
 import { mediaFor, contentTypesOf, quotaOf, targetFor, conceptText } from '../data/adGroups.js';
 import { ProductSummary } from './ProductChips.jsx';
+import ProductFilter from './ProductFilter.jsx';
+import { knownProductCodes, matchProducts, productFilterOptions } from '../data/productFilter.js';
 import { draftIsNew, markDraftSeen } from '../utils/tabUpdates.js';
 
 // ค่าที่เก็บเป็นสตริงคั่นด้วย , (เช่น content_format) → แยกเป็นรายตัว
@@ -238,6 +240,7 @@ export default function OnProcessTable({ subs = [], groups = [], showAds = false
     const [ctypeFilter, setCtypeFilter] = useState('all'); // ตัวกรองย่อยตาม Content Type
     const [clipFilter, setClipFilter] = useState('all');   // ตัวกรองตามคลิป (กลุ่มที่ 1 คนส่งหลายคลิป)
     const [groupFilter, setGroupFilter] = useState('all'); // ตัวกรองตามกลุ่มสินค้า ('__none' = คนที่ไม่อยู่กลุ่มไหน)
+    const [prodFilter, setProdFilter] = useState([]);      // ตัวกรองตามสินค้า — เลือกได้หลายตัว ([] = ทุกสินค้า)
     // เรียงเก่า -> ใหม่ ให้ตรงกับแท็บรายชื่อและฝั่งลิงก์เอเจนซี่ (API ส่งมาแบบใหม่สุดขึ้นก่อน)
     const confirmed = subs.filter(s => s.status === 'confirmed')
         .slice().sort((a, b) => (a.submitted_at || '').localeCompare(b.submitted_at || '') || (a.id - b.id));
@@ -246,6 +249,8 @@ export default function OnProcessTable({ subs = [], groups = [], showAds = false
     }
     // แพลตฟอร์มที่มีจริงในลิสต์ (ทำเป็นปุ่มกรอง)
     const platforms = [...new Set(confirmed.map(s => s.platform).filter(Boolean))];
+    // สินค้าที่มีจริงในลิสต์ (1 แถว = 1 คลิป จึงกรองตามสินค้าของคลิปนั้นตรง ๆ)
+    const knownCodes = knownProductCodes(groups, confirmed);
     // Content Type ของแพลตฟอร์มที่เลือกอยู่ (เช่น Facebook: Awareness / Engagement)
     const ctypesOfPlat = p => [...new Set(groups.flatMap(g => contentTypesOf(g, p)))];
     const quotaFor = (p, ct) => groups.reduce((n, g) => n + quotaOf(g, p, ct), 0);
@@ -262,6 +267,7 @@ export default function OnProcessTable({ subs = [], groups = [], showAds = false
         .filter(s => ctypeFilter === 'all' || (s.content_type || '') === ctypeFilter)
         .filter(s => clipFilter === 'all' || (s.clip_name || '') === clipFilter)
         .filter(s => groupFilter === 'all' || (groupFilter === '__none' ? isUngrouped(s) : s.group_key === groupFilter))
+        .filter(s => matchProducts(s, prodFilter, knownCodes))
         .filter(s => stage === 'all' || workStage(s) === stage);   // ตัวกรองจากการ์ดสรุปด้านบน
 
     const groupMap = {};
@@ -316,9 +322,11 @@ export default function OnProcessTable({ subs = [], groups = [], showAds = false
         </div>
     ) : null;
 
-    // แถบปุ่มกรองแพลตฟอร์ม (โชว์เมื่อมีมากกว่า 1 แพลตฟอร์ม)
+    // แถบปุ่มกรองแพลตฟอร์ม (โชว์เมื่อมีมากกว่า 1 แพลตฟอร์ม) + ตัวกรองสินค้า (โชว์เมื่อมีมากกว่า 1 สินค้า)
     const filterBar = (
         <>
+            <ProductFilter options={productFilterOptions(confirmed, knownCodes)} value={prodFilter}
+                onChange={setProdFilter} total={confirmed.length} unit="" />
             {platforms.length > 1 && (
                 <div className="proc-platfilter">
                     <span className="proc-platfilter-lbl">แพลตฟอร์ม:</span>

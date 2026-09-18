@@ -128,7 +128,7 @@ export default function Dashboard() {
                     {/* งบด้านบนรวมงานจ้างอื่น ๆ ไว้แล้ว — บรรทัดนี้บอกว่ามาจากงานพวกนั้นเท่าไร */}
                     {otherProjects > 0 && (
                         <div className="bento-hero-extra">
-                            รวมงานจ้างอื่น ๆ {otherProjects} งาน · {otherHires} คน · {fmtMoney(otherBudget)}
+                            รวมงาน Talent {otherProjects} งาน · {otherHires} คน · {fmtMoney(otherBudget)}
                         </div>
                     )}
                     <div className="bento-hero-stats">

@@ -281,7 +281,7 @@ export default function OtherProjectForm({ editing, onClose, onSaved, onConflict
         <div className="modal-backdrop" onClick={onClose}>
             <div className="modal wide" onClick={e => e.stopPropagation()}>
                 <div className="modal-head">
-                    <h3>{isEdit ? 'แก้ไขงานจ้าง' : 'สร้างงานจ้าง (Other)'}</h3>
+                    <h3>{isEdit ? 'แก้ไขงานจ้าง' : 'สร้างงานจ้าง (Talent)'}</h3>
                     <button type="button" className="modal-x" onClick={onClose}>×</button>
                 </div>
                 <p className="ctype-lead">งานจ้างนอกเหนือจาก KOL — ไม่เข้าหน้าโฆษณาและรายงานแคมเปญ แต่ค่าตัวยังเข้ารอบทำจ่ายตามปกติ</p>

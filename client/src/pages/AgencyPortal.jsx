@@ -16,6 +16,8 @@ import {
     tiersOf, productsFor, clipCountFor, quotaOf, contentCells, cellKeyOf, cellKey, hasOwnConcepts
 } from '../data/adGroups.js';
 import { groupClips, clipCount, collapseByPerson, countPeople } from '../data/clips.js';
+import ProductFilter from '../components/ProductFilter.jsx';
+import { knownProductCodes, matchProducts, productFilterOptions } from '../data/productFilter.js';
 import { tabBadges, markSeen, seedDraftsSeen } from '../utils/tabUpdates.js';
 import { useAuth } from '../auth/AuthContext.jsx';
 import ChangePasswordModal from '../components/ChangePasswordModal.jsx';
@@ -232,7 +234,9 @@ function SubItem({ s, onEdit }) {
 }
 // กล่องกรอกรายชื่อของ 1 ช่อง = Platform + Content Type ที่ตายตัว
 // กรอกในกล่องไหน = เป็นของช่องนั้น ไม่ต้องเลือก Platform / Content Type ทีละคน
-function TypeBox({ token, group, platform, contentType, saved, quota, agencyName, startNo, onReload, onEdit, onDelete, onNote }) {
+// total = จำนวนคนทั้งหมดในช่องนี้ (ตอนกรองสินค้าอยู่ saved เหลือเฉพาะที่ตรง แต่ตัวเลขเทียบเป้าต้องนับทุกคน)
+// matchesFilter = แถวใหม่ตรงตัวกรองสินค้าไหม · onClearFilter = ปุ่ม "ดูทุกสินค้า" ในข้อความที่บอกว่าซ่อนอยู่
+function TypeBox({ token, group, platform, contentType, saved, total, quota, agencyName, startNo, onReload, onEdit, onDelete, onNote, matchesFilter, onClearFilter }) {
     const media = mediaFor(group, platform, contentType);
     const tierOpts = tiersOf(group, platform, contentType);
     const prodOpts = productsFor(group, platform);
@@ -241,6 +245,13 @@ function TypeBox({ token, group, platform, contentType, saved, quota, agencyName
     // กันแถวเปล่าค้างอยู่ทุกกล่องจนดูเหมือนมีงานรอกรอกทั้งที่ยังไม่มีใครตั้งใจกรอก
     const [rows, setRows] = useState([]);
     const [err, setErr] = useState('');
+    // ข้อความยืนยันบันทึก — ขึ้นเฉพาะตอนคนใหม่ไม่ตรงตัวกรองสินค้า (แถวจะไม่ขึ้นในรายการ) แล้วหายเองใน 6 วินาที
+    const [savedNote, setSavedNote] = useState('');
+    useEffect(() => {
+        if (!savedNote) return undefined;
+        const timer = setTimeout(() => setSavedNote(''), 6000);
+        return () => clearTimeout(timer);
+    }, [savedNote]);
     const upRow = (i, k, v) => setRows(rs => rs.map((x, idx) => idx === i ? { ...x, [k]: v } : x));
     const addRow = () => setRows(rs => [...rs, blank()]);
     const removeRow = i => setRows(rs => rs.filter((_, idx) => idx !== i));
@@ -278,10 +289,15 @@ function TypeBox({ token, group, platform, contentType, saved, quota, agencyName
             });
             // บันทึกแล้วเอาแถวออกเฉย ๆ ไม่เด้งแถวเปล่าใหม่ — ถ้าจะกรอกคนต่อไปให้กด "เพิ่มรายชื่อ" เอง
             setRows(rs => rs.filter((_, idx) => idx !== i));
+            // คนใหม่ไม่ตรงตัวกรองสินค้าที่เลือกอยู่ = จะไม่ขึ้นในรายการ ต้องบอกว่าบันทึกแล้ว ไม่งั้นนึกว่าไม่ติดแล้วกรอกซ้ำ
+            if (matchesFilter && !matchesFilter({ product: en.product || null })) {
+                setSavedNote(`✓ บันทึก "${en.account_name.trim()}" แล้ว — ไม่ตรงสินค้าที่กรองอยู่ จึงไม่แสดงในรายการ`);
+            }
             onReload();
         } catch (e) { setErr(e.message); upRow(i, 'saving', false); }
     }
 
+    const hidden = total != null ? Math.max(0, total - saved.length) : 0;
     return (
         <div className="ag-typebox">
             <div className="ag-tb-head">
@@ -291,8 +307,15 @@ function TypeBox({ token, group, platform, contentType, saved, quota, agencyName
                     : <span className="ctype-none">— ยังไม่ได้ตั้ง Content Type —</span>}
                 {media.media_type && <span className="proc-ctype-chip media">{media.media_type}</span>}
                 {splitCsv(media.content_format).map(x => <span className="proc-ctype-chip fmt" key={x}>{x}</span>)}
-                <span className="ag-tb-count">{saved.length}<span>/{quota || '—'}</span> คน</span>
+                <span className="ag-tb-count">{total != null ? total : saved.length}<span>/{quota || '—'}</span> คน</span>
             </div>
+            {hidden > 0 && (
+                <div className="ag-hidden-note">
+                    ซ่อน {hidden} คนที่ไม่ตรงสินค้าที่กรองอยู่
+                    {onClearFilter && <button type="button" onClick={onClearFilter}>ดูทุกสินค้า</button>}
+                </div>
+            )}
+            {savedNote && <div className="agency-saved ag-tb-saved">{savedNote}</div>}
             {err && <div className="alert-error">{err}</div>}
             <div className="ag-add-scroll">
                 <div className={'ag-add-grid' + (agencyName ? ' no-agency' : '')}>
@@ -343,13 +366,20 @@ function TypeBox({ token, group, platform, contentType, saved, quota, agencyName
 }
 
 // รายชื่อเก่าที่ยังจับเข้าช่องไหนไม่ได้ (บันทึกไว้ก่อนมี Content Type รายคน) — ดูอย่างเดียว
-function LeftoverBox({ rows, group, agencyName, onEdit, onDelete, onNote }) {
+// hidden = จำนวนที่ถูกซ่อนเพราะตัวกรองสินค้า
+function LeftoverBox({ rows, group, agencyName, onEdit, onDelete, onNote, hidden = 0, onClearFilter }) {
     return (
         <div className="ag-typebox ag-typebox-left">
             <div className="ag-tb-head">
-                <span className="ctype-none">— ยังไม่ระบุ Content Type ({rows.length} คน) —</span>
+                <span className="ctype-none">— ยังไม่ระบุ Content Type ({rows.length + hidden} คน) —</span>
                 <span className="ag-tb-note">บันทึกไว้ก่อนมีการแยกช่อง · กดแก้ไขเพื่อระบุได้</span>
             </div>
+            {hidden > 0 && (
+                <div className="ag-hidden-note">
+                    ซ่อน {hidden} คนที่ไม่ตรงสินค้าที่กรองอยู่
+                    {onClearFilter && <button type="button" onClick={onClearFilter}>ดูทุกสินค้า</button>}
+                </div>
+            )}
             <div className="ag-add-scroll">
                 <div className={'ag-add-grid' + (agencyName ? ' no-agency' : '')}>
                     <div className="ag-add-head"><span>NAME</span><span>CONTENT TYPE</span><span>STYLE</span><span>TIER</span><span>FOLLOWER</span><span>PRODUCT</span>{!agencyName && <span>AGENCY</span>}<span>LINK ACCOUNT</span><span /></div>
@@ -373,7 +403,8 @@ function agencyScopeOf(group, scopePlatforms = [], platFilter = 'all') {
 }
 
 // section 1 กลุ่มสินค้า — โชว์ความต้องการ (Platform/Tier/จำนวน) + กล่องกรอกแยกตาม Content Type
-function GroupSection({ token, group, gi, subs, onReload, onEdit, onDelete, onNote, agencyName, scopePlatforms = [], platFilter = 'all' }) {
+// productFilter / knownCodes = ตัวกรองสินค้าของแท็บรายชื่อ — ซ่อนเฉพาะแถวที่ไม่ตรง ตัวเลขเทียบเป้ายังนับทุกคน
+function GroupSection({ token, group, gi, subs, onReload, onEdit, onDelete, onNote, agencyName, scopePlatforms = [], platFilter = 'all', productFilter = [], knownCodes = [], onClearProductFilter }) {
     // Platform ที่กำลังดูอยู่ — งบ / จำนวนคน / Content ต่อคน ต้องคิดเฉพาะขอบเขตนี้
     const { platforms: scopePlats, products: groupProducts } = agencyScopeOf(group, scopePlatforms, platFilter);
     // เห็นแค่แถวของ Platform ที่เจ้านี้รับผิดชอบ ไม่ใช่ทั้งกลุ่ม
@@ -393,7 +424,12 @@ function GroupSection({ token, group, gi, subs, onReload, onEdit, onDelete, onNo
     // ช่องกรอก 1 ช่อง = Platform + Content Type — กรอกในช่องไหนก็เป็นของช่องนั้น ไม่ต้องติ๊กเอง
     const cells = contentCells(group, scopePlats);
     const known = new Set(cells.map(cellKey));
-    const leftover = groupSubs.filter(s => !known.has(cellKeyOf(group, s)));
+    // คนที่มีคลิปของสินค้าที่เลือก (คนละหลายคลิป = เช็คทุกคลิป)
+    const showPerson = s => (s._clips || [s]).some(c => matchProducts(c, productFilter, knownCodes));
+    const leftoverAll = groupSubs.filter(s => !known.has(cellKeyOf(group, s)));
+    const leftover = leftoverAll.filter(showPerson);
+    const filtering = productFilter.length > 0;
+    const matchesFilter = filtering ? s => matchProducts(s, productFilter, knownCodes) : null;
 
     // เป้าจำนวน Content = ผลรวมของ (คนที่ต้องการ × Content ต่อคน) ของแต่ละ Platform ในขอบเขต
     const totalClips = scopePlats.reduce((s, p) => s + quotaOf(group, p) * clipCountFor(group, p), 0) || total;
@@ -435,19 +471,22 @@ function GroupSection({ token, group, gi, subs, onReload, onEdit, onDelete, onNo
 
             {cells.map(c => {
                 const key = cellKey(c);
-                const mine = groupSubs.filter(s => cellKeyOf(group, s) === key);
+                const mineAll = groupSubs.filter(s => cellKeyOf(group, s) === key);
+                const mine = mineAll.filter(showPerson);
                 const startNo = runningNo;
                 runningNo += mine.length;
                 return (
                     <TypeBox key={key} token={token} group={group}
                         platform={c.platform} contentType={c.contentType}
-                        saved={mine} quota={quotaOf(group, c.platform, c.contentType || null)}
+                        saved={mine} total={mineAll.length} quota={quotaOf(group, c.platform, c.contentType || null)}
+                        matchesFilter={matchesFilter} onClearFilter={filtering ? onClearProductFilter : null}
                         agencyName={agencyName} startNo={startNo}
                         onReload={onReload} onEdit={onEdit} onDelete={onDelete} onNote={onNote} />
                 );
             })}
-            {leftover.length > 0 && (
+            {leftoverAll.length > 0 && (
                 <LeftoverBox rows={leftover} group={group} agencyName={agencyName}
+                    hidden={leftoverAll.length - leftover.length} onClearFilter={filtering ? onClearProductFilter : null}
                     onEdit={onEdit} onDelete={onDelete} onNote={onNote} />
             )}
         </div>
@@ -468,6 +507,7 @@ export default function AgencyPortal() {
     const [editSub, setEditSub] = useState(null); // KOL ที่กำลังแก้ไข
     const [stage, setStage] = useState('all');    // ตัวกรองขั้นงานจากการ์ดสรุป
     const [platFilter, setPlatFilter] = useState('all');   // ดูทีละ Platform เมื่อเจ้านี้รับหลาย Platform
+    const [prodFilter, setProdFilter] = useState([]);      // ตัวกรองสินค้าในแท็บรายชื่อ — เลือกได้หลายตัว ([] = ทุกสินค้า)
     const [badges, setBadges] = useState({ listNew: false, processNew: false });
     const [toasts, setToasts] = useState([]);       // แจ้งเตือนเด้งอัตโนมัติ (Feedback/สถานะดราฟจากทีม)
     const toastId = useRef(0);
@@ -618,7 +658,11 @@ export default function AgencyPortal() {
     const displayTarget = scopeKol > 0 ? scopeKol : (info.kol_target || 0); // เป้าหมาย KOL ที่เจ้านี้รับผิดชอบ
     const adGroups = info.ad_groups || [];
     const groupKeys = new Set(adGroups.map(g => g.key));
-    const ungrouped = subs.filter(s => !s.group_key || !groupKeys.has(s.group_key));
+    const knownCodes = knownProductCodes(adGroups, subs);
+    const platSubs = subs.filter(s => platFilter === 'all' || s.platform === platFilter);
+    const ungrouped = subs.filter(s => (!s.group_key || !groupKeys.has(s.group_key)) && matchProducts(s, prodFilter, knownCodes));
+    // แคมเปญที่ไม่มีกลุ่มสินค้า (ฟอร์มเดี่ยวแบบเดิม) ก็ต้องกรองตามสินค้าที่เลือก
+    const noGroupShown = subs.filter(s => matchProducts(s, prodFilter, knownCodes));
 
     return (
         <div className="agency-page">
@@ -748,6 +792,12 @@ export default function AgencyPortal() {
                     </div>
                 )}
 
+                {/* ตัวกรองสินค้า (เลือกได้หลายตัว) — แท็บ On Process มีตัวกรองของตัวเองในตาราง */}
+                {tab === 'list' && subs.length > 0 && (
+                    <ProductFilter options={productFilterOptions(platSubs, knownCodes, countPeople)}
+                        value={prodFilter} onChange={setProdFilter} total={countPeople(platSubs)} />
+                )}
+
                 {/* ===== แท็บ Influencers List ===== */}
                 {tab === 'list' && <>
                     {savedMsg && <div className="agency-saved">{savedMsg}</div>}
@@ -755,7 +805,7 @@ export default function AgencyPortal() {
                     {adGroups.length > 0 ? (
                         <>
                             {adGroups.map((g, gi) => (
-                                <GroupSection key={g.key || gi} token={token} group={g} gi={gi} subs={subs} onReload={load} onEdit={setEditSub} onDelete={deleteSub} onNote={saveNote} agencyName={info.agency_name} scopePlatforms={scopePlatforms} platFilter={platFilter} />
+                                <GroupSection key={g.key || gi} token={token} group={g} gi={gi} subs={subs} onReload={load} onEdit={setEditSub} onDelete={deleteSub} onNote={saveNote} agencyName={info.agency_name} scopePlatforms={scopePlatforms} platFilter={platFilter} productFilter={prodFilter} knownCodes={knownCodes} onClearProductFilter={() => setProdFilter([])} />
                             ))}
                             {ungrouped.length > 0 && (
                                 <div className="agency-card">
@@ -820,11 +870,13 @@ export default function AgencyPortal() {
                                 <button type="button" className="agency-add-row" onClick={addEntry}><Icon name="plus" size={15} /> เพิ่มรายชื่อ</button>
                             </div>
                             <div className="agency-card">
-                                <h3>รายชื่อที่ส่งแล้ว ({countPeople(subs)})</h3>
+                                <h3>รายชื่อที่ส่งแล้ว ({prodFilter.length ? `${countPeople(noGroupShown)} / ${countPeople(subs)}` : countPeople(subs)})</h3>
                                 {subs.length === 0 ? (
                                     <p className="empty" style={{ padding: '20px 0' }}>ยังไม่มีรายชื่อ — เพิ่มด้านบนได้เลย</p>
+                                ) : noGroupShown.length === 0 ? (
+                                    <p className="empty" style={{ padding: '20px 0' }}>ไม่มีรายชื่อของสินค้าที่เลือก</p>
                                 ) : (
-                                    <div className="agency-list">{subs.map(s => <SubItem key={s.id} s={s} onEdit={setEditSub} />)}</div>
+                                    <div className="agency-list">{noGroupShown.map(s => <SubItem key={s.id} s={s} onEdit={setEditSub} />)}</div>
                                 )}
                                 <p className="agency-note">เมื่อทีมคัดเลือกแล้ว สถานะจะเปลี่ยนเป็น "คัดเลือกแล้ว ✓" ที่นี่ทันที</p>
                             </div>

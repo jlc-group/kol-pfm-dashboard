@@ -17,6 +17,8 @@ import {
     contentCells, cellKeyOf, cellKey, clipCountFor, targetFor
 } from '../data/adGroups.js';
 import { clipCount, collapseByPerson, countPeople } from '../data/clips.js';
+import ProductFilter from '../components/ProductFilter.jsx';
+import { knownProductCodes, matchProducts, productFilterOptions } from '../data/productFilter.js';
 import StageCards from '../components/StageCards.jsx';
 import FeeInput from '../components/FeeInput.jsx';
 import DivideFeesModal, { feeOf, personKeyOf, feeBudgetFor, feeEligible, locksOnFee } from '../components/DivideFeesModal.jsx';
@@ -413,6 +415,8 @@ export default function ProjectDetail() {
     const [listCtype, setListCtype] = useState('all');
     // กรองเฉพาะคนที่ยังไม่ใส่ค่าตัว — ใช้ร่วมกับตัวกรอง Platform / Content Type ได้
     const [feeOnly, setFeeOnly] = useState(false);
+    // กรองรายชื่อตามสินค้า — เลือกได้หลายตัว ([] = ทุกสินค้า) ใช้ร่วมกับตัวกรองอื่นได้
+    const [listProducts, setListProducts] = useState([]);
     // หน้าต่างหาร/ล้างค่าตัวของกลุ่ม { key, gi, mode: 'divide' | 'clear' }
     const [feeModal, setFeeModal] = useState(null);
     const [badges, setBadges] = useState({ listNew: false, processNew: false });
@@ -657,7 +661,15 @@ export default function ProjectDetail() {
     const feeMissingKeys = new Set(submissions.filter(missingFee).map(personKeyOf));
     const feeMissingCount = countPeople(submissions.filter(s => matchScope(s) && missingFee(s)));
     // กรองทั้งคน (ทุกคลิป) ไม่ใช่เฉพาะคลิปที่เป็น 0 — ช่องค่าตัวต่อคนจะได้เห็นครบ
-    const matchListFilter = s => matchScope(s) && (!feeOnly || feeMissingKeys.has(personKeyOf(s)));
+    // กรองตามสินค้าแบบทั้งคน: คนที่มีคลิปของสินค้าที่เลือก เห็นครบทุกคลิป (ช่องค่าตัวต่อคนจะได้ไม่แหว่ง)
+    const knownCodes = knownProductCodes(project.ad_groups || [], submissions);
+    const productKeys = listProducts.length
+        ? new Set(submissions.filter(s => matchProducts(s, listProducts, knownCodes)).map(personKeyOf)) : null;
+    const matchListFilter = s => matchScope(s) && (!feeOnly || feeMissingKeys.has(personKeyOf(s)))
+        && (!productKeys || productKeys.has(personKeyOf(s)));
+    // ข้อความตอนไม่มีรายชื่อ — บอกให้ชัดว่าหายเพราะตัวกรอง
+    const emptyText = where => (feeOnly ? `ไม่มีคนที่ยังไม่ใส่ค่าตัว${where}`
+        : listProducts.length ? `ไม่มีรายชื่อของสินค้าที่เลือก${where}` : `ยังไม่มีรายชื่อ${where}`);
 
     // แถวในตารางรายชื่อ KOL (action ต่างกันตามกลุ่ม)
     const subRow = (s, i, grp) => (
@@ -765,7 +777,8 @@ export default function ProjectDetail() {
         );
     };
     // หัวกล่องของ 1 ช่อง = Platform + Content Type (ตรงกับที่เอเจนซี่กรอก)
-    const cellHead = (g, c, rows) => {
+    // total = จำนวนคนทั้งหมดในช่องนี้ตามตัวกรอง Platform/Content Type — เปิดตัวกรองสินค้า/ยังไม่ใส่ค่าตัวแล้วตัวเลขเทียบโควตาต้องไม่หด
+    const cellHead = (g, c, rows, total) => {
         const m = mediaFor(g, c.platform, c.contentType);
         const quota = quotaOf(g, c.platform, c.contentType || null);
         return (
@@ -776,7 +789,7 @@ export default function ProjectDetail() {
                     : <span className="ctype-none">— ยังไม่ได้ตั้ง Content Type —</span>}
                 {m.media_type && <span className="proc-ctype-chip media">{m.media_type}</span>}
                 {splitCsv(m.content_format).map(x => <span className="proc-ctype-chip fmt" key={x}>{x}</span>)}
-                <span className="ag-tb-count">{countPeople(rows)}<span>/{quota || '—'}</span> คน</span>
+                <span className="ag-tb-count">{total != null ? total : countPeople(rows)}<span>/{quota || '—'}</span> คน</span>
             </div>
         );
     };
@@ -790,11 +803,16 @@ export default function ProjectDetail() {
         return <>
             {cells.map(c => {
                 const mine = rows.filter(r => cellKeyOf(g, r) === cellKey(c));
+                const all = submissions.filter(s => s.group_key === g.key && matchScope(s) && cellKeyOf(g, s) === cellKey(c));
                 return (
                     <div className="list-typebox" key={cellKey(c)}>
-                        {cellHead(g, c, mine)}
+                        {cellHead(g, c, mine, countPeople(all))}
+                        {/* กรองอยู่แล้วซ่อนบางคน — บอกให้รู้ว่าไม่ได้หาย */}
+                        {countPeople(all) > countPeople(mine) && mine.length > 0 && (
+                            <div className="ag-hidden-note">ซ่อน {countPeople(all) - countPeople(mine)} คนตามตัวกรองที่เลือกอยู่</div>
+                        )}
                         {mine.length === 0
-                            ? <div className="proc-group-empty">{feeOnly ? 'ไม่มีคนที่ยังไม่ใส่ค่าตัวในช่องนี้' : 'ยังไม่มีรายชื่อในช่องนี้'}</div>
+                            ? <div className="proc-group-empty">{emptyText('ในช่องนี้')}</div>
                             : statusBlocks(mine, g)}
                     </div>
                 );
@@ -830,8 +848,9 @@ export default function ProjectDetail() {
     // Platform ที่สรุป/หารค่าตัวของกลุ่ม — ตามตัวกรอง Platform ที่เลือกอยู่
     const feePlatsOf = g => groupPlatforms(g).filter(p => listPlat === 'all' || p === listPlat);
     const teamGroupBar = (g, gi, gsubs) => {
-        // ตัวเลขคัดเลือกนับตามตัวกรอง Platform/Content Type เท่านั้น — เปิดตัวกรอง "ยังไม่ใส่ค่าตัว" แล้วยอดต้องไม่หด
-        const scoped = feeOnly ? submissions.filter(s => s.group_key === g.key && matchScope(s)) : gsubs;
+        // ตัวเลขคัดเลือกนับตามตัวกรอง Platform/Content Type เท่านั้น — เปิดตัวกรอง "ยังไม่ใส่ค่าตัว" / สินค้า แล้วยอดต้องไม่หด
+        // (โควตาจำนวนคนตั้งต่อ Platform/Content Type ไม่ได้ตั้งต่อสินค้า)
+        const scoped = (feeOnly || listProducts.length) ? submissions.filter(s => s.group_key === g.key && matchScope(s)) : gsubs;
         const conf = countPeople(scoped.filter(s => s.status === 'confirmed'));
         // สรุปค่าตัวของกลุ่ม: งบ (กลุ่ม × Platform) เทียบกับค่าตัวที่ใส่แล้ว — ไม่นับคนที่ "ไม่เลือก"
         const plats = feePlatsOf(g);
@@ -1350,6 +1369,11 @@ export default function ProjectDetail() {
                     ))}
                 </div>
             )}
+            {/* ตัวกรองสินค้า (เลือกได้หลายตัว) — จำนวนนับเป็นคน ตามตัวกรอง Platform / Content Type ที่เลือกอยู่ */}
+            {subTab === 'list' && submissions.length > 0 && (
+                <ProductFilter options={productFilterOptions(submissions.filter(matchScope), knownCodes, countPeople)}
+                    value={listProducts} onChange={setListProducts} total={countPeople(submissions.filter(matchScope))} />
+            )}
             {/* ตัวกรองคนที่ยังไม่ใส่ค่าตัว — แถวของตัวเอง โชว์ตลอด ใช้ร่วมกับตัวกรอง Platform / Content Type ด้านบนได้ */}
             {subTab === 'list' && submissions.length > 0 && (
                 <div className="proc-platfilter fee-filter-row">
@@ -1373,7 +1397,7 @@ export default function ProjectDetail() {
                                 <div className="kol-group-card" key={g.key || gi}>
                                     {teamGroupBar(g, gi, gsubs)}
                                     {gsubs.length === 0
-                                        ? <div className="proc-group-empty">{feeOnly ? 'ไม่มีคนที่ยังไม่ใส่ค่าตัวในกลุ่มนี้' : 'ยังไม่มีรายชื่อในกลุ่มนี้'}</div>
+                                        ? <div className="proc-group-empty">{emptyText('ในกลุ่มนี้')}</div>
                                         : cellBlocks(g, gsubs)}
                                 </div>
                             );
@@ -1392,8 +1416,8 @@ export default function ProjectDetail() {
                     </>
                 ) : (
                     /* ไม่มีกลุ่มสินค้า → รวมทั้งหมด */
-                    (feeOnly && !submissions.some(matchListFilter))
-                        ? <div className="proc-group-empty">ไม่มีคนที่ยังไม่ใส่ค่าตัว</div>
+                    ((feeOnly || listProducts.length > 0) && !submissions.some(matchListFilter))
+                        ? <div className="proc-group-empty">{emptyText('')}</div>
                         : statusBlocks(submissions.filter(matchListFilter))
                 ))
             )}

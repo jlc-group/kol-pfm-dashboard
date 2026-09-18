@@ -226,7 +226,7 @@ router.post('/', async (req, res, next) => {
         delete createFields.expected_updated_at;
         const data = await store.projects.create(createFields);
         await record(req, data.id, 'create',
-            data.campaign_type === 'other' ? 'สร้างแคมเปญ (งานจ้างอื่น ๆ)' : 'สร้างแคมเปญ', data.name, teamId);
+            data.campaign_type === 'other' ? 'สร้างแคมเปญ (Talent)' : 'สร้างแคมเปญ', data.name, teamId);
         res.status(201).json({ status: 'success', data });
     } catch (err) { next(err); }
 });

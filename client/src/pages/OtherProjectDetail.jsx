@@ -155,13 +155,13 @@ export default function OtherProjectDetail({ project, reload, onDeleted }) {
     return (
         <div>
             <div className="pd-hero">
-                <button className="pd-back" onClick={() => navigate('/hires?tab=jobs')} title="กลับไปหน้างานจ้างอื่น ๆ">
+                <button className="pd-back" onClick={() => navigate('/hires?tab=jobs')} title="กลับไปหน้า Talent">
                     <Icon name="back" size={18} />
                 </button>
                 <div className="pd-hero-main">
                     <div className="pd-hero-top">
                         <span className={`status status-${project.status}`}>{STATUS_LABEL[project.status] || project.status}</span>
-                        <span className="ctype-chip" title="งานจ้างอื่น ๆ — ไม่เข้าหน้าโฆษณาและรายงานแคมเปญ">Other</span>
+                        <span className="ctype-chip" title="งาน Talent — ไม่เข้าหน้าโฆษณาและรายงานแคมเปญ">Talent</span>
                         {project.brand && <span className="pd-chip">{project.brand}</span>}
                     </div>
                     <h1 className="pd-title">{project.name}</h1>
