@@ -5,7 +5,7 @@ import Icon from '../components/Icon.jsx';
 import { productLabel, asTargetArray } from '../data/products.js';
 import { ProductSummary } from '../components/ProductChips.jsx';
 import { fmtDate } from '../utils/date.js';
-import { visibleBrands } from '../data/brands.js';
+import { visibleBrands, seesAllBrands } from '../data/brands.js';
 import { useAuth } from '../auth/AuthContext.jsx';
 
 // ค่าที่เก็บเป็นสตริงคั่นด้วย , (เช่น content_format) → แยกเป็นรายตัว
@@ -177,10 +177,23 @@ function CopyCode({ value }) {
 // เมนูใช้ position:fixed เพราะหัวตารางอยู่ในกรอบที่เลื่อนแนวนอน ถ้าใช้ absolute จะโดนตัด
 
 // แถวตาราง: อัปเดตข้อมูลแอดของโพสต์ 1 อัน (บันทึกเมื่อออกจากช่อง)
-function AdRow({ row, onSaved }) {
+function AdRow({ row, onSaved, canCost }) {
     const [adStatus, setAdStatus] = useState(row.ad_status || 'ยังไม่ยิง');
     const [end, setEnd] = useState(row.ad_end || '');
     const [note, setNote] = useState(row.ad_note || '');
+    // ค่าแอดสะสม: โพสต์ TikTok ที่มี ID Post ระบบ PFM ซิงก์ให้เอง (แก้ไม่ได้) · โพสต์อื่นกรอกเองได้ (เฉพาะคนที่เห็นต้นทุน)
+    // Reach: PFM ไม่ได้ส่งมา กรอกเองได้ทุกโพสต์
+    // ช่องจะตามค่าล่าสุดจากรายการเสมอ ยกเว้นตอนผู้ใช้กำลังพิมพ์ (dirty) — แค่กด Tab ผ่านต้องไม่เอาค่าเก่าไปทับ
+    const spendText = v => (v == null || Number(v) === 0 ? '' : String(Math.round(Number(v) * 100) / 100));
+    const reachText = v => (v == null || Number(v) === 0 ? '' : String(Math.round(Number(v))));
+    const [spend, setSpend] = useState(spendText(row.ad_spend));
+    const [reach, setReach] = useState(reachText(row.ad_reach));
+    const [spendDirty, setSpendDirty] = useState(false);
+    const [reachDirty, setReachDirty] = useState(false);
+    const [spendFrom, setSpendFrom] = useState(row.ad_spend);
+    const [reachFrom, setReachFrom] = useState(row.ad_reach);
+    useEffect(() => { if (!spendDirty) { setSpend(spendText(row.ad_spend)); setSpendFrom(row.ad_spend); } }, [row.ad_spend]);   // eslint-disable-line react-hooks/exhaustive-deps
+    useEffect(() => { if (!reachDirty) { setReach(reachText(row.ad_reach)); setReachFrom(row.ad_reach); } }, [row.ad_reach]);   // eslint-disable-line react-hooks/exhaustive-deps
     const [saving, setSaving] = useState(false);
     const [saved, setSaved] = useState(false);
 
@@ -197,6 +210,31 @@ function AdRow({ row, onSaved }) {
 
     // บันทึกหมายเหตุ (เช่น Gencode ใช้ไม่ได้ / ยิงแอดไม่ได้) — เฉพาะเมื่อมีการเปลี่ยน
     const saveNote = () => { if (note !== (row.ad_note || '')) put({ ad_note: note || null }); };
+    // เงินมีทศนิยมได้ (เก็บถึงสตางค์) — เทียบกันที่หน่วยสตางค์ ไม่ตัดจุดทิ้ง (ไม่งั้น 150.25 กลายเป็น 15,025)
+    const money = v => Math.round((Number(String(v || '').replace(/[^0-9.]/g, '')) || 0) * 100) / 100;
+    const sameMoney = (a, b) => Math.round((Number(a) || 0) * 100) === Math.round((Number(b) || 0) * 100);
+    function saveSpend() {
+        if (!spendDirty) return;
+        const v = money(spend);
+        if (sameMoney(v, spendFrom)) { setSpendDirty(false); return; }
+        // ถึง 10,000 เมื่อไหร่ ระบบสแตมป์ผล PFM ถาวร (ถ้ามียอดวิวและค่าตัวแล้ว / หรือทันทีที่ครบภายหลัง) — พิมพ์ผิดแก้คืนไม่ได้ จึงถามก่อนทุกครั้ง
+        if (v >= 10000 && !row.perf_stamp && !window.confirm(
+            `ค่าแอดสะสม ฿${v.toLocaleString('th-TH')} ถึงเกณฑ์ 10,000 — ${row.stamp_waiting
+                ? 'คลิปนี้รอค่าตัว/ยอดวิวอยู่ พอข้อมูลครบระบบจะล็อกผล PFM ด้วยยอดนี้ทันทีและแก้ไม่ได้'
+                : 'ถ้าคลิปนี้มียอดวิวและค่าตัวครบ ระบบจะล็อกผล PFM ด้วยยอดนี้ไว้ถาวร แก้ไม่ได้'} ยืนยันยอดนี้ไหม?`)) {
+            setSpend(spendText(spendFrom)); setSpendDirty(false);
+            return;
+        }
+        setSpendDirty(false);
+        put({ ad_spend: v, ad_spend_from: Number(spendFrom) || 0 });
+    }
+    function saveReach() {
+        if (!reachDirty) return;
+        const v = Math.round(Number(String(reach || '').replace(/[^0-9]/g, '')) || 0);
+        setReachDirty(false);
+        if (v === Math.round(Number(reachFrom) || 0)) return;
+        put({ ad_reach: v, ad_reach_from: Math.round(Number(reachFrom) || 0) });
+    }
 
     // สลับสถานะ — เมื่อกด "ยิงแล้ว" ให้ลงวันยิงแอด (ad_end) เป็นวันนี้อัตโนมัติ, ยกเลิกให้ล้างวันที่
     function toggleStatus() {
@@ -293,6 +331,22 @@ function AdRow({ row, onSaved }) {
                 </button>
                 {/* ย้ายตัวบอกสถานะการบันทึกมาจากช่อง CPM ที่เอาออกไป */}
                 {saving ? <span className="proc-status">…</span> : saved ? <span className="proc-status ok">✓</span> : null}
+            </div>
+            {/* ค่าแอดสะสม + Reach — บันทึกเมื่อออกจากช่อง (ใช้คิด CPM ในหน้านี้และหน้าภาพรวม) */}
+            <div className="ads-cell ads-spend">
+                {row.spend_from_pfm ? (
+                    <span className="ads-spend-pfm" title="ค่าแอดของโพสต์นี้ซิงก์จากระบบ PFM อัตโนมัติ — แก้เองไม่ได้">
+                        {canCost ? fmtMoney(row.ad_spend) : '฿ •••'} <em>PFM</em>
+                    </span>
+                ) : canCost ? (
+                    <input inputMode="decimal" value={spend} placeholder="ค่าแอด ฿" title="ค่าแอดสะสม (บาท) — โพสต์นี้ PFM ไม่ได้ซิงก์ให้ กรอกเองได้"
+                        onChange={e => { setSpend(e.target.value.replace(/[^0-9.]/g, '').replace(/(\..*)\./g, '$1')); setSpendDirty(true); }}
+                        onBlur={saveSpend} />
+                ) : (
+                    <span className="muted" title="ค่าแอดดูและแก้ได้เฉพาะผู้ดูแลระบบและ Manager">—</span>
+                )}
+                <input inputMode="numeric" value={reach} placeholder="Reach" title="Reach สะสม (PFM ไม่ได้ส่งมา กรอกเองได้)"
+                    onChange={e => { setReach(e.target.value.replace(/[^0-9]/g, '')); setReachDirty(true); }} onBlur={saveReach} />
             </div>
             <div className="ads-cell ads-late">
                 {lateDays === null
@@ -478,6 +532,7 @@ export default function Ads() {
                                         options={[{ value: '', label: 'ทุกสถานะ', count: countIf('status', () => true) },
                                         ...STATUSES.map(st => ({ value: st, label: st === 'ยิงแล้ว' ? '✓ ยิงแล้ว' : st, count: countIf('status', r => r.ad_status === st) }))]} />
                                 </span>
+                                <span title="ค่าแอดสะสม (บาท) และ Reach — กรอกเองได้ บันทึกเมื่อออกจากช่อง">ค่าแอด / REACH</span>
                                 <span>ยิงช้า
                                     <ColumnFilter label="ความช้า" value={late} onPick={setLate}
                                         options={[{ value: '', label: 'ทั้งหมด', count: countIf('late', () => true) },
@@ -487,7 +542,7 @@ export default function Ads() {
                                 <span title="ผลตอนนี้ คำนวณสดจากข้อมูลล่าสุด — ใช้ตัดสินว่าควรยิงต่อหรือหยุด">PFM</span>
                                 <span>หมายเหตุ</span>
                             </div>
-                            {rows.map(r => <AdRow key={r.sub_id} row={r} onSaved={load} />)}
+                            {rows.map(r => <AdRow key={r.sub_id} row={r} onSaved={load} canCost={seesAllBrands(user)} />)}
                         </div>
                     </div>
                 )}

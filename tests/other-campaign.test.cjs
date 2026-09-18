@@ -632,6 +632,25 @@ test('saving the job form keeps booking state and gives the slot back when an ap
     assert.equal(mergeHireItems(orphan, [{ ...orphan[0], status: 'ตกลงแล้ว' }], {})[0].status, 'ตกลงแล้ว');
 });
 
+
+test('payment view splits an Other job budget into agreed, pending and not yet found', () => {
+    const { hireBreakdown, hireRowFee } = require(path.join(SRC, 'store/logic'));
+    const items = [
+        { key: 'a', mode: 'direct', name: 'ก', fee: 10000, status: 'ตกลงแล้ว' },
+        { key: 'b', mode: 'direct', name: 'ข', fee: 5000, status: 'ส่งงานแล้ว' },
+        { key: 'c', mode: 'direct', name: 'ค', fee: 3000, status: 'ทาบทาม' },
+        // อนุมัติแล้วแต่ยังรอคนหาคอนเฟิร์มคิว — ยังไม่นับว่าจ่ายได้ แม้สถานะในแถวจะถูกแก้เป็นตกลงแล้ว
+        { key: 'd', mode: 'direct', name: 'ง', fee: 4000, status: 'ตกลงแล้ว', from_request: 'r', booking: { state: 'pending' } },
+        { key: 'e', mode: 'direct', name: 'จ', fee: 2000 },          // แถวเก่าไม่มีสถานะ = ยังไม่ตกลง
+        { key: 'r', mode: 'casting', kind: 'นางแบบ', fee: 1500, headcount: 3, filled: 1 }
+    ];
+    const split = hireBreakdown(items);
+    assert.deepEqual(split, { agreed: 15000, pending: 9000, unfilled: 3000 });
+    // สามก้อนรวมกัน = งบของงาน (ไม่มีเงินหล่นหายหรือนับซ้ำ)
+    assert.equal(split.agreed + split.pending + split.unfilled, items.reduce((s, it) => s + hireRowFee(it), 0));
+    assert.deepEqual(hireBreakdown(null), { agreed: 0, pending: 0, unfilled: 0 });
+});
+
 test('hires list filters by kind, brand, search and date range', async () => {
     assert.deepEqual((await hires.list({ kind: 'Live สด' })).rows.map(r => r.name), ['มะลิ']);
     assert.deepEqual((await hires.list({ brand: 'Code Lab' })).rows.map(r => r.name), ['ต้นกล้า']);

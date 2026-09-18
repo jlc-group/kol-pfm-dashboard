@@ -85,6 +85,33 @@ async function canEditProject(req, projectId) {
     return { ok: true };
 }
 
+// ---------- เช็คสิทธิ์ก่อนรับไฟล์ ----------
+// multer เขียนไฟล์ลงดิสก์ทันทีที่รับ ถ้าเช็คสิทธิ์ทีหลัง คนที่ไม่มีสิทธิ์ก็ส่งไฟล์ใหญ่ (คลิปถึง 95MB) มาให้เขียนลงเครื่องได้
+// ด่านนี้วางไว้หน้า multer · ในตัว handler ยังเช็คซ้ำอีกชั้นเหมือนเดิม (กันสิทธิ์เปลี่ยนระหว่างอัป)
+const guardEdit = (req, res, next) => canEditProject(req, req.params.id)
+    .then(c => (c.ok ? next() : res.status(c.code).json({ status: 'error', message: c.message })))
+    .catch(next);
+// ไฟล์ของชื่อที่เสนอ: ต้องเข้าถึงใบนี้ได้ และเป็นคนเสนอชื่อนั้นเอง หรือทีมของแบรนด์
+const guardCandidateFile = (req, res, next) => castingRow(req, req.params.id, req.params.key).then(acc => {
+    if (!acc.ok) return res.status(acc.code).json({ status: 'error', message: acc.message });
+    const cand = candsOf(acc.row).find(c => String(c.key) === String(req.params.ckey));
+    if (!cand) return res.status(404).json({ status: 'error', message: 'ไม่พบชื่อที่เสนอนี้' });
+    if (String(cand.by_id) !== String(req.user.id) && !acc.isOwner) {
+        return res.status(403).json({ status: 'error', message: 'แก้ไฟล์ได้เฉพาะชื่อที่ตัวเองเสนอ' });
+    }
+    next();
+}).catch(next);
+// ด่านข้างบนใช้เฉพาะคำขอที่แนบไฟล์ — ข้อความล้วน (JSON) ให้ตัว handler เช็คสิทธิ์เองครั้งเดียวพอ
+const onlyMultipart = guard => (req, res, next) =>
+    (String(req.headers['content-type'] || '').startsWith('multipart/') ? guard(req, res, next) : next());
+// ลบไฟล์ที่ multer เพิ่งเขียน (ใช้ตอนตีกลับหลังรับไฟล์แล้ว ไม่ให้ไฟล์ค้างในเครื่อง)
+function dropUploads(req) {
+    const files = [];
+    if (req.file) files.push(req.file);
+    if (req.files) Object.values(req.files).forEach(v => (Array.isArray(v) ? v : [v]).forEach(f => files.push(f)));
+    files.forEach(f => { const p = f && f.filename ? uploadPath(f.filename) : null; if (p) fs.unlink(p, () => {}); });
+}
+
 // บันทึกประวัติ (ไม่ให้ error ของ log ไปกระทบ response หลัก)
 async function record(req, id, action, summary, projectName, teamId) {
     try {
@@ -229,7 +256,7 @@ router.put('/:id', async (req, res, next) => {
         if (hasHire && !Array.isArray(req.body.hire_items)) {
             return res.status(400).json({ status: 'error', message: 'รายการจ้างไม่ถูกต้อง' });
         }
-        // hire_items เขียนได้ทางเดียวคือ replaceHireItems ด้านล่าง (ห้ามหลุดไปถึง store.update แบบทั้งก้อน)
+        // hire_items เขียนได้ทางเดียวคือ updateWithHireItems ด้านล่าง (ห้ามหลุดไปถึง store.update แบบทั้งก้อน)
         delete patch.hire_items;
         const curProject = await store.projects.findByIdFull(req.params.id);
         // งบของงานจ้างอื่น ๆ = ผลรวมรายการจ้างเสมอ ห้ามแก้ตัวเลขตรง ๆ (แคมเปญ KOL ยังส่งงบจริงจากฟอร์มได้ตามเดิม)
@@ -239,20 +266,24 @@ router.put('/:id', async (req, res, next) => {
         if (patch.platform_briefs !== undefined) patch.platform_briefs = mergeBriefFiles(curProject && curProject.platform_briefs, patch.platform_briefs);
         // รายการจ้างไม่เขียนทับทั้งก้อน: ต้องยืนยันว่าหน้าเว็บถือข้อมูลล่าสุดอยู่ แล้วรวมกับของในฐาน
         // (ชื่อที่คนจัดหาเสนอ / คนที่ถูกเลือกไปแล้ว / ไฟล์แนบ มาจากเส้นของมันเอง หน้าเว็บส่งทับไม่ได้)
+        let data;
         if (hasHire) {
             if (!req.body.expected_updated_at) {
                 return res.status(409).json({ status: 'error', code: 'STALE', message: 'ข้อมูลของงานนี้เพิ่งเปลี่ยน — โหลดค่าล่าสุดแล้วบันทึกอีกครั้ง' });
             }
             const users = await resolveAssignees(req.body.hire_items);
-            const saved = await store.projects.replaceHireItems(req.params.id, req.body.expected_updated_at,
+            delete patch.budget;     // งบคำนวณใหม่จากรายการจ้างที่รวมแล้ว
+            // รายการจ้าง + ช่องอื่นของงาน บันทึกพร้อมกันในทรานแซกชันเดียว (สำเร็จทั้งหมด หรือไม่บันทึกอะไรเลย)
+            const saved = await store.projects.updateWithHireItems(req.params.id, patch, req.body.expected_updated_at,
                 current => mergeHireItems(current, req.body.hire_items, { userId: req.user.id, users, actor: actorName(req) }));
             if (!saved) return res.status(404).json({ status: 'error', message: 'ไม่พบ Project' });
             if (saved.conflict) {
                 return res.status(409).json({ status: 'error', code: 'STALE', message: 'ข้อมูลของงานนี้เพิ่งเปลี่ยนระหว่างที่เปิดอยู่ — โหลดค่าล่าสุดแล้วบันทึกอีกครั้ง' });
             }
-            delete patch.budget;     // งบคำนวณใหม่จากรายการจ้างที่รวมแล้ว
+            data = saved.row;
+        } else {
+            data = await store.projects.update(req.params.id, patch);
         }
-        const data = await store.projects.update(req.params.id, patch);
         // ถ้าแก้แค่สถานะ บันทึกเป็น "เปลี่ยนสถานะ" มิฉะนั้นเป็น "แก้ไขข้อมูล"
         const summary = (bodyKeys.length === 1 && bodyKeys[0] === 'status')
             ? `เปลี่ยนสถานะเป็น ${STATUS_LABEL[req.body.status] || req.body.status}`
@@ -319,7 +350,7 @@ router.delete('/:id/kols/:linkId', async (req, res, next) => {
 });
 
 // POST /api/projects/:id/brief/upload — อัปโหลดไฟล์บรีฟ
-router.post('/:id/brief/upload', (req, res, next) => {
+router.post('/:id/brief/upload', guardEdit, (req, res, next) => {
     briefUpload.single('file')(req, res, async (err) => {
         if (err) return res.status(400).json({ status: 'error', message: err.message });
         if (!req.file) return res.status(400).json({ status: 'error', message: 'ไม่พบไฟล์' });
@@ -358,7 +389,7 @@ router.get('/:id/brief/file', async (req, res, next) => {
 
 // POST /api/projects/:id/hires/:key/image — อัปโหลดรูป/คอมการ์ดของผู้รับงานหนึ่งคน (แคมเปญงานจ้างอื่น ๆ)
 // key = รหัสแถวใน hire_items (ฝั่งหน้าเว็บสร้างไว้ตอนเพิ่มแถว) ไม่ใช่ลำดับ เพราะลำดับสลับได้เมื่อมีการลบแถว
-router.post('/:id/hires/:key/image', (req, res, next) => {
+router.post('/:id/hires/:key/image', guardEdit, (req, res, next) => {
     hireImage.single('file')(req, res, async (err) => {
         if (err) return res.status(400).json({ status: 'error', message: err.message });
         if (!req.file) return res.status(400).json({ status: 'error', message: 'ไม่พบไฟล์' });
@@ -738,7 +769,7 @@ router.delete('/:id/hires/:key/candidates/:ckey', async (req, res, next) => {
 });
 
 // POST /api/projects/:id/hires/:key/candidates/:ckey/image — รูป / คอมการ์ดของคนที่เสนอ
-router.post('/:id/hires/:key/candidates/:ckey/image', (req, res, next) => {
+router.post('/:id/hires/:key/candidates/:ckey/image', guardCandidateFile, (req, res, next) => {
     hireImage.single('file')(req, res, async (err) => {
         if (err) return res.status(400).json({ status: 'error', message: err.message });
         if (!req.file) return res.status(400).json({ status: 'error', message: 'ไม่พบไฟล์' });
@@ -826,7 +857,7 @@ router.put('/:id/hires/:key/candidates/:ckey', async (req, res, next) => {
 });
 
 // POST /api/projects/:id/hires/:key/candidates/:ckey/video — คลิปแนะนำตัวของคนที่เสนอ
-router.post('/:id/hires/:key/candidates/:ckey/video', (req, res, next) => {
+router.post('/:id/hires/:key/candidates/:ckey/video', guardCandidateFile, (req, res, next) => {
     hireVideo.single('file')(req, res, async (err) => {
         if (err) return res.status(400).json({ status: 'error', message: err.message });
         if (!req.file) return res.status(400).json({ status: 'error', message: 'ไม่พบไฟล์' });
@@ -875,7 +906,7 @@ router.get('/:id/hires/:key/candidates/:ckey/video', async (req, res, next) => {
 
 
 // POST /api/projects/:id/product-brief/:code/file — อัปโหลดไฟล์บรีฟของสินค้าหนึ่งตัว
-router.post('/:id/product-brief/:code/file', (req, res, next) => {
+router.post('/:id/product-brief/:code/file', guardEdit, (req, res, next) => {
     briefUpload.single('file')(req, res, async (err) => {
         if (err) return res.status(400).json({ status: 'error', message: err.message });
         if (!req.file) return res.status(400).json({ status: 'error', message: 'ไม่พบไฟล์' });
@@ -905,7 +936,7 @@ router.get('/:id/product-brief/:code/file', async (req, res, next) => {
 });
 
 // POST /api/projects/:id/platform-brief/:platform/file — อัปโหลดไฟล์บรีฟหลักของ Platform
-router.post('/:id/platform-brief/:platform/file', (req, res, next) => {
+router.post('/:id/platform-brief/:platform/file', guardEdit, (req, res, next) => {
     briefUpload.single('file')(req, res, async (err) => {
         if (err) return res.status(400).json({ status: 'error', message: err.message });
         if (!req.file) return res.status(400).json({ status: 'error', message: 'ไม่พบไฟล์' });
@@ -1321,7 +1352,7 @@ router.get('/:id/agency-links/:token/messages', async (req, res, next) => {
     } catch (err) { next(err); }
 });
 
-router.post('/:id/agency-links/:token/messages', (req, res, next) => {
+router.post('/:id/agency-links/:token/messages', onlyMultipart(guardEdit), (req, res, next) => {
     if (!String(req.headers['content-type'] || '').startsWith('multipart/')) return next();
     chatImage.fields([{ name: 'image', maxCount: 1 }, { name: 'thumb', maxCount: 1 }])(req, res, err => {
         if (err) return res.status(400).json({ status: 'error', message: err.message });
@@ -1330,11 +1361,11 @@ router.post('/:id/agency-links/:token/messages', (req, res, next) => {
 }, async (req, res, next) => {
     try {
         const check = await canEditProject(req, req.params.id);
-        if (!check.ok) return res.status(check.code).json({ status: 'error', message: check.message });
+        if (!check.ok) { dropUploads(req); return res.status(check.code).json({ status: 'error', message: check.message }); }
         const text = String(req.body.text || '').trim();
         const full = req.files && req.files.image && req.files.image[0];
         const thumb = req.files && req.files.thumb && req.files.thumb[0];
-        if (!text && !full) return res.status(400).json({ status: 'error', message: 'พิมพ์ข้อความ หรือแนบรูปอย่างน้อยหนึ่งอย่าง' });
+        if (!text && !full) { dropUploads(req); return res.status(400).json({ status: 'error', message: 'พิมพ์ข้อความ หรือแนบรูปอย่างน้อยหนึ่งอย่าง' }); }
         const user = await store.users.findById(req.user.id);
         const row = await store.projects.addAgencyMessage(req.params.id, req.params.token, {
             from: 'team',
@@ -1343,10 +1374,10 @@ router.post('/:id/agency-links/:token/messages', (req, res, next) => {
             image: full ? { filename: full.filename, original: full.originalname, size: full.size } : null,
             thumb: thumb ? { filename: thumb.filename, original: thumb.originalname, size: thumb.size } : null
         });
-        if (!row) return res.status(404).json({ status: 'error', message: 'ไม่พบห้องแชท' });
+        if (!row) { dropUploads(req); return res.status(404).json({ status: 'error', message: 'ไม่พบห้องแชท' }); }
         chatHub.broadcast(req.params.token);
         res.status(201).json({ status: 'success', data: row });
-    } catch (err) { next(err); }
+    } catch (err) { dropUploads(req); next(err); }
 });
 
 router.post('/:id/agency-links/:token/messages/read', async (req, res, next) => {

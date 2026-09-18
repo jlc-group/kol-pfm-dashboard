@@ -28,6 +28,29 @@ const {
 } = require('./_snapshot');
 const { now, clone, inScope, scopeProjects, linkGroupPlatforms, hireRowFee, sameInstant } = require('../logic');
 
+// ช่องของ projects ที่แก้ได้จากฟอร์ม → ค่าที่พร้อมเขียนลงฐาน
+// null = ผู้ใช้ล้างค่าออกจริง ๆ (route ส่งเฉพาะคีย์ที่ client ส่งมา คีย์ที่ไม่ได้แก้จะเป็น undefined)
+function projectPatchData(fields) {
+    const data = {};
+    const put = (key, val) => { if (fields[key] !== undefined) data[key] = val(fields[key]); };
+    for (const key of ['name', 'brand', 'objective', 'product', 'owner', 'creator', 'brief_link', 'status', 'description']) {
+        put(key, v => v);
+    }
+    put('products', v => asJson(v, []));
+    put('ad_groups', v => asJson(v, []));
+    put('campaign_type', v => (v === 'other' ? 'other' : 'kol'));
+    put('hire_items', v => asJson(v, []));
+    put('product_briefs', v => asJson(v, {}));
+    put('platform_briefs', v => asJson(v, {}));
+    put('platform_budgets', v => asJson(v, {}));
+    put('kol_target', v => asNum(v, 0));
+    put('budget', v => asNum(v, 0));
+    put('start_date', v => asDate(v));
+    put('end_date', v => asDate(v));
+    put('updated_by', v => v);
+    return data;
+}
+
 // ช่วง INTEGER ของ Postgres — เกินนี้ส่งเข้า query ไม่ได้ (เดิมก็หาไม่เจออยู่แล้ว)
 const INT_MAX = 2147483647;
 
@@ -165,32 +188,16 @@ const projects = {
     async update(id, fields) {
         const n = intId(id);
         if (n === null) return null;
-        const data = {};
-        // null = ผู้ใช้ล้างค่าออกจริง ๆ (route ส่งเฉพาะคีย์ที่ client ส่งมา คีย์ที่ไม่ได้แก้จะเป็น undefined)
-        const put = (key, val) => { if (fields[key] !== undefined) data[key] = val(fields[key]); };
-        for (const key of ['name', 'brand', 'objective', 'product', 'owner', 'creator', 'brief_link', 'status', 'description']) {
-            put(key, v => v);
-        }
-        put('products', v => asJson(v, []));
-        put('ad_groups', v => asJson(v, []));
-        put('campaign_type', v => (v === 'other' ? 'other' : 'kol'));
-        put('hire_items', v => asJson(v, []));
-        put('product_briefs', v => asJson(v, {}));
-        put('platform_briefs', v => asJson(v, {}));
-        put('platform_budgets', v => asJson(v, {}));
-        put('kol_target', v => asNum(v, 0));
-        put('budget', v => asNum(v, 0));
-        put('start_date', v => asDate(v));
-        put('end_date', v => asDate(v));
-        put('updated_by', v => v);
+        const data = projectPatchData(fields);
         data.updated_at = now();
         return await updateRow('projects', n, data);
     },
 
-    // บันทึก hire_items ทั้งก้อนจากฟอร์ม — ล็อกแถว แล้วเช็คว่าไม่มีใคร (หรืองานจัดหา) แก้ระหว่างที่หน้าเว็บเปิดค้างไว้
-    // expectedUpdatedAt ไม่ตรง = ข้อมูลที่หน้าเว็บถืออยู่เก่าแล้ว ถ้าเขียนทับจะทำชื่อที่เสนอ/คนที่เลือกไปแล้วหาย → คืน { conflict }
-    // build(current) คืนอาเรย์ใหม่ทั้งชุด · งบของแคมเปญคำนวณใหม่จากอาเรย์นั้นเสมอ
-    async replaceHireItems(id, expectedUpdatedAt, build) {
+    // แก้ข้อมูลงาน + รายการจ้างที่ฟอร์มส่งมาทั้งก้อน ในทรานแซกชันเดียว
+    // เดิมบันทึกรายการจ้างก่อนแล้วค่อยแก้ช่องอื่นแยกอีกคำขอ — ถ้าพังระหว่างนั้นจะได้ข้อมูลครึ่ง ๆ กลาง ๆ
+    // ล็อกแถว แล้วเช็คว่าไม่มีใคร (หรืองานจัดหา) แก้ระหว่างที่หน้าเว็บเปิดค้างไว้ — expectedUpdatedAt ไม่ตรง → { conflict }
+    // build(current) คืนรายการจ้างชุดใหม่ทั้งชุด · งบของงานคำนวณใหม่จากชุดนั้นเสมอ (งบที่ส่งมาในฟอร์มไม่ใช้)
+    async updateWithHireItems(id, fields, expectedUpdatedAt, build) {
         const n = intId(id);
         if (n === null) return null;
         return await withTransaction(async (c) => {
@@ -200,10 +207,12 @@ const projects = {
             if (!sameInstant(cur.updated_at, expectedUpdatedAt)) return { conflict: true };
             const next = build(Array.isArray(cur.hire_items) ? cur.hire_items : []);
             if (!Array.isArray(next)) return null;
-            const budget = next.reduce((s, it) => s + hireRowFee(it), 0);
-            await c.query('UPDATE projects SET hire_items = $1, budget = $2, updated_at = $3 WHERE id = $4',
-                [asJson(next, []), budget, now(), n]);
-            return { items: clone(next), budget };
+            const data = projectPatchData({ ...fields, hire_items: undefined, budget: undefined });
+            data.hire_items = asJson(next, []);
+            data.budget = next.reduce((s, it) => s + hireRowFee(it), 0);
+            data.updated_at = now();
+            const row = await updateRow('projects', n, data, c);
+            return { row, items: clone(next) };
         });
     },
 

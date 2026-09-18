@@ -50,6 +50,21 @@ function requireAgencyAccess(req, res, next) {
 }
 router.use(requireAgencyAccess);
 
+// ลิงก์ต้องมีอยู่จริงก่อนรับไฟล์ — ลิงก์ผิด/หมดอายุจะได้ไม่ต้องเขียนไฟล์ลงเครื่องแล้วค้างไว้
+const requireLiveLink = (req, res, next) => store.projects.resolveToken(req.params.token)
+    .then(r => (r ? next() : res.status(404).json({ status: 'error', message: 'ลิงก์ไม่ถูกต้องหรือหมดอายุ' })))
+    .catch(next);
+// ด่านข้างบนใช้เฉพาะคำขอที่แนบไฟล์ — ข้อความ/ลิงก์ล้วน handler เช็คลิงก์เองอยู่แล้ว ไม่ต้องโหลดซ้ำ
+const onlyMultipart = guard => (req, res, next) =>
+    (String(req.headers['content-type'] || '').startsWith('multipart/') ? guard(req, res, next) : next());
+// ลบไฟล์ที่ multer เพิ่งเขียน เมื่อคำขอนั้นไม่ได้บันทึกอะไรลงฐาน
+function dropUploads(req) {
+    const files = [];
+    if (req.file) files.push(req.file);
+    if (req.files) Object.values(req.files).forEach(v => (Array.isArray(v) ? v : [v]).forEach(f => files.push(f)));
+    files.forEach(f => { const p = f && f.filename ? uploadPath(f.filename) : null; if (p) fs.unlink(p, () => {}); });
+}
+
 // ---------- ไฟล์ Report ที่เอเจนซี่อัปเข้ามา ----------
 const REPORT_EXT = ['.pdf', '.png', '.jpg', '.jpeg', '.webp', '.ppt', '.pptx', '.xls', '.xlsx', '.doc', '.docx', '.csv'];
 if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR, { recursive: true });
@@ -404,7 +419,7 @@ router.get('/:token/platform-brief/:platform/file', async (req, res, next) => {
 
 // ---------- Report ที่เอเจนซี่ส่งเข้ามา ----------
 // POST /api/agency/:token/reports — อัปไฟล์ (field "file") หรือส่งลิงก์ ({ url, note })
-router.post('/:token/reports', (req, res, next) => {
+router.post('/:token/reports', onlyMultipart(requireLiveLink), (req, res, next) => {
     const isFile = String(req.headers['content-type'] || '').startsWith('multipart/');
     if (!isFile) return next();
     reportUpload.single('file')(req, res, err => {
@@ -414,7 +429,7 @@ router.post('/:token/reports', (req, res, next) => {
 }, async (req, res, next) => {
     try {
         const resolved = await store.projects.resolveToken(req.params.token);
-        if (!resolved) return res.status(404).json({ status: 'error', message: 'ลิงก์ไม่ถูกต้องหรือหมดอายุ' });
+        if (!resolved) { dropUploads(req); return res.status(404).json({ status: 'error', message: 'ลิงก์ไม่ถูกต้องหรือหมดอายุ' }); }
         const { project } = resolved;
         let meta;
         if (req.file) {
@@ -426,9 +441,9 @@ router.post('/:token/reports', (req, res, next) => {
             meta = { kind: 'link', original: (req.body.note || '').trim() || url, url };
         }
         const row = await store.projects.addAgencyReport(project.id, req.params.token, meta);
-        if (!row) return res.status(404).json({ status: 'error', message: 'ไม่พบลิงก์เอเจนซี่' });
+        if (!row) { dropUploads(req); return res.status(404).json({ status: 'error', message: 'ไม่พบลิงก์เอเจนซี่' }); }
         res.status(201).json({ status: 'success', data: row });
-    } catch (err) { next(err); }
+    } catch (err) { dropUploads(req); next(err); }
 });
 
 // GET /api/agency/:token/reports/:reportId/file — เปิด/ดาวน์โหลดไฟล์
@@ -472,7 +487,7 @@ router.get('/:token/messages', async (req, res, next) => {
 });
 
 // POST /api/agency/:token/messages — ข้อความ (+ รูป 1 ใบ)
-router.post('/:token/messages', (req, res, next) => {
+router.post('/:token/messages', onlyMultipart(requireLiveLink), (req, res, next) => {
     if (!String(req.headers['content-type'] || '').startsWith('multipart/')) return next();
     chatImage.fields([{ name: 'image', maxCount: 1 }, { name: 'thumb', maxCount: 1 }])(req, res, err => {
         if (err) return res.status(400).json({ status: 'error', message: err.message });
@@ -481,11 +496,11 @@ router.post('/:token/messages', (req, res, next) => {
 }, async (req, res, next) => {
     try {
         const r = await store.projects.resolveToken(req.params.token);
-        if (!r) return res.status(404).json({ status: 'error', message: 'ลิงก์ไม่ถูกต้องหรือหมดอายุ' });
+        if (!r) { dropUploads(req); return res.status(404).json({ status: 'error', message: 'ลิงก์ไม่ถูกต้องหรือหมดอายุ' }); }
         const text = String(req.body.text || '').trim();
         const full = req.files && req.files.image && req.files.image[0];
         const thumb = req.files && req.files.thumb && req.files.thumb[0];
-        if (!text && !full) return res.status(400).json({ status: 'error', message: 'พิมพ์ข้อความ หรือแนบรูปอย่างน้อยหนึ่งอย่าง' });
+        if (!text && !full) { dropUploads(req); return res.status(400).json({ status: 'error', message: 'พิมพ์ข้อความ หรือแนบรูปอย่างน้อยหนึ่งอย่าง' }); }
         const row = await store.projects.addAgencyMessage(r.project.id, req.params.token, {
             from: 'agency',
             by: r.link.name || 'เอเจนซี่',
@@ -493,10 +508,10 @@ router.post('/:token/messages', (req, res, next) => {
             image: full ? { filename: full.filename, original: full.originalname, size: full.size } : null,
             thumb: thumb ? { filename: thumb.filename, original: thumb.originalname, size: thumb.size } : null
         });
-        if (!row) return res.status(404).json({ status: 'error', message: 'ไม่พบห้องแชท' });
+        if (!row) { dropUploads(req); return res.status(404).json({ status: 'error', message: 'ไม่พบห้องแชท' }); }
         chatHub.broadcast(req.params.token);   // เด้งให้ทุกคนที่เปิดห้องอยู่รู้ทันที
         res.status(201).json({ status: 'success', data: row });
-    } catch (err) { next(err); }
+    } catch (err) { dropUploads(req); next(err); }
 });
 
 // POST /api/agency/:token/messages/read — บอกว่าอ่านถึงตอนนี้แล้ว

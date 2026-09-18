@@ -135,6 +135,95 @@ test('multipart upload and authenticated download use the external upload direct
     assert.equal((await request('/api/projects/23/brief/file')).status, 403);
 });
 
+
+test('uploads are refused before any file is written when the user may not edit the job', async () => {
+    const project = { id: 24, name: 'fixture', team_id: 1, brand: 'Beauterry', campaign_type: 'other',
+        hire_items: [
+            { key: 'h1', mode: 'direct', name: 'มะลิ', fee: 1000 },
+            { key: 'r1', mode: 'casting', kind: 'นางแบบ', fee: 1000, headcount: 1, filled: 0, assignee_id: 55,
+              candidates: [{ key: 'c1', name: 'ชบา', status: 'เสนอ', by_id: 55 }] }
+        ] };
+    store.projects.findByIdFull = async () => project;
+    store.projects.setBriefFile = async () => { throw new Error('must not be reached'); };
+    store.projects.patchHireItems = async () => { throw new Error('must not be reached'); };
+    store.activity.log = async () => {};
+    const before = fs.readdirSync(process.env.UPLOAD_DIR).length;
+    const send = (url, token = adminToken, name = 'big.pdf') => {
+        const form = new FormData();
+        form.append('file', new Blob([Buffer.alloc(64 * 1024)], { type: 'application/pdf' }), name);
+        return request(url, token, { method: 'POST', body: form });
+    };
+
+    // member ของแบรนด์อื่น: ทุกเส้นอัปของงานนี้ตีกลับ 403 และไม่มีไฟล์ใหม่ในโฟลเดอร์
+    user({ role: 'member', team_id: 2, brands: ['Jdent'] });
+    assert.equal((await send('/api/projects/24/brief/upload')).status, 403);
+    assert.equal((await send('/api/projects/24/hires/h1/image')).status, 403);
+    assert.equal((await send('/api/projects/24/product-brief/P1/file')).status, 403);
+    assert.equal((await send('/api/projects/24/platform-brief/TikTok/file')).status, 403);
+    // ไฟล์ของชื่อที่เสนอ: ไม่ใช่คนหาของใบ ไม่ใช่ทีมแบรนด์ → 403 · ชื่อที่ไม่มีอยู่ → 404
+    assert.equal((await send('/api/projects/24/hires/r1/candidates/c1/image')).status, 403);
+    assert.equal((await send('/api/projects/24/hires/r1/candidates/c1/video')).status, 403);
+    // ไฟล์นามสกุลที่ไม่รับ: ถ้าด่านอยู่หน้า multer ต้องได้ 403 (ไม่ใช่ 400 จากตัวกรองไฟล์) = ไม่ได้เริ่มรับไฟล์เลย
+    for (const url of ['/api/projects/24/brief/upload', '/api/projects/24/hires/h1/image',
+        '/api/projects/24/product-brief/P1/file', '/api/projects/24/platform-brief/TikTok/file',
+        '/api/projects/24/hires/r1/candidates/c1/image', '/api/projects/24/hires/r1/candidates/c1/video']) {
+        assert.equal((await send(url, adminToken, 'x.exe')).status, 403, url);
+    }
+    // แชตทีมกับเอเจนซี่: member แบรนด์อื่นส่งไม่ได้ ทั้งข้อความล้วนและแนบรูป
+    store.projects.addAgencyMessage = async () => { throw new Error('must not be reached'); };
+    assert.equal((await request('/api/projects/24/agency-links/tok1/messages', adminToken, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: 'hi' })
+    })).status, 403);
+    assert.equal((await send('/api/projects/24/agency-links/tok1/messages', adminToken, 'x.exe')).status, 403);
+
+    user({ role: 'member', team_id: 2, brands: ['Beauterry'] });
+    assert.equal((await send('/api/projects/24/hires/r1/candidates/nope/image')).status, 404);
+    assert.equal(fs.readdirSync(process.env.UPLOAD_DIR).length, before, 'ไม่มีไฟล์ค้างจากคำขอที่ถูกตีกลับ');
+
+    // งานปกติต้องยังผ่าน: คนหาที่ไม่มีสิทธิ์แบรนด์อัปคอมการ์ดของชื่อที่ตัวเองเสนอได้
+    let saved = structuredClone(project.hire_items);
+    store.projects.patchHireItems = async (id, key, fn) => {
+        const row = saved.find(it => it.key === key);
+        const next = row ? fn(structuredClone(row), structuredClone(saved)) : null;
+        if (!Array.isArray(next)) return null;
+        saved = next;
+        return structuredClone(next);
+    };
+    const finder = jwt.sign({ id: 55, role: 'member', team_id: 2 }, process.env.JWT_SECRET);
+    user({ id: 55, role: 'member', team_id: 2, brands: [] });
+    const ok = await send('/api/projects/24/hires/r1/candidates/c1/image', finder, 'card.png');
+    assert.equal(ok.status, 200);
+    const img = saved.find(it => it.key === 'r1').candidates[0].image;
+    assert.ok(img && fs.existsSync(path.join(process.env.UPLOAD_DIR, img.filename)));
+    fs.unlinkSync(path.join(process.env.UPLOAD_DIR, img.filename));
+});
+
+test('agency uploads need a live link before any file is accepted', async () => {
+    user({ role: 'agency', agency_tokens: ['tok9'] });
+    const before = fs.readdirSync(process.env.UPLOAD_DIR).length;
+    store.projects.resolveToken = async () => null;   // ลิงก์ถูกลบ/หมดอายุ แต่บัญชียังผูกอยู่
+    store.projects.addAgencyReport = async () => { throw new Error('must not be reached'); };
+    store.projects.addAgencyMessage = async () => { throw new Error('must not be reached'); };
+    const post = (url, name) => {
+        const form = new FormData();
+        form.append(url.endsWith('/messages') ? 'image' : 'file', new Blob([Buffer.alloc(1024)], { type: 'image/png' }), name);
+        return request(url, adminToken, { method: 'POST', body: form });
+    };
+    // ลิงก์ไม่อยู่แล้ว → 404 ก่อนรับไฟล์ (ไฟล์นามสกุลที่ไม่รับก็ยังได้ 404 ไม่ใช่ 400)
+    assert.equal((await post('/api/agency/tok9/reports', 'x.exe')).status, 404);
+    assert.equal((await post('/api/agency/tok9/messages', 'x.exe')).status, 404);
+    assert.equal(fs.readdirSync(process.env.UPLOAD_DIR).length, before);
+
+    // ลิงก์ใช้ได้ → ส่งรายงานได้ตามปกติ
+    store.projects.resolveToken = async () => ({ project: { id: 5, brand: 'Beauterry' }, link: { name: 'Agency' } });
+    let stored = null;
+    store.projects.addAgencyReport = async (pid, token, meta) => { stored = meta; return { id: 1, ...meta }; };
+    const res = await post('/api/agency/tok9/reports', 'report.pdf');
+    assert.equal(res.status, 201);
+    assert.ok(stored && fs.existsSync(path.join(process.env.UPLOAD_DIR, stored.filename)));
+    fs.unlinkSync(path.join(process.env.UPLOAD_DIR, stored.filename));
+});
+
 test('members can only create or move campaigns into brands they are assigned', async () => {
     const project = { id: 31, name: 'fixture', team_id: 2, brand: 'Jdent' };
     let created = 0, updated = 0;
@@ -454,6 +543,98 @@ test('booking steps: the finder confirms or releases, only the brand team decide
     user({ role: 'member', team_id: 2, brands: ['Beauterry'] });
     assert.equal((await post('p3/confirm', {})).status, 200);
     assert.equal(saved.find(it => it.key === 'p3').status, 'ตกลงแล้ว');
+});
+
+
+test('saving an Other job writes hire rows and the other fields in one transaction', async () => {
+    user();
+    const project = { id: 62, name: 'งานเดิม', brand: 'Beauterry', team_id: 1, campaign_type: 'other', status: 'Active',
+        updated_at: '2026-09-18T01:00:00.000Z', hire_items: [{ key: 'h1', mode: 'direct', name: 'มะลิ', fee: 1000, status: 'ตกลงแล้ว' }] };
+    store.projects.findByIdFull = async () => project;
+    store.activity.log = async () => {};
+    let plainUpdates = 0;
+    store.projects.update = async () => { plainUpdates++; return project; };
+    const calls = [];
+    let conflict = false;
+    store.projects.updateWithHireItems = async (id, fields, expected, build) => {
+        calls.push({ id, fields, expected });
+        if (conflict) return { conflict: true };
+        const items = build(project.hire_items);
+        return { row: { ...project, ...fields, hire_items: items }, items };
+    };
+    const put = body => request('/api/projects/62', adminToken, {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
+    });
+    const body = { name: 'ชื่อใหม่', status: 'Active', budget: 999999, expected_updated_at: project.updated_at,
+        hire_items: [{ key: 'h1', mode: 'direct', name: 'มะลิ', fee: 2500, status: 'ตกลงแล้ว' }] };
+
+    const res = await put(body);
+    assert.equal(res.status, 200);
+    assert.equal(calls.length, 1, 'บันทึกผ่านทรานแซกชันเดียว');
+    assert.equal(plainUpdates, 0, 'ไม่แยกบันทึกช่องอื่นอีกรอบ');
+    assert.equal(calls[0].fields.name, 'ชื่อใหม่');
+    assert.equal(calls[0].fields.budget, undefined, 'งบของงานจ้างคิดจากรายการจ้าง ไม่รับจากฟอร์ม');
+    assert.equal(calls[0].fields.hire_items, undefined);
+    assert.equal(calls[0].expected, project.updated_at);
+    assert.equal((await res.json()).data.name, 'ชื่อใหม่');
+
+    // มีคนแก้ระหว่างนั้น → 409 และไม่มีอะไรถูกบันทึกเลย (รวมช่องอื่นด้วย)
+    conflict = true;
+    assert.equal((await put(body)).status, 409);
+    assert.equal(plainUpdates, 0);
+
+    // แก้เฉพาะสถานะ (ไม่มีรายการจ้าง) → ทางเดิม
+    conflict = false;
+    assert.equal((await put({ status: 'Completed' })).status, 200);
+    assert.equal(plainUpdates, 1);
+});
+
+test('ad spend and reach typed on the Ads page are cleaned before saving', async () => {
+    user();
+    let sub = { id: 11, ad_spend: 0, ad_reach: 0, id_post: null, ad_synced_at: null };
+    store.ads.subContext = async () => ({ submission: sub, brand: 'Beauterry', project_id: 5, project_name: 'x', account_name: 'kol', team_id: 1 });
+    const saved = [];
+    store.submissions.update = async (id, pid, fields) => { saved.push(fields); return { id: Number(id), ...fields }; };
+    store.activity.log = async () => {};
+    const put = body => request('/api/ads/11', adminToken, {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
+    });
+    assert.equal((await put({ ad_spend: 12500, ad_reach: 34000 })).status, 200);
+    assert.deepEqual(saved.pop(), { ad_spend: 12500, ad_reach: 34000 });
+    assert.equal((await put({ ad_spend: -5000, ad_reach: -3 })).status, 200);
+    assert.deepEqual(saved.pop(), { ad_spend: 0, ad_reach: 0 }, 'ค่าติดลบกลายเป็น 0');
+    assert.equal((await put({ ad_spend: 'abc', ad_reach: 12.9 })).status, 200);
+    assert.deepEqual(saved.pop(), { ad_spend: 0, ad_reach: 12 });
+    assert.equal((await put({ ad_spend: 1e15 })).status, 200);
+    assert.equal(saved.pop().ad_spend, 100000000, 'เลขมหาศาลที่พิมพ์ผิดถูกจำกัด');
+    // member แบรนด์อื่นแก้ไม่ได้
+    user({ role: 'member', team_id: 2, brands: ['Jdent'] });
+    assert.equal((await put({ ad_spend: 1 })).status, 403);
+
+    // member ของแบรนด์นั้นเอง: มองไม่เห็นค่าแอด (ถูกปิดไว้) จึงห้ามเขียนทับ แต่ใส่ Reach ได้ และแถวที่คืนมาต้องไม่มีค่าแอด
+    user({ role: 'member', team_id: 2, brands: ['Beauterry'] });
+    store.submissions.update = async (id, pid, fields) => ({ id: 11, ad_spend: 25000, ad_reach: fields.ad_reach || 0, perf_stamp: { total_cost: 30000, cpm: 5 } });
+    assert.equal((await put({ ad_spend: 500 })).status, 403);
+    const memberRes = await put({ ad_reach: 900 });
+    assert.equal(memberRes.status, 200);
+    const memberRow = (await memberRes.json()).data;
+    assert.equal(memberRow.ad_spend, null);
+    assert.equal(memberRow.perf_stamp.total_cost, null);
+
+    // โพสต์ที่ PFM ซิงก์ค่าแอดให้ (ID Post เป็นตัวเลข / เคยซิงก์แล้ว) — กรอกทับไม่ได้ แม้เป็น admin
+    user();
+    store.submissions.update = async (id, pid, fields) => { saved.push(fields); return { id: Number(id), ...fields }; };
+    sub = { ...sub, id_post: '7412345678901234567' };
+    assert.equal((await put({ ad_spend: 100 })).status, 409);
+    sub = { ...sub, id_post: null, ad_synced_at: '2026-09-18T00:00:00.000Z' };
+    assert.equal((await put({ ad_spend: 100 })).status, 409);
+    assert.equal((await put({ ad_reach: 500 })).status, 200, 'Reach PFM ไม่ได้ส่งมา กรอกได้ทุกโพสต์');
+
+    // ค่าในฐานเปลี่ยนไประหว่างที่หน้าเปิดอยู่ → ไม่เขียนทับ
+    sub = { ...sub, ad_synced_at: null, ad_spend: 1200.5, ad_reach: 40 };
+    assert.equal((await put({ ad_spend: 900, ad_spend_from: 1000 })).status, 409);
+    assert.equal((await put({ ad_spend: 900, ad_spend_from: 1200.5 })).status, 200);
+    assert.equal((await put({ ad_reach: 90, ad_reach_from: 10 })).status, 409);
 });
 
 test('staff can only open agency links of brands they may see', async () => {

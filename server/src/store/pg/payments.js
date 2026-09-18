@@ -17,7 +17,7 @@ const {
     insertRow, updateRow
 } = require('./_base');
 const { loadSnapshot } = require('./_snapshot');
-const { clone, now } = require('../logic');
+const { clone, now, hireBreakdown } = require('../logic');
 
 // ============================ ตัวช่วยร่วม (ยกมาจาก jsonStore) ============================
 
@@ -115,11 +115,15 @@ const payments = {
                 const its = snap.installments.filter(i => i.project_id === p.id);
                 const paidAmt = its.filter(i => i.status === 'paid').reduce((s, i) => s + (Number(i.amount) || 0), 0);
                 const planAmt = its.reduce((s, i) => s + (Number(i.amount) || 0), 0);
+                const other = (p.campaign_type || 'kol') === 'other';
                 return clone({
                     project_id: p.id,
                     project_name: p.name,
                     brand: p.brand,
                     budget: p.budget,
+                    campaign_type: other ? 'other' : 'kol',
+                    // งานจ้างอื่น ๆ: งบรวมงบของคนที่ยังไม่ตกลง/ยังหาไม่ได้ด้วย — แยกให้เห็นว่าก้อนไหนจ่ายได้จริง
+                    hire_breakdown: other ? hireBreakdown(p.hire_items) : null,
                     team_name: team ? team.name : null,
                     agency_name: pay.agency_name || null,
                     payment_date: pay.payment_date || null,

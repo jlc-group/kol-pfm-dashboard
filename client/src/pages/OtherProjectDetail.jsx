@@ -9,6 +9,7 @@ import OtherProjectForm, {
 import HireRequestCard from '../components/HireRequestCard.jsx';
 import FilePreviewModal from '../components/FilePreviewModal.jsx';
 import { fmtRange } from '../utils/date.js';
+import { setNavSection } from '../utils/navSection.js';
 
 // หน้ารายละเอียดของแคมเปญ "งานจ้างอื่น ๆ" (campaign_type = 'other')
 // งานแบบนี้ไม่มี Platform / คลิป / ค่าแอด / เอเจนซี่ — สิ่งที่ต้องดูคือ "จ้างใคร ทำอะไร วันไหน เท่าไร"
@@ -29,6 +30,8 @@ const rowsOf = p => (Array.isArray(p.hire_items) ? p.hire_items : []).map((it, i
 export default function OtherProjectDetail({ project, reload, onDeleted }) {
     const navigate = useNavigate();
     const location = useLocation();
+    // หน้านี้เป็นของเมนู "งานจ้างอื่น ๆ" แม้ URL จะเป็น /projects/:id — ให้เมนูด้านข้างไฮไลต์ถูกอัน
+    useEffect(() => { setNavSection('hires'); return () => setNavSection(null); }, []);
     const [tab, setTab] = useState('people');      // people = รายชื่อผู้รับงาน · days = ตารางงานตามวัน
     const [statusPick, setStatusPick] = useState('');
     // ช่องที่แก้ในตาราง (สถานะ/ลิงก์ Account/หมายเหตุ) เก็บไว้ก่อน แล้วกดบันทึกทีเดียว

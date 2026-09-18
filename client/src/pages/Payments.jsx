@@ -9,6 +9,23 @@ import { BRANDS } from '../data/brands.js';
 
 const baht = n => '฿' + Number(n || 0).toLocaleString('th-TH');
 
+// งบของงานจ้างอื่น ๆ แยกตามความคืบหน้า (มาจาก server: hire_breakdown) — โชว์เฉพาะก้อนที่มียอด
+function HireSplit({ split }) {
+    const parts = [
+        ['agreed', 'ตกลงแล้ว (จ่ายได้)', split.agreed],
+        ['pending', 'รอตกลง / รอคอนเฟิร์มคิว', split.pending],
+        ['unfilled', 'ยังหาคนไม่ได้', split.unfilled]
+    ].filter(p => Number(p[2]) > 0);
+    if (!parts.length) return null;
+    return (
+        <div className="hire-split">
+            {parts.map(([k, label, v]) => (
+                <span key={k} className={'hire-split-' + k}>{label} {baht(v)}</span>
+            ))}
+        </div>
+    );
+}
+
 const TH_MON = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
 // '2026-09-15' -> '15 ก.ย. 2026'
 function fmtDateTh(d) {
@@ -473,7 +490,9 @@ function CampaignCard({ row, onOpen }) {
                 <div className="pcard-foot">
                     <div>
                         <div className="pcard-budget-val">{baht(row.budget)}</div>
-                        <div className="pcard-budget-lbl">งบแคมเปญ</div>
+                        <div className="pcard-budget-lbl">{row.hire_breakdown ? 'งบงานจ้าง' : 'งบแคมเปญ'}</div>
+                        {/* งานจ้างอื่น ๆ: งบรวมงบของคนที่ยังไม่ตกลง/ยังหาไม่ได้ — แยกให้เห็นก่อนตั้งงวด */}
+                        {row.hire_breakdown && <HireSplit split={row.hire_breakdown} />}
                     </div>
                     <div className="pay-docs">
                         <span className={row.quotation || row.quotation_link ? 'doc-ok' : 'doc-no'}>📄 เสนอราคา</span>
@@ -609,6 +628,12 @@ function PlanModal({ row, onClose, onSaved, onReload }) {
                                 {row.brand && <span className="cat-chip">{row.brand}</span>}
                                 <span className="muted"> · ฐานคิดยอด {baht(budget)}{curGroup ? " (กลุ่มนี้)" : " (ทั้งแคมเปญ)"}</span>
                             </div>
+                            {row.hire_breakdown && (Number(row.hire_breakdown.pending) > 0 || Number(row.hire_breakdown.unfilled) > 0) && (
+                                <div className="hire-split-note">
+                                    งบนี้รวมคนที่ยังไม่ตกลง/ยังหาไม่ได้ด้วย — ยอดที่ตกลงแล้วจริง {baht(row.hire_breakdown.agreed)}
+                                    <HireSplit split={row.hire_breakdown} />
+                                </div>
+                            )}
                         </div>
                     </div>
                     <button className="modal-x" onClick={onClose}>×</button>

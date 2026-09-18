@@ -9,11 +9,22 @@ import { useAuth } from '../auth/AuthContext.jsx';
  * ฝั่ง server กันไว้อีกชั้นแล้ว ตรงนี้แค่ทำให้หน้าจอไม่ค้างหรือขึ้น error เปล่า ๆ
  */
 export default function AgencyRoute({ children }) {
-    const { user, loading } = useAuth();
+    const { user, loading, connecting, authError, retry } = useAuth();
     const { token } = useParams();
     const loc = useLocation();
 
-    if (loading) return <div className="page-loading">กำลังโหลด...</div>;
+    if (loading) return <div className="page-loading">{connecting ? 'กำลังเชื่อมต่อเซิร์ฟเวอร์ใหม่... (ระบบอาจกำลังอัปเดต)' : 'กำลังโหลด...'}</div>;
+    // เซิร์ฟเวอร์ยังตอบไม่ได้ (ไม่ใช่ token เสีย) — ให้กดลองใหม่ ไม่เตะไปหน้าล็อกอิน
+    if (!user && authError) {
+        return (
+            <div className="page-loading">
+                <div className="auth-retry">
+                    <p>{authError}</p>
+                    <button type="button" className="btn-primary" onClick={retry}>ลองใหม่</button>
+                </div>
+            </div>
+        );
+    }
     if (!user) return <Navigate to="/login" state={{ from: loc.pathname + loc.search + loc.hash }} replace />;
 
     if (user.role === 'agency' && !(user.agency_tokens || []).includes(token)) {

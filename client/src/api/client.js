@@ -10,7 +10,8 @@ export function setToken(token) {
 }
 
 // เรียก API — คืน data ที่ parse แล้ว หรือ throw error พร้อมข้อความไทย
-export async function api(path, { method = 'GET', body } = {}) {
+// signal (ไม่บังคับ) ใช้ตั้งเวลาหมดของคำขอ — เช่นตอนเช็คการล็อกอินตอนเปิดแอป ไม่ให้ค้างรอนาน
+export async function api(path, { method = 'GET', body, signal } = {}) {
     const headers = { 'Content-Type': 'application/json' };
     const token = getToken();
     if (token) headers['Authorization'] = `Bearer ${token}`;
@@ -18,7 +19,8 @@ export async function api(path, { method = 'GET', body } = {}) {
     const res = await fetch(`/api${path}`, {
         method,
         headers,
-        body: body ? JSON.stringify(body) : undefined
+        body: body ? JSON.stringify(body) : undefined,
+        signal
     });
 
     let json = null;

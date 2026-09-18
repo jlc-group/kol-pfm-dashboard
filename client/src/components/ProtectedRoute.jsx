@@ -4,11 +4,22 @@ import Pending from '../pages/Pending.jsx';
 
 // ป้องกันหน้าที่ต้องล็อกอินก่อน — ถ้ายังไม่ล็อกอิน เด้งไปหน้า Login
 export default function ProtectedRoute({ children }) {
-    const { user, loading } = useAuth();
+    const { user, loading, connecting, authError, retry } = useAuth();
     const loc = useLocation();
 
     if (loading) {
-        return <div className="page-loading">กำลังโหลด...</div>;
+        return <div className="page-loading">{connecting ? 'กำลังเชื่อมต่อเซิร์ฟเวอร์ใหม่... (ระบบอาจกำลังอัปเดต)' : 'กำลังโหลด...'}</div>;
+    }
+    // ยังล็อกอินอยู่ (มี token) แต่เซิร์ฟเวอร์ยังตอบไม่ได้ — ไม่พาไปหน้าล็อกอิน ให้กดลองใหม่
+    if (!user && authError) {
+        return (
+            <div className="page-loading">
+                <div className="auth-retry">
+                    <p>{authError}</p>
+                    <button type="button" className="btn-primary" onClick={retry}>ลองใหม่</button>
+                </div>
+            </div>
+        );
     }
     if (!user) {
         // จำลิงก์เดิมไว้ทั้ง query และ hash (เช่นลิงก์ใบขอจัดหาที่ส่งทาง LINE) — ล็อกอินเสร็จจะพากลับมาที่เดิม

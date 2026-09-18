@@ -16,7 +16,7 @@ const {
     now, clone, scopeProjects,
     resolveGroupTarget, resolveGroupProducts, resolveGroupCtype, resolveGroupMedia, resolveGroupCampaign,
     engagementOf, clipCostMetrics, perfVerdict,
-    maybeStamp, stampWaitReason
+    maybeStamp, stampWaitReason, pfmManagedSpend
 } = logic;
 
 // ===== สแตมป์ Performance ตอนค่าแอดถึงเกณฑ์ =====
@@ -181,6 +181,8 @@ const ads = {
                     ad_status: s.ad_status || 'ยังไม่ยิง',
                     ad_spend: spend,
                     ad_reach: reach,
+                    // ค่าแอดมาจาก PFM อัตโนมัติ (หน้าโฆษณาไม่ให้กรอกทับ)
+                    spend_from_pfm: pfmManagedSpend(s),
                     ad_start: s.ad_start || null,
                     ad_end: s.ad_end || null,
                     ad_note: s.ad_note || null,

@@ -107,6 +107,31 @@ function hireStage(it, jobStatus, items) {
     return 'finding';
 }
 
+// ===== ค่าแอดของโพสต์มาจากระบบ PFM อัตโนมัติไหม =====
+// PFM ซิงก์ค่าแอดให้โพสต์ที่มี ID Post เป็นตัวเลข (TikTok) และซิงก์ได้ทางเดียว (ขึ้นอย่างเดียว)
+// ถ้าให้กรอกทับ ยอดที่กรอกเกินจริงจะค้างถาวร และถ้ากรอกต่ำกว่า ซิงก์รอบหน้าจะเขียนทับกลับ — โพสต์พวกนี้จึงให้ PFM ดูแลอย่างเดียว
+function pfmManagedSpend(s) {
+    return !!(s && (s.ad_synced_at || /^\d{1,50}$/.test(String(s.id_post || '').trim())));
+}
+
+// ===== งบของงานจ้างอื่น ๆ แยกตามความคืบหน้า (หน้ารอบทำจ่าย) =====
+// งบของงาน = ผลรวมทุกแถว แต่ไม่ใช่ทั้งก้อนที่ "จ่ายได้" — ต้องแยกให้แอดมินเห็นก่อนตั้งงวด
+//  agreed   = ตกลงแล้ว / ถ่ายเสร็จ / ส่งงานแล้ว (จ่ายได้จริง)
+//  pending  = ยังทาบทาม หรือยังค้างคอนเฟิร์มคิว / ค่าตัวใหม่ (ยังไม่แน่นอน)
+//  unfilled = งบของใบขอจัดหาที่ยังหาคนไม่ได้ (ยังไม่มีคนให้จ่าย)
+const HIRE_PAYABLE = ['ตกลงแล้ว', 'ถ่ายเสร็จ', 'ส่งงานแล้ว'];
+function hireBreakdown(items) {
+    const out = { agreed: 0, pending: 0, unfilled: 0 };
+    (Array.isArray(items) ? items : []).forEach(it => {
+        if (!it) return;
+        const fee = hireRowFee(it);
+        if (it.mode === 'casting') { out.unfilled += fee; return; }
+        if (!bookingOpen(it) && HIRE_PAYABLE.includes(String(it.status || '').trim())) out.agreed += fee;
+        else out.pending += fee;
+    });
+    return out;
+}
+
 // ----- การเปลี่ยนขั้นคอนเฟิร์มคิว (ฟังก์ชันบริสุทธิ์: รับ hire_items ทั้งงาน คืน { list, row } หรือ { error }) -----
 const isDateStr = v => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v);
 const clipText = (v, n) => { const s = v == null ? '' : String(v).trim(); return s ? s.slice(0, n) : null; };
@@ -534,7 +559,7 @@ module.exports = {
     duplicateError, inScope, scopeProjects, hireRemaining, hireRowFee,
     HIRE_JOB_CLOSED, hireWaiting, hireNeedMore, hireStage,
     BOOK_PENDING, BOOK_FEE, BOOK_OK, HIRE_BOOKED, HIRE_AGREED, bookingState, bookingOpen, hireBookings,
-    releaseToRequest, bookingConfirm, bookingFeeDecision, bookingUnavailable,
+    releaseToRequest, bookingConfirm, bookingFeeDecision, bookingUnavailable, hireBreakdown, pfmManagedSpend,
     resolveInside, sameInstant, mergeHireItems, mergeBriefFiles, cleanFee, cleanHeadcount, safeId, safeSlug,
     linkGroupPlatforms, resolveGroupClips, resolveGroupTarget,
     resolveGroupProducts, resolveGroupCtype, resolveGroupMedia, resolveGroupCampaign,

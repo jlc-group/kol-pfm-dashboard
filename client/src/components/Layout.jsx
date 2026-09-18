@@ -1,10 +1,13 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Suspense } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext.jsx';
 import Icon from './Icon.jsx';
 import { api } from '../api/client.js';
 import { ROLE_LABEL } from '../data/brands.js';
 import ChangePasswordModal from './ChangePasswordModal.jsx';
+import { useNavSection } from '../utils/navSection.js';
+import PageErrorBoundary from './PageErrorBoundary.jsx';
+import { preloadPages } from '../pages/lazyPages.js';
 
 const MAIN_NAV = [
     { to: '/', label: 'ภาพรวม', icon: 'dashboard', end: true },
@@ -24,6 +27,19 @@ const ADMIN_NAV = [
 
 export default function Layout() {
     const { user, logout, isAdmin } = useAuth();
+    // หน้างานจ้างอื่น ๆ ใช้ URL /projects/:id ร่วมกับแคมเปญ KOL — หน้านั้นบอกมาเองว่าเป็นของเมนูไหน
+    const navSection = useNavSection();
+    // โหลดไฟล์ของหน้าอื่น ๆ ล่วงหน้าตอนเครื่องว่าง — เปลี่ยนหน้าครั้งแรกบนมือถือจะได้ไม่ค้างหน้าเดิม
+    useEffect(() => {
+        if (!user) return undefined;
+        const run = () => preloadPages(isAdmin);
+        if (typeof window.requestIdleCallback === 'function') {
+            const id = window.requestIdleCallback(run, { timeout: 5000 });
+            return () => window.cancelIdleCallback && window.cancelIdleCallback(id);
+        }
+        const t = setTimeout(run, 2500);
+        return () => clearTimeout(t);
+    }, [user, isAdmin]);
     const navigate = useNavigate();
     const location = useLocation();
     const [showPw, setShowPw] = useState(false);
@@ -91,7 +107,12 @@ export default function Layout() {
                 to={item.to}
                 end={item.end}
                 onClick={() => setNavOpen(false)}
-                className={({ isActive }) => 'nav-item' + (isActive ? ' active' : '')}
+                className={({ isActive }) => {
+                    const on = item.to === '/projects' ? (isActive && navSection !== 'hires')
+                        : item.to === '/hires' ? (isActive || navSection === 'hires')
+                            : isActive;
+                    return 'nav-item' + (on ? ' active' : '');
+                }}
             >
                 <Icon name={item.icon} size={19} />
                 {item.label}
@@ -172,7 +193,13 @@ export default function Layout() {
             </aside>
             {showPw && <ChangePasswordModal onClose={() => setShowPw(false)} />}
             <main id="main-content" className="content" tabIndex="-1">
-                <Outlet />
+                {/* หน้าต่าง ๆ แยกไฟล์ — ระหว่างโหลดหน้าที่เปิดครั้งแรก เมนูด้านข้างยังอยู่ */}
+                {/* หน้าไหนพัง (เช่นโหลดไฟล์ไม่ได้) ขึ้นข้อความพร้อมปุ่มโหลดใหม่ เมนูยังอยู่ · เปลี่ยนเมนูแล้วเริ่มใหม่ */}
+                <PageErrorBoundary key={location.pathname}>
+                    <Suspense fallback={<div className="page-loading-inline">กำลังโหลด...</div>}>
+                        <Outlet />
+                    </Suspense>
+                </PageErrorBoundary>
             </main>
         </div>
     );
