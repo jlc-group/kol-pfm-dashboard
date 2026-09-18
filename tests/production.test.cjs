@@ -251,7 +251,7 @@ test('members can only create or move campaigns into brands they are assigned', 
 
 function agencyFixture() {
     const project = { id: 41, name: 'fixture', brand: 'Jdent', platform_budgets: { TikTok: 90000 },
-        ad_groups: [{ key: 'g1', budget: 90000, products: [], blocks: [{ platform: 'TikTok', budget: '90000', products: [], clips: [], sets: [] }] }] };
+        ad_groups: [{ key: 'g1', budget: 90000, products: [], blocks: [{ platform: 'TikTok', budget: '90000', budget_mode: 'split', product_budgets: { L3: 90000 }, products: ['L3'], clips: [], sets: [] }] }] };
     const link = { token: 'tok1', scoped: true, name: 'Fixture Agency', products: [], platforms: [], groups: [], reports: [] };
     const row = { id: 5, project_id: 41, agency_token: 'tok1', person_key: 'p1', budget: '5000.00', ad_spend: '12000.00', ad_status: 'ยิงแล้ว',
         perf_stamp: { views: 1000, verdict: 'Pass', ad_spend: 12000, total_cost: 17000, cpm: 17, cpe: 2 } };
@@ -268,6 +268,7 @@ test('agency accounts get no team budgets, and only admin/manager get ad costs o
     assert.deepEqual(seen.platform_budgets, {});
     assert.equal('budget' in seen.ad_groups[0], false);
     assert.equal('budget' in seen.ad_groups[0].blocks[0], false);
+    assert.equal('product_budgets' in seen.ad_groups[0].blocks[0], false);   // งบแยกต่อสินค้าก็เป็นงบของทีม
     assert.equal(seen.ad_groups[0].blocks[0].platform, 'TikTok');
     // ค่าตัว KOL: บัญชีเอเจนซี่ได้ null แต่คีย์ต้องยังอยู่ (แท็บเก่าทำ Number(s.budget) ไม่มีคีย์จะขึ้น ฿NaN)
     assert.equal('budget' in seen.submissions[0], true);
@@ -280,6 +281,7 @@ test('agency accounts get no team budgets, and only admin/manager get ad costs o
     const staff = (await (await request('/api/agency/tok1')).json()).data;
     assert.deepEqual(staff.platform_budgets, { TikTok: 90000 });
     assert.equal(staff.ad_groups[0].blocks[0].budget, '90000');
+    assert.deepEqual(staff.ad_groups[0].blocks[0].product_budgets, { L3: 90000 });
     assert.equal(staff.submissions[0].budget, '5000.00');
     assert.equal(staff.submissions[0].ad_spend, '12000.00');
     user({ role: 'member', brands: ['Jdent'] });
@@ -731,4 +733,62 @@ test('unknown campaign types fall back to kol in the store', async () => {
     } finally {
         if (!hadFile) fs.rmSync(dataFile, { force: true });
     }
+});
+
+test('saving from a tab opened before the per-product Target deploy keeps the saved per-product Targets', async () => {
+    const project = { id: 33, name: 'fixture', team_id: 1, brand: 'Jdent', ad_groups: [{ key: 'g1', blocks: [
+        { platform: 'TikTok', products: ['L3', 'L4'], target: ['a', 'b'], product_targets: { L3: ['a'], L4: ['b'] } }] }] };
+    let sent = null;
+    store.projects.findByIdFull = async () => project;
+    store.projects.update = async (id, fields) => { sent = fields; return { ...project, ...fields }; };
+    store.activity.log = async () => {};
+    user();
+    const put = groups => request('/api/projects/33', adminToken, { method: 'PUT', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: 'x', ad_groups: groups }) });
+    // ฟอร์มรุ่นเก่าส่งบล็อกที่ไม่มี product_targets และ Target รวมเท่าเดิม → ยกของเดิมมาต่อ
+    assert.equal((await put([{ key: 'g1', blocks: [{ platform: 'TikTok', products: ['L3', 'L4'], target: ['b', 'a'] }] }])).status, 200);
+    assert.deepEqual(sent.ad_groups[0].blocks[0].product_targets, { L3: ['a'], L4: ['b'] });
+    // ฟอร์มรุ่นใหม่ส่งมาเอง → ใช้ของที่ส่งมา
+    assert.equal((await put([{ key: 'g1', blocks: [{ platform: 'TikTok', products: ['L3'], target: ['a'], product_targets: { L3: ['a'] } }] }])).status, 200);
+    assert.deepEqual(sent.ad_groups[0].blocks[0].product_targets, { L3: ['a'] });
+});
+
+test('saving from a tab opened before the per-product budget deploy keeps the per-product budgets', async () => {
+    const project = { id: 34, name: 'fixture', team_id: 1, brand: 'Jdent', ad_groups: [{ key: 'g1', blocks: [
+        { platform: 'Facebook', products: ['L3', 'L4'], budget: '500', budget_mode: 'split', product_budgets: { L3: 300, L4: 200 } }] }] };
+    let sent = null;
+    store.projects.findByIdFull = async () => project;
+    store.projects.update = async (id, fields) => { sent = fields; return { ...project, ...fields }; };
+    store.activity.log = async () => {};
+    user();
+    const put = groups => request('/api/projects/34', adminToken, { method: 'PUT', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: 'x', ad_groups: groups }) });
+    // ฟอร์มรุ่นเก่าไม่ส่ง budget_mode และงบเท่าเดิม → ยกงบรายสินค้าเดิมมาต่อ
+    assert.equal((await put([{ key: 'g1', blocks: [{ platform: 'Facebook', products: ['L3', 'L4'], budget: '500' }] }])).status, 200);
+    assert.equal(sent.ad_groups[0].blocks[0].budget_mode, 'split');
+    assert.deepEqual(sent.ad_groups[0].blocks[0].product_budgets, { L3: 300, L4: 200 });
+    // ฟอร์มรุ่นใหม่เปลี่ยนเป็นงบก้อนเดียว → ใช้ตามที่ส่งมา
+    assert.equal((await put([{ key: 'g1', blocks: [{ platform: 'Facebook', products: ['L3', 'L4'], budget: '500', budget_mode: 'total' }] }])).status, 200);
+    assert.equal(sent.ad_groups[0].blocks[0].budget_mode, 'total');
+    assert.equal(sent.ad_groups[0].blocks[0].product_budgets, undefined);
+});
+
+test('saving from a tab opened before the per-product concept deploy keeps the per-product concepts', async () => {
+    const project = { id: 35, name: 'fixture', team_id: 1, brand: 'Jdent', ad_groups: [{ key: 'g1', concept: 'หลัก',
+        blocks: [{ platform: 'TikTok', products: ['L3', 'L4'], concept_split: true, product_concepts: { L3: 'กันแดด' } }] }] };
+    let sent = null;
+    store.projects.findByIdFull = async () => project;
+    store.projects.update = async (id, fields) => { sent = fields; return { ...project, ...fields }; };
+    store.activity.log = async () => {};
+    user();
+    const put = groups => request('/api/projects/35', adminToken, { method: 'PUT', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: 'x', ad_groups: groups }) });
+    // ฟอร์มรุ่นเก่าไม่ส่ง concept_split และ Concept หลักเท่าเดิม → ยก Concept ต่อสินค้าเดิมมาต่อ
+    assert.equal((await put([{ key: 'g1', concept: 'หลัก', blocks: [{ platform: 'TikTok', products: ['L3', 'L4'] }] }])).status, 200);
+    assert.equal(sent.ad_groups[0].blocks[0].concept_split, true);
+    assert.deepEqual(sent.ad_groups[0].blocks[0].product_concepts, { L3: 'กันแดด' });
+    // ฟอร์มรุ่นใหม่ปิดการแยก → ใช้ตามที่ส่งมา
+    assert.equal((await put([{ key: 'g1', concept: 'หลัก', blocks: [{ platform: 'TikTok', products: ['L3', 'L4'], concept_split: false }] }])).status, 200);
+    assert.equal(sent.ad_groups[0].blocks[0].concept_split, false);
+    assert.equal(sent.ad_groups[0].blocks[0].product_concepts, undefined);
 });

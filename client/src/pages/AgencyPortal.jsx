@@ -9,10 +9,11 @@ import Avatar from '../components/Avatar.jsx';
 import OnProcessTable from '../components/OnProcessTable.jsx';
 import StageCards from '../components/StageCards.jsx';
 import ProductChips, { ProductSummary } from '../components/ProductChips.jsx';
+import ConceptLines from '../components/ConceptLines.jsx';
 import { productLabel } from '../data/products.js';
 import {
     groupPlatforms, allocsInScope, contentTypesOf, mediaFor,
-    tiersOf, productsFor, clipCountFor, quotaOf, contentCells, cellKeyOf, cellKey
+    tiersOf, productsFor, clipCountFor, quotaOf, contentCells, cellKeyOf, cellKey, hasOwnConcepts
 } from '../data/adGroups.js';
 import { groupClips, clipCount, collapseByPerson, countPeople } from '../data/clips.js';
 import { tabBadges, markSeen, seedDraftsSeen } from '../utils/tabUpdates.js';
@@ -359,15 +360,22 @@ function LeftoverBox({ rows, group, agencyName, onEdit, onDelete, onNote }) {
     );
 }
 
+// ขอบเขตที่ลิงก์นี้เห็นในกลุ่มหนึ่ง: Platform ที่รับผิดชอบ (หรือที่กำลังกรอง) + สินค้าของ Platform เหล่านั้น
+// ใช้ทั้งแท็บรายชื่อ (GroupSection) และหัวกลุ่มในแท็บ On Process ให้เห็นตรงกัน
+function agencyScopeOf(group, scopePlatforms = [], platFilter = 'all') {
+    const groupPlats = groupPlatforms(group);
+    const platforms = platFilter !== 'all' ? [platFilter]
+        : (scopePlatforms.length ? scopePlatforms.filter(p => groupPlats.includes(p)) : groupPlats);
+    const products = platforms.length
+        ? [...new Set(platforms.flatMap(p => productsFor(group, p)))]
+        : (group.products || []);
+    return { platforms, products };
+}
+
 // section 1 กลุ่มสินค้า — โชว์ความต้องการ (Platform/Tier/จำนวน) + กล่องกรอกแยกตาม Content Type
 function GroupSection({ token, group, gi, subs, onReload, onEdit, onDelete, onNote, agencyName, scopePlatforms = [], platFilter = 'all' }) {
-    const groupPlats = groupPlatforms(group);
     // Platform ที่กำลังดูอยู่ — งบ / จำนวนคน / Content ต่อคน ต้องคิดเฉพาะขอบเขตนี้
-    const scopePlats = platFilter !== 'all' ? [platFilter]
-        : (scopePlatforms.length ? scopePlatforms.filter(p => groupPlats.includes(p)) : groupPlats);
-    const groupProducts = scopePlats.length
-        ? [...new Set(scopePlats.flatMap(p => productsFor(group, p)))]
-        : (group.products || []);
+    const { platforms: scopePlats, products: groupProducts } = agencyScopeOf(group, scopePlatforms, platFilter);
     // เห็นแค่แถวของ Platform ที่เจ้านี้รับผิดชอบ ไม่ใช่ทั้งกลุ่ม
     const myAllocs = allocsInScope(group, platFilter === 'all' ? scopePlatforms : [platFilter]);
     const myKol = myAllocs.reduce((s, a) => s + (Number(a.kols) || 0), 0);
@@ -407,7 +415,10 @@ function GroupSection({ token, group, gi, subs, onReload, onEdit, onDelete, onNo
                             {perClip > 1 && <span className="ag-clip-note"> × {perClip} คลิป = {totalClips} คลิป</span>}
                         </div>
                     )}
-                    {group.concept && <div className="ag-concept-top">📝 Concept: <b>{group.concept}</b></div>}
+                    {/* Concept แยกต่อสินค้า — เอเจนซี่บรีฟ KOL ตามสินค้าของแต่ละคนได้ (เฉพาะสินค้าที่ลิงก์นี้เห็น) */}
+                    {hasOwnConcepts(group, groupProducts, scopePlats)
+                        ? <div className="ag-concept-top">📝 Concept ตามสินค้า<ConceptLines group={group} products={groupProducts} platforms={scopePlats} className="ag" /></div>
+                        : group.concept && <div className="ag-concept-top">📝 Concept: <b>{group.concept}</b></div>}
                     <div style={{ marginTop: 8 }}>
                         <ProductChips products={groupProducts} />
                     </div>
@@ -830,6 +841,7 @@ export default function AgencyPortal() {
                             subs={subs}
                             stage={stage} onClearStage={() => setStage('all')}
                             groups={adGroups}
+                            conceptScope={g => agencyScopeOf(g, scopePlatforms)}
                             scope={token}
                             directEdit
                             putSubmission={(subId, payload) => api(`/agency/${token}/submissions/${subId}`, { method: 'PUT', body: payload })}

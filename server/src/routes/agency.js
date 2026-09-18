@@ -166,7 +166,8 @@ function withoutGroupBudgets(groups) {
     return groups.map(g => {
         const out = { ...g };
         delete out.budget;   // งบก้อนเดียวของกลุ่มแบบเก่า — หน้าเว็บเกลี่ยกลับเป็นงบต่อ Platform ได้ จึงต้องตัดด้วย
-        if (Array.isArray(g.blocks)) out.blocks = g.blocks.map(b => { const nb = { ...b }; delete nb.budget; return nb; });
+        // งบแยกต่อสินค้าก็เป็นงบของทีม — ตัดเหมือนงบของ Platform
+        if (Array.isArray(g.blocks)) out.blocks = g.blocks.map(b => { const nb = { ...b }; delete nb.budget; delete nb.product_budgets; return nb; });
         return out;
     });
 }

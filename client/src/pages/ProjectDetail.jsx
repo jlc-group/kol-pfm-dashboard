@@ -6,14 +6,15 @@ import ProjectForm from '../components/ProjectForm.jsx';
 import OtherProjectDetail from './OtherProjectDetail.jsx';
 import OnProcessTable from '../components/OnProcessTable.jsx';
 import ProductChips, { ProductSummary } from '../components/ProductChips.jsx';
+import ConceptLines from '../components/ConceptLines.jsx';
 import ProductMultiSelect from '../components/ProductMultiSelect.jsx';
 import { unreadCount } from '../components/MessageBox.jsx';
 import ChatDock from '../components/ChatDock.jsx';
 import { productLabel, asTargetArray } from '../data/products.js';
 import {
     groupPlatforms, kolInScope, contentTypesOf, mediaFor, quotaOf,
-    toBlocks, blockKol, blocksKol, blocksBudget, num, needTarget,
-    contentCells, cellKeyOf, cellKey, clipCountFor
+    toBlocks, blockKol, blocksKol, blocksBudget, num, needTarget, isSplitBudget, hasOwnConcepts, conceptText,
+    contentCells, cellKeyOf, cellKey, clipCountFor, targetFor
 } from '../data/adGroups.js';
 import { clipCount, collapseByPerson, countPeople } from '../data/clips.js';
 import StageCards from '../components/StageCards.jsx';
@@ -171,7 +172,8 @@ function AddSubmissionModal({ projectId, products = [], groups = [], onClose, on
                                         const opts = plat ? contentTypesOf(g, plat) : [];
                                         const ct = opts.length === 1 ? opts[0] : f.content_type;
                                         const m = mediaFor(g, plat, ct);
-                                        const tg = asTargetArray(g.target);
+                                        // Target ตามสินค้าที่เลือกในฟอร์มนี้ (ถ้าเลือกแล้ว) ไม่งั้นเป็น Target รวมของ Platform
+                                        const tg = plat ? asTargetArray(targetFor(g, plat, f.product)) : asTargetArray(g.target);
                                         const empty = !ct && !m.media_type && !m.content_format && tg.length === 0;
                                         return (
                                             <div className="ag-group-req">
@@ -337,6 +339,18 @@ function AgencyLinkRow({ l, url, copied, onCopy, onEdit, onDelete, onChat, unrea
             )}
         </div>
     );
+}
+
+// สินค้าในบล็อกที่ตั้ง Target เป็นชุดเดียวกัน รวมไว้แถวเดียว (เรียงตามสินค้าตัวแรกที่เจอ)
+function groupByTargets(b) {
+    const rows = [];
+    (b.products || []).forEach(code => {
+        const targets = asTargetArray((b.product_targets || {})[code]);
+        const key = [...targets].sort().join('|');
+        const row = rows.find(r => r.key === key);
+        if (row) row.codes.push(code); else rows.push({ key, targets, codes: [code] });
+    });
+    return rows;
 }
 
 export default function ProjectDetail() {
@@ -831,7 +845,7 @@ export default function ProjectDetail() {
                     <div className="grp-bar-row">
                         <span className="grp-no">กลุ่มที่ {gi + 1}</span>
                         <div className="grp-chips"><ProductSummary value={g.products || []} max={4} /></div>
-                        {g.concept && <span className="grp-concept">📝 Concept: {g.concept}</span>}
+                        {conceptText(g) && <span className="grp-concept" title={conceptText(g, true)}>📝 Concept: {conceptText(g)}</span>}
                     </div>
                     <span className="grp-count grp-count-under">
                         {/* กรอง Platform/Content Type อยู่ ตัวหารต้องเป็นโควตาเฉพาะที่กรอง ไม่ใช่ยอดรวมทั้งกลุ่ม */}
@@ -1005,10 +1019,13 @@ export default function ProjectDetail() {
                                         <div className="adg-card" key={i}>
                                             <div className="adg-card-head">
                                                 <span className="adg-badge">กลุ่มที่ {i + 1}</span>
-                                                {g.concept && <span className="adg-concept">📝 Concept: {g.concept}</span>}
+                                                {hasOwnConcepts(g)
+                                                    ? <span className="adg-concept">📝 Concept แยกตามสินค้า</span>
+                                                    : g.concept && <span className="adg-concept">📝 Concept: {g.concept}</span>}
                                                 {blocksKol(blocks) > 0 && <span className="adg-kol">⭐ รวม {blocksKol(blocks)} KOL</span>}
                                                 {blocksBudget(blocks) > 0 && <span className="adg-budget">💰 รวม ฿{blocksBudget(blocks).toLocaleString('th-TH')}</span>}
                                             </div>
+                                            <ConceptLines group={g} className="adg" />
                                             {g.brief && (
                                                 <a className="brief-link adg-brief" href={g.brief} target="_blank" rel="noreferrer">
                                                     <Icon name="eye" size={13} /> เปิดบรีฟกลุ่มนี้
@@ -1025,6 +1042,25 @@ export default function ProjectDetail() {
                                                             {(b.clips || []).length > 1 && <span className="adg-pb-clip">🎬 {b.clips.length} Content / คน</span>}
                                                         </div>
                                                         <div className="adg-fields">
+                                                            {/* บล็อกที่ตั้ง Target แยกต่อสินค้า: 1 แถว = สินค้า + Target ของสินค้านั้น */}
+                                                            {needTarget(b.platform) && b.product_targets && (b.products || []).length > 0 ? (
+                                                                <div className="adg-field">
+                                                                    <span className="adg-label">สินค้า + Target <span className="adg-count">({b.products.length})</span></span>
+                                                                    <div className="adg-ptgt">
+                                                                        {groupByTargets(b).map(r => (
+                                                                            <div className="adg-ptgt-row" key={r.key}>
+                                                                                <div className="adg-ptgt-tg">
+                                                                                    {r.targets.length > 0
+                                                                                        ? r.targets.map(t => <span className="chip-target" key={t}>🎯 {t}</span>)
+                                                                                        : <span className="muted">ไม่ระบุ Target</span>}
+                                                                                    <span className="adg-count">· {r.codes.length} สินค้า</span>
+                                                                                </div>
+                                                                                <ProductChips products={r.codes} />
+                                                                            </div>
+                                                                        ))}
+                                                                    </div>
+                                                                </div>
+                                                            ) : (<>
                                                             <div className="adg-field">
                                                                 <span className="adg-label">สินค้า <span className="adg-count">({(b.products || []).length})</span></span>
                                                                 <div className="adg-val">
@@ -1041,6 +1077,20 @@ export default function ProjectDetail() {
                                                                         {b.target.length > 0
                                                                             ? b.target.map(t => <span className="chip-target" key={t}>🎯 {t}</span>)
                                                                             : <span className="muted">ไม่ระบุ</span>}
+                                                                    </div>
+                                                                </div>
+                                                            )}
+                                                            </>)}
+                                                            {/* งบแยกต่อสินค้า (ผลรวม = งบของ Platform ที่หัวบล็อก) */}
+                                                            {isSplitBudget(b) && (b.products || []).length > 0 && (
+                                                                <div className="adg-field">
+                                                                    <span className="adg-label">งบต่อสินค้า</span>
+                                                                    <div className="adg-val">
+                                                                        {b.products.map(c => (
+                                                                            <span className="adg-pbud" key={c} title={productLabel(c)}>
+                                                                                <b>{c}</b> ฿{num((b.product_budgets || {})[c]).toLocaleString('th-TH')}
+                                                                            </span>
+                                                                        ))}
                                                                     </div>
                                                                 </div>
                                                             )}

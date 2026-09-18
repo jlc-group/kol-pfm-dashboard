@@ -287,15 +287,6 @@ export default function OtherProjectForm({ editing, onClose, onSaved, onConflict
                 <p className="ctype-lead">งานจ้างนอกเหนือจาก KOL — ไม่เข้าหน้าโฆษณาและรายงานแคมเปญ แต่ค่าตัวยังเข้ารอบทำจ่ายตามปกติ</p>
 
                 <form onSubmit={handleSubmit}>
-                    {/* ทีมใช้บัญชีเดียวร่วมกัน ระบบจึงบันทึกได้แค่ "System Admin" ต้องเลือกชื่อจริงเอง */}
-                    <div className="field">
-                        <label>ผู้ติดต่อ</label>
-                        <select value={form.creator} onChange={e => update('creator', e.target.value)}>
-                            <option value="">— เลือก —</option>
-                            {owners.map(n => <option key={n} value={n}>{n}</option>)}
-                            {form.creator && !owners.includes(form.creator) && <option value={form.creator}>{form.creator}</option>}
-                        </select>
-                    </div>
 
                     <div className="field-row">
                         <div className="field">
@@ -520,6 +511,16 @@ export default function OtherProjectForm({ editing, onClose, onSaved, onConflict
                             งบรวมทั้งงาน <b>฿{totalFee.toLocaleString('th-TH')}</b>
                             <span className="hire-total-note">ค่าตัวของแถวที่ระบุคนเอง + (งบต่อคน × จำนวนคน) ของใบขอจัดหา</span>
                         </div>
+                    </div>
+
+                    {/* ผู้ติดต่อของงาน — อยู่ท้ายฟอร์มตามที่ทีมขอ (ทีมใช้บัญชีเดียวร่วมกัน ระบบบันทึกได้แค่ "System Admin" ต้องเลือกชื่อจริงเอง) */}
+                    <div className="field">
+                        <label>ผู้ติดต่อ</label>
+                        <select value={form.creator} onChange={e => update('creator', e.target.value)}>
+                            <option value="">— เลือก —</option>
+                            {owners.map(n => <option key={n} value={n}>{n}</option>)}
+                            {form.creator && !owners.includes(form.creator) && <option value={form.creator}>{form.creator}</option>}
+                        </select>
                     </div>
 
                     {error && <div className="alert-error">{error}</div>}

@@ -5,7 +5,7 @@ import DatePicker from './DatePicker.jsx';
 import DraftModal from './DraftModal.jsx';
 import PerfModal from './PerfModal.jsx';
 import { asTargetArray } from '../data/products.js';
-import { mediaFor, contentTypesOf, quotaOf, targetFor } from '../data/adGroups.js';
+import { mediaFor, contentTypesOf, quotaOf, targetFor, conceptText } from '../data/adGroups.js';
 import { ProductSummary } from './ProductChips.jsx';
 import { draftIsNew, markDraftSeen } from '../utils/tabUpdates.js';
 
@@ -41,7 +41,8 @@ function ProcessRow({ sub, putSubmission, reload, showAds = false, group = null,
     // Content Type ผูกกับคน (1 Platform ในกลุ่มเดียวมีได้หลายอย่าง) — ของเก่าที่ยังไม่ระบุค่อยถอยไปใช้ของกลุ่ม
     const ctype = sub.content_type || (group ? (contentTypesOf(group, sub.platform)[0] || null) : null);
     const media = group ? mediaFor(group, sub.platform, ctype) : { media_type: null, content_format: null };
-    const tgt = group ? asTargetArray(targetFor(group, sub.platform)) : [];
+    // Target ตามสินค้าของคลิปนี้ (แคมเปญที่ตั้ง Target ต่อสินค้า) — ไม่รู้สินค้าก็ใช้ Target รวมของ Platform
+    const tgt = group ? asTargetArray(targetFor(group, sub.platform, sub.product)) : [];
     // ยิงแอดไปแล้ว = ล็อก ลิงก์โพสต์ / Gencode / ID Post ห้ามแก้
     // เพราะเป็นข้อมูลที่แอดที่ยิงไปแล้วอ้างอิงอยู่ (ฝั่ง server ปฏิเสธซ้ำอีกชั้น)
     const adLocked = sub.ad_status === 'ยิงแล้ว';
@@ -211,14 +212,17 @@ const procHead = (showAds = false) => (
 );
 
 // แถบหัวกลุ่มสินค้า (กลุ่มที่ N + รหัสสินค้า + concept + จำนวน)
-function GroupBar({ group, gi, count }) {
+// scope = { products, platforms } ที่ผู้ดูเห็น (หน้าเอเจนซี่) — Concept แยกต่อสินค้าโชว์เฉพาะของขอบเขตนี้
+function GroupBar({ group, gi, count, scope }) {
+    const concept = conceptText(group, false, scope && scope.products, scope && scope.platforms);
     return (
         <div className="grp-bar">
             <span className="grp-no">กลุ่มที่ {gi + 1}</span>
             <div className="grp-chips">
                 <ProductSummary value={group.products || []} max={4} />
             </div>
-            {group.concept && <span className="grp-concept">📝 Concept: {group.concept}</span>}
+            {/* Concept แยกต่อสินค้า = "L3, L10 = ... · L4 = ..." · ไม่แยก = Concept ของกลุ่มเหมือนเดิม */}
+            {concept && <span className="grp-concept" title={conceptText(group, true, scope && scope.products, scope && scope.platforms)}>📝 Concept: {concept}</span>}
             <span className="grp-count">{count} คน</span>
         </div>
     );
@@ -228,7 +232,8 @@ function GroupBar({ group, gi, count }) {
  * ตาราง On Process — แสดง KOL ที่ถูกคัดเลือกแล้ว ให้ทีม/เอเจนซี่อัปเดตงาน + ดราฟ
  * props: subs, groups (ad_groups — ถ้ามีจะแบ่งเป็นกลุ่มสินค้า), putSubmission(subId, payload), reload()
  */
-export default function OnProcessTable({ subs = [], groups = [], showAds = false, scope = '', putSubmission, reload, directEdit = false, stage = 'all', onClearStage }) {
+// conceptScope(group) → { products, platforms } = ขอบเขตที่ผู้ดูเห็น (หน้าเอเจนซี่ส่งมา · หน้าทีมไม่ส่ง = เห็นทั้งกลุ่ม)
+export default function OnProcessTable({ subs = [], groups = [], showAds = false, scope = '', putSubmission, reload, directEdit = false, stage = 'all', onClearStage, conceptScope }) {
     const [platFilter, setPlatFilter] = useState('all');   // ตัวกรองตามแพลตฟอร์ม
     const [ctypeFilter, setCtypeFilter] = useState('all'); // ตัวกรองย่อยตาม Content Type
     const [clipFilter, setClipFilter] = useState('all');   // ตัวกรองตามคลิป (กลุ่มที่ 1 คนส่งหลายคลิป)
@@ -364,7 +369,7 @@ export default function OnProcessTable({ subs = [], groups = [], showAds = false
                             const gs = view.filter(s => s.group_key === g.key);
                             return (
                                 <div className="proc-group" key={g.key || gi}>
-                                    <GroupBar group={g} gi={gi} count={gs.length} />
+                                    <GroupBar group={g} gi={gi} count={gs.length} scope={conceptScope ? conceptScope(g) : null} />
                                     {procHead(showAds)}{rowsFor(gs)}
                                 </div>
                             );

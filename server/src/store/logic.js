@@ -12,6 +12,8 @@ const GOOD_CPE = 1.5;
 
 // Platform ที่มีเป้าหมาย (target) ระดับกลุ่ม
 const TARGET_PLATFORMS = ['TikTok'];
+// Platform ที่ใช้ช่อง Campaign (VDO View / Reach / Consideration Ads) — ต้องตรงกับ CAMPAIGN_PLATFORMS ฝั่งหน้าเว็บ
+const CAMPAIGN_PLATFORMS = ['TikTok'];
 
 // ค่าแอดขั้นต่ำที่ถือว่า "ยิงจริงจังแล้ว" — ถึงเกณฑ์นี้ระบบจึงล็อกผลตัดสินคุ้ม/ไม่คุ้ม
 // (ต่ำกว่านี้ตัวเลขยังแกว่ง ตัดสินไปก็ไม่มีความหมาย)
@@ -405,11 +407,121 @@ function resolveGroupClips(g, platform) {
 
 // Target ตั้งแยกต่อ Platform และมีเฉพาะ Platform ที่ใช้ยิงแอด
 // กลุ่มที่ลง TikTok + Facebook จะมี Target แค่ฝั่ง TikTok เท่านั้น
-function resolveGroupTarget(g, platform) {
+// รหัสสินค้าในช่องสินค้าของคลิป ("L3,L4" / "L3 - ชื่อ, L4") ที่ตรงกับรหัสที่รู้จัก — เทียบเต็มรหัส ("L1" ไม่จับ "L10")
+// ต้องตรงกับ productCodesIn ฝั่งหน้าเว็บ (client/src/data/adGroups.js)
+function productCodesIn(value, known) {
+    const keys = (known || []).map(String);
+    const out = [];
+    String(value == null ? '' : value).split(/[,，]/).map(s => s.trim()).filter(Boolean).forEach(tok => {
+        const hit = keys.find(k => tok === k || tok.startsWith(k + ' '));
+        if (hit && !out.includes(hit)) out.push(hit);
+    });
+    return out;
+}
+
+// Target ของคลิป: บล็อกที่ตั้ง Target แยกต่อสินค้า (product_targets) → เอาเฉพาะของสินค้าในคลิป
+// ไม่รู้สินค้า / ไม่มีข้อมูลต่อสินค้า → Target รวมของ Platform ตามเดิม · ต้องตรงกับ targetFor ฝั่งหน้าเว็บ
+function resolveGroupTarget(g, platform, product) {
     if (!g) return null;
     const b = (g.blocks || []).find(x => x.platform === platform);
-    if (b) { const t = b.target; return (Array.isArray(t) ? t.length : !!t) ? t : null; }
+    if (b) {
+        const pt = b.product_targets;
+        if (product && pt && typeof pt === 'object' && !Array.isArray(pt)) {
+            const picked = [...new Set(productCodesIn(product, Object.keys(pt))
+                .flatMap(c => (Array.isArray(pt[c]) ? pt[c] : (pt[c] ? [pt[c]] : [])).filter(Boolean)))];
+            if (picked.length) return picked;
+        }
+        const t = b.target;
+        return (Array.isArray(t) ? t.length : !!t) ? t : null;
+    }
     return TARGET_PLATFORMS.includes(platform) ? (g.target || null) : null;
+}
+
+// Concept แยกต่อสินค้า (ต่อ Platform): แท็บที่เปิดค้างจากก่อน deploy ส่งบล็อกมาโดยไม่มี concept_split (ฟอร์มรุ่นใหม่ส่ง true/false เสมอ)
+// ของในฐานแยกอยู่ + Concept หลักของกลุ่มเท่าเดิม → ยก Concept ต่อสินค้าเดิมมาต่อ (เฉพาะสินค้าที่ยังอยู่ในบล็อก)
+// ต้องตรงกับ packConcepts ฝั่งหน้าเว็บ
+function carryProductConcepts(incoming, stored) {
+    if (!Array.isArray(incoming) || !Array.isArray(stored)) return incoming;
+    const isMap = v => !!v && typeof v === 'object' && !Array.isArray(v);
+    const text = v => String(v == null ? '' : v).trim();
+    return incoming.map(g => {
+        if (!g || !Array.isArray(g.blocks) || !g.key) return g;
+        const old = stored.find(s => s && s.key === g.key);
+        if (!old || !Array.isArray(old.blocks) || text(g.concept) !== text(old.concept)) return g;
+        let changed = false;
+        const blocks = g.blocks.map(b => {
+            if (!b || b.concept_split !== undefined) return b;
+            const ob = old.blocks.find(x => x && x.platform === b.platform && x.concept_split === true && isMap(x.product_concepts));
+            if (!ob) return b;
+            const pc = {};
+            (Array.isArray(b.products) ? b.products : []).forEach(c => {
+                if (Object.prototype.hasOwnProperty.call(ob.product_concepts, c) && text(ob.product_concepts[c])) pc[c] = text(ob.product_concepts[c]);
+            });
+            changed = true;
+            return { ...b, concept_split: true, product_concepts: pc };
+        });
+        return changed ? { ...g, blocks } : g;
+    });
+}
+
+// งบแยกต่อสินค้า: แท็บที่เปิดค้างจากก่อน deploy ส่งบล็อกมาโดยไม่มี budget_mode (ฟอร์มรุ่นใหม่ส่ง 'total' / 'split' เสมอ)
+// ของในฐานแยกงบอยู่ + ทุกสินค้าที่ส่งมามีงบเดิม + ผลรวมเท่างบที่ส่งมา (ไม่ได้แตะงบ) → ยกงบรายสินค้าเดิมมาต่อ
+// นอกนั้นเป็นงบก้อนเดียวตามที่ส่งมา (ตัวเลขงบรวมยังถูกเสมอ) · ต้องตรงกับ packBudgets ฝั่งหน้าเว็บ
+function carryProductBudgets(incoming, stored) {
+    if (!Array.isArray(incoming) || !Array.isArray(stored)) return incoming;
+    const isMap = v => !!v && typeof v === 'object' && !Array.isArray(v);
+    const money = v => Number(String(v == null ? '' : v).replace(/[^0-9]/g, '')) || 0;
+    return incoming.map(g => {
+        if (!g || !Array.isArray(g.blocks) || !g.key) return g;
+        const old = stored.find(s => s && s.key === g.key);
+        if (!old || !Array.isArray(old.blocks)) return g;
+        let changed = false;
+        const blocks = g.blocks.map(b => {
+            if (!b || b.budget_mode !== undefined) return b;
+            const ob = old.blocks.find(x => x && x.platform === b.platform && x.budget_mode === 'split' && isMap(x.product_budgets));
+            if (!ob) return b;
+            const products = Array.isArray(b.products) ? b.products : [];
+            if (!products.length || !products.every(c => Object.prototype.hasOwnProperty.call(ob.product_budgets, c))) return b;
+            const pb = {};
+            products.forEach(c => { pb[c] = money(ob.product_budgets[c]); });
+            const sum = Object.values(pb).reduce((n, v) => n + v, 0);
+            if (!sum || sum !== money(b.budget)) return b;
+            changed = true;
+            return { ...b, budget_mode: 'split', product_budgets: pb };
+        });
+        return changed ? { ...g, blocks } : g;
+    });
+}
+
+// หน้าเว็บที่เปิดค้างไว้ตั้งแต่ก่อน deploy (ฟอร์มรุ่นเก่า) ไม่รู้จัก product_targets — บันทึกเมื่อไหร่ Target ต่อสินค้าหายทั้งก้อน
+// บล็อกที่ส่งมาไม่มี product_targets แต่ของในฐานมี และ Target รวมยังเท่าเดิม (คนกดบันทึกไม่ได้แตะ Target) → ยกของเดิมมาต่อ
+// เฉพาะสินค้าที่ยังอยู่ในบล็อก · ถ้า Target รวมเปลี่ยน = แก้ Target จริง ปล่อยให้ฟอร์มรุ่นใหม่แบ่งใหม่ตอนเปิดครั้งหน้า
+function carryProductTargets(incoming, stored) {
+    if (!Array.isArray(incoming) || !Array.isArray(stored)) return incoming;
+    const list = t => (Array.isArray(t) ? t.filter(Boolean) : (t ? [t] : []));
+    const isMap = v => !!v && typeof v === 'object' && !Array.isArray(v);
+    const sameSet = (a, b) => {
+        const A = new Set(list(a)), B = new Set(list(b));
+        return A.size === B.size && [...A].every(x => B.has(x));
+    };
+    return incoming.map(g => {
+        if (!g || !Array.isArray(g.blocks) || !g.key) return g;
+        const old = stored.find(s => s && s.key === g.key);
+        if (!old || !Array.isArray(old.blocks)) return g;
+        let changed = false;
+        const blocks = g.blocks.map(b => {
+            if (!b || isMap(b.product_targets) || !TARGET_PLATFORMS.includes(b.platform)) return b;
+            const ob = old.blocks.find(x => x && x.platform === b.platform && isMap(x.product_targets));
+            if (!ob || !sameSet(b.target, ob.target)) return b;
+            const pt = {};
+            (Array.isArray(b.products) ? b.products : []).forEach(c => {
+                if (Object.prototype.hasOwnProperty.call(ob.product_targets, c)) pt[c] = list(ob.product_targets[c]);
+            });
+            changed = true;
+            return { ...b, product_targets: pt };
+        });
+        return changed ? { ...g, blocks } : g;
+    });
 }
 
 // สินค้าของ Platform นั้นในกลุ่ม — ไม่มีค่อยถอยไปใช้ของทั้งกลุ่ม
@@ -441,8 +553,10 @@ function resolveGroupMedia(g, platform, contentType) {
 // ต้องตรง Content Type จริง — ชุดที่ยังไม่เลือก Content Type ห้ามแจก Campaign ให้ KOL ทุก Content Type ใน Platform นั้น
 // (ต่างจาก resolveGroupMedia ที่ถือว่าแถวไม่มี Content Type ใช้ได้กับทุกอัน) · KOL ที่ไม่มี Content Type เลยถึงจะหยิบชุดแรกที่มี Campaign
 // กลุ่มที่บันทึกก่อนมีช่องนี้ = null
+// Platform ที่ไม่ใช้ Campaign (ไม่ใช่ TikTok) = null เสมอ แม้ข้อมูลเก่าจะมีค่าค้างอยู่
 function resolveGroupCampaign(g, platform, contentType) {
     if (!g) return null;
+    if (platform && !CAMPAIGN_PLATFORMS.includes(platform)) return null;
     const hit = (g.allocations || []).find(a => a.campaign
         && (!platform || !a.platform || a.platform === platform)
         && (!contentType || a.content_type === contentType));
@@ -555,13 +669,13 @@ function feeCostAverages(rows) {
 
 
 module.exports = {
-    GOOD_CPM, GOOD_CPE, TARGET_PLATFORMS, AD_STAMP_AT, now, clone,
+    GOOD_CPM, GOOD_CPE, TARGET_PLATFORMS, CAMPAIGN_PLATFORMS, AD_STAMP_AT, now, clone,
     duplicateError, inScope, scopeProjects, hireRemaining, hireRowFee,
     HIRE_JOB_CLOSED, hireWaiting, hireNeedMore, hireStage,
     BOOK_PENDING, BOOK_FEE, BOOK_OK, HIRE_BOOKED, HIRE_AGREED, bookingState, bookingOpen, hireBookings,
     releaseToRequest, bookingConfirm, bookingFeeDecision, bookingUnavailable, hireBreakdown, pfmManagedSpend,
     resolveInside, sameInstant, mergeHireItems, mergeBriefFiles, cleanFee, cleanHeadcount, safeId, safeSlug,
-    linkGroupPlatforms, resolveGroupClips, resolveGroupTarget,
+    linkGroupPlatforms, resolveGroupClips, resolveGroupTarget, productCodesIn, carryProductTargets, carryProductBudgets, carryProductConcepts,
     resolveGroupProducts, resolveGroupCtype, resolveGroupMedia, resolveGroupCampaign,
     engagementOf, maybeStamp, stampWaitReason,
     feeMissing, clipCostMetrics, costAxisRange, costAxisNorm, perfVerdict, feeCostAverages

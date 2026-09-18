@@ -1,3 +1,5 @@
+import { targetsForProduct } from './products.js';
+
 // Platform ของกลุ่มโฆษณา — 1 กลุ่มลงได้หลาย Platform
 //
 // รูปแบบข้อมูลที่ต้องรองรับพร้อมกัน:
@@ -50,12 +52,19 @@ export function contentTypesFor(platformCsv, current) {
 
 // Campaign ของการยิงแอด — ตั้งต่อชุด Content Type (หน้า Ads แสดงเป็นคอลัมน์ CAMPAIGN)
 export const CAMPAIGN_TYPES = ['VDO View', 'Reach', 'Consideration Ads'];
+// ใช้เฉพาะ TikTok — Platform อื่นปิดช่องนี้ ไม่ต้องเลือก (เพิ่มชื่อในลิสต์นี้ที่เดียวถ้าวันหลังต้องใช้)
+// ต้องตรงกับ CAMPAIGN_PLATFORMS ฝั่ง server (server/src/store/logic.js)
+export const CAMPAIGN_PLATFORMS = ['TikTok'];
+export const needCampaign = p => CAMPAIGN_PLATFORMS.includes(p);
 // ค่าที่เคยบันทึกไว้ต้องคงอยู่ในลิสต์เสมอ (กติกาเดียวกับ contentTypesFor)
 export const campaignTypesFor = current => (current && !CAMPAIGN_TYPES.includes(current) ? [...CAMPAIGN_TYPES, current] : CAMPAIGN_TYPES);
 
 export const emptyTier = () => ({ tier: '', kols: '' });
 export const emptySet = (over = {}) => ({ campaign: '', content_type: '', media_type: '', content_format: '', tiers: [emptyTier()], ...over });
-export const emptyBlock = platform => ({ platform, target: [], budget: '', products: [], clips: [], sets: [emptySet()] });
+// product_targets = Target แยกต่อสินค้า { รหัสสินค้า: [Target] } · target = รวมทุกสินค้า (ให้หน้าที่ยังอ่านแบบรวมใช้ต่อได้)
+// budget_mode = 'total' งบรวมก้อนเดียว (budget) | 'split' แยกงบต่อสินค้า (product_budgets { รหัส: งบ } และ budget = ผลรวม)
+// concept_split / product_concepts = Concept แยกต่อสินค้าของ Platform นี้ (ว่าง = ใช้ Concept หลักของกลุ่ม)
+export const emptyBlock = platform => ({ platform, target: [], product_targets: {}, budget: '', budget_mode: 'total', product_budgets: {}, concept_split: false, product_concepts: {}, products: [], clips: [], sets: [emptySet()] });
 
 export const setKol = s => (s.tiers || []).reduce((n, t) => n + (Number(t.kols) || 0), 0);
 export const blockKol = b => (b.sets || []).reduce((n, s) => n + setKol(s), 0);
@@ -103,7 +112,15 @@ export function toBlocks(g, platformCsv) {
             return {
                 platform: p,
                 target: asArr(b.target),
+                // null = บันทึกไว้ก่อนมี Target ต่อสินค้า (ฟอร์มจะแบ่ง Target รวมให้แต่ละสินค้าเอง)
+                product_targets: b.product_targets && typeof b.product_targets === 'object' && !Array.isArray(b.product_targets)
+                    ? { ...b.product_targets } : null,
                 budget: b.budget != null ? b.budget : '',
+                // งบแยกต่อสินค้า ('split') หรือก้อนเดียว ('total' / ข้อมูลเก่าที่ไม่มีช่องนี้)
+                budget_mode: b.budget_mode === 'split' ? 'split' : 'total',
+                product_budgets: isMap(b.product_budgets) ? { ...b.product_budgets } : {},
+                concept_split: b.concept_split === true,
+                product_concepts: isMap(b.product_concepts) ? { ...b.product_concepts } : {},
                 products: [...(b.products || [])],
                 clips: [...(b.clips || [])],
                 sets: (b.sets && b.sets.length ? b.sets : [emptySet()]).map(s => ({
@@ -131,6 +148,11 @@ export function toBlocks(g, platformCsv) {
     const legacy = plats.map((p, idx) => ({
         platform: p,
         target: needTarget(p) ? asArr(g.target) : [],
+        product_targets: null,
+        budget_mode: 'total',
+        product_budgets: {},
+        concept_split: false,
+        product_concepts: {},
         // ของเก่าสินค้า/คลิปเป็นของกลุ่ม = ทุก Platform ใช้ชุดเดียวกันอยู่แล้ว ยกลงให้ครบทุกบล็อก
         products: [...(g.products || [])],
         clips: [...(g.clips || [])],
@@ -178,13 +200,164 @@ export function specFor(g, platform, tier) {
     };
 }
 
+// รหัสสินค้าที่อยู่ในช่องสินค้าของคลิป ("L3,L4" / "L3 - ชื่อ, L4") เทียบกับรหัสที่รู้จัก
+// เทียบแบบเต็มรหัส ("L1" ไม่ไปจับ "L10")
+export function productCodesIn(value, known) {
+    const keys = (known || []).map(String);
+    const out = [];
+    String(value == null ? '' : value).split(/[,，]/).map(s => s.trim()).filter(Boolean).forEach(tok => {
+        const hit = keys.find(k => tok === k || tok.startsWith(k + ' '));
+        if (hit && !out.includes(hit)) out.push(hit);
+    });
+    return out;
+}
+
 // Target ของ Platform นั้น (ของเก่าเก็บไว้ระดับกลุ่ม)
-export function targetFor(g, platform) {
+// ส่ง product (สินค้าของคลิป) มาด้วย = เอาเฉพาะ Target ของสินค้านั้น · ไม่รู้สินค้า/ไม่มีข้อมูลต่อสินค้า = Target รวมของ Platform
+// ต้องตรงกับ resolveGroupTarget ฝั่ง server (server/src/store/logic.js)
+export function targetFor(g, platform, product) {
     if (Array.isArray(g.blocks) && g.blocks.length) {
         const b = g.blocks.find(x => x.platform === platform);
-        if (b) return asArr(b.target);
+        if (b) {
+            const pt = b.product_targets;
+            if (product && pt && typeof pt === 'object' && !Array.isArray(pt)) {
+                const codes = productCodesIn(product, Object.keys(pt));
+                const picked = [...new Set(codes.flatMap(c => asArr(pt[c])))];
+                if (picked.length) return picked;
+            }
+            return asArr(b.target);
+        }
     }
     return needTarget(platform) ? asArr(g.target) : [];
+}
+
+// ฟอร์มแคมเปญ: เตรียม Target แยกต่อสินค้าของบล็อก (1 แถว = 1 สินค้า)
+// แคมเปญที่บันทึกก่อนมีแบบนี้เก็บ Target รวมก้อนเดียวต่อ Platform — แบ่งให้อัตโนมัติ:
+// สินค้าได้ Target เดิมที่อยู่ในรายการของสินค้านั้น · Target เดิมที่ไม่ตรงสินค้าไหนเลยเก็บใน legacy_orphans ไว้เตือน
+export function withProductTargets(b) {
+    const union = asArr(b.target);
+    const pt0 = b.product_targets;
+    const saved = pt0 && typeof pt0 === 'object' && !Array.isArray(pt0) ? pt0 : null;
+    const pt = {};
+    (b.products || []).forEach(code => {
+        pt[code] = saved ? asArr(saved[code]) : union.filter(t => targetsForProduct(code).includes(t));
+    });
+    const used = new Set(Object.values(pt).flat());
+    return { ...b, product_targets: pt, legacy_orphans: saved ? [] : union.filter(t => !used.has(t)) };
+}
+
+const isMap = v => !!v && typeof v === 'object' && !Array.isArray(v);
+
+// งบของ Platform แยกต่อสินค้าไหม (ไม่มีค่า / ข้อมูลเก่า = งบรวมก้อนเดียว)
+export const isSplitBudget = b => !!b && b.budget_mode === 'split';
+
+// ผลรวมงบของสินค้าที่ยังอยู่ในบล็อก
+export function productBudgetSum(b) {
+    const pb = isMap(b.product_budgets) ? b.product_budgets : {};
+    return (b.products || []).reduce((n, c) => n + num(pb[c]), 0);
+}
+
+// ตอนบันทึก: แยกต่อสินค้า → เก็บงบเฉพาะสินค้าที่ยังอยู่ และ budget = ผลรวม (งบกลุ่ม/งบแคมเปญ/แบ่งค่าตัวที่อ่าน budget ใช้ต่อได้เหมือนเดิม)
+// ก้อนเดียว → เขียน budget_mode 'total' ไว้ชัด ๆ (server ใช้แยกฟอร์มรุ่นใหม่ออกจากแท็บเก่าที่ไม่รู้จักช่องนี้) และไม่เก็บงบรายสินค้า
+// ต้องตรงกับ carryProductBudgets ฝั่ง server (server/src/store/logic.js)
+export function packBudgets(b) {
+    const { budget_before_split, product_budgets, ...rest } = b;
+    if (!isSplitBudget(b)) return { ...rest, budget_mode: 'total' };
+    const pb = {};
+    (rest.products || []).forEach(c => { pb[c] = num(isMap(product_budgets) ? product_budgets[c] : 0); });
+    const sum = Object.values(pb).reduce((n, v) => n + v, 0);
+    return { ...rest, budget_mode: 'split', product_budgets: pb, budget: sum > 0 ? String(sum) : '' };
+}
+
+// ---------- Concept แยกต่อสินค้า (ต่อ Platform — ช่องอยู่ในแถวสินค้าที่เดียวกับ Target / งบ) ----------
+// g.concept = Concept หลักของกลุ่ม · b.concept_split = Platform นี้แยก Concept ต่อสินค้า · b.product_concepts = { รหัส: ข้อความ }
+const ctext = v => String(v == null ? '' : v).trim();
+export const isBlockSplitConcept = b => !!b && b.concept_split === true;
+
+// กลุ่มนี้มี Platform ไหนแยก Concept บ้าง (platforms = นับเฉพาะ Platform ที่ผู้ดูเห็น)
+export const isSplitConcept = (g, platforms) => !!g && Array.isArray(g.blocks)
+    && g.blocks.some(b => isBlockSplitConcept(b) && (!platforms || !platforms.length || platforms.includes(b.platform)));
+
+// แถว Concept สำหรับแสดงผล: สินค้าที่ Concept เดียวกันรวมแถวเดียว [{ concept, items: [{ code, label }], main }]
+// สินค้าเดียวกันที่ Concept ต่างกันตาม Platform มีชื่อ Platform กำกับ ("L3 · TikTok")
+// main = ทุกรายการในแถวใช้ Concept หลัก · only / platforms = จำกัดเฉพาะสินค้า / Platform ที่ผู้ดูเห็น
+export function conceptRows(g, only, platforms) {
+    const main = ctext(g && g.concept);
+    if (!isSplitConcept(g, platforms)) return main ? [{ concept: main, items: [], main: true }] : [];
+    const entries = [];
+    // นับ Concept ของทุกคู่ (สินค้า, Platform) ที่เห็น รวมที่ว่าง — สินค้าที่มี Concept แค่บาง Platform ต้องมีชื่อ Platform กำกับ
+    const conceptsOf = {};
+    g.blocks.forEach(b => {
+        if (!b || (platforms && platforms.length && !platforms.includes(b.platform))) return;
+        const pc = isBlockSplitConcept(b) && isMap(b.product_concepts) ? b.product_concepts : {};
+        (b.products || []).filter(c => !only || only.includes(c)).forEach(code => {
+            const own = ctext(pc[code]);
+            const concept = own || main;
+            (conceptsOf[code] = conceptsOf[code] || new Set()).add(concept);
+            if (concept) entries.push({ code, platform: b.platform, concept, own: !!own });
+        });
+    });
+    const rows = [];
+    entries.forEach(e => {
+        const label = conceptsOf[e.code].size > 1 ? e.code + ' · ' + e.platform : e.code;
+        let row = rows.find(r => r.concept === e.concept);
+        if (!row) { row = { concept: e.concept, items: [], main: true }; rows.push(row); }
+        if (e.own) row.main = false;
+        if (!row.items.some(it => it.label === label)) row.items.push({ code: e.code, label });
+    });
+    return rows;
+}
+
+// มีสินค้าที่ใส่ Concept ของตัวเองจริงไหม (ในขอบเขตที่เห็น) — เปิดแยกแต่ยังไม่ได้ใส่ = แสดงแบบ Concept เดียวของกลุ่ม
+export const hasOwnConcepts = (g, only, platforms) => conceptRows(g, only, platforms).some(r => !r.main);
+
+// ข้อความบรรทัดเดียว (แถบหัวกลุ่ม) — ไม่ได้แยก = Concept หลักเหมือนเดิม
+// แยกแล้ว: บอกเฉพาะสินค้าที่มี Concept ของตัวเอง (เกิน 3 ตัวย่อเป็น +N) ที่เหลือรวมเป็น "สินค้าอื่น = Concept หลัก"
+// full = ไม่ย่อ ใส่ทุกรหัส (ใช้เป็น tooltip) · only / platforms = จำกัดเฉพาะสินค้า / Platform ที่ผู้ดูเห็น (หน้าเอเจนซี่)
+export function conceptText(g, full = false, only, platforms) {
+    if (!isSplitConcept(g, platforms)) return ctext(g && g.concept);
+    const rows = conceptRows(g, only, platforms);
+    const own = rows.filter(r => !r.main);
+    const rest = rows.find(r => r.main);
+    if (!own.length) return rest ? rest.concept : '';
+    const list = items => {
+        const l = items.map(it => it.label);
+        return full || l.length <= 3 ? l.join(', ') : l.slice(0, 3).join(', ') + ' +' + (l.length - 3);
+    };
+    return [
+        ...own.map(r => list(r.items) + ' = ' + r.concept),
+        ...(rest ? [(full ? list(rest.items) : 'สินค้าอื่น') + ' = ' + rest.concept + (full ? ' (Concept หลัก)' : '')] : [])
+    ].join(' · ');
+}
+
+// ตอนบันทึก (ต่อบล็อก): เขียน concept_split ไว้ชัด ๆ เสมอ (server ใช้แยกฟอร์มรุ่นใหม่ออกจากแท็บเก่าที่ไม่รู้จักช่องนี้)
+// แยกอยู่ → เก็บเฉพาะสินค้าที่ยังอยู่ในบล็อกและมีข้อความ · ไม่แยก → ไม่เก็บ product_concepts
+// ต้องตรงกับ carryProductConcepts ฝั่ง server (server/src/store/logic.js)
+export function packConcepts(b) {
+    const { product_concepts, ...rest } = b;
+    if (!isBlockSplitConcept(b)) return { ...rest, concept_split: false };
+    const pc = {};
+    (rest.products || []).forEach(c => {
+        const v = ctext(isMap(product_concepts) ? product_concepts[c] : '');
+        if (v) pc[c] = v;
+    });
+    return { ...rest, concept_split: true, product_concepts: pc };
+}
+
+// ตอนบันทึก: Platform ที่ไม่ใช้ Campaign เก็บเป็นว่างเสมอ (กันค่าค้างจากข้อมูลเก่า)
+export function packCampaigns(b) {
+    if (needCampaign(b.platform)) return b;
+    return { ...b, sets: (b.sets || []).map(s => ({ ...s, campaign: '' })) };
+}
+
+// ตอนบันทึก: เก็บ Target เฉพาะสินค้าที่ยังอยู่ในบล็อก และคิด Target รวม (b.target) ใหม่จากทุกสินค้า
+// ให้หน้าที่ยังอ่าน Target รวมได้ค่าตรงกับที่เลือกจริง · Platform ที่ไม่ใช้ Target เก็บเป็นว่าง · ตัดตัวช่วยเตือนของฟอร์มทิ้ง
+export function packProductTargets(b) {
+    const { legacy_orphans, ...rest } = b;
+    const src = rest.product_targets && typeof rest.product_targets === 'object' ? rest.product_targets : {};
+    const pt = {};
+    (rest.products || []).forEach(code => { pt[code] = needTarget(rest.platform) ? asArr(src[code]) : []; });
+    return { ...rest, product_targets: pt, target: [...new Set(Object.values(pt).flat())] };
 }
 
 // จำนวน KOL ในขอบเขตที่ระบุ — ใช้ตอนตั้งลิงก์เอเจนซี่ (เจ้าที่รับแค่ TikTok ต้องได้จำนวนของ TikTok)

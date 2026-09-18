@@ -2,15 +2,17 @@ import { useEffect, useRef, useState } from 'react';
 import { api, uploadFile } from '../api/client.js';
 import Icon from './Icon.jsx';
 import DatePicker from './DatePicker.jsx';
-import { productsByBrand, productLabel, targetsForProducts, asTargetArray } from '../data/products.js';
+import { productsByBrand, productLabel, targetsForProduct, asTargetArray } from '../data/products.js';
 import { CONTENT_FORMATS } from '../data/contentFormats.js';
 import MultiSelect from './MultiSelect.jsx';
 import { useAuth } from '../auth/AuthContext.jsx';
 import { visibleBrands } from '../data/brands.js';
 import {
     groupPlatforms, splitCsv, needTarget, contentTypesFor, campaignTypesFor,
-    emptyTier, emptySet, emptyBlock, blockKol, blocksKol, toBlocks, flattenBlocks,
-    num, blocksBudget, platformBudgets, blocksProducts
+    emptyTier, emptySet, emptyBlock, blocksKol, toBlocks, flattenBlocks,
+    num, blocksBudget, platformBudgets, blocksProducts, withProductTargets, packProductTargets,
+    needCampaign, packCampaigns, isSplitBudget, productBudgetSum, packBudgets,
+    isSplitConcept, isBlockSplitConcept, packConcepts
 } from '../data/adGroups.js';
 
 // รายชื่อทีมงานที่รับเป็น Owner ของแคมเปญ — แก้/เพิ่มชื่อตรงนี้ได้เลย
@@ -34,7 +36,8 @@ const groupTotalKol = g => ((g.blocks && g.blocks.length)
 // สร้าง "กลุ่มโฆษณา" เริ่มต้นจากข้อมูลเดิม (รองรับ ad_groups / products[{name,target}] / products[string])
 // เลือกแบบ checkbox ติ๊กได้หลายตัวพร้อมกัน (ใช้ทั้งสินค้าและกลุ่ม Target)
 // options = [{ value, label }]
-function CheckMultiSelect({ options, selected, onToggle, disabled, disabledText, placeholder, emptyText, allLabel = 'ทั้งหมด' }) {
+// buttonText = ข้อความบนปุ่มแทนแบบปกติ (เช่นโชว์ชื่อที่เลือกไว้) · buttonTitle = tooltip ของปุ่ม
+function CheckMultiSelect({ options, selected, onToggle, disabled, disabledText, placeholder, emptyText, allLabel = 'ทั้งหมด', buttonText, buttonTitle }) {
     const [open, setOpen] = useState(false);
     if (disabled) return <div className="product-picker pms-disabled">{disabledText}</div>;
     const allSelected = options.length > 0 && options.every(o => selected.includes(o.value));
@@ -43,8 +46,8 @@ function CheckMultiSelect({ options, selected, onToggle, disabled, disabledText,
     const clearAll = () => options.forEach(o => { if (selected.includes(o.value)) onToggle(o.value); });
     return (
         <div className="pms">
-            <button type="button" className="product-picker pms-toggle" onClick={() => setOpen(o => !o)}>
-                <span>{placeholder} {selected.length > 0 ? `(เลือกแล้ว ${selected.length})` : '(ติ๊กได้หลายตัว)'}</span>
+            <button type="button" className="product-picker pms-toggle" onClick={() => setOpen(o => !o)} title={buttonTitle}>
+                <span className="pms-text">{buttonText != null ? buttonText : `${placeholder} ${selected.length > 0 ? `(เลือกแล้ว ${selected.length})` : '(ติ๊กได้หลายตัว)'}`}</span>
                 <span className="pms-caret">{open ? '▲' : '▼'}</span>
             </button>
             {open && (
@@ -92,6 +95,7 @@ function migAllocations(g) {
 // Platform ของกลุ่ม — ในฟอร์มเก็บเป็นสตริงคั่นคอมมา (MultiSelect ใช้รูปแบบนี้)
 
 const migPlatform = g => groupPlatforms(g).join(',');
+
 function initGroups(editing) {
     if (Array.isArray(editing?.ad_groups) && editing.ad_groups.length) {
         // ข้อมูลเดิมงบเก็บต่อ Platform — ถ้ากลุ่มยังไม่มี budget และ Platform นั้นมีกลุ่มเดียว ให้สืบค่าจากงบ Platform
@@ -101,7 +105,7 @@ function initGroups(editing) {
         return editing.ad_groups.map(g => {
             const plat = migPlatform(g);
             const seededBudget = (g.budget != null && g.budget !== '') ? g.budget : ((groupsPerPlat[plat] === 1 && Number(pb[plat]) > 0) ? pb[plat] : '');
-            return newGroup({ key: g.key || genKey(), platform: plat, concept: g.concept || '', clips: [...(g.clips || [])], target: asTargetArray(g.target), content_type: g.content_type || '', media_type: g.media_type || '', content_format: g.content_format || '', brief: g.brief || '', products: [...(g.products || [])], allocations: migAllocations(g), blocks: toBlocks(g, plat), budget: seededBudget, code_expire: Number(g.code_expire) || 60 });
+            return newGroup({ key: g.key || genKey(), platform: plat, concept: g.concept || '', clips: [...(g.clips || [])], target: asTargetArray(g.target), content_type: g.content_type || '', media_type: g.media_type || '', content_format: g.content_format || '', brief: g.brief || '', products: [...(g.products || [])], allocations: migAllocations(g), blocks: toBlocks(g, plat).map(withProductTargets), budget: seededBudget, code_expire: Number(g.code_expire) || 60 });
         });
     }
     const prods = editing?.products || [];
@@ -178,22 +182,65 @@ export default function ProjectForm({ editing, onClose, onSaved }) {
     }
     const mapBlock = (i, bi, fn) => setAdGroups(gs => gs.map((x, idx) =>
         idx !== i ? x : ({ ...x, blocks: (x.blocks || []).map((b, j) => j !== bi ? b : fn(b)) })));
-    const toggleBlockTarget = (i, bi, t) => mapBlock(i, bi, b => ({
-        ...b, target: asTargetArray(b.target).includes(t) ? asTargetArray(b.target).filter(v => v !== t) : [...asTargetArray(b.target), t]
-    }));
-    const removeBlockTarget = (i, bi, t) => mapBlock(i, bi, b => ({ ...b, target: asTargetArray(b.target).filter(v => v !== t) }));
+    // Target ของสินค้าตัวหนึ่งในบล็อก (1 แถว = 1 สินค้า) — Target รวมของบล็อกคิดใหม่ตอนบันทึก
+    const toggleProductTarget = (i, bi, code, t) => mapBlock(i, bi, b => {
+        const cur = asTargetArray((b.product_targets || {})[code]);
+        return { ...b, product_targets: { ...(b.product_targets || {}), [code]: cur.includes(t) ? cur.filter(v => v !== t) : [...cur, t] } };
+    });
     // เพิ่มชุด Content Type — ก๊อป Campaign / Format (Photo/VDO) / Style ของชุดก่อนหน้ามาให้ กรอกน้อยลง
     const addSet = (i, bi) => mapBlock(i, bi, b => {
         const last = b.sets[b.sets.length - 1] || {};
-        return { ...b, sets: [...b.sets, emptySet({ campaign: last.campaign || '', media_type: last.media_type || '', content_format: last.content_format || '' })] };
+        return { ...b, sets: [...b.sets, emptySet({ campaign: needCampaign(b.platform) ? (last.campaign || '') : '', media_type: last.media_type || '', content_format: last.content_format || '' })] };
     });
     const removeSet = (i, bi, si) => mapBlock(i, bi, b => ({ ...b, sets: b.sets.length > 1 ? b.sets.filter((_, j) => j !== si) : b.sets }));
     const setBlockBudget = (i, bi, v) => mapBlock(i, bi, b => ({ ...b, budget: v.replace(/[^0-9]/g, '') }));
+    // งบของ Platform: รวมก้อนเดียว ↔ แยกต่อสินค้า — ตอนแยก b.budget = ผลรวมของสินค้าเสมอ (งบกลุ่ม/รวมทั้งกลุ่มอ่านค่านี้)
+    // เปลี่ยนเป็นแยก: ช่องงบของแต่ละสินค้าเริ่มว่าง (ไม่เดาตัวเลขให้) · กลับเป็นก้อนเดียว: ยกผลรวมที่ใส่ไว้มา ถ้ายังไม่ได้ใส่คืนงบก้อนเดิม
+    const setBudgetMode = (i, bi, mode) => mapBlock(i, bi, b => {
+        if (mode === 'split') {
+            if (isSplitBudget(b)) return b;
+            const next = { ...b, budget_mode: 'split', product_budgets: { ...(b.product_budgets || {}) }, budget_before_split: b.budget };
+            const sum = productBudgetSum(next);
+            return { ...next, budget: sum > 0 ? String(sum) : '' };
+        }
+        if (!isSplitBudget(b)) return b;
+        const sum = productBudgetSum(b);
+        return { ...b, budget_mode: 'total', budget: sum > 0 ? String(sum) : (b.budget_before_split || '') };
+    });
+    const setProductBudget = (i, bi, code, v) => mapBlock(i, bi, b => {
+        const pb = { ...(b.product_budgets || {}), [code]: String(v).replace(/[^0-9]/g, '') };
+        const sum = productBudgetSum({ ...b, product_budgets: pb });
+        return { ...b, product_budgets: pb, budget: sum > 0 ? String(sum) : '' };
+    });
+    // เอาสินค้าออกจากบล็อก = งบ / Concept ของสินค้านั้นหายไปด้วย และงบรวม (ตอนแยกงบ) คิดใหม่
+    const dropProductExtras = (b, code) => {
+        const pb = { ...(b.product_budgets || {}) };
+        delete pb[code];
+        const pc = { ...(b.product_concepts || {}) };
+        delete pc[code];
+        const next = { ...b, product_budgets: pb, product_concepts: pc };
+        if (!isSplitBudget(next)) return next;
+        const sum = productBudgetSum(next);
+        return { ...next, budget: sum > 0 ? String(sum) : '' };
+    };
     // สินค้า / คลิปต่อคน ย้ายมาอยู่ระดับ Platform แล้ว
-    const toggleBlockProduct = (i, bi, code) => mapBlock(i, bi, b => ({
-        ...b, products: (b.products || []).includes(code) ? b.products.filter(c => c !== code) : [...(b.products || []), code]
-    }));
-    const removeBlockProduct = (i, bi, code) => mapBlock(i, bi, b => ({ ...b, products: (b.products || []).filter(c => c !== code) }));
+    // เลือก/เอาสินค้าออก — แถว Target ของสินค้านั้นเกิด/หายตามไปด้วย
+    const toggleBlockProduct = (i, bi, code) => mapBlock(i, bi, b => {
+        const on = (b.products || []).includes(code);
+        const pt = { ...(b.product_targets || {}) };
+        // สินค้าที่มี Target ให้เลือกตัวเดียว (เช่น Beauterry) ติ๊กให้เลย ไม่ต้องเปิดเลือกทีละแถว — กด × เอาออกได้
+        const only = needTarget(b.platform) && targetsForProduct(code).length === 1 ? targetsForProduct(code) : [];
+        // Target เดิมที่ค้างอยู่ (แคมเปญเก่า) และเป็นของสินค้าที่เพิ่งเพิ่ม → ติ๊กคืนให้ตามที่คำเตือนบอกไว้
+        const back = asTargetArray(b.legacy_orphans).filter(t => targetsForProduct(code).includes(t));
+        if (on) delete pt[code]; else pt[code] = pt[code] || [...new Set([...only, ...back])];
+        const next = { ...b, products: on ? b.products.filter(c => c !== code) : [...(b.products || []), code], product_targets: pt };
+        return on ? dropProductExtras(next, code) : next;
+    });
+    const removeBlockProduct = (i, bi, code) => mapBlock(i, bi, b => {
+        const pt = { ...(b.product_targets || {}) };
+        delete pt[code];
+        return dropProductExtras({ ...b, products: (b.products || []).filter(c => c !== code), product_targets: pt }, code);
+    });
     const addBlockClip = (i, bi) => mapBlock(i, bi, b => ({ ...b, clips: [...(b.clips || []), ''] }));
     const removeBlockClip = (i, bi, ci) => mapBlock(i, bi, b => ({ ...b, clips: (b.clips || []).filter((_, j) => j !== ci) }));
     const setBlockClip = (i, bi, ci, v) => mapBlock(i, bi, b => ({ ...b, clips: (b.clips || []).map((c, j) => j === ci ? v : c) }));
@@ -216,6 +263,9 @@ export default function ProjectForm({ editing, onClose, onSaved }) {
     }));
 
     const setGroupField = (i, k, v) => setAdGroups(g => g.map((x, idx) => idx === i ? { ...x, [k]: v } : x));
+    // Concept แยกต่อสินค้า (ต่อ Platform) — ปิดแล้วข้อความที่พิมพ์ไว้ยังอยู่ในฟอร์ม (เปิดใหม่ได้คืน) แต่ไม่ถูกบันทึก
+    const toggleConceptSplit = (i, bi) => mapBlock(i, bi, b => ({ ...b, concept_split: !b.concept_split }));
+    const setProductConcept = (i, bi, code, v) => mapBlock(i, bi, b => ({ ...b, product_concepts: { ...(b.product_concepts || {}), [code]: v } }));
     // เลือกกลุ่ม Target ได้หลายอัน (array)
 
     // ตรวจว่ากรอกครบทุกช่องไหม (คืน list ช่องที่ยังไม่ครบ)
@@ -225,27 +275,30 @@ export default function ProjectForm({ editing, onClose, onSaved }) {
         if (!form.brand) m.push('Brand');
         if (!form.objective.trim()) m.push('รายละเอียดแคมเปญ');
         // ตรวจทีละชั้น: กลุ่ม -> บล็อก Platform -> ชุด Content Type -> แถว Tier
-        const hasTargetOpts = targetsForProducts;
         const groupsOk = adGroups.length > 0 && adGroups.every(g => {
             if (!g.platform) return false;
             const blocks = g.blocks || [];
             if (!blocks.length) return false;
             return blocks.every(b => {
                 if (!(b.products || []).length) return false;
-                // Target บังคับเฉพาะ Platform ที่ใช้ Target และสินค้านั้นมี Target ให้เลือก
-                if (needTarget(b.platform) && hasTargetOpts(b.products).length > 0 && asTargetArray(b.target).length === 0) return false;
+                // Target บังคับเฉพาะ Platform ที่ใช้ Target — ทุกสินค้าที่มี Target ให้เลือกต้องเลือกอย่างน้อย 1 กลุ่ม
+                if (needTarget(b.platform) && b.products.some(code =>
+                    targetsForProduct(code).length > 0 && asTargetArray((b.product_targets || {})[code]).length === 0)) return false;
                 if (!(b.sets || []).length) return false;
                 return b.sets.every(s => s.content_type
                     && (s.tiers || []).length > 0
                     && s.tiers.every(t => t.tier && (Number(t.kols) || 0) > 0));
             });
         });
-        if (!groupsOk) m.push('กลุ่มสินค้า (Platform/สินค้า/Target ของ TikTok/Content Type + ทุกแถว Tier กับจำนวน KOL ให้ครบ)');
+        if (!groupsOk) m.push('กลุ่มสินค้า (Platform/สินค้า/Target ของทุกสินค้าใน TikTok/Content Type + ทุกแถว Tier กับจำนวน KOL ให้ครบ)');
         if (!form.owner) m.push('Project Owner');
         // งบกรอกที่ชั้น Platform — ต้องมีทุกบล็อก
+        // แยกงบต่อสินค้า = ทุกสินค้าในบล็อกต้องใส่งบ · ก้อนเดียว = งบของ Platform ต้องมากกว่า 0
         const budgetOk = adGroups.length > 0 && adGroups.every(g => (g.blocks || []).length > 0
-            && g.blocks.every(b => num(b.budget) > 0));
-        if (!budgetOk) m.push('Budget ของแต่ละ Platform ในกลุ่มสินค้า');
+            && g.blocks.every(b => (isSplitBudget(b)
+                ? (b.products || []).length > 0 && b.products.every(c => num((b.product_budgets || {})[c]) > 0)
+                : num(b.budget) > 0)));
+        if (!budgetOk) m.push('Budget ของแต่ละ Platform ในกลุ่มสินค้า (ถ้าแยกงบต่อสินค้า ทุกสินค้าต้องใส่งบ)');
         if (!form.start_date) m.push('วันเริ่ม (Start)');
         if (!form.end_date) m.push('วันสิ้นสุด (End)');
         return m;
@@ -262,7 +315,11 @@ export default function ProjectForm({ editing, onClose, onSaved }) {
             // เก็บเฉพาะกลุ่มที่มีสินค้า + ทำ products แบบ flat ไว้ให้หน้าอื่นใช้ (เช่น Agency)
             const groups = adGroups.filter(g => g.platform && (g.blocks || []).some(b => (b.products || []).length)).map(g => {
                 const plats = splitCsv(g.platform);
-                const blocks = (g.blocks || []).filter(b => plats.includes(b.platform));
+                // Target ต่อสินค้า: เก็บเฉพาะสินค้าที่ยังอยู่ + คิด Target รวมของบล็อกใหม่ (packProductTargets)
+                // Campaign: Platform ที่ไม่ใช้ (ไม่ใช่ TikTok) เก็บเป็นว่าง (packCampaigns)
+                // งบ: แยกต่อสินค้า → budget = ผลรวม (packBudgets)
+                // Concept แยกต่อสินค้า: เก็บเฉพาะสินค้าที่ยังอยู่และมีข้อความ (packConcepts)
+                const blocks = (g.blocks || []).filter(b => plats.includes(b.platform)).map(b => packCampaigns(packProductTargets(packBudgets(packConcepts(b)))));
                 // แบนโครง 3 ชั้นออกเป็น allocations — 1 แถว = Platform + Content Type + Tier
                 // หน้าอื่นที่ยังอ่านแบบเดิมจะยังทำงานได้ และมีข้อมูลพอให้แยกตาม Platform ได้ด้วย
                 const allocations = flattenBlocks(blocks);
@@ -418,7 +475,8 @@ export default function ProjectForm({ editing, onClose, onSaved }) {
                                                 onChange={v => setGroupPlatforms(i, v)}
                                                 placeholder="— เลือก Platform —" itemName="Platform" />
                                         </div>
-                                        <input className="adgroup-concept" value={g.concept} placeholder="Concept ของกลุ่ม..."
+                                        <input className="adgroup-concept" value={g.concept}
+                                            placeholder={isSplitConcept(g) ? 'Concept หลักของกลุ่ม...' : 'Concept ของกลุ่ม...'}
                                             onChange={e => setGroupField(i, 'concept', e.target.value)} />
                                         <button type="button" className="adgroup-rm" title="ลบกลุ่ม" onClick={() => removeGroup(i)}>×</button>
                                     </div>
@@ -443,19 +501,69 @@ export default function ProjectForm({ editing, onClose, onSaved }) {
                                         <p className="blk-empty">เลือก Platform ด้านบนก่อน แล้วช่องแบ่งงานจะขึ้นตรงนี้</p>
                                     ) : (g.blocks || []).map((b, bi) => {
                                         const single = (g.blocks || []).length === 1;
-                                        const bTargetSel = asTargetArray(b.target);
-                                        const bTargetOpts = [...new Set([...targetsForProducts(b.products || []), ...bTargetSel])];
+                                        const withTarget = needTarget(b.platform);
+                                        const ptOf = code => asTargetArray((b.product_targets || {})[code]);
+                                        const needCount = (b.products || []).filter(code => targetsForProduct(code).length > 0).length;
+                                        const doneCount = (b.products || []).filter(code => targetsForProduct(code).length > 0 && ptOf(code).length > 0).length;
+                                        // Target เดิมที่ยังไม่มีสินค้าไหนใช้ — คิดสดทุกครั้ง (เลือกคืนให้สินค้าแล้วคำเตือนหายเอง)
+                                        const orphans = withTarget ? asTargetArray(b.legacy_orphans).filter(t => !(b.products || []).some(c => ptOf(c).includes(t))) : [];
+                                        // งบแยกต่อสินค้า
+                                        const split = isSplitBudget(b);
+                                        const pbOf = code => num((b.product_budgets || {})[code]);
+                                        const budgetMissing = split ? (b.products || []).filter(code => pbOf(code) <= 0) : [];
+                                        // Concept แยกต่อสินค้า — ช่องในแถวสินค้า (ว่าง = ใช้ Concept หลักของกลุ่ม)
+                                        const cSplit = isBlockSplitConcept(b);
+                                        const cOf = code => String((b.product_concepts || {})[code] || '');
+                                        const conceptField = (code, inline) => (
+                                            <div className={'pcon' + (inline ? ' inline' : '')}>
+                                                <span className="pcon-ico" aria-hidden="true">📝</span>
+                                                <input className={'pcon-in' + (cOf(code).trim() ? ' filled' : '')} value={cOf(code)}
+                                                    placeholder="ว่าง = ใช้ Concept หลักของกลุ่ม" aria-label={`Concept ของ ${code}`}
+                                                    onChange={e => setProductConcept(i, bi, code, e.target.value)} />
+                                            </div>
+                                        );
+                                        const rowLabel = [withTarget && 'Target', split && 'งบ', cSplit && 'Concept'].filter(Boolean).join(' + ') + ' ของแต่ละสินค้า';
+                                        const moneyInput = code => (
+                                            // div ไม่ใช่ label — .field label ของฟอร์มบังคับเป็น block ตัวอักษรใหญ่ ทำให้ ฿ ตกบรรทัด
+                                            <div className={'ptgt-money' + (pbOf(code) > 0 ? '' : ' need')}>
+                                                <input type="text" inputMode="numeric" placeholder="ใส่งบ" aria-label={`งบของ ${code}`}
+                                                    value={pbOf(code) > 0 ? pbOf(code).toLocaleString('en-US') : ''}
+                                                    onChange={e => setProductBudget(i, bi, code, e.target.value)} />
+                                                <span>฿</span>
+                                            </div>
+                                        );
                                         return (
                                         <div className={'plat-blk' + (single ? ' single' : '')} key={b.platform}>
                                             <div className="plat-blk-head">
-                                                <span className="plat-blk-name">{single ? '💰 งบ / จำนวนคน' : '📱 ' + b.platform}</span>
-                                                <span className="plat-blk-sum">รวม {blockKol(b)} คน</span>
-                                                <label className="plat-blk-budget">
-                                                    <input type="text" inputMode="numeric" placeholder="0"
-                                                        value={b.budget ? num(b.budget).toLocaleString('en-US') : ''}
-                                                        onChange={e => setBlockBudget(i, bi, e.target.value)} />
-                                                    <span className="pb-baht">฿</span>
-                                                </label>
+                                                {/* หัวบล็อก = ชื่อ (กลุ่มที่มี Platform เดียวเขียน BUDGET) + งบ · จำนวนคนรวมดูที่แถวสรุปท้ายกลุ่ม */}
+                                                <span className="plat-blk-name">{single ? '💰 BUDGET' : '📱 ' + b.platform}</span>
+                                                {split ? (
+                                                    <span className="plat-blk-budget auto" title="รวมจากงบของแต่ละสินค้าอัตโนมัติ">
+                                                        <b>฿{num(b.budget).toLocaleString('en-US')}</b>
+                                                        <small>รวมจากสินค้า</small>
+                                                    </span>
+                                                ) : (
+                                                    <label className="plat-blk-budget">
+                                                        <input type="text" inputMode="numeric" placeholder="0"
+                                                            value={b.budget ? num(b.budget).toLocaleString('en-US') : ''}
+                                                            onChange={e => setBlockBudget(i, bi, e.target.value)} />
+                                                        <span className="pb-baht">฿</span>
+                                                    </label>
+                                                )}
+                                            </div>
+                                            {/* ปกติ = งบรวมก้อนเดียว (ช่องงบที่หัวบล็อก) · กดปุ่มนี้ = แยกงบต่อสินค้า (ใส่งบในแถวของแต่ละสินค้า) กดอีกครั้งเพื่อกลับ */}
+                                            <div className="bmode">
+                                                <button type="button" className={split ? 'on' : ''} aria-pressed={split}
+                                                    title={split ? 'กดอีกครั้งเพื่อกลับไปใช้งบรวมก้อนเดียว' : 'ใส่งบแยกของแต่ละสินค้า แล้วระบบรวมให้อัตโนมัติ'}
+                                                    onClick={() => setBudgetMode(i, bi, split ? 'total' : 'split')}>
+                                                    {split ? '☑' : '☐'} 📦 แยกงบต่อสินค้า
+                                                </button>
+                                                {/* กดแล้วแถวสินค้าได้ช่อง Concept ของตัวเอง — ว่าง = ใช้ Concept หลักของกลุ่ม */}
+                                                <button type="button" className={cSplit ? 'on' : ''} aria-pressed={cSplit}
+                                                    title={cSplit ? 'กดอีกครั้งเพื่อกลับไปใช้ Concept ของกลุ่มทุกสินค้า' : 'ใส่ Concept แยกของแต่ละสินค้าใน Platform นี้'}
+                                                    onClick={() => toggleConceptSplit(i, bi)}>
+                                                    {cSplit ? '☑' : '☐'} 📝 แยก Concept ต่อสินค้า
+                                                </button>
                                             </div>
                                             {/* สินค้าของ Platform นี้ */}
                                             <CheckMultiSelect
@@ -468,7 +576,33 @@ export default function ProjectForm({ editing, onClose, onSaved }) {
                                                 selected={b.products || []}
                                                 onToggle={code => toggleBlockProduct(i, bi, code)}
                                             />
-                                            {(b.products || []).length > 0 && (
+                                            {/* Platform ที่ใช้ Target (ตอนนี้ TikTok): 1 แถว = 1 สินค้า + Target ของสินค้านั้น
+                                                Platform อื่นไม่มี Target — แสดงแค่รายการสินค้า */}
+                                            {(b.products || []).length > 0 && !withTarget && (split || cSplit) && (
+                                                <div className="ptgt-list">
+                                                    <div className="tgt-label">
+                                                        <span>{split ? '💰' : '📝'} {rowLabel}{split && <b className="tgt-req"> *</b>}</span>
+                                                        {split && (budgetMissing.length > 0
+                                                            ? <span className="tgt-hint">ใส่งบแล้ว {b.products.length - budgetMissing.length} / {b.products.length} สินค้า</span>
+                                                            : <span className="tgt-ok">✓ ใส่งบครบ {b.products.length} สินค้า</span>)}
+                                                    </div>
+                                                    {b.products.map(code => (
+                                                        <div className={'ptgt-row' + (split && pbOf(code) <= 0 ? ' need-budget' : '')} key={code}>
+                                                            <div className="ptgt-prod" title={productLabel(code)}>
+                                                                <b>{code}</b>
+                                                                <span>{productLabel(code).replace(code + ' - ', '')}</span>
+                                                            </div>
+                                                            {/* ไม่มีช่องอื่นในแถว = Concept อยู่บรรทัดเดียวกับสินค้า · มีงบด้วย = Concept ขึ้นบรรทัดที่สอง */}
+                                                            {cSplit && !split && conceptField(code, true)}
+                                                            {split && moneyInput(code)}
+                                                            <button type="button" className="ptgt-rm" title={`เอา ${code} ออกจาก Platform นี้`}
+                                                                onClick={() => removeBlockProduct(i, bi, code)}>×</button>
+                                                            {cSplit && split && conceptField(code, false)}
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            )}
+                                            {(b.products || []).length > 0 && !withTarget && !split && !cSplit && (
                                                 <div className="prodchip-wrap" style={{ marginBottom: 8 }}>
                                                     {b.products.map(code => (
                                                         <span className="prodchip removable" key={code} title={productLabel(code)}>
@@ -477,43 +611,80 @@ export default function ProjectForm({ editing, onClose, onSaved }) {
                                                     ))}
                                                 </div>
                                             )}
-                                            {/* Target ใช้เฉพาะบาง Platform (ตอนนี้ TikTok) — Platform อื่นไม่มีช่องนี้เลย */}
-                                            {needTarget(b.platform) && (
-                                                <div className={'target-multi tgt-field' + (bTargetSel.length === 0 ? ' need' : '')}>
+                                            {(b.products || []).length > 0 && withTarget && (
+                                                <div className="ptgt-list">
                                                     <div className="tgt-label">
-                                                        <span>🎯 กลุ่ม Target <b className="tgt-req">*</b></span>
-                                                        {bTargetSel.length === 0
-                                                            ? <span className="tgt-hint">กดที่ช่องด้านล่างเพื่อเลือก — ต้องเลือกอย่างน้อย 1 กลุ่ม</span>
-                                                            : <span className="tgt-ok">✓ เลือกแล้ว {bTargetSel.length}</span>}
-                                                    </div>
-                                                    <CheckMultiSelect
-                                                        disabled={(b.products || []).length === 0 || bTargetOpts.length === 0}
-                                                        disabledText={(b.products || []).length === 0 ? '— เลือกสินค้าก่อน —' : '— สินค้านี้ยังไม่มี Target —'}
-                                                        placeholder="▾ กดเลือกกลุ่ม Target"
-                                                        emptyText="สินค้านี้ยังไม่มี Target"
-                                                        options={bTargetOpts.map(t => ({ value: t, label: t }))}
-                                                        selected={bTargetSel}
-                                                        onToggle={t => toggleBlockTarget(i, bi, t)}
-                                                    />
-                                                    {bTargetSel.length > 0 && (
-                                                        <div className="chip-list target-chips">
-                                                            {bTargetSel.map(t => (
-                                                                <span className="chip-target lg" key={t}>🎯 {t}
-                                                                    <button type="button" onClick={() => removeBlockTarget(i, bi, t)}>×</button>
+                                                        <span>🎯 {rowLabel} <b className="tgt-req">*</b></span>
+                                                        {split ? (
+                                                            // แยกงบ: ✓ ได้เมื่อครบทั้ง Target และงบ — ไม่งั้นบอกว่าขาดอะไรกี่สินค้า
+                                                            (needCount === 0 || doneCount === needCount) && budgetMissing.length === 0
+                                                                ? <span className="tgt-ok">✓ Target และงบครบ {b.products.length} สินค้า</span>
+                                                                : <span className="tgt-hint">
+                                                                    {[needCount > 0 && doneCount < needCount ? `เลือก Target แล้ว ${doneCount} / ${needCount}` : null,
+                                                                        budgetMissing.length > 0 ? `ใส่งบแล้ว ${b.products.length - budgetMissing.length} / ${b.products.length}` : null]
+                                                                        .filter(Boolean).join(' · ')} สินค้า
                                                                 </span>
-                                                            ))}
-                                                        </div>
-                                                    )}
+                                                        ) : needCount === 0 ? <span className="tgt-hint">สินค้าที่เลือกยังไม่มี Target ให้เลือก</span>
+                                                            : doneCount < needCount
+                                                                ? <span className="tgt-hint">เลือกแล้ว {doneCount} / {needCount} สินค้า — ทุกสินค้าต้องมีอย่างน้อย 1 กลุ่ม</span>
+                                                                : <span className="tgt-ok">✓ เลือกครบ {needCount} สินค้า</span>}
+                                                    </div>
+                                                    {b.products.map(code => {
+                                                        const opts = [...new Set([...targetsForProduct(code), ...ptOf(code)])];
+                                                        const sel = ptOf(code);
+                                                        const need = targetsForProduct(code).length > 0 && sel.length === 0;
+                                                        // ยังไม่ใส่งบ (ตอนแยกงบ) — แถวแดง แต่ปุ่ม Target ไม่แดง (Target เลือกแล้ว)
+                                                        const needBudget = split && pbOf(code) <= 0;
+                                                        return (
+                                                            <div className={'ptgt-row' + (need ? ' need' : '') + (needBudget ? ' need-budget' : '')} key={code}>
+                                                                <div className="ptgt-prod" title={productLabel(code)}>
+                                                                    <b>{code}</b>
+                                                                    <span>{productLabel(code).replace(code + ' - ', '')}</span>
+                                                                </div>
+                                                                <div className="ptgt-pick">
+                                                                    <CheckMultiSelect
+                                                                        disabled={opts.length === 0}
+                                                                        disabledText="— สินค้านี้ไม่มี Target —"
+                                                                        emptyText="สินค้านี้ยังไม่มี Target"
+                                                                        allLabel="ทุก Target ของสินค้านี้"
+                                                                        buttonText={sel.length ? '🎯 ' + sel.join(', ') : '▾ เลือก Target (ติ๊กได้หลายตัว)'}
+                                                                        buttonTitle={sel.length ? sel.join('\n') : undefined}
+                                                                        options={opts.map(t => ({ value: t, label: t }))}
+                                                                        selected={sel}
+                                                                        onToggle={t => toggleProductTarget(i, bi, code, t)}
+                                                                    />
+                                                                </div>
+                                                                {split && moneyInput(code)}
+                                                                <button type="button" className="ptgt-rm" title={`เอา ${code} ออกจาก Platform นี้`}
+                                                                    onClick={() => removeBlockProduct(i, bi, code)}>×</button>
+                                                                {cSplit && conceptField(code, false)}
+                                                            </div>
+                                                        );
+                                                    })}
+                                                </div>
+                                            )}
+                                            {/* อยู่นอกรายการสินค้า — บล็อกที่มี Target เดิมแต่ไม่มีสินค้าเลยก็ต้องเตือน */}
+                                            {orphans.length > 0 && (
+                                                <div className="ptgt-orphan">
+                                                    Target เดิมที่ยังไม่มีสินค้าไหนใช้: {orphans.join(', ')} — บันทึกแล้วจะถูกเอาออก
+                                                    (ถ้ายังต้องใช้ ให้เลือกสินค้าที่ใช้ Target นี้เพิ่ม ระบบจะติ๊กคืนให้ หรือติ๊กในแถวของสินค้านั้นเอง)
                                                 </div>
                                             )}
                                             {(b.sets || []).map((s, si) => (
                                                 <div className="ctype-set" key={si}>
                                                     <div className="ctype-set-row">
-                                                        <select className="target-add" value={s.campaign || ''}
-                                                            onChange={e => setSetField(i, bi, si, 'campaign', e.target.value)}>
-                                                            <option value="">— Campaign —</option>
-                                                            {campaignTypesFor(s.campaign).map(c => <option key={c} value={c}>{c}</option>)}
-                                                        </select>
+                                                        {/* Campaign ใช้เฉพาะ TikTok — Platform อื่นปิดช่องไว้ ไม่ต้องเลือก */}
+                                                        {needCampaign(b.platform) ? (
+                                                            <select className="target-add" value={s.campaign || ''}
+                                                                onChange={e => setSetField(i, bi, si, 'campaign', e.target.value)}>
+                                                                <option value="">— Campaign —</option>
+                                                                {campaignTypesFor(s.campaign).map(c => <option key={c} value={c}>{c}</option>)}
+                                                            </select>
+                                                        ) : (
+                                                            <select className="target-add" value="" disabled title="Campaign ใช้เฉพาะ TikTok">
+                                                                <option value="">— ไม่ใช้ Campaign —</option>
+                                                            </select>
+                                                        )}
                                                         <select className="target-add" value={s.content_type}
                                                             onChange={e => setSetField(i, bi, si, 'content_type', e.target.value)}>
                                                             <option value="">— Content Type —</option>

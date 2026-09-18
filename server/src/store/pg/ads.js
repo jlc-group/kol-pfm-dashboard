@@ -159,7 +159,8 @@ const ads = {
                     account_name: s.account_name,
                     platform: s.platform || null,
                     product: s.product || (resolveGroupProducts(grp, s.platform).join(', ') || null),
-                    target: resolveGroupTarget(grp, s.platform),
+                    // Target ตามสินค้าของคลิปนี้ (แคมเปญที่ตั้ง Target ต่อสินค้า) — ไม่รู้สินค้าใช้ Target รวมของ Platform
+                    target: resolveGroupTarget(grp, s.platform, s.product),
                     campaign: resolveGroupCampaign(grp, s.platform, ct),   // คอลัมน์ CAMPAIGN (ตั้งต่อชุด Content Type)
                     content_type: ct,
                     media_type: media.media_type,

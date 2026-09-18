@@ -25,6 +25,33 @@ test('resolveGroupCampaign picks the campaign of the matching Platform + Content
     assert.equal(resolveGroupCampaign(GROUP, 'Instagram', 'Review'), null);
 });
 
+test('Campaign is TikTok-only: other platforms give null even when old data carries a value', () => {
+    const g = { key: 'g3', allocations: [
+        { platform: 'Facebook', tier: 'Nano 1k - 10k', kols: 1, content_type: 'Awareness', campaign: 'Reach' },
+        { platform: 'Instagram', tier: 'Nano 1k - 10k', kols: 1, content_type: 'Review', campaign: 'VDO View' },
+        { platform: 'TikTok', tier: 'Nano 1k - 10k', kols: 1, content_type: 'Review', campaign: 'Reach' }
+    ] };
+    assert.equal(resolveGroupCampaign(g, 'Facebook', 'Awareness'), null);
+    assert.equal(resolveGroupCampaign(g, 'Instagram', 'Review'), null);
+    assert.equal(resolveGroupCampaign(g, 'TikTok', 'Review'), 'Reach');
+});
+
+test('the campaign form clears Campaign on non-TikTok blocks when saving', async () => {
+    const { pathToFileURL } = require('node:url');
+    const web = await import(pathToFileURL(path.join(__dirname, '../client/src/data/adGroups.js')).href);
+    assert.equal(web.needCampaign('TikTok'), true);
+    assert.equal(web.needCampaign('Facebook'), false);
+    const sets = [{ campaign: 'Reach', content_type: 'Review', tiers: [] }, { campaign: '', content_type: 'Sale', tiers: [] }];
+    const tik = { platform: 'TikTok', sets };
+    assert.equal(web.packCampaigns(tik), tik);
+    const fb = web.packCampaigns({ platform: 'Facebook', sets });
+    assert.deepEqual(fb.sets.map(s => s.campaign), ['', '']);
+    assert.deepEqual(fb.sets.map(s => s.content_type), ['Review', 'Sale']);
+    assert.equal(sets[0].campaign, 'Reach'); // ไม่แก้ของเดิมในที่
+    // allocations ที่แบนออกมาจึงไม่มี Campaign ของ Facebook
+    assert.deepEqual(web.flattenBlocks([{ platform: 'Facebook', sets: [{ campaign: '', content_type: 'Awareness', tiers: [{ tier: 'Nano 1k - 10k', kols: 1 }] }] }])[0].campaign, null);
+});
+
 test('resolveGroupCampaign: no group or a group saved before the field existed gives null', () => {
     assert.equal(resolveGroupCampaign(null, 'TikTok', 'Review'), null);
     assert.equal(resolveGroupCampaign({ key: 'old', allocations: [{ platform: 'TikTok', content_type: 'Review', media_type: 'VDO' }] }, 'TikTok', 'Review'), null);

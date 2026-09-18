@@ -107,6 +107,11 @@ export function asTargetArray(t) {
     return t ? [t] : [];
 }
 
+// Target ที่เลือกได้ของสินค้าตัวเดียว (ช่อง Target ของแต่ละแถวในฟอร์มแคมเปญ)
+export function targetsForProduct(code) {
+    return [...(TARGET_MAP[code] || [])];
+}
+
 // รวม Target ของสินค้าหลายตัว (union) — สินค้าที่ไม่มีใน map จะไม่มี Target
 export function targetsForProducts(codes) {
     const out = [];
