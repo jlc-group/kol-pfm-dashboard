@@ -155,10 +155,10 @@ function EnteredAt({ at, by, has }) {
     );
 }
 
-// โค้ด + ปุ่มคัดลอก (Gencode / ID Post)
-function CopyCode({ value }) {
+// โค้ด + ปุ่มคัดลอก (Gencode / ID Post) · empty = ข้อความตอนยังไม่มีค่า
+function CopyCode({ value, empty = '—' }) {
     const [copied, setCopied] = useState(false);
-    if (!value) return <span className="muted">—</span>;
+    if (!value) return <span className="muted">{empty}</span>;
     const copy = () => {
         navigator.clipboard?.writeText(String(value))
             .then(() => { setCopied(true); setTimeout(() => setCopied(false), 1400); })
@@ -304,12 +304,8 @@ function AdRow({ row, onSaved, canCost }) {
             </div>
             {/* GENCODE — โค้ดยาว 65 ตัว แสดงไม่ครบแน่นอน จึงตัดด้วย ... แล้วให้กดปุ่มคัดลอกเอาไปใช้แทน */}
             <div className="ads-cell"><CopyCode value={row.gencode} /></div>
-            {/* ID POST */}
-            <div className="ads-cell">
-                {row.id_post
-                    ? <span className="ads-code" title={row.id_post}>{row.id_post}</span>
-                    : <span className="muted">ยังไม่มี</span>}
-            </div>
+            {/* ID POST — ตัวเลขยาว ~19 หลัก มักโดนตัด ... จึงมีปุ่มคัดลอกแบบเดียวกับ Gencode */}
+            <div className="ads-cell"><CopyCode value={row.id_post} empty="ยังไม่มี" /></div>
             {/* วันลงงาน — ป้าย "แจ้งช้า" อยู่ช่องนี้เพราะเป็นเรื่องของวันลงงานโดยตรง (ลงจริงวันหนึ่ง แต่เพิ่งแจ้งอีกวันหนึ่ง) */}
             <div className="ads-cell ads-stack">
                 {row.post_date ? <span className="ads-postdate">{fmtDate(row.post_date)}</span> : <span className="muted">—</span>}
