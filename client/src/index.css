@@ -3425,3 +3425,472 @@ button { color: inherit; }
     .req-copy { margin-left: 0; }
     .hub-toolbar .ka-search { max-width: none; }
 }
+
+/* ===== ลิ้นชักขวา (SideDrawer) — หน้า Talent: ใบขอให้หา / ฟอร์มสั้น ===== */
+/* ห้ามค้าง transform บนตัวลิ้นชัก: ของข้างในที่เป็น position:fixed (ป๊อปอัป / ปฏิทิน) จะถูกขังในกรอบ — แอนิเมชันจึงไม่มี fill-mode */
+.side-drawer { position: fixed; inset: 0; z-index: 120; background: rgba(15, 40, 32, .42); display: flex; justify-content: flex-end; }
+.side-drawer-panel { width: min(100%, var(--drawer-w, 640px)); height: 100%; background: var(--bg); display: flex; flex-direction: column;
+    box-shadow: -18px 0 40px rgba(16, 94, 75, .16); outline: none; animation: drawerIn .2s ease-out; }
+@keyframes drawerIn { from { transform: translateX(28px); opacity: 0; } to { transform: none; opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .side-drawer-panel { animation: none; } }
+.side-drawer-head { display: flex; align-items: flex-start; gap: 12px; padding: 18px 22px 14px; background: #fff; border-bottom: 1px solid var(--border); }
+.side-drawer-titles { flex: 1; min-width: 0; }
+.side-drawer-titles h2 { margin: 0; font-size: 18px; line-height: 1.35; }
+.side-drawer-sub { margin-top: 4px; font-size: 13px; color: var(--muted); line-height: 1.5; }
+.side-drawer-x { flex: none; width: 36px; height: 36px; border-radius: 10px; border: 1px solid var(--border); background: #fff; color: var(--muted);
+    font-size: 22px; line-height: 1; cursor: pointer; }
+.side-drawer-x:hover:not(:disabled) { color: var(--text); border-color: var(--mint); }
+.side-drawer-body { flex: 1; min-height: 0; overflow-y: auto; padding: 18px 22px 28px; overscroll-behavior: contain; }
+.side-drawer-foot { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; padding: 12px 22px; background: #fff; border-top: 1px solid var(--border); }
+/* การ์ดใบขอให้หาในลิ้นชัก: กรอบนอกซ้อนกรอบในดูรก — เหลือแค่เนื้อ · ฟอร์มในการ์ดเหลือ 2 คอลัมน์ (ลิ้นชักแคบกว่าจอ) */
+.side-drawer .req-card { box-shadow: none; margin-bottom: 0; }
+.side-drawer .hire-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.side-drawer .hire-f.wide { grid-column: 1 / -1; }
+.side-drawer .req-facts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.side-drawer .req-assign select { min-width: 0; }
+@media (max-width: 600px) {
+    .side-drawer-panel { width: 100%; }
+    .side-drawer-head { padding: 14px 16px 12px; }
+    .side-drawer-body { padding: 14px 16px 24px; }
+    .side-drawer-foot { padding: 10px 16px; }
+    .side-drawer .hire-grid, .side-drawer .req-facts { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* ===== การ์ดใบขอให้หา / หน้างาน Talent (tc-) — รอบ 1 หน้า Talent ===== */
+/* ===== การ์ดใบขอให้หา (HireRequestCard) + หน้างาน Talent (OtherProjectDetail) — คลาสขึ้นต้น tc- ===== */
+/* ไฟล์นี้ถูก import จาก HireRequestCard.jsx / OtherProjectDetail.jsx / OtherProjectForm.jsx เท่านั้น */
+
+/* หมายเหตุของใบ — ข้อความยาวได้ ให้กินเต็มแถวของกล่องข้อมูล ไม่ถูกบีบเหลือช่องเดียว */
+.req-facts > .tc-fact-wide { grid-column: 1 / -1; }
+.tc-fact-wide b { font-weight: 600; white-space: pre-wrap; overflow-wrap: anywhere; }
+
+/* ป้าย "ชื่อนี้คุณเสนอเอง" — ทีมแบรนด์ที่เสนอชื่อเองแล้วเลือกเอง ควรรู้ตัวก่อนกด */
+.tc-self { padding: 2px 8px; font-size: 10.5px; font-weight: 700; color: #6d28d9; background: #f3e8ff; border-radius: 999px; white-space: nowrap; }
+
+/* กล่องถามก่อน "เลือกคนนี้" (ย้อนกลับไม่ได้) */
+.tc-pick { margin-top: 8px; padding: 10px 12px; border: 1px solid var(--mint); border-radius: 10px; background: #f2fbf7; }
+.tc-pick-q { font-size: 13px; font-weight: 700; color: var(--text); overflow-wrap: anywhere; }
+.tc-pick-sub { margin-top: 3px; font-size: 12px; color: var(--muted); line-height: 1.5; }
+.tc-pick-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 9px; }
+.tc-pick-actions .btn-primary, .tc-pick-actions .btn-ghost { padding: 6px 14px; font-size: 12.5px; }
+
+/* ชิปเหตุผลลัดในกล่อง "ไม่เอา" — กดแล้วเติมลงช่องเหตุผล (พิมพ์เองต่อได้) */
+.tc-reasons { display: flex; flex-wrap: wrap; gap: 6px; flex-basis: 100%; }
+.tc-reasons .proc-plat-chip { padding: 4px 11px; font-size: 11.5px; }
+
+/* ค่าตัวยังเป็น 0 — ยืนยันคิว / ตั้งเป็น "ตกลงแล้ว" ไม่ได้ */
+.tc-need-fee { margin-top: 8px; font-size: 12px; font-weight: 700; color: #b91c1c; }
+.tc-fee-missing { font-size: 12px; font-weight: 600; color: #b45309; white-space: nowrap; }
+
+/* จอแคบ: ปุ่มของแต่ละชื่อ (แก้ไข / เลือกคนนี้ / ไม่เอา / ลบ) ลงบรรทัดใหม่ได้ ไม่ดันการ์ดจนล้นจอ */
+.tc-card .req-cand-main { min-width: 0; flex: 1 1 auto; }
+.tc-card .req-cand-name { flex-wrap: wrap; }
+@media (max-width: 600px) {
+    .tc-card .req-cand { flex-wrap: wrap; }
+    .tc-card .req-cand-actions { flex-wrap: wrap; width: 100%; justify-content: flex-end; }
+}
+
+/* หัวหน้างาน Talent — ปุ่มเยอะขึ้น (เพิ่มคน / ขอให้ช่วยหา / แก้ไขงาน / ลบ) ต้องลงบรรทัดใหม่ได้บนมือถือ */
+.tc-hero-ghost {
+    display: inline-flex; align-items: center; gap: 7px; padding: 9px 16px; border-radius: 11px;
+    border: 1px solid rgba(255,255,255,.55); background: rgba(255,255,255,.12); color: #fff;
+    font-weight: 700; font-size: 13.5px; cursor: pointer;
+}
+.tc-hero-ghost:hover { background: rgba(255,255,255,.24); }
+.tc-hero .pd-edit-btn:disabled { opacity: .6; cursor: not-allowed; transform: none; }
+@media (max-width: 900px) {
+    .tc-hero { flex-wrap: wrap; }
+    .tc-hero .pd-hero-main { flex: 1 1 calc(100% - 56px); }
+    .tc-hero .pd-hero-actions { flex: 1 1 100%; flex-shrink: 1; justify-content: flex-start; }
+}
+@media (max-width: 600px) {
+    .tc-hero { padding: 18px 16px; gap: 12px; }
+    .tc-hero .pd-title { font-size: 22px; overflow-wrap: anywhere; }
+    .tc-hero .pd-hero-actions { gap: 8px; }
+    .tc-hero .pd-hero-actions .pd-edit-btn, .tc-hero .pd-hero-actions .tc-hero-ghost, .tc-hero .pd-hero-actions .pd-del-btn { padding: 8px 12px; font-size: 13px; }
+    .tc-hero .pd-hero-actions .quick-status { flex-basis: 100%; }
+}
+
+/* ===== ฟอร์มสั้น มีคนแล้ว / ขอให้ช่วยหา (qf-) — รอบ 1 หน้า Talent ===== */
+/* ===== ฟอร์มสั้นหน้า Talent (QuickHireForm) — คลาสขึ้นต้น qf- ทั้งหมด ไม่ชนกับของเดิม ===== */
+/* ตัวอักษรของป้ายใหญ่กว่าฟอร์มเต็ม (.hire-f ใช้ 10.5px ตัวพิมพ์ใหญ่) — คนกรอกเป็นทีมแบรนด์ที่ไม่ได้ใช้ระบบทุกวัน */
+
+.qf { min-width: 0; }
+
+/* ส่วนที่มีเลขกำกับ ① ② ③ */
+.qf-sec { background: #fff; border: 1px solid var(--border); border-radius: 14px; padding: 16px 18px; margin-bottom: 14px; min-width: 0; }
+.qf-sec-head { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 10px; margin: 0 0 14px; font-size: 16px; font-weight: 700; color: var(--text); line-height: 1.4; }
+.qf-num { flex: none; width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; background: var(--grad); color: #fff; font-size: 13.5px; font-weight: 700; }
+/* ขอให้ช่วยหา = สีม่วงเดียวกับใบขอให้หาทั้งแอป */
+.qf-casting .qf-num { background: #7c3aed; }
+.qf-sec-sub { font-size: 12.5px; font-weight: 500; color: var(--muted); }
+
+/* ช่องกรอก */
+.qf-field { margin-bottom: 14px; min-width: 0; }
+.qf-field:last-child { margin-bottom: 0; }
+.qf-label { display: block; margin-bottom: 6px; font-size: 14px; font-weight: 700; color: var(--text); line-height: 1.4; }
+.qf-req { color: var(--danger); }
+.qf-opt { font-size: 12.5px; font-weight: 500; color: var(--muted); }
+.qf-hint { margin-top: 5px; font-size: 12.5px; color: var(--muted); line-height: 1.5; }
+.qf-hint b { color: var(--mint-dark); }
+.qf-err { margin-top: 5px; font-size: 13px; font-weight: 600; color: var(--danger); line-height: 1.45; }
+
+.qf input:not([type=file]), .qf select, .qf textarea {
+    width: 100%; padding: 11px 13px; border: 1px solid var(--border); border-radius: 11px;
+    background: #fff; font-size: 15px; color: var(--text); font-family: inherit;
+    transition: border-color .15s, box-shadow .15s;
+}
+.qf textarea { resize: vertical; min-height: 76px; line-height: 1.5; }
+.qf input:not([type=file]):focus, .qf select:focus, .qf textarea:focus {
+    outline: none; border-color: var(--mint); box-shadow: 0 0 0 3px rgba(16, 185, 129, .14);
+}
+.qf-field.has-err > input, .qf-field.has-err > select, .qf-field.has-err > textarea,
+.qf-field.has-err .qf-joblist { border-color: var(--danger); }
+.qf-field.has-err .qf-chip:not(.on) { border-color: #f8b4c0; }
+
+/* ปฏิทินเต็มความกว้างช่อง (ของเดิมกว้างตามข้อความ) */
+.qf .dp { width: 100%; }
+.qf .dp-trigger { width: 100%; min-height: 44px; font-size: 14.5px; }
+
+/* ชิปเลือกอย่างเดียว (ประเภทงาน / แบรนด์ / ส่งรายชื่อภายใน) */
+.qf-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.qf-chips-sm { margin-top: 8px; gap: 6px; }
+.qf-chip {
+    min-height: 40px; padding: 8px 15px; border-radius: 999px; border: 1px solid var(--border);
+    background: #fff; color: var(--text); font-family: inherit; font-size: 14px; font-weight: 600;
+    cursor: pointer; transition: background .12s, border-color .12s, color .12s;
+}
+.qf-chip:hover { border-color: var(--mint); color: var(--mint-dark); }
+.qf-chip.on { background: var(--grad); color: #fff; border-color: transparent; }
+.qf-chip.sm { min-height: 34px; padding: 5px 12px; font-size: 13px; }
+
+/* ตัวเลือกสองทาง (งานที่มีอยู่ | งานใหม่ · กำลังคุย | ตกลงแล้ว) */
+.qf-seg { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.qf-seg-opt {
+    display: flex; flex-direction: column; align-items: flex-start; justify-content: center; gap: 2px;
+    min-height: 48px; padding: 10px 14px; border: 1px solid var(--border); border-radius: 12px;
+    background: #fff; color: var(--text); font-family: inherit; font-size: 14.5px; font-weight: 700;
+    text-align: left; cursor: pointer; min-width: 0;
+}
+.qf-seg-opt small { font-size: 12px; font-weight: 500; color: var(--muted); line-height: 1.4; }
+.qf-seg-opt:hover:not(:disabled) { border-color: var(--mint); }
+.qf-seg-opt.on { border-color: var(--mint); background: var(--bg-soft); box-shadow: inset 0 0 0 1px var(--mint); color: var(--mint-dark); }
+.qf-seg-opt:disabled { opacity: .5; cursor: not-allowed; background: #f6f8f7; }
+
+/* ① รายการงานที่มีอยู่ */
+.qf-search { position: relative; margin: 0 0 8px; }
+.qf-search svg { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--muted); pointer-events: none; }
+.qf .qf-search input { padding-left: 38px; }
+.qf-joblist { display: flex; flex-direction: column; max-height: 280px; overflow-y: auto; border: 1px solid var(--border); border-radius: 12px; background: #fff; overscroll-behavior: contain; }
+.qf-job {
+    display: flex; align-items: center; gap: 10px; width: 100%; min-height: 52px; padding: 10px 14px;
+    border: none; border-bottom: 1px solid var(--border); background: #fff; color: var(--text);
+    font-family: inherit; text-align: left; cursor: pointer;
+}
+.qf-job:last-child { border-bottom: none; }
+.qf-job:hover { background: #f8fcfa; }
+.qf-job.on { background: var(--bg-soft); box-shadow: inset 3px 0 0 var(--mint); }
+.qf-job svg { flex: none; color: var(--mint-dark); }
+.qf-job-txt { flex: 1; min-width: 0; }
+.qf-job-name { display: block; font-size: 14.5px; font-weight: 700; overflow-wrap: anywhere; }
+.qf-job-meta { display: block; margin-top: 2px; font-size: 12.5px; color: var(--muted); overflow-wrap: anywhere; }
+.qf-empty { padding: 16px 14px; font-size: 13px; color: var(--muted); text-align: center; line-height: 1.5; }
+
+/* งานที่ล็อกไว้ (เปิดจากหน้างาน / เพิ่งสร้างงาน) */
+.qf-fixed {
+    display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 8px; margin-bottom: 14px; padding: 12px 16px;
+    border: 1px solid var(--border); border-radius: 12px; background: #fff; font-size: 14.5px; min-width: 0;
+}
+.qf-fixed b { overflow-wrap: anywhere; }
+.qf-fixed-k { font-size: 12.5px; font-weight: 700; color: var(--muted); }
+.qf-fixed-meta { font-size: 13px; color: var(--muted); }
+.qf-fixed .qf-warn { flex-basis: 100%; }
+.qf-fixed.warn { border-color: #fde68a; }
+
+/* สองคอลัมน์ในลิ้นชัก (640px) — มือถือเหลือคอลัมน์เดียว */
+.qf-row2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 12px; }
+/* ทุกช่องในแถวเว้นล่างเท่ากัน — ไม่งั้นคอลัมน์ขวา (ช่องสุดท้าย) ที่สูงกว่าจะชิดของถัดไป */
+.qf-row2 > .qf-field, .qf-row2 > .qf-field:last-child { margin-bottom: 14px; }
+
+/* จำนวนคน − / + */
+.qf-step { display: inline-flex; align-items: stretch; max-width: 100%; border: 1px solid var(--border); border-radius: 12px; overflow: hidden; background: #fff; }
+.qf-step button {
+    flex: none; width: 46px; min-height: 44px; border: none; background: #f8fcfa; color: var(--mint-dark);
+    font-family: inherit; font-size: 20px; font-weight: 700; line-height: 1; cursor: pointer;
+}
+.qf-step button:hover:not(:disabled) { background: var(--bg-soft); }
+.qf-step button:disabled { color: #c6d3cd; cursor: not-allowed; }
+.qf .qf-step input {
+    width: 64px; min-width: 0; border: none; border-left: 1px solid var(--border); border-right: 1px solid var(--border);
+    border-radius: 0; text-align: center; font-weight: 700; font-variant-numeric: tabular-nums;
+}
+.qf .qf-step input:focus { box-shadow: none; background: var(--bg-soft); }
+
+/* ข้อมูลเพิ่มเติม ▸ (ช่องเสริมที่พับไว้) */
+.qf-more-btn {
+    display: inline-flex; align-items: center; flex-wrap: wrap; gap: 4px 10px; min-height: 40px; padding: 6px 0;
+    border: none; background: none; color: var(--mint-dark); font-family: inherit; font-size: 14px; font-weight: 700; cursor: pointer;
+}
+.qf-more-btn:hover { color: var(--mint); }
+.qf-more-count { font-size: 12px; font-weight: 600; color: var(--muted); }
+.qf-more { margin-top: 10px; padding-top: 14px; border-top: 1px dashed var(--border); }
+
+/* รูป / คอมการ์ด */
+.qf-file { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.qf-file-btn {
+    display: inline-flex; align-items: center; gap: 7px; min-width: 0; max-width: 100%; min-height: 44px; padding: 9px 14px;
+    border: 1px dashed var(--border); border-radius: 11px; background: #fff; color: var(--mint-dark);
+    font-size: 13.5px; font-weight: 600; cursor: pointer;
+}
+.qf-file-btn svg { flex: none; }
+.qf-file-btn span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.qf-file-btn:hover { border-color: var(--mint); background: var(--bg-soft); }
+.qf-file-btn.has { border-style: solid; border-color: var(--mint); background: var(--bg-soft); }
+
+/* ข้อความบนสุดของฟอร์ม */
+.qf-ok {
+    display: flex; align-items: center; gap: 8px; margin-bottom: 14px; padding: 11px 14px; border-radius: 12px;
+    background: #d1fae5; color: #047857; font-size: 14px; font-weight: 600; line-height: 1.45;
+}
+.qf-ok svg { flex: none; }
+.qf-warn {
+    margin-top: 8px; padding: 10px 14px; border: 1px solid #fde68a; border-radius: 12px;
+    background: #fffbeb; color: #92400e; font-size: 13px; line-height: 1.5;
+}
+.qf-upfail { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 12px; margin: 0 0 14px; }
+.qf-upfail > div { flex: 1 1 220px; min-width: 0; }
+.qf-link-btn {
+    min-height: 36px; padding: 6px 12px; border: 1px solid #f59e0b; border-radius: 9px; background: #fff;
+    color: #b45309; font-family: inherit; font-size: 13px; font-weight: 700; cursor: pointer;
+}
+.qf-link-btn:disabled { opacity: .6; cursor: not-allowed; }
+
+/* ปุ่มรองที่ยังอยากให้เห็นชัด (บันทึกแล้วเพิ่มอีกคน / ดูใบ) */
+.btn-ghost.qf-btn-accent { color: var(--mint-dark); border-color: var(--mint); }
+.btn-ghost.qf-btn-accent:disabled { opacity: .6; cursor: not-allowed; }
+
+/* หน้าจบ (ส่งใบแล้ว / บันทึกแล้วแต่แนบไฟล์ไม่สำเร็จ) */
+.qf-done { max-width: 440px; margin: 0 auto; padding: 28px 4px 8px; text-align: center; }
+.qf-done h3 { margin: 0 0 10px; font-size: 19px; line-height: 1.4; }
+.qf-done-tick { color: var(--mint-dark); }
+.qf-done-line { font-size: 15px; line-height: 1.6; color: var(--text); overflow-wrap: anywhere; }
+.qf-done-sub { margin-top: 6px; font-size: 13px; color: var(--muted); line-height: 1.5; }
+.qf-done .qf-warn { text-align: left; }
+.qf-done-actions { display: flex; flex-direction: column; gap: 10px; max-width: 320px; margin: 22px auto 0; }
+.qf-done-actions button { width: 100%; justify-content: center; }
+
+@media (max-width: 600px) {
+    .qf-sec { padding: 14px; }
+    .qf-row2 { grid-template-columns: minmax(0, 1fr); }
+    /* ตัวอักษร 16px กัน iOS ซูมเข้าเองตอนแตะช่องกรอก */
+    .qf input:not([type=file]), .qf select, .qf textarea { font-size: 16px; }
+    .qf-seg { gap: 6px; }
+    .qf-seg-opt { padding: 9px 11px; }
+    /* ปุ่มท้ายลิ้นชักยืดเต็มแถว กดง่ายด้วยนิ้ว */
+    .qf-drawer .side-drawer-foot > button { flex: 1 1 auto; }
+}
+
+/* ===== หน้า Talent: หน้าหลัก / รอคุณทำ / แท็บ (th-) — รอบ 1 หน้า Talent ===== */
+/* ===== หน้า Talent (/hires) — หัวหน้า / หน้าหลัก / ลิ้นชักใบขอให้หา / รายการ ===== */
+/* คลาสขึ้นต้น th- ทั้งหมด (ไฟล์นี้ import จาก OtherWork.jsx) — ไม่ชนกับฟอร์มสั้น (qf-) และการ์ดใบ (tc-)
+   สี: ม่วง = ใบขอให้หา/การหาคน · เหลือง = รอ · ส้ม = ค่าตัวใหม่ · เขียวมิ้นต์ = ปุ่มหลัก */
+
+.th-hub { min-width: 0; }
+
+/* ---------- หัวหน้า + ปุ่มคำอธิบาย ---------- */
+.th-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; flex-wrap: wrap; }
+.th-head > div { min-width: 0; flex: 1 1 320px; }
+.th-help-btn { flex: none; padding: 8px 14px; border-radius: 999px; border: 1px solid #ddd6fe; background: #f5f3ff; color: #6d28d9;
+    font-size: 13px; font-weight: 700; cursor: pointer; white-space: nowrap; }
+.th-help-btn:hover { border-color: #a78bfa; }
+.th-help-btn[aria-expanded="true"] { background: #6d28d9; border-color: #6d28d9; color: #fff; }
+
+.th-help { margin: -8px 0 18px; padding: 16px 18px; background: #fff; border: 1px solid #e9e3ff; border-radius: 16px; box-shadow: var(--shadow); }
+.th-help-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
+.th-help-head strong { font-size: 15px; }
+.th-help-x, .th-notice-x { width: 30px; height: 30px; flex: none; border-radius: 8px; border: 1px solid var(--border); background: #fff;
+    color: var(--muted); font-size: 18px; line-height: 1; cursor: pointer; }
+.th-help-x:hover, .th-notice-x:hover { color: var(--text); border-color: var(--mint); }
+.th-help-paths { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.th-help-path { padding: 12px 14px; border-radius: 12px; background: #f2fbf7; border: 1px solid #d1fae5; min-width: 0; }
+.th-help-path.casting { background: #faf5ff; border-color: #ede9fe; }
+.th-help-name { font-size: 12.5px; font-weight: 800; color: var(--mint-dark); margin-bottom: 8px; }
+.th-help-path.casting .th-help-name { color: #6d28d9; }
+.th-flow { list-style: none; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 4px; }
+.th-flow li { display: inline-flex; align-items: center; font-size: 12.5px; font-weight: 600; color: var(--text); white-space: nowrap; }
+.th-flow li + li::before { content: '→'; margin-right: 4px; color: var(--muted); font-weight: 400; }
+.th-help-note { margin-top: 10px; font-size: 12px; color: var(--muted); line-height: 1.55; }
+
+.th-notice { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.th-notice span { min-width: 0; }
+
+/* ---------- ส่วนต่าง ๆ ของหน้าหลัก ---------- */
+.th-home { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.th-section { background: var(--card); border: 1px solid rgba(226, 240, 234, .9); border-radius: 16px; padding: 16px 18px; box-shadow: var(--shadow); min-width: 0; }
+.th-loading { color: var(--muted); text-align: center; }
+.th-sec-title { display: flex; align-items: center; gap: 8px; margin: 0 0 12px; font-size: 16px; font-weight: 800; color: var(--text); }
+.th-sec-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
+.th-sec-row .th-sec-title { margin: 0; }
+.th-count { display: inline-block; min-width: 22px; padding: 1px 8px; border-radius: 999px; font-size: 11.5px; font-weight: 800; text-align: center;
+    background: var(--bg-soft); color: var(--mint-dark); }
+.th-count.danger { background: #ef4444; color: #fff; }
+.th-count.amber { background: #fde68a; color: #92400e; }
+.th-hint { margin: 0 0 10px; font-size: 12.5px; color: var(--muted); line-height: 1.5; }
+.th-link { border: none; background: none; padding: 0; color: #6d28d9; font-weight: 700; font-size: 13px; cursor: pointer; text-decoration: none; }
+.th-link:hover { text-decoration: underline; }
+
+/* ---------- การ์ดเริ่ม 3 ทาง ---------- */
+.th-start { display: flex; flex-direction: column; gap: 10px; }
+.th-start-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+.th-start-card { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; padding: 18px; text-align: left; font: inherit; color: var(--text);
+    background: #fff; border: 1px solid var(--border); border-radius: 16px; box-shadow: var(--shadow); cursor: pointer; transition: border-color .12s, transform .12s; min-width: 0; }
+.th-start-card:hover { border-color: var(--mint); transform: translateY(-1px); }
+.th-start-ico { width: 40px; height: 40px; border-radius: 12px; display: grid; place-items: center; background: var(--bg-soft); color: var(--mint-dark); }
+.th-start-title { font-size: 15.5px; font-weight: 800; line-height: 1.35; }
+.th-start-desc { font-size: 12.5px; color: var(--muted); line-height: 1.5; }
+.th-start-card.th-k-casting .th-start-ico { background: #f3e8ff; color: #6d28d9; }
+.th-start-card.th-k-casting:hover { border-color: #a78bfa; }
+.th-start-card.th-k-rate .th-start-ico { background: #fff7e6; color: #b45309; }
+.th-start-card.th-k-rate:hover { border-color: #fbbf24; }
+.th-again { align-self: flex-start; }
+.th-start-compact { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.th-start-mini { display: inline-flex; align-items: center; gap: 6px; padding: 8px 14px; border-radius: 999px; border: 1px solid var(--border);
+    background: #fff; color: var(--text); font: inherit; font-size: 13px; font-weight: 700; cursor: pointer; white-space: nowrap; }
+.th-start-mini:hover { border-color: var(--mint); color: var(--mint-dark); }
+.th-start-mini.th-k-casting { color: #6d28d9; border-color: #ddd6fe; background: #faf5ff; }
+.th-start-mini.th-k-rate { color: #b45309; border-color: #fde68a; background: #fffbeb; }
+
+/* ---------- รอคุณทำ ---------- */
+.th-todo-sec { border-color: #fecaca; }
+.th-flash { margin: 0 0 12px; padding: 9px 13px; border-radius: 10px; font-size: 13px; font-weight: 600; }
+.th-flash.ok { color: #047857; background: #ecfdf5; border: 1px solid #a7f3d0; }
+.th-flash.warn { color: #92400e; background: #fffbeb; border: 1px solid #fde68a; }
+.th-todo-list { display: flex; flex-direction: column; gap: 10px; }
+.th-todo { position: relative; padding: 14px 16px 14px 18px; border: 1px solid var(--border); border-radius: 14px; background: #fff; min-width: 0; }
+.th-todo::before { content: ''; position: absolute; left: 0; top: 10px; bottom: 10px; width: 4px; border-radius: 0 4px 4px 0; background: var(--mint); }
+.th-todo.th-t-fee::before { background: #f97316; }
+.th-todo.th-t-decide::before, .th-todo.th-t-find::before, .th-todo.th-t-assign::before { background: #8b5cf6; }
+.th-todo.th-t-confirm::before { background: #f59e0b; }
+.th-todo.late { border-color: #fecaca; background: #fffafa; }
+.th-todo-title { font-size: 15px; font-weight: 800; line-height: 1.4; color: var(--text); overflow-wrap: anywhere; }
+.th-todo-meta { margin-top: 3px; font-size: 13px; color: var(--text); overflow-wrap: anywhere; }
+.th-todo-detail { margin-top: 3px; font-size: 13px; font-weight: 600; color: #9a3412; }
+.th-ctx { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; margin-top: 4px; font-size: 12px; color: var(--muted); overflow-wrap: anywhere; }
+.th-late { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 11px; font-weight: 700; color: #b91c1c; background: #fee2e2; white-space: nowrap; }
+.th-todo-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; margin-top: 10px; }
+.th-todo-actions .btn-primary { min-height: 40px; padding: 9px 16px; }
+.th-textbtn { display: inline-flex; align-items: center; gap: 5px; border: none; background: none; padding: 6px 2px; font: inherit; font-size: 13px;
+    font-weight: 700; color: var(--muted); cursor: pointer; text-decoration: underline; text-underline-offset: 3px; text-decoration-color: rgba(125, 150, 140, .45); white-space: nowrap; }
+.th-textbtn:hover:not(:disabled) { color: var(--mint-dark); }
+.th-textbtn:disabled { opacity: .5; cursor: not-allowed; }
+.btn-primary.th-danger { background: #e11d48; box-shadow: 0 6px 16px rgba(225, 29, 72, .2); }
+.th-done { display: inline-block; margin-top: 10px; font-size: 13px; font-weight: 700; color: #047857; }
+.th-err { margin-top: 8px; padding: 8px 12px; border-radius: 10px; font-size: 12.5px; color: var(--danger); background: #fdecef; border: 1px solid #f8d4da; }
+.th-reject { margin-top: 10px; }
+.th-reject input { width: 100%; padding: 10px 12px; border: 1px solid #fed7aa; border-radius: 10px; background: #fff; font: inherit; font-size: 13px; color: var(--text); }
+.th-reject input:focus { outline: none; border-color: #f97316; }
+.th-reject .th-todo-actions { margin-top: 8px; }
+
+.th-empty { text-align: center; padding: 24px 18px; }
+.th-empty-title { font-size: 16px; font-weight: 800; }
+.th-empty p { margin: 4px 0 14px; font-size: 13px; color: var(--muted); }
+.th-empty-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; }
+.th-casting-btn { display: inline-flex; align-items: center; gap: 7px; color: #6d28d9; border-color: #ddd6fe; }
+.th-casting-btn:hover { color: #6d28d9; border-color: #a78bfa; }
+
+/* ---------- หัวข้อพับได้ + รายการบรรทัดเดียว ---------- */
+.th-fold { padding: 0; overflow: hidden; }
+.th-fold.amber { border-color: #fde68a; }
+.th-fold-btn { display: flex; align-items: center; gap: 8px; width: 100%; padding: 14px 18px; border: none; background: none; font: inherit; color: var(--text);
+    text-align: left; cursor: pointer; }
+.th-fold-btn:hover { background: #f8fcfa; }
+.th-fold-caret { display: inline-grid; place-items: center; color: var(--muted); transition: transform .15s; }
+.th-fold-caret.open { transform: rotate(90deg); }
+.th-fold-title { font-size: 15px; font-weight: 800; }
+.th-fold-body { padding: 0 18px 14px; }
+
+.th-lines { list-style: none; display: flex; flex-direction: column; gap: 8px; margin: 0; padding: 0; }
+.th-line { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 12px; background: #fff; cursor: pointer; min-width: 0; }
+.th-line:hover { border-color: var(--mint); background: #f8fcfa; }
+.th-line:focus-visible { outline: 2px solid var(--mint); outline-offset: 1px; }
+.th-line-main { flex: 1; min-width: 0; }
+.th-line-text { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; font-size: 13.5px; font-weight: 600; line-height: 1.45; overflow-wrap: anywhere; }
+.th-line-sub { margin-top: 2px; font-size: 12px; color: var(--muted); overflow-wrap: anywhere; }
+.th-line-note { margin-top: 3px; font-size: 12px; font-weight: 600; color: #6d28d9; overflow-wrap: anywhere; }
+.th-line-note.no { color: #b91c1c; }
+.th-line-next { font-size: 12.5px; font-weight: 700; color: #047857; }
+.th-line-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 4px 10px; flex: none; }
+.th-smallbtn { padding: 6px 12px; border-radius: 9px; border: 1px solid var(--border); background: #fff; color: var(--mint-dark); font: inherit; font-size: 12.5px;
+    font-weight: 700; cursor: pointer; white-space: nowrap; }
+.th-smallbtn:hover { border-color: var(--mint); }
+.th-cand-st { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 11px; font-weight: 700; white-space: nowrap; color: #92400e; background: #fef3c7; }
+.th-cand-st.st-ok { color: #047857; background: #d1fae5; }
+.th-cand-st.st-no { color: #b91c1c; background: #fee2e2; }
+
+/* ---------- สรุปถามราคา + งานที่กำลังทำ ---------- */
+.th-rate-sum { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; padding: 12px 18px; border-color: #fde68a; background: #fffdf5; }
+.th-rate-text { font-size: 13.5px; color: var(--text); }
+.th-rate-text b { color: #92400e; }
+.th-jobs { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 210px), 1fr)); gap: 10px; }
+.th-job { display: flex; flex-direction: column; gap: 6px; padding: 12px 14px; border: 1px solid var(--border); border-radius: 12px; background: #fff; color: var(--text);
+    text-decoration: none; min-width: 0; }
+.th-job:hover { border-color: var(--mint); background: #f8fcfa; }
+.th-job-name { font-size: 14px; font-weight: 800; line-height: 1.35; overflow-wrap: anywhere; }
+.th-job-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; font-size: 12px; color: var(--muted); }
+.th-job-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; font-size: 12.5px; font-weight: 600; }
+.th-job-need { color: #92400e; background: #fef3c7; padding: 1px 8px; border-radius: 999px; font-size: 11.5px; }
+
+/* ---------- หน้าคนช่วยหา (ไม่มีแบรนด์) ---------- */
+.th-finder-intro { border-color: #ede9fe; background: #faf5ff; }
+.th-finder-intro .th-sec-title { margin-bottom: 6px; color: #5b21b6; }
+.th-finder-intro p { margin: 0; font-size: 13.5px; color: var(--text); line-height: 1.6; }
+
+/* ---------- ลิ้นชักใบขอให้หา ---------- */
+.th-turn { margin-bottom: 10px; padding: 11px 14px; border-radius: 12px; font-size: 14px; font-weight: 700; line-height: 1.5;
+    color: #475569; background: #f1f5f9; border: 1px solid #e2e8f0; }
+.th-turn.mine { color: #b91c1c; background: #fef2f2; border-color: #fecaca; }
+.th-drawer-links { display: flex; justify-content: flex-end; margin-bottom: 10px; }
+
+/* ---------- ตารางใบขอให้หา: ทั้งแถวกดเปิดลิ้นชัก ---------- */
+.th-req-table tr.th-row-link { cursor: pointer; }
+.th-req-table tr.th-row-link:hover td { background: #f8fbfa; }
+.th-req-table tr.th-row-link:focus-visible { outline: 2px solid var(--mint); outline-offset: -2px; }
+.th-proj-name { font-weight: 700; color: var(--text); }
+
+/* ---------- เมนูปุ่ม "บันทึกการจ้าง ▾" ---------- */
+.th-menu-wrap { position: relative; flex: none; }
+.th-menu { position: absolute; left: 0; top: calc(100% + 6px); z-index: 30; width: min(320px, calc(100vw - 32px)); padding: 6px; background: #fff;
+    border: 1px solid var(--border); border-radius: 14px; box-shadow: 0 16px 40px rgba(16, 94, 75, .16); display: flex; flex-direction: column; }
+.th-menu button { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding: 10px 12px; border: none; border-radius: 10px; background: none;
+    font: inherit; color: var(--text); text-align: left; cursor: pointer; }
+.th-menu button:hover, .th-menu button:focus-visible { background: var(--bg-soft); }
+.th-menu button strong { font-size: 13.5px; }
+.th-menu button span { font-size: 12px; color: var(--muted); }
+
+/* ---------- สลับย่อย คนที่เคยจ้าง | ถามราคา ---------- */
+.th-seg { display: inline-flex; gap: 4px; padding: 4px; margin-bottom: 14px; border-radius: 12px; background: #fff; border: 1px solid var(--border); max-width: 100%; }
+.th-seg-btn { display: inline-flex; align-items: center; gap: 7px; padding: 8px 16px; border: none; border-radius: 9px; background: none; font: inherit;
+    font-size: 13.5px; font-weight: 700; color: var(--muted); cursor: pointer; white-space: nowrap; }
+.th-seg-btn:hover { color: var(--text); }
+.th-seg-btn.on { background: var(--grad); color: #fff; }
+.th-seg-btn.on .agency-tab-count.warn { background: #fff; }
+
+/* ---------- จอแคบ ---------- */
+@media (max-width: 760px) {
+    .th-start-grid { grid-template-columns: minmax(0, 1fr); gap: 10px; }
+    .th-start-card { flex-direction: row; flex-wrap: wrap; align-items: center; padding: 14px 16px; column-gap: 12px; }
+    .th-start-card .th-start-desc { flex-basis: 100%; }
+    .th-help-paths { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 600px) {
+    .th-section { padding: 14px; }
+    .th-fold { padding: 0; }
+    .th-fold-btn { padding: 13px 14px; }
+    .th-fold-body { padding: 0 14px 12px; }
+    .th-help { padding: 14px; }
+    .th-line { flex-direction: column; align-items: stretch; }
+    .th-line-actions { justify-content: flex-start; }
+    .th-todo-actions .btn-primary { flex: 1 1 100%; }
+    .th-seg { display: flex; }
+    .th-seg-btn { flex: 1; justify-content: center; }
+}

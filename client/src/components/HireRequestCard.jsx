@@ -6,14 +6,17 @@ import FilePreviewModal from './FilePreviewModal.jsx';
 import HireRequestEditModal from './HireRequestEditModal.jsx';
 import DatePicker from './DatePicker.jsx';
 import {
-    hireStage, hireNeedMore, STAGE_LABEL, CAND_LABEL,
-    BOOK_PENDING, BOOK_FEE, BOOKING_LABEL, bookingState, hireBookings
+    hireStage, hireNeedMore, BOOK_PENDING, BOOK_FEE, bookingState, hireBookings
 } from './OtherProjectForm.jsx';
+import {
+    T, STAGE_LABEL, BOOKING_LABEL, CAND_LABEL, REJECT_REASONS, requestLink, feeDiff
+} from '../data/talentLabels.js';
 
-// การ์ด "ใบขอจัดหา" หนึ่งใบ พร้อมรายชื่อที่เสนอเข้ามาทั้งหมด — ที่เดียวที่ทำอะไรกับใบได้
-// ใช้ 2 ที่ด้วยหน้าตาเดียวกัน: ฝังตรง ๆ ในหน้ารายละเอียดงาน (ทีมแบรนด์) และในกล่องจากแท็บใบขอจัดหา (คนหาที่ไม่มีสิทธิ์แบรนด์)
-// งานของใบนี้มีสองฝั่ง — คนหาเสนอชื่อได้หลายคน ทีมแบรนด์เป็นคนกดอนุมัติ / ไม่ผ่าน (พร้อมเหตุผลให้คนหาเห็น)
+// การ์ด "ใบขอให้หา" หนึ่งใบ พร้อมรายชื่อที่ส่งเข้ามาทั้งหมด — ที่เดียวที่ทำอะไรกับใบได้
+// ใช้ 2 ที่ด้วยหน้าตาเดียวกัน: ฝังตรง ๆ ในหน้ารายละเอียดงาน (ทีมแบรนด์) และในลิ้นชักใบขอให้หาของหน้า Talent
+// งานของใบนี้มีสองฝั่ง — คนช่วยหาเสนอชื่อได้หลายคน ทีมแบรนด์เป็นคนกด "เลือกคนนี้" / "ไม่เอา" (พร้อมเหตุผลให้คนช่วยหาเห็น)
 // ทุกปุ่มยิงเส้นที่แก้ทีละแถวในฐาน (ไม่ใช่ PUT ทั้งแคมเปญ) สองฝั่งจึงทำงานพร้อมกันได้โดยไม่ทับกัน
+// ค่าในฐานยังเป็นคำเดิม (เสนอ / เลือกแล้ว / ไม่เอา / pending / fee_review) — เปลี่ยนแค่ป้ายที่โชว์ผ่าน talentLabels.js
 const B = n => '฿' + (Number(n) || 0).toLocaleString('th-TH');
 const fmtD = d => {
     if (!d) return '—';
@@ -27,6 +30,12 @@ const candsOf = r => (Array.isArray(r && r.candidates) ? r.candidates : []);
 const leftOf = r => Math.max(0, (Number(r && r.headcount) || 1) - (Number(r && r.filled) || 0));
 const EMPTY = { name: '', fee: '', contact: '', agency: '', link: '', note: '', image_link: '', video_link: '' };
 const S = v => (v == null ? '' : String(v));
+// เหตุผลที่เซิร์ฟเวอร์เขียนไว้ตอนคนที่เลือกแล้วมาไม่ได้ ('คิวไม่ว่าง: …' — ค่าในฐานคงเดิม มีเทสต์ผูกไว้)
+// โชว์เป็นคำใหม่เท่านั้น ไม่แก้ข้อมูล
+const UNAVAIL_PREFIX = 'คิวไม่ว่าง';
+const isUnavailNote = n => typeof n === 'string' && (n === UNAVAIL_PREFIX || n.startsWith(UNAVAIL_PREFIX + ': '));
+const showDecidedNote = n => (!isUnavailNote(n) ? n
+    : n === UNAVAIL_PREFIX ? 'มาไม่ได้' : 'มาไม่ได้: ' + n.slice(UNAVAIL_PREFIX.length + 2));
 
 // ช่องกรอกของ "ชื่อที่เสนอ" — ใช้ชุดเดียวกันทั้งตอนเสนอใหม่และตอนกดแก้ไข จะได้ไม่มีช่องที่มีแค่ฝั่งเดียว
 function CandFields({ form, setForm, feeHint, img, setImg, vid, setVid, current, clearImg, setClearImg, clearVid, setClearVid }) {
@@ -45,7 +54,7 @@ function CandFields({ form, setForm, feeHint, img, setImg, vid, setVid, current,
                     onChange={e => set('fee', e.target.value.replace(/[^0-9]/g, ''))} placeholder={String(feeHint || 0)} />
             </label>
             <label className="hire-f">
-                <span>ช่องทางติดต่อ</span>
+                <span>{T.contact}</span>
                 <input value={form.contact} onChange={e => set('contact', e.target.value)} placeholder="เบอร์ / LINE / IG" />
             </label>
             <label className="hire-f">
@@ -94,15 +103,15 @@ function CandFields({ form, setForm, feeHint, img, setImg, vid, setVid, current,
             </div>
 
             <label className="hire-f wide">
-                <span>โน้ต</span>
+                <span>{T.note}</span>
                 <input value={form.note} onChange={e => set('note', e.target.value)} placeholder="เช่น ว่างเฉพาะช่วงเช้า" />
             </label>
         </div>
     );
 }
 
-// ===== ส่วน "อนุมัติแล้ว · รอคอนเฟิร์มคิว" ของการ์ด =====
-// คนหา (หรือทีมแบรนด์แทน) คอนเฟิร์มคิว/ค่าตัวจริง หรือแจ้งคิวไม่ว่าง · ทีมแบรนด์อนุมัติค่าตัวใหม่เมื่อแพงกว่าที่อนุมัติไว้
+// ===== ส่วน "เลือกแล้ว · รอยืนยันคิว" ของการ์ด =====
+// คนช่วยหา (หรือทีมแบรนด์แทน) ยืนยันคิว/ค่าตัวจริง หรือแจ้งว่าคนนี้มาไม่ได้ · ทีมแบรนด์ตัดสินค่าตัวใหม่เมื่อแพงกว่าที่ตกลงไว้
 const bookingsOf = r => (Array.isArray(r && r.bookings) ? r.bookings : []);
 const BOOK_EMPTY = { use_date: '', use_time: '', place: '', contact: '', fee: '', note: '' };
 const digits = v => Number(String(v == null ? '' : v).replace(/[^0-9]/g, '')) || 0;
@@ -154,7 +163,7 @@ function BookingSection({ rows, pid, rowKey, canAct, canFee, busy, run, applyIte
     });
     const feeDecide = (b, ok) => act(b, async () => {
         const bk = b.booking || {};
-        // ส่งยอดที่เห็นบนจอไปด้วย — ถ้าคนหาคอนเฟิร์มใหม่ระหว่างนั้น server จะตีกลับแทนการอนุมัติยอดที่ไม่เคยเห็น
+        // ส่งยอดที่เห็นบนจอไปด้วย — ถ้าคนช่วยหายืนยันคิวรอบใหม่ระหว่างนั้น server จะตีกลับแทนการยอมรับยอดที่ไม่เคยเห็น
         const res = await api(url(b, ok ? 'fee-approve' : 'fee-reject'), {
             method: 'POST',
             body: { note: ok ? null : feeNote, expected_fee: bk.requested_fee, expected_confirmed_at: bk.confirmed_at || null }
@@ -168,9 +177,9 @@ function BookingSection({ rows, pid, rowKey, canAct, canFee, busy, run, applyIte
         <div className="req-bookings">
             <div className="req-cands-head">
                 <span>
-                    อนุมัติแล้ว · {[
-                        rows.some(r => bookingState(r) === BOOK_PENDING) ? `รอคอนเฟิร์มคิว ${rows.filter(r => bookingState(r) === BOOK_PENDING).length}` : '',
-                        rows.some(r => bookingState(r) === BOOK_FEE) ? `รออนุมัติค่าตัวใหม่ ${rows.filter(r => bookingState(r) === BOOK_FEE).length}` : ''
+                    เลือกแล้ว · {[
+                        rows.some(r => bookingState(r) === BOOK_PENDING) ? `${BOOKING_LABEL.pending} ${rows.filter(r => bookingState(r) === BOOK_PENDING).length}` : '',
+                        rows.some(r => bookingState(r) === BOOK_FEE) ? `${BOOKING_LABEL.fee_review} ${rows.filter(r => bookingState(r) === BOOK_FEE).length}` : ''
                     ].filter(Boolean).join(' · ')}
                 </span>
             </div>
@@ -180,6 +189,8 @@ function BookingSection({ rows, pid, rowKey, canAct, canFee, busy, run, applyIte
                 const isBusy = busy === 'b' + b.key;
                 const approved = Number(b.fee) || 0;
                 const higher = confirmKey === b.key && digits(bf.fee) > approved;
+                // ไม่ได้พิมพ์ค่าตัว server จะใช้ค่าตัวที่ตกลงไว้ — ถ้าอันนั้นก็ 0 จะยืนยันคิว (= ตกลงแล้ว) ไม่ได้
+                const zeroFee = confirmKey === b.key && digits(bf.fee) <= 0 && approved <= 0;
                 return (
                     <div className={'req-book st-' + st} key={b.key}>
                         <div className="req-book-top">
@@ -189,42 +200,42 @@ function BookingSection({ rows, pid, rowKey, canAct, canFee, busy, run, applyIte
                                     <span className={'stage-chip st-' + (st === BOOK_FEE ? 'fee' : 'booking')}>{BOOKING_LABEL[st]}</span>
                                 </div>
                                 <div className="req-cand-meta">
-                                    ค่าตัวที่อนุมัติ {B(approved)}
+                                    ค่าตัวที่ตกลงไว้ {approved > 0 ? B(approved) : 'ยังไม่ระบุ'}
                                     {b.use_date ? ` · ${fmtD(b.use_date)}` : ''}{b.use_time ? ` ${b.use_time}` : ''}
                                     {b.place ? ` · ${b.place}` : ''}{b.contact ? ` · ${b.contact}` : ''}
-                                    {bk.approved_by ? ` · อนุมัติโดย ${bk.approved_by}` : ''}
+                                    {bk.approved_by ? ` · เลือกโดย ${bk.approved_by}` : ''}
                                 </div>
                                 {st === BOOK_FEE && (
                                     <div className="req-book-fee">
-                                        ขอค่าตัวใหม่ <b>{B(bk.requested_fee)}</b> (อนุมัติไว้ {B(approved)})
-                                        {bk.confirmed_by ? ` · คอนเฟิร์มคิวโดย ${bk.confirmed_by}` : ''}
+                                        ขอ{T.newFee} <b>{B(bk.requested_fee)}</b> (ตกลงไว้ {B(approved)} · {feeDiff(approved, bk.requested_fee).text})
+                                        {bk.confirmed_by ? ` · ${T.confirmQueue}โดย ${bk.confirmed_by}` : ''}
                                     </div>
                                 )}
                                 {st === BOOK_PENDING && bk.rejected_fee != null && (
                                     <div className="req-cand-reason">
-                                        ทีมไม่อนุมัติค่าตัว {B(bk.rejected_fee)}{bk.reviewed_by ? ` (${bk.reviewed_by})` : ''}
-                                        {bk.team_note ? ` — ${bk.team_note}` : ''} · คุยใหม่แล้วคอนเฟิร์มอีกครั้ง หรือกดคิวไม่ว่าง
+                                        ทีมไม่ยอมรับค่าตัว {B(bk.rejected_fee)}{bk.reviewed_by ? ` (${bk.reviewed_by})` : ''}
+                                        {bk.team_note ? ` — ${bk.team_note}` : ''} · คุยใหม่แล้ว{T.confirmQueue}อีกครั้ง หรือกด "{T.cantCome}"
                                     </div>
                                 )}
                             </div>
                             <div className="req-cand-actions">
                                 {st === BOOK_PENDING && canAct && confirmKey !== b.key && dropKey !== b.key && (
                                     <button type="button" className="btn-primary" disabled={isBusy} onClick={() => openConfirm(b)}>
-                                        คอนเฟิร์มคิว
+                                        {T.confirmQueue}
                                     </button>
                                 )}
                                 {st === BOOK_FEE && canFee && feeNoKey !== b.key && dropKey !== b.key && (
                                     <>
                                         <button type="button" className="btn-primary" disabled={isBusy} onClick={() => feeDecide(b, true)}>
-                                            ✓ อนุมัติค่าตัวใหม่
+                                            ✓ ยอมรับ{T.newFee}
                                         </button>
                                         <button type="button" className="btn-reject" disabled={isBusy}
-                                            onClick={() => { closeAll(); setFeeNoKey(b.key); setFeeNote(''); }}>✕ ไม่อนุมัติ</button>
+                                            onClick={() => { closeAll(); setFeeNoKey(b.key); setFeeNote(''); }}>✕ ไม่ยอมรับ</button>
                                     </>
                                 )}
                                 {canAct && dropKey !== b.key && confirmKey !== b.key && feeNoKey !== b.key && (
                                     <button type="button" className="btn-ghost" disabled={isBusy}
-                                        onClick={() => { closeAll(); setDropKey(b.key); setDropReason(''); }}>คิวไม่ว่าง / ถอนตัว</button>
+                                        onClick={() => { closeAll(); setDropKey(b.key); setDropReason(''); }}>{T.cantCome}</button>
                                 )}
                             </div>
                         </div>
@@ -245,28 +256,30 @@ function BookingSection({ rows, pid, rowKey, canAct, canFee, busy, run, applyIte
                                         <input value={bf.place} maxLength={200} onChange={e => set('place', e.target.value)} placeholder="เช่น สตูดิโอ ลาดพร้าว" />
                                     </label>
                                     <label className="hire-f">
-                                        <span>ช่องทางติดต่อ</span>
+                                        <span>{T.contact}</span>
                                         <input value={bf.contact} maxLength={200} onChange={e => set('contact', e.target.value)} placeholder="เบอร์ / LINE / IG" />
                                     </label>
                                     <label className="hire-f">
-                                        <span>ค่าตัวที่ตกลงจริง (บาท)</span>
+                                        <span>ค่าตัวที่ตกลงจริง (บาท){approved > 0 ? '' : ' *'}</span>
                                         <input inputMode="numeric" value={bf.fee} placeholder={String(approved)}
                                             onChange={e => set('fee', e.target.value.replace(/[^0-9]/g, ''))} />
                                     </label>
                                     <label className="hire-f wide">
-                                        <span>โน้ต</span>
+                                        <span>{T.note}</span>
                                         <input value={bf.note} maxLength={500} onChange={e => set('note', e.target.value)} placeholder="เงื่อนไขที่ตกลงกัน เช่น เตรียมชุดมาเอง" />
                                     </label>
                                 </div>
                                 {higher && (
                                     <div className="req-book-warn">
-                                        ค่าตัวสูงกว่าที่อนุมัติไว้ ({B(approved)}) — กดส่งแล้วต้องรอทีมแบรนด์อนุมัติค่าตัวใหม่ก่อน ถึงจะเป็น "ตกลงแล้ว"
+                                        ค่าตัวสูงกว่าที่ตกลงไว้ ({B(approved)}) — กดส่งแล้วต้องรอทีมแบรนด์ตัดสิน{T.newFee}ก่อน ถึงจะเป็น "{T.agreed}"
                                     </div>
                                 )}
+                                {zeroFee && <div className="tc-need-fee">ใส่ค่าตัวที่ตกลงจริงก่อน</div>}
                                 <div className="req-add-actions">
                                     <button type="button" className="btn-ghost" disabled={isBusy} onClick={() => setConfirmKey('')}>ยกเลิก</button>
-                                    <button type="button" className="btn-primary" disabled={isBusy} onClick={() => confirm(b)}>
-                                        {isBusy ? 'กำลังบันทึก...' : higher ? 'ส่งให้ทีมอนุมัติค่าตัวใหม่' : 'ยืนยันคอนเฟิร์มคิว'}
+                                    <button type="button" className="btn-primary" disabled={isBusy || zeroFee} onClick={() => confirm(b)}
+                                        title={zeroFee ? 'ใส่ค่าตัวที่ตกลงจริงก่อน' : undefined}>
+                                        {isBusy ? 'กำลังบันทึก...' : higher ? `ส่งให้ทีมตัดสิน${T.newFee}` : T.confirmQueue}
                                     </button>
                                 </div>
                             </div>
@@ -278,7 +291,7 @@ function BookingSection({ rows, pid, rowKey, canAct, canFee, busy, run, applyIte
                                     placeholder="เหตุผล เช่น ติดงานอื่นวันนั้น (ทีมจะเห็น) — ที่ว่างจะคืนให้หาคนใหม่" />
                                 <button type="button" className="btn-ghost" disabled={isBusy} onClick={() => setDropKey('')}>ยกเลิก</button>
                                 <button type="button" className="btn-reject" disabled={isBusy} onClick={() => drop(b)}>
-                                    {isBusy ? 'กำลังบันทึก...' : 'ยืนยันคิวไม่ว่าง'}
+                                    {isBusy ? 'กำลังบันทึก...' : `ยืนยัน: ${T.cantCome}`}
                                 </button>
                             </div>
                         )}
@@ -286,10 +299,10 @@ function BookingSection({ rows, pid, rowKey, canAct, canFee, busy, run, applyIte
                         {feeNoKey === b.key && st === BOOK_FEE && (
                             <div className="req-reject">
                                 <input value={feeNote} autoFocus maxLength={500} onChange={e => setFeeNote(e.target.value)}
-                                    placeholder="เหตุผล / งบที่รับได้ (ไม่บังคับ) — คนหาจะเห็นข้อความนี้" />
+                                    placeholder={`เหตุผล / งบที่รับได้ (ไม่บังคับ) — ${T.finder}จะเห็นข้อความนี้`} />
                                 <button type="button" className="btn-ghost" disabled={isBusy} onClick={() => setFeeNoKey('')}>ยกเลิก</button>
                                 <button type="button" className="btn-reject" disabled={isBusy} onClick={() => feeDecide(b, false)}>
-                                    {isBusy ? 'กำลังบันทึก...' : 'ยืนยันไม่อนุมัติค่าตัว'}
+                                    {isBusy ? 'กำลังบันทึก...' : `ยืนยัน: ไม่ยอมรับ${T.newFee}`}
                                 </button>
                             </div>
                         )}
@@ -313,7 +326,7 @@ export default function HireRequestCard({ request, canDecide = false, canPropose
         request.place, request.spec, request.note, request.status, request.filled, request.assignee_id,
         candsOf(request), bookingsOf(request)
     ]);
-    // คนที่อนุมัติจากใบนี้แล้วยังรอคอนเฟิร์มคิว (หน้าแม่ส่งมา / เส้นที่กดคืน hire_items ชุดใหม่มา)
+    // คนที่เลือกจากใบนี้แล้วยังรอยืนยันคิว (หน้าแม่ส่งมา / เส้นที่กดคืน hire_items ชุดใหม่มา)
     const [bookRows, setBookRows] = useState(() => bookingsOf(request));
     useEffect(() => { setRow(request); setBookRows(bookingsOf(request)); }, [sig]);   // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -324,15 +337,18 @@ export default function HireRequestCard({ request, canDecide = false, canPropose
     useEffect(() => {
         setAssignee(row.assignee_id == null ? '' : String(row.assignee_id));
     }, [row.assignee_id]);
-    // แก้/ถอนชื่อที่เสนอได้ถ้าเป็นฝั่งคนขอ หรือเป็นคนเสนอชื่อนั้นเอง (ตรงกับที่ server บังคับ ไม่โชว์ปุ่มที่กดแล้วเจอ 403)
+    // แก้/เอาชื่อที่เสนอออกได้ถ้าเป็นฝั่งคนขอ หรือเป็นคนเสนอชื่อนั้นเอง (ตรงกับที่ server บังคับ ไม่โชว์ปุ่มที่กดแล้วเจอ 403)
     const { user } = useAuth();
     const canTouch = c => canDecide || (user && c && String(c.by_id) === String(user.id));
     const [preview, setPreview] = useState(null);   // ไฟล์ที่กำลังเปิดดูในหน้า
     const [editing, setEditing] = useState(false);
     const [del, setDel] = useState(false);
     const [deleting, setDeleting] = useState(false);
-    const [rejectKey, setRejectKey] = useState('');   // ชื่อที่กำลังกด "ไม่ผ่าน" (รอใส่เหตุผล)
+    const [rejectKey, setRejectKey] = useState('');   // ชื่อที่กำลังกด "ไม่เอา" (รอใส่เหตุผล)
     const [rejectNote, setRejectNote] = useState('');
+    // ชื่อที่กำลังถามก่อน "เลือกคนนี้" — เลือกแล้วคนนั้นกลายเป็นแถวผู้รับงานทันที ย้อนกลับไม่ได้ จึงให้ยืนยันอีกชั้น
+    const [pickKey, setPickKey] = useState('');
+    const [changingFinder, setChangingFinder] = useState(false);   // กด [เปลี่ยน] คนช่วยหาแล้ว → ขึ้นช่องเลือก
     const [copied, setCopied] = useState(false);
 
     const [adding, setAdding] = useState(false);
@@ -348,7 +364,7 @@ export default function HireRequestCard({ request, canDecide = false, canPropose
     const [clearVid, setClearVid] = useState(false);
 
     useEffect(() => {
-        if (!canDecide) return;   // มีแต่ฝั่งคนขอที่เปลี่ยนผู้รับผิดชอบได้ ไม่ต้องโหลดรายชื่อให้คนอื่น
+        if (!canDecide) return;   // มีแต่ฝั่งคนขอที่เปลี่ยนคนช่วยหาได้ ไม่ต้องโหลดรายชื่อให้คนอื่น
         api('/users/options').then(res => setOwners(res.data || [])).catch(() => setOwners([]));
     }, [canDecide]);
 
@@ -389,6 +405,7 @@ export default function HireRequestCard({ request, canDecide = false, canPropose
         const res = await api(`/projects/${pid}/hires/${rowKey}/assign`,
             { method: 'PUT', body: { assignee_id: assignee === '' ? null : Number(assignee) } });
         applyItems(res.data);
+        setChangingFinder(false);
     });
 
     const propose = () => run('add', async () => {
@@ -419,6 +436,7 @@ export default function HireRequestCard({ request, canDecide = false, canPropose
             link: S(c.link), note: S(c.note), image_link: S(c.image_link), video_link: S(c.video_link)
         });
         setEditImg(null); setEditVid(null); setClearImg(false); setClearVid(false);
+        setPickKey(k => (k === c.key ? '' : k));
         setErr('');
     }
 
@@ -442,19 +460,20 @@ export default function HireRequestCard({ request, canDecide = false, canPropose
         setEditKey('');
     });
 
-    // note = เหตุผลตอนไม่ผ่าน (ไม่บังคับ) — server เก็บเป็น decided_note แล้วคนหาเห็นบนการ์ด
+    // note = เหตุผลตอนไม่เอา (ไม่บังคับ) — server เก็บเป็น decided_note แล้วคนช่วยหาเห็นบนการ์ด
     const decide = (cand, status, note) => run('c' + cand.key, async () => {
         const res = await api(`/projects/${pid}/hires/${rowKey}/candidates/${cand.key}`,
             { method: 'PATCH', body: { status, note: note && note.trim() ? note.trim() : null } });
         applyItems(res.data);
-        // ปิดเฉพาะกล่องเหตุผลของชื่อนี้ — ถ้ากำลังพิมพ์เหตุผลของอีกชื่อค้างไว้ ต้องไม่หาย
+        // ปิดเฉพาะกล่องของชื่อนี้ — ถ้ากำลังพิมพ์เหตุผล/ถามยืนยันของอีกชื่อค้างไว้ ต้องไม่หาย
         setRejectKey(k => (k === cand.key ? '' : k));
+        setPickKey(k => (k === cand.key ? '' : k));
     });
 
-    // ลิงก์ของใบนี้ไว้ส่งทาง LINE — ลิงก์เดียวใช้ได้ทุกคน: ทีมแบรนด์ถูกพาไปที่การ์ดในหน้างาน คนหาเปิดใบในกล่อง
-    // (ห้ามส่งลิงก์หน้างานตรง ๆ ให้คนหา — คนที่ไม่มีสิทธิ์แบรนด์เปิดหน้างานไม่ได้)
+    // ลิงก์ของใบนี้ไว้ส่งทาง LINE — ลิงก์เดียวใช้ได้ทุกคน (เปิดใบในหน้า Talent ได้ทั้งทีมแบรนด์และคนช่วยหา)
+    // (ห้ามส่งลิงก์หน้างานตรง ๆ ให้คนช่วยหา — คนที่ไม่มีสิทธิ์แบรนด์เปิดหน้างานไม่ได้)
     async function copyLink() {
-        const url = `${window.location.origin}/hires?tab=requests&open=${pid}~${rowKey}`;
+        const url = requestLink(window.location.origin, pid, rowKey);
         try {
             await navigator.clipboard.writeText(url);
             setCopied(true);
@@ -466,7 +485,7 @@ export default function HireRequestCard({ request, canDecide = false, canPropose
 
     const drop = cand => {
         const files = [cand.image && 'คอมการ์ด', cand.video && 'คลิปแนะนำตัว'].filter(Boolean).join(' และ ');
-        if (!window.confirm(`ถอนชื่อ "${cand.name}" ออกจากใบนี้?${files ? ` ${files} ที่แนบไว้จะถูกลบด้วย` : ''}`)) return;
+        if (!window.confirm(`เอาชื่อ "${cand.name}" ออกจากใบนี้?${files ? ` ${files} ที่แนบไว้จะถูกลบด้วย` : ''}`)) return;
         run('c' + cand.key, async () => {
             const res = await api(`/projects/${pid}/hires/${rowKey}/candidates/${cand.key}`, { method: 'DELETE' });
             applyItems(res.data);
@@ -489,31 +508,42 @@ export default function HireRequestCard({ request, canDecide = false, canPropose
     const pending = cands.filter(c => (c.status || CAND_NEW) === CAND_NEW);
     const waiting = left > 0 ? pending : [];
     const spares = left > 0 ? [] : pending;
-    // ข้อมูลจากคิว (GET /hires/tasks) ไม่มีฟิลด์ mode — การ์ดนี้เป็นใบขอจัดหาเสมอ ต้องบอกตัวคิดขั้นตอนให้ชัด
+    // ข้อมูลจากคิว (GET /hires/tasks) ไม่มีฟิลด์ mode — การ์ดนี้เป็นใบขอให้หาเสมอ ต้องบอกตัวคิดขั้นตอนให้ชัด
     const castRow = { ...row, mode: 'casting' };
     const stage = hireStage(castRow, request.job_status, bookRows);
     const nPending = bookRows.filter(b => bookingState(b) === BOOK_PENDING).length;
     const nFee = bookRows.filter(b => bookingState(b) === BOOK_FEE).length;
     const needMore = hireNeedMore(castRow);
-    const waitingText = stage === 'unassigned' ? 'รอทีมแบรนด์มอบหมายคนหา'
-        : stage === 'finding' ? `รอ ${row.assignee_name || 'คนหา'} หาคน`
-            : stage === 'deciding' ? `รอทีมแบรนด์อนุมัติชื่อที่เสนอ${needMore > 0 ? ` · คนหายังต้องหาเพิ่มอีก ${needMore} คน` : ''}`
-                : stage === 'booking' ? (row.assignee_id == null || row.assignee_id === ''
-                    ? `รอทีมแบรนด์คอนเฟิร์มคิว ${nPending} คน (ใบนี้ไม่มีคนหา)`
-                    : `รอ ${row.assignee_name || 'คนหา'} คอนเฟิร์มคิว ${nPending} คน`)
-                    : stage === 'fee' ? `รอทีมแบรนด์อนุมัติค่าตัวใหม่ ${nFee} คน${nPending ? ` · รอคอนเฟิร์มคิวอีก ${nPending} คน` : ''}`
+    const noFinder = row.assignee_id == null || row.assignee_id === '';
+    const waitingText = stage === 'unassigned' ? `รอทีมแบรนด์เลือก${T.finder}`
+        : stage === 'finding' ? `รอ ${row.assignee_name || T.finder} หาคน`
+            : stage === 'deciding' ? `รอทีมแบรนด์เลือกชื่อที่ส่งมา${needMore > 0 ? ` · ${T.finder}ยังต้องหาเพิ่มอีก ${needMore} คน` : ''}`
+                : stage === 'booking' ? (noFinder
+                    ? `รอทีมแบรนด์${T.confirmQueue} ${nPending} คน (ใบนี้ไม่มี${T.finder})`
+                    : `รอ ${row.assignee_name || T.finder} ${T.confirmQueue} ${nPending} คน`)
+                    : stage === 'fee' ? `รอทีมแบรนด์ตัดสิน${T.newFee} ${nFee} คน${nPending ? ` · ${BOOKING_LABEL.pending}อีก ${nPending} คน` : ''}`
                         : stage === 'full' ? 'ได้คนครบตามที่ขอแล้ว'
-                            : bookRows.length ? `งานนี้ปิดแล้ว · ยังมี ${bookRows.length} คนค้างคอนเฟิร์ม — ทีมแบรนด์จัดการต่อได้`
-                                : 'งานนี้ปิดแล้ว — เสนอหรืออนุมัติชื่อเพิ่มไม่ได้';
+                            : bookRows.length ? `งานนี้ปิดแล้ว · ยังมี ${bookRows.length} คนค้าง${T.confirmQueue} — ทีมแบรนด์จัดการต่อได้`
+                                : 'งานนี้ปิดแล้ว — ส่งชื่อหรือเลือกชื่อเพิ่มไม่ได้';
     const closed = stage === 'closed';
+    // ใบเปลี่ยนระหว่างที่กล่องยืนยัน "เลือกคนนี้" เปิดอยู่ (ได้ครบ / มีคนเลือกไปก่อน / งานปิด) → ปิดกล่องทิ้ง
+    // ไม่งั้นกล่องหายไปแต่ค่ายังค้าง ปุ่ม "ไม่เอา" ของคนนั้นถูกซ่อนต่อโดยไม่มีทางกดยกเลิก
+    useEffect(() => {
+        if (!pickKey) return;
+        const pc = cands.find(x => x && x.key === pickKey);
+        if (left <= 0 || closed || !pc || (pc.status || CAND_NEW) !== CAND_NEW) setPickKey('');
+    }, [pickKey, left, closed, cands]);
+    // ใครเป็นคนยืนยันคิวต่อหลังทีมเลือกชื่อ — ใบที่ไม่มีคนช่วยหา ทีมแบรนด์ยืนยันเอง
+    const nextConfirmer = noFinder ? 'ทีม'
+        : (user && String(row.assignee_id) === String(user.id)) ? 'คุณ' : (row.assignee_name || T.finder);
 
     return (
-        <div className="panel req-card" id={'req-' + rowKey}>
+        <div className="panel req-card tc-card" id={'req-' + rowKey}>
             {(heading || canDecide) && (
                 <div className="req-card-head">
                     {heading && (
                         <>
-                            <span className="cast-chip">ใบขอจัดหา</span>
+                            <span className="cast-chip">{T.request}</span>
                             {row.kind && <strong className="req-card-kind">{row.kind}</strong>}
                             <span className={'req-need' + (left > 0 ? '' : ' done')}>
                                 {left > 0 ? `ต้องหาอีก ${left} คน จาก ${Number(row.headcount) || 1}` : 'ได้ครบแล้ว'}
@@ -521,13 +551,13 @@ export default function HireRequestCard({ request, canDecide = false, canPropose
                             <span className="req-money">{B(row.fee)} / คน</span>
                         </>
                     )}
-                    {/* แก้/ลบได้เฉพาะฝั่งคนขอ — คนที่ถูกมอบหมายให้จัดหาแตะใบไม่ได้ */}
+                    {/* แก้/ลบได้เฉพาะฝั่งคนขอ — คนช่วยหาแตะตัวใบไม่ได้ */}
                     {canDecide && (
                         <div className="row-actions req-card-actions">
-                            <button type="button" className="icon-btn" title="แก้ไขใบขอจัดหา" onClick={() => setEditing(true)}>
+                            <button type="button" className="icon-btn" title={`แก้ไข${T.request}`} onClick={() => setEditing(true)}>
                                 <Icon name="edit" size={14} />
                             </button>
-                            <button type="button" className="icon-btn danger" title="ลบใบขอจัดหา" onClick={() => setDel(true)}>
+                            <button type="button" className="icon-btn danger" title={`ลบ${T.request}`} onClick={() => setDel(true)}>
                                 <Icon name="trash" size={14} />
                             </button>
                         </div>
@@ -538,7 +568,7 @@ export default function HireRequestCard({ request, canDecide = false, canPropose
             <div className="req-stage-line">
                 <span className={'stage-chip st-' + stage}>{STAGE_LABEL[stage]}</span>
                 <span className="req-stage-text">{waitingText}</span>
-                <button type="button" className="btn-ghost req-copy" onClick={copyLink} title="คัดลอกลิงก์ไว้ส่งให้คนหา / ทีม">
+                <button type="button" className="btn-ghost req-copy" onClick={copyLink} title={`คัดลอกลิงก์ไว้ส่งให้${T.finder} / ทีม ทาง LINE`}>
                     <Icon name={copied ? 'check' : 'copy'} size={13} /> {copied ? 'คัดลอกแล้ว' : 'คัดลอกลิงก์ใบนี้'}
                 </button>
             </div>
@@ -549,19 +579,28 @@ export default function HireRequestCard({ request, canDecide = false, canPropose
                 <div><span>วันที่ต้องใช้งาน</span><b>{fmtD(row.use_date)}</b></div>
                 <div><span>กำหนดส่งรายชื่อ</span><b>{fmtD(row.deadline)}</b></div>
                 <div><span>สถานที่</span><b>{row.place || '—'}</b></div>
+                {/* หมายเหตุของคนขอ (เช่น เงื่อนไขกองถ่าย) — คนช่วยหาต้องเห็นก่อนไปคุยกับใคร */}
+                {row.note && String(row.note).trim() && (
+                    <div className="tc-fact-wide"><span>{T.note}</span><b>{row.note}</b></div>
+                )}
             </div>
 
             {row.spec && <div className="req-spec"><Icon name="file" size={14} /> {row.spec}</div>}
 
             <div className="req-assign">
-                <span className="req-assign-lbl">ผู้รับผิดชอบจัดหา</span>
-                {canDecide ? (
+                <span className="req-assign-lbl">{T.finder}</span>
+                {canDecide && !noFinder && !changingFinder ? (
+                    <>
+                        <b>{row.assignee_name || `ผู้ใช้ #${row.assignee_id}`}</b>
+                        <button type="button" className="btn-ghost" disabled={closed} onClick={() => setChangingFinder(true)}>เปลี่ยน</button>
+                    </>
+                ) : canDecide ? (
                     <>
                         <select value={assignee} onChange={e => setAssignee(e.target.value)}>
-                            <option value="">— ยังไม่มอบหมาย —</option>
+                            <option value="">— ยังไม่เลือก —</option>
                             {owners.map(u => <option key={u.id} value={String(u.id)}>{u.name}</option>)}
                             {/* คนที่เคยรับงานไว้แต่ไม่อยู่ในรายชื่อแล้ว (ปิดบัญชี/เปลี่ยนสิทธิ์) ต้องยังโชว์
-                                ไม่งั้นช่องจะเด้งกลับเป็น "ยังไม่มอบหมาย" แล้วกดบันทึกทีเดียวงานหลุดมือเงียบ ๆ */}
+                                ไม่งั้นช่องจะเด้งกลับเป็น "ยังไม่เลือก" แล้วกดบันทึกทีเดียวงานหลุดมือเงียบ ๆ */}
                             {assignee !== '' && !owners.some(u => String(u.id) === assignee) && (
                                 <option value={assignee}>{row.assignee_name || `ผู้ใช้ #${assignee}`}</option>
                             )}
@@ -569,9 +608,13 @@ export default function HireRequestCard({ request, canDecide = false, canPropose
                         <button type="button" className="btn-ghost"
                             disabled={busy === 'assign' || assignee === (row.assignee_id == null ? '' : String(row.assignee_id))}
                             onClick={saveAssignee}>{busy === 'assign' ? 'กำลังบันทึก...' : 'บันทึก'}</button>
+                        {changingFinder && (
+                            <button type="button" className="btn-ghost" disabled={busy === 'assign'}
+                                onClick={() => { setChangingFinder(false); setAssignee(row.assignee_id == null ? '' : String(row.assignee_id)); }}>ยกเลิก</button>
+                        )}
                     </>
                 ) : (
-                    <b>{row.assignee_name || '— ยังไม่มอบหมาย —'}</b>
+                    <b>{row.assignee_name || `— ยังไม่ได้เลือก${T.finder} —`}</b>
                 )}
             </div>
 
@@ -580,7 +623,7 @@ export default function HireRequestCard({ request, canDecide = false, canPropose
                 busy={busy} run={run} applyItems={applyItems} onStale={onChanged} />
 
             <div className="req-cands-head">
-                <span>รายชื่อที่เสนอ ({cands.length}{waiting.length ? ` · รออนุมัติ ${waiting.length}` : ''}{spares.length ? ` · ตัวสำรอง ${spares.length}` : ''})</span>
+                <span>รายชื่อที่เสนอ ({cands.length}{waiting.length ? ` · ${CAND_LABEL['เสนอ']} ${waiting.length}` : ''}{spares.length ? ` · ${T.spare} ${spares.length}` : ''})</span>
                 {canPropose && !adding && !closed && (
                     <button type="button" className="btn-ghost" onClick={() => { setAdding(true); setForm(EMPTY); setImg(null); setVid(null); }}>
                         <Icon name="plus" size={14} /> เสนอชื่อ
@@ -625,13 +668,18 @@ export default function HireRequestCard({ request, canDecide = false, canPropose
                                 </div>
                             );
                         }
+                        // ทีมแบรนด์ที่เสนอชื่อเองแล้วมาเลือกเอง — บอกให้รู้ตัว (ไม่ห้าม เพราะทีมเล็กทำเองทั้งสองฝั่งเป็นปกติ)
+                        const mine = canDecide && user && c.by_id != null && String(c.by_id) === String(user.id);
+                        const unavail = st === CAND_DROPPED && isUnavailNote(c.decided_note);
+                        const picking = pickKey === c.key && st === CAND_NEW && canDecide && left > 0 && !closed;
                         return (
                             <div className={'req-cand st-' + (st === CAND_PICKED ? 'ok' : st === CAND_DROPPED ? 'no' : 'new')} key={c.key}>
                                 <div className="req-cand-main">
                                     <div className="req-cand-name">
                                         <span className="req-cand-no">{i + 1}</span>
                                         <strong>{c.name}</strong>
-                                        <span className="req-cand-st">{spare ? 'ตัวสำรอง' : (CAND_LABEL[st] || st)}</span>
+                                        <span className="req-cand-st">{spare ? T.spare : unavail ? 'มาไม่ได้' : (CAND_LABEL[st] || st)}</span>
+                                        {mine && <span className="tc-self">ชื่อนี้คุณเสนอเอง</span>}
                                     </div>
                                     <div className="req-cand-meta">
                                         {B(c.fee)}
@@ -642,20 +690,54 @@ export default function HireRequestCard({ request, canDecide = false, canPropose
                                     {c.note && <div className="req-cand-note">📝 {c.note}</div>}
                                     {st === CAND_DROPPED && (c.decided_note || c.decided_by) && (
                                         <div className="req-cand-reason">
-                                            ไม่ผ่าน{c.decided_by ? ` โดย ${c.decided_by}` : ''}{c.decided_note ? ` — ${c.decided_note}` : ''}
+                                            {/* คนที่เลือกแล้วแต่มาไม่ได้ ไม่ใช่ทีม "ไม่เอา" — แยกคำให้คนอ่านไม่เข้าใจผิด */}
+                                            {unavail
+                                                ? `${showDecidedNote(c.decided_note)}${c.decided_by ? ` (แจ้งโดย ${c.decided_by})` : ''}`
+                                                : `${T.reject}${c.decided_by ? ` โดย ${c.decided_by}` : ''}${c.decided_note ? ` — ${c.decided_note}` : ''}`}
                                         </div>
                                     )}
                                     {rejectKey === c.key && (
                                         <div className="req-reject">
+                                            {/* เหตุผลลัด — กดแล้วเติมลงช่อง พิมพ์ต่อเองได้ */}
+                                            <div className="tc-reasons" role="group" aria-label="เหตุผลที่ใช้บ่อย">
+                                                {REJECT_REASONS.map(r => (
+                                                    <button type="button" key={r}
+                                                        className={'proc-plat-chip' + (rejectNote.trim() === r ? ' on' : '')}
+                                                        aria-pressed={rejectNote.trim() === r}
+                                                        disabled={busy === 'c' + c.key}
+                                                        onClick={() => setRejectNote(r)}>{r}</button>
+                                                ))}
+                                            </div>
                                             <input value={rejectNote} autoFocus maxLength={300}
                                                 onChange={e => setRejectNote(e.target.value)}
-                                                placeholder="เหตุผลที่ไม่ผ่าน (ไม่บังคับ) — คนหาจะเห็นข้อความนี้" />
+                                                placeholder={`เหตุผลที่ไม่เอา (ไม่บังคับ) — ${T.finder}จะเห็นข้อความนี้`} />
                                             <button type="button" className="btn-ghost" disabled={busy === 'c' + c.key}
                                                 onClick={() => { setRejectKey(''); setRejectNote(''); }}>ยกเลิก</button>
                                             <button type="button" className="btn-reject" disabled={busy === 'c' + c.key}
                                                 onClick={() => decide(c, CAND_DROPPED, rejectNote)}>
-                                                {busy === 'c' + c.key ? 'กำลังบันทึก...' : 'ยืนยันไม่ผ่าน'}
+                                                {busy === 'c' + c.key ? 'กำลังบันทึก...' : `ยืนยัน: ${T.reject}`}
                                             </button>
+                                        </div>
+                                    )}
+                                    {picking && (
+                                        <div className="tc-pick" role="group" aria-label={`ยืนยันเลือก ${c.name}`}>
+                                            <div className="tc-pick-q">
+                                                เลือก {c.name} {Number(c.fee) > 0 ? B(c.fee) : Number(row.fee) > 0 ? B(row.fee) : '(ยังไม่ระบุค่าตัว)'}?
+                                            </div>
+                                            {!(Number(c.fee) > 0) && Number(row.fee) > 0 && (
+                                                <div className="tc-pick-sub">ยังไม่ได้ใส่ค่าตัว — ใช้งบต่อคน {B(row.fee)} ไปก่อน แก้เป็นค่าตัวจริงได้ตอน{T.confirmQueue}</div>
+                                            )}
+                                            <div className="tc-pick-sub">
+                                                ขั้นต่อไป {nextConfirmer} จะ{T.confirmQueue}กับ {c.name} · เลือกแล้วย้อนกลับไม่ได้
+                                            </div>
+                                            <div className="tc-pick-actions">
+                                                <button type="button" className="btn-primary" disabled={busy === 'c' + c.key}
+                                                    onClick={() => decide(c, CAND_PICKED)}>
+                                                    {busy === 'c' + c.key ? 'กำลังบันทึก...' : 'เลือกเลย'}
+                                                </button>
+                                                <button type="button" className="btn-ghost" disabled={busy === 'c' + c.key}
+                                                    onClick={() => setPickKey('')}>ยกเลิก</button>
+                                            </div>
                                         </div>
                                     )}
                                     <div className="req-cand-links">
@@ -679,36 +761,38 @@ export default function HireRequestCard({ request, canDecide = false, canPropose
                                 <div className="req-cand-actions">
                                     {st === CAND_PICKED && (
                                         <span className="req-cand-done"
-                                            title={canDecide ? 'แก้ข้อมูลคนนี้ที่ปุ่ม แก้ไข / เพิ่มคน ในหน้างาน' : 'ทีมแบรนด์อนุมัติคนนี้แล้ว'}>
+                                            title={canDecide
+                                                ? 'แก้ข้อมูลคนนี้ได้ในหน้างาน — ตาราง "ผู้รับงาน" หรือปุ่ม "แก้ไขงาน / หลายคน"'
+                                                : 'ทีมแบรนด์เลือกคนนี้แล้ว'}>
                                             {(() => {
                                                 const hitBk = bookRows.find(bk => bk.from_candidate != null && String(bk.from_candidate) === String(c.key));
-                                                return hitBk ? `อนุมัติแล้ว · ${BOOKING_LABEL[bookingState(hitBk)] || 'รอคอนเฟิร์มคิว'}` : 'อยู่ในรายชื่อผู้รับงานแล้ว';
+                                                return hitBk ? `เลือกแล้ว · ${BOOKING_LABEL[bookingState(hitBk)] || BOOKING_LABEL.pending}` : 'อยู่ในรายชื่อผู้รับงานแล้ว';
                                             })()}
                                         </span>
                                     )}
-                                    {/* คนที่อนุมัติแล้วเป็นแถวผู้รับงานไปแล้ว — แก้ที่นี่ไม่ไปถึงแถวนั้น จึงแก้ได้เฉพาะชื่อที่ยังไม่อนุมัติ */}
+                                    {/* คนที่เลือกแล้วเป็นแถวผู้รับงานไปแล้ว — แก้ที่นี่ไม่ไปถึงแถวนั้น จึงแก้ได้เฉพาะชื่อที่ยังไม่ถูกเลือก */}
                                     {canPropose && canTouch(c) && st !== CAND_PICKED && (
                                         <button type="button" className="btn-ghost req-edit-btn" title="แก้ไขข้อมูลของคนนี้"
                                             disabled={busy === 'c' + c.key} onClick={() => startEdit(c)}>
                                             <Icon name="edit" size={13} /> แก้ไข
                                         </button>
                                     )}
-                                    {st === CAND_NEW && canDecide && left > 0 && !closed && rejectKey !== c.key && (
+                                    {st === CAND_NEW && canDecide && left > 0 && !closed && rejectKey !== c.key && !picking && (
                                         <button type="button" className="btn-primary" disabled={busy === 'c' + c.key}
-                                            onClick={() => decide(c, CAND_PICKED)}>✓ อนุมัติ</button>
+                                            onClick={() => { setPickKey(c.key); setRejectKey(''); setErr(''); }}>✓ {T.pick}</button>
                                     )}
-                                    {st === CAND_NEW && canDecide && !closed && rejectKey !== c.key && (
+                                    {st === CAND_NEW && canDecide && !closed && rejectKey !== c.key && !picking && (
                                         <button type="button" className="btn-reject" disabled={busy === 'c' + c.key}
-                                            onClick={() => { setRejectKey(c.key); setRejectNote(''); }}>✕ ไม่ผ่าน</button>
+                                            onClick={() => { setRejectKey(c.key); setRejectNote(''); setPickKey(''); }}>✕ {T.reject}</button>
                                     )}
                                     {st === CAND_DROPPED && canDecide && !closed && (
                                         <button type="button" className="btn-ghost" disabled={busy === 'c' + c.key}
-                                            title="ย้ายชื่อนี้กลับไปรออนุมัติอีกครั้ง"
-                                            onClick={() => decide(c, CAND_NEW)}>↩ ดึงกลับมาพิจารณา</button>
+                                            title="ย้ายชื่อนี้กลับไปรอเลือกอีกครั้ง"
+                                            onClick={() => decide(c, CAND_NEW)}>↩ {T.restore}</button>
                                     )}
-                                    {/* คนที่อนุมัติแล้วถอนออกจากใบไม่ได้ — แถวผู้รับงานเกิดไปแล้ว ถ้าถอนตรงนี้ยอดคนกับงบจะไม่ตรงกัน */}
+                                    {/* คนที่เลือกแล้วเอาออกจากใบไม่ได้ — แถวผู้รับงานเกิดไปแล้ว ถ้าเอาออกตรงนี้ยอดคนกับงบจะไม่ตรงกัน */}
                                     {canPropose && canTouch(c) && st !== CAND_PICKED && (
-                                        <button type="button" className="sub-del" title="ถอนชื่อนี้ออก"
+                                        <button type="button" className="sub-del" title="เอาชื่อนี้ออกจากใบ"
                                             disabled={busy === 'c' + c.key}
                                             onClick={() => drop(c)}>
                                             <Icon name="trash" size={14} />
@@ -735,13 +819,13 @@ export default function HireRequestCard({ request, canDecide = false, canPropose
             {del && (
                 <div className="modal-backdrop" onClick={() => !deleting && setDel(false)}>
                     <div className="modal confirm-modal" onClick={e => e.stopPropagation()}>
-                        <h3>ลบใบขอจัดหานี้?</h3>
+                        <h3>ลบ{T.request}นี้?</h3>
                         <p>
-                            {row.kind || 'ใบขอจัดหา'}
+                            {row.kind || T.request}
                             {cands.length > 0 ? ` · รายชื่อที่เสนอไว้ ${cands.length} ชื่อจะหายไปด้วย` : ''}
-                            {Number(row.filled) > 0 && !bookRows.length ? ` · คนที่อนุมัติไปแล้ว ${Number(row.filled)} คนยังอยู่ในงานจ้างตามเดิม` : ''}
+                            {Number(row.filled) > 0 && !bookRows.length ? ` · คนที่เลือกไปแล้ว ${Number(row.filled)} คนยังอยู่ในงานจ้างตามเดิม` : ''}
                             {bookRows.length > 0 && (
-                                <span className="req-del-block"> · ยังลบไม่ได้: มี {bookRows.length} คนที่อนุมัติแล้วรอคอนเฟิร์มคิว/รออนุมัติค่าตัว — คอนเฟิร์ม หรือกดคิวไม่ว่าง ให้ครบก่อน</span>
+                                <span className="req-del-block"> · ยังลบไม่ได้: มี {bookRows.length} คนที่เลือกแล้ว{BOOKING_LABEL.pending}/{BOOKING_LABEL.fee_review} — {T.confirmQueue} หรือกด "{T.cantCome}" ให้ครบก่อน</span>
                             )}
                         </p>
                         <div className="modal-actions">

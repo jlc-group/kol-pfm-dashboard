@@ -3,27 +3,33 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { api } from '../api/client.js';
 import Icon from '../components/Icon.jsx';
 import OtherProjectForm, {
-    HIRE_STATUS, HIRE_JOB_CLOSED, isCasting, statusesOf, rowFee, hireLeft, hireStage, hireWaiting, STAGE_LABEL,
-    BOOKING_LABEL, bookingOpen, bookingState, hireBookings
+    HIRE_STATUS, HIRE_JOB_CLOSED, isCasting, statusesOf, rowFee, hireLeft, hireStage, hireWaiting,
+    bookingOpen, bookingState, hireBookings
 } from '../components/OtherProjectForm.jsx';
 import HireRequestCard from '../components/HireRequestCard.jsx';
+import QuickHireForm from '../components/QuickHireForm.jsx';
 import FilePreviewModal from '../components/FilePreviewModal.jsx';
 import { fmtRange } from '../utils/date.js';
 import { setNavSection } from '../utils/navSection.js';
+import {
+    T, STAGE_LABEL, BOOKING_LABEL, JOB_STATUS_OPTIONS, jobStatusLabel, jobStatusValue,
+    hireStatusLabel, PAYABLE_STATUS, feeMissing, NEED_FEE_MSG
+} from '../data/talentLabels.js';
 
 // หน้ารายละเอียดของแคมเปญ "งานจ้างอื่น ๆ" (campaign_type = 'other')
 // งานแบบนี้ไม่มี Platform / คลิป / ค่าแอด / เอเจนซี่ — สิ่งที่ต้องดูคือ "จ้างใคร ทำอะไร วันไหน เท่าไร"
 // จึงเป็นคนละหน้ากับแคมเปญ KOL ทั้งหน้า (ProjectDetail เรียกหน้านี้แทนเมื่อเป็นประเภท other)
-const STATUS_LABEL = { Draft: 'ร่าง', Active: 'กำลังทำ', Completed: 'เสร็จสิ้น', Cancelled: 'ยกเลิก' };
-const STATUS_ORDER = ['Draft', 'Active', 'Completed', 'Cancelled'];
 const B = n => '฿' + (Number(n) || 0).toLocaleString('th-TH');
 const fmtD = d => {
     if (!d) return '—';
     const [y, m, dd] = String(d).split('-');
     return `${Number(dd)}/${Number(m)}/${String(y).slice(2)}`;
 };
-// ตัวกรองสถานะ: ใบขอจัดหาใช้ "ขั้นตอน" ที่คิดจากข้อมูล (ชุดเดียวกับการ์ดและแท็บใบขอจัดหา) · ผู้รับงานใช้สถานะของคน
-const CHIP_ORDER = [...new Set([...Object.values(STAGE_LABEL), ...Object.values(BOOKING_LABEL), ...HIRE_STATUS])];
+// #req-<key> มาจาก URL ที่คนพิมพ์/วางเองได้ — % ที่ไม่ครบชุดทำให้ decodeURIComponent โยน error แล้วหน้าพังทั้งหน้า
+const safeDecode = s => { try { return decodeURIComponent(s); } catch { return s; } };
+// ตัวกรองสถานะ: ใบขอให้หาใช้ "ขั้นตอน" ที่คิดจากข้อมูล (ชุดเดียวกับการ์ดและแท็บใบขอให้หา) · ผู้รับงานใช้สถานะของคน
+// ทุกตัวเป็น "ป้ายที่โชว์" (ทาบทาม → กำลังคุย) — labelOf ด้านล่างต้องแปลงด้วยชุดเดียวกัน ไม่งั้นชิปนับได้ 0
+const CHIP_ORDER = [...new Set([...Object.values(STAGE_LABEL), ...Object.values(BOOKING_LABEL), ...HIRE_STATUS.map(hireStatusLabel)])];
 // แถวเก่าที่บันทึกก่อนมี key ต้องมีรหัสประจำแถวเสมอ ไม่งั้น React จะสลับแถวตอนแก้ไขในตาราง
 const rowsOf = p => (Array.isArray(p.hire_items) ? p.hire_items : []).map((it, i) => ({ ...it, key: it.key || 'h' + i }));
 
@@ -43,53 +49,61 @@ export default function OtherProjectDetail({ project, reload, onDeleted }) {
     const [showDel, setShowDel] = useState(false);
     const [preview, setPreview] = useState(null);      // ไฟล์แนบที่กำลังเปิดดูในหน้า
     const [deleting, setDeleting] = useState(false);
+    // ฟอร์มสั้น (ลิ้นชักขวา): 'direct' = เพิ่มคนที่มีแล้ว · 'casting' = ขอให้ช่วยหา — ไม่แตะตารางที่แก้ค้างไว้
+    const [quick, setQuick] = useState('');
 
     const items = useMemo(() => rowsOf(project), [project]);
     const view = items.map(it => ({ ...it, ...(draft[it.key] || {}) }));
     const dirty = Object.keys(draft).length > 0;
     const setField = (key, field, value) => setDraft(d => ({ ...d, [key]: { ...(d[key] || {}), [field]: value } }));
 
-    // ใบขอจัดหาคิดงบเป็น งบต่อคน × จำนวนคนที่ขอ ส่วนแถวที่ระบุคนเองคิดค่าตัวตรง ๆ
+    // ใบขอให้หาคิดงบเป็น งบต่อคน × จำนวนคนที่ขอ ส่วนแถวที่มีคนแล้วคิดค่าตัวตรง ๆ
     const totalFee = items.reduce((s, it) => s + rowFee(it), 0);
     const people = new Set(items.map(it => String(it.name || '').trim()).filter(Boolean)).size;
     const castingRows = items.filter(isCasting);
-    // งานที่ปิดแล้ว (เสร็จสิ้น/ยกเลิก) ไม่มีใครต้องหา/อนุมัติต่อ — ให้ตรงกับการ์ดและแท็บใบขอจัดหา
+    // งานที่ปิดแล้ว (จบแล้ว/ยกเลิก) ไม่มีใครต้องหา/เลือกต่อ — ให้ตรงกับการ์ดและแท็บใบขอให้หา
     const jobClosed = HIRE_JOB_CLOSED.includes(project.status);
     const castingHeads = jobClosed ? 0 : castingRows.reduce((n, it) => n + hireLeft(it), 0);
     const waitingNames = jobClosed ? 0 : castingRows.reduce((n, it) => n + (hireLeft(it) > 0 ? hireWaiting(it) : 0), 0);
-    // คนที่อนุมัติแล้วค้างคอนเฟิร์ม — นับเฉพาะที่ใบต้นทางยังอยู่ (ใบหายไปแล้วถือว่าไม่ค้างขั้นนี้ ให้แก้สถานะเองได้)
+    // คนที่เลือกแล้วค้างยืนยันคิว — นับเฉพาะที่ใบต้นทางยังอยู่ (ใบหายไปแล้วถือว่าไม่ค้างขั้นนี้ ให้แก้สถานะเองได้)
     // งานปิดแล้วก็ยังโชว์ ให้ทีมเห็นว่ามีคนค้างต้องเก็บ
     const liveReq = new Set(castingRows.map(r => String(r.key)));
     const bookingLive = it => !isCasting(it) && it.from_request != null && liveReq.has(String(it.from_request)) && bookingOpen(it);
     const bookingPeople = items.filter(it => bookingLive(it) && bookingState(it) === 'pending').length;
     const feePeople = items.filter(it => bookingLive(it) && bookingState(it) === 'fee_review').length;
-    // ใบขอจัดหาใบหนึ่ง + ข้อมูลงานที่การ์ดต้องใช้ (สถานะงานใช้คิดขั้นตอน "งานปิดแล้ว")
+    // ใบขอให้หาใบหนึ่ง + ข้อมูลงานที่การ์ดต้องใช้ (สถานะงานใช้คิดขั้นตอน "งานปิดแล้ว")
     const reqOf = it => ({
         ...it, project_id: project.id, project_name: project.name, brand: project.brand,
         job_status: project.status, remaining: hireLeft(it), in_brand: true, is_assignee: true,
-        // คนที่อนุมัติจากใบนี้แล้วยังรอคอนเฟิร์มคิว — การ์ดเป็นที่เดียวที่คอนเฟิร์ม/คิวไม่ว่าง/อนุมัติค่าตัวใหม่
+        // คนที่เลือกจากใบนี้แล้วยังรอยืนยันคิว — การ์ดเป็นที่เดียวที่ยืนยันคิว/คนนี้มาไม่ได้/ตัดสินค่าตัวใหม่
         bookings: hireBookings(items, it.key)
     });
 
-    // มาจากแท็บใบขอจัดหา / ลิงก์ที่คัดลอกไว้ (#req-<ใบ>) → เลื่อนไปที่การ์ดของใบนั้นแล้วไฮไลต์ให้เห็น
+    // มาจากหน้า Talent / ลิงก์ที่คัดลอกไว้ (#req-<ใบ>) → เลื่อนไปที่การ์ดของใบนั้นแล้วไฮไลต์ให้เห็น
+    // hashFound: ใบที่เพิ่งสร้างจากฟอร์มสั้นอาจยังไม่อยู่ในข้อมูลตอนกด "ดูใบ" — พอโหลดเสร็จแล้วมีใบนั้น ให้เลื่อนอีกรอบ
+    const hashKey = (/^#req-(.+)$/.exec(location.hash || '') || [])[1];
+    const hashFound = !!hashKey && items.some(it => String(it.key) === safeDecode(hashKey));
     useEffect(() => {
         const m = /^#req-(.+)$/.exec(location.hash || '');
         if (!m) return undefined;
-        const el = document.getElementById('req-' + decodeURIComponent(m[1]));
+        const el = document.getElementById('req-' + safeDecode(m[1]));
         if (!el) return undefined;
         el.scrollIntoView({ behavior: 'smooth', block: 'center' });
         el.classList.add('req-flash');
         const t = setTimeout(() => el.classList.remove('req-flash'), 2600);
         return () => clearTimeout(t);
-    }, [location.hash, location.key, project.id]);   // location.key: กดไปที่ใบเดิมซ้ำก็เลื่อนให้อีกครั้ง
+    }, [location.hash, location.key, project.id, hashFound]);   // location.key: กดไปที่ใบเดิมซ้ำก็เลื่อนให้อีกครั้ง
     const useDates = items.map(it => it.use_date).filter(Boolean).sort();
     const rangeText = useDates.length
         ? fmtRange(useDates[0], useDates[useDates.length - 1], ' → ')
         : fmtRange(project.start_date, project.end_date, ' → ');
 
     const statusOf = it => it.status || statusesOf(it)[0];
+    // ป้ายที่โชว์ (ไม่ใช่ค่าในฐาน) — ชุดเดียวกับ CHIP_ORDER
     const labelOf = it => (isCasting(it) ? STAGE_LABEL[hireStage(it, project.status, items)]
-        : bookingLive(it) ? BOOKING_LABEL[bookingState(it)] : statusOf(it));
+        : bookingLive(it) ? BOOKING_LABEL[bookingState(it)] : hireStatusLabel(statusOf(it)));
+    // สถานะที่บันทึกไว้จริงของแถว (ก่อนแก้ในตาราง) — แถวเก่าที่ "ตกลงแล้ว" แต่ไม่มีค่าตัวต้องยังเลือกค่าเดิมค้างไว้ได้
+    const savedStatus = key => { const hit = items.find(x => x.key === key); return hit ? statusOf(hit) : ''; };
     const countStatus = s => view.filter(it => labelOf(it) === s).length;
     const shown = statusPick ? view.filter(it => labelOf(it) === statusPick) : view;
 
@@ -127,7 +141,7 @@ export default function OtherProjectDetail({ project, reload, onDeleted }) {
             reload();
         } catch (e) {
             if (e.status === 409) {
-                // ข้อมูลเพิ่งเปลี่ยน (เช่นมีคนเสนอชื่อในใบขอจัดหา) — โหลดค่าล่าสุดให้เลย ช่องที่แก้ค้างไว้ยังอยู่
+                // ข้อมูลเพิ่งเปลี่ยน (เช่นมีคนส่งชื่อในใบขอให้หา) — โหลดค่าล่าสุดให้เลย ช่องที่แก้ค้างไว้ยังอยู่
                 reload();
                 setErr('ข้อมูลของงานนี้เพิ่งเปลี่ยน — โหลดค่าล่าสุดให้แล้ว ช่องที่แก้ไว้ยังอยู่ กดบันทึกอีกครั้ง');
             } else {
@@ -137,9 +151,9 @@ export default function OtherProjectDetail({ project, reload, onDeleted }) {
     }
 
     async function changeStatus(status) {
-        // ปิดงานตอนยังมีคนค้างคอนเฟิร์ม — เตือนก่อน (ปิดแล้วคนหาแตะไม่ได้ ทีมต้องเก็บเอง)
+        // ปิดงานตอนยังมีคนค้างยืนยันคิว — เตือนก่อน (ปิดแล้วคนช่วยหาแตะไม่ได้ ทีมต้องเก็บเอง)
         if (HIRE_JOB_CLOSED.includes(status) && (bookingPeople + feePeople) > 0
-            && !window.confirm(`ยังมี ${bookingPeople + feePeople} คนที่อนุมัติแล้วรอคอนเฟิร์มคิว/รออนุมัติค่าตัว — ปิดงานแล้วคนหาจะแตะไม่ได้ ทีมแบรนด์ต้องจัดการเองที่การ์ดของใบ ต้องการปิดงานไหม?`)) return;
+            && !window.confirm(`ยังมี ${bookingPeople + feePeople} คนที่เลือกแล้ว${BOOKING_LABEL.pending}/${BOOKING_LABEL.fee_review} — ปิดงานแล้ว${T.finder}จะแตะไม่ได้ ทีมแบรนด์ต้องจัดการเองที่การ์ดของใบ ต้องการปิดงานไหม?`)) return;
         try { await api(`/projects/${project.id}`, { method: 'PUT', body: { status } }); reload(); }
         catch (e) { alert(e.message); }
     }
@@ -152,15 +166,22 @@ export default function OtherProjectDetail({ project, reload, onDeleted }) {
 
     // งานจ้างอื่น ๆ ไม่มีช่องบรีฟแล้ว เหลือแค่รายละเอียดงาน
 
+    // ปุ่มย้อนกลับ: มาจากในแอป (หน้าหลัก Talent / ลิ้นชักใบ / รายการงาน) → กลับหน้าเดิมพร้อมแท็บและตัวกรองเดิม
+    // เปิดตรงจากลิงก์ (ไม่มีประวัติในแอป) → ไปหน้า Talent แทน ไม่ให้เด้งออกนอกเว็บ
+    function goBack() {
+        if (window.history.state && window.history.state.idx > 0) navigate(-1);
+        else navigate('/hires');
+    }
+
     return (
         <div>
-            <div className="pd-hero">
-                <button className="pd-back" onClick={() => navigate('/hires?tab=jobs')} title="กลับไปหน้า Talent">
+            <div className="pd-hero tc-hero">
+                <button className="pd-back" onClick={goBack} title="กลับหน้าที่มา" aria-label="กลับหน้าที่มา">
                     <Icon name="back" size={18} />
                 </button>
                 <div className="pd-hero-main">
                     <div className="pd-hero-top">
-                        <span className={`status status-${project.status}`}>{STATUS_LABEL[project.status] || project.status}</span>
+                        <span className={`status status-${project.status}`}>{jobStatusLabel(project.status)}</span>
                         <span className="ctype-chip" title="งาน Talent — ไม่เข้าหน้าโฆษณาและรายงานแคมเปญ">Talent</span>
                         {project.brand && <span className="pd-chip">{project.brand}</span>}
                     </div>
@@ -168,15 +189,25 @@ export default function OtherProjectDetail({ project, reload, onDeleted }) {
                 </div>
                 <div className="pd-hero-actions">
                     <label className="quick-status">สถานะ:
-                        <select value={project.status} onChange={e => changeStatus(e.target.value)}>
-                            {STATUS_ORDER.map(s => <option key={s} value={s}>{STATUS_LABEL[s]}</option>)}
+                        {/* งาน Draft โชว์เป็น "กำลังทำ" (ป้ายเดียวกัน) — ไม่เปลี่ยนค่าในฐานจนกว่าจะเลือกสถานะอื่นเอง */}
+                        <select value={jobStatusValue(project.status)} onChange={e => changeStatus(e.target.value)}>
+                            {JOB_STATUS_OPTIONS.map(s => <option key={s} value={s}>{jobStatusLabel(s)}</option>)}
                         </select>
                     </label>
-                    <button className="pd-edit-btn" onClick={() => {
+                    <button type="button" className="pd-edit-btn" onClick={() => setQuick('direct')}
+                        title="บันทึกคนที่ดีลไว้แล้วเข้างานนี้ ทีละคน">
+                        <Icon name="plus" size={15} /> เพิ่มคนที่มีแล้ว
+                    </button>
+                    {/* งานปิดแล้วขอให้ช่วยหาเพิ่มไม่ได้ (server ตีกลับ 409) — ปิดปุ่มไว้พร้อมบอกเหตุผล */}
+                    <button type="button" className="pd-edit-btn" onClick={() => setQuick('casting')} disabled={jobClosed}
+                        title={jobClosed ? 'งานนี้จบแล้ว — ขอให้ช่วยหาเพิ่มไม่ได้' : `เปิด${T.request} ให้${T.finder}ส่งรายชื่อมาให้เลือก`}>
+                        <Icon name="plus" size={15} /> ขอให้ช่วยหา
+                    </button>
+                    <button type="button" className="tc-hero-ghost" onClick={() => {
                         if (dirty && !window.confirm(`ยังมีที่แก้ในตาราง ${Object.keys(draft).length} แถวที่ยังไม่ได้บันทึก — เปิดฟอร์มแก้ไขแล้วค่าเหล่านี้จะหาย ต้องการไปต่อไหม?`)) return;
                         setShowEdit(true);
-                    }}>
-                        <Icon name="edit" size={15} /> แก้ไข / เพิ่มคน
+                    }} title="แก้ชื่องาน รายละเอียด สถานะ หรือเพิ่ม/แก้หลายคนพร้อมกันในฟอร์มเต็ม">
+                        <Icon name="edit" size={15} /> แก้ไขงาน / หลายคน
                     </button>
                     <button className="pd-del-btn" onClick={() => setShowDel(true)} title="ลบงานนี้">
                         <Icon name="trash" size={15} /> ลบ
@@ -192,7 +223,7 @@ export default function OtherProjectDetail({ project, reload, onDeleted }) {
                         <div className="pd-metric-value">{B(totalFee)}</div>
                         <div className="pd-metric-extra">
                             {items.length} รายการจ้าง
-                            {castingRows.length > 0 && ` · ใบขอจัดหา ${castingRows.length} ใบ`}
+                            {castingRows.length > 0 && ` · ${T.request} ${castingRows.length} ใบ`}
                         </div>
                     </div>
                 </div>
@@ -203,10 +234,10 @@ export default function OtherProjectDetail({ project, reload, onDeleted }) {
                         <div className="pd-metric-value">{people} คน</div>
                         <div className="pd-metric-extra">
                             {byKind.length} ประเภทงาน
-                            {castingHeads > 0 && ` · รอจัดหาอีก ${castingHeads} คน`}
-                            {waitingNames > 0 && ` · รออนุมัติ ${waitingNames} ชื่อ`}
-                            {bookingPeople > 0 && ` · รอคอนเฟิร์มคิว ${bookingPeople} คน`}
-                            {feePeople > 0 && ` · รออนุมัติค่าตัวใหม่ ${feePeople} คน`}
+                            {castingHeads > 0 && ` · ต้องหาอีก ${castingHeads} คน`}
+                            {waitingNames > 0 && ` · รอเลือก ${waitingNames} ชื่อ`}
+                            {bookingPeople > 0 && ` · ${BOOKING_LABEL.pending} ${bookingPeople} คน`}
+                            {feePeople > 0 && ` · ${BOOKING_LABEL.fee_review} ${feePeople} คน`}
                         </div>
                     </div>
                 </div>
@@ -221,7 +252,7 @@ export default function OtherProjectDetail({ project, reload, onDeleted }) {
                 <div className="pd-metric">
                     <div className="pd-metric-icon owner"><Icon name="users" size={20} /></div>
                     <div>
-                        <div className="pd-metric-label">ผู้ติดต่อ</div>
+                        <div className="pd-metric-label">{T.owner}</div>
                         <div className="pd-metric-value sm">{project.creator || project.owner || '—'}</div>
                     </div>
                 </div>
@@ -272,11 +303,11 @@ export default function OtherProjectDetail({ project, reload, onDeleted }) {
             {items.length === 0 ? (
                 <div className="panel empty-state">
                     <div className="empty-emoji">🎬</div>
-                    <p>ยังไม่มีรายการจ้าง — กดปุ่ม "แก้ไข / เพิ่มคน" ด้านบน แล้วเลือก "ระบุคนเอง" (ดีลคนไว้แล้ว) หรือ "ให้ช่วยจัดหา"</p>
+                    <p>ยังไม่มีรายการจ้าง — กดปุ่ม "+ เพิ่มคนที่มีแล้ว" ด้านบนถ้าดีลคนไว้แล้ว หรือ "+ ขอให้ช่วยหา" ถ้ายังไม่มีคน</p>
                 </div>
             ) : tab === 'people' ? (
                 byKind.map(g => {
-                    // แยกสองส่วนในกลุ่มเดียวกัน: ใบขอจัดหา (ยังไม่ได้ตัวคน) กับผู้รับงานที่ได้ตัวแล้ว
+                    // แยกสองส่วนในกลุ่มเดียวกัน: ใบขอให้หา (ยังไม่ได้ตัวคน) กับผู้รับงานที่ได้ตัวแล้ว
                     // โครงเดียวกับหน้าแคมเปญ KOL — แถบกลุ่มสีเขียว แล้วหัวข้อย่อยมีจุดสีบอกสถานะ
                     const reqs = g.rows.filter(isCasting);
                     const hired = g.rows.filter(it => !isCasting(it));
@@ -291,7 +322,7 @@ export default function OtherProjectDetail({ project, reload, onDeleted }) {
                                 <>
                                     <div className="sub-group-head">
                                         <span className="sub-group-dot pending"></span>
-                                        <span className="sub-group-title">ใบขอจัดหา</span>
+                                        <span className="sub-group-title">{T.request}</span>
                                         <span className="sub-group-count">{reqs.length}</span>
                                     </div>
                                     {/* กางรายชื่อที่เสนอไว้ในหน้าเลย ไม่ต้องกดเปิดกล่องอีกชั้น */}
@@ -328,13 +359,18 @@ export default function OtherProjectDetail({ project, reload, onDeleted }) {
                                                                 {(it.agency || it.contact) && (
                                                                     <span className="cast-sub">{[it.agency, it.contact].filter(Boolean).join(' · ')}</span>
                                                                 )}
-                                                                {it.from_request && <span className="hire-assignee">ได้จากใบขอจัดหา</span>}
+                                                                {it.from_request && <span className="hire-assignee">ได้จาก{T.request}</span>}
                                                             </td>
                                                             <td className="muted">
                                                                 {it.qty || '—'}
                                                                 {it.place && <span className="cast-sub">📍 {it.place}</span>}
                                                             </td>
-                                                            <td className="num">{B(rowFee(it))}</td>
+                                                            <td className="num">
+                                                                {/* คนที่ยังกำลังคุยบันทึกได้โดยไม่มีค่าตัว — บอกให้ชัดแทน ฿0 ที่ดูเหมือนจ้างฟรี */}
+                                                                {feeMissing(it.fee)
+                                                                    ? <span className="tc-fee-missing" title='ใส่ค่าตัวได้ที่ปุ่ม "แก้ไขงาน / หลายคน"'>ยังไม่ใส่ค่าตัว</span>
+                                                                    : B(rowFee(it))}
+                                                            </td>
                                                             <td className="muted">
                                                                 {fmtD(it.use_date)}
                                                                 {it.use_time && <span className="cast-sub">{it.use_time}</span>}
@@ -353,7 +389,7 @@ export default function OtherProjectDetail({ project, reload, onDeleted }) {
                                                             </td>
                                                             <td>
                                                                 {bookingLive(it) ? (
-                                                                    // ระหว่างรอคอนเฟิร์มคิว สถานะเดินตามขั้นตอนบนการ์ด เปลี่ยนเองจากตารางไม่ได้
+                                                                    // ระหว่างรอยืนยันคิว สถานะเดินตามขั้นตอนบนการ์ด เปลี่ยนเองจากตารางไม่ได้
                                                                     <>
                                                                         <span className={'stage-chip st-' + (bookingState(it) === 'fee_review' ? 'fee' : 'booking')}>
                                                                             {BOOKING_LABEL[bookingState(it)]}
@@ -370,7 +406,16 @@ export default function OtherProjectDetail({ project, reload, onDeleted }) {
                                                                 ) : (
                                                                     <select className="users-inline-sel" value={statusOf(it)}
                                                                         onChange={e => setField(it.key, 'status', e.target.value)}>
-                                                                        {statusesOf(it).map(s => <option key={s} value={s}>{s}</option>)}
+                                                                        {/* "ตกลงแล้ว" ขึ้นไปต้องมีค่าตัวก่อน (server ตีกลับเหมือนกัน)
+                                                                            ยกเว้นค่าที่บันทึกไว้อยู่แล้ว — แถวเก่าต้องยังโชว์/คงค่าเดิมได้ */}
+                                                                        {statusesOf(it).map(s => {
+                                                                            const blocked = PAYABLE_STATUS.includes(s) && feeMissing(it.fee) && s !== savedStatus(it.key);
+                                                                            return (
+                                                                                <option key={s} value={s} disabled={blocked} title={blocked ? NEED_FEE_MSG : undefined}>
+                                                                                    {hireStatusLabel(s)}{blocked ? ' (ใส่ค่าตัวก่อน)' : ''}
+                                                                                </option>
+                                                                            );
+                                                                        })}
                                                                     </select>
                                                                 )}
                                                             </td>
@@ -412,7 +457,7 @@ export default function OtherProjectDetail({ project, reload, onDeleted }) {
                                                 <td className="sub-no">{i + 1}</td>
                                                 <td>
                                                     {isCasting(it)
-                                                        ? <span className="cast-chip">ใบขอจัดหา{it.kind ? ` · ${it.kind}` : ''} · {hireLeft(it) > 0 ? `ต้องหาอีก ${hireLeft(it)} คน` : 'ได้ครบแล้ว'}</span>
+                                                        ? <span className="cast-chip">{T.request}{it.kind ? ` · ${it.kind}` : ''} · {hireLeft(it) > 0 ? `ต้องหาอีก ${hireLeft(it)} คน` : 'ได้ครบแล้ว'}</span>
                                                         : <strong>{it.name || '—'}</strong>}
                                                 </td>
                                                 <td>{it.kind ? <span className="proc-ctype-chip">{it.kind}</span> : <span className="ctype-none">— ยังไม่ระบุ —</span>}</td>
@@ -437,6 +482,19 @@ export default function OtherProjectDetail({ project, reload, onDeleted }) {
             {showEdit && (
                 <OtherProjectForm editing={project} onClose={() => setShowEdit(false)} onConflict={reload}
                     onSaved={() => { setShowEdit(false); setDraft({}); reload(); }} />
+            )}
+
+            {/* ฟอร์มสั้นเพิ่มทีละคน / ขอให้ช่วยหา — ต่อท้ายงานนี้ด้วยเส้น POST ของแถวเดียว ไม่ทับที่แก้ค้างในตาราง
+                "ดูใบ" หลังส่งใบ: สลับไปแท็บรายชื่อและล้างตัวกรองก่อน ไม่งั้นการ์ดของใบถูกซ่อนแล้วเลื่อนไปไม่เจอ */}
+            {quick && (
+                <QuickHireForm mode={quick} job={project}
+                    onClose={() => setQuick('')}
+                    onSaved={() => reload()}
+                    onOpenRequest={({ key }) => {
+                        setTab('people');
+                        setStatusPick('');
+                        navigate({ hash: '#req-' + key }, { replace: true });
+                    }} />
             )}
 
             {showDel && (

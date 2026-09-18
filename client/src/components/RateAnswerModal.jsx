@@ -43,7 +43,7 @@ export default function RateAnswerModal({ item, onClose, onSaved }) {
         <div className="modal-backdrop" onClick={onClose}>
             <div className="modal wide" onClick={e => e.stopPropagation()}>
                 <div className="modal-head">
-                    <h3>สอบถามราคา {item.request_type === 'presenter' ? '(Presenter)' : '(KOL)'} · {item.kol_name}</h3>
+                    <h3>ถามราคา {item.request_type === 'presenter' ? '(Presenter)' : '(KOL)'} · {item.kol_name}</h3>
                     <button type="button" className="modal-x" onClick={onClose}>×</button>
                 </div>
                 <p className="ctype-lead">
@@ -78,7 +78,7 @@ export default function RateAnswerModal({ item, onClose, onSaved }) {
                             onChange={e => setRate(e.target.value.replace(/[^0-9]/g, ''))} placeholder="0" />
                     </label>
                     <label className="hire-f wide">
-                        <span>โน้ตคำตอบ</span>
+                        <span>หมายเหตุคำตอบ</span>
                         <input value={note} onChange={e => setNote(e.target.value)}
                             placeholder="เช่น ราคานี้รวมไลฟ์ 1 รอบ / ว่างเฉพาะต้นเดือน" />
                     </label>

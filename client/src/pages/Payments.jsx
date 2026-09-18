@@ -13,7 +13,7 @@ const baht = n => '฿' + Number(n || 0).toLocaleString('th-TH');
 function HireSplit({ split }) {
     const parts = [
         ['agreed', 'ตกลงแล้ว (จ่ายได้)', split.agreed],
-        ['pending', 'รอตกลง / รอคอนเฟิร์มคิว', split.pending],
+        ['pending', 'รอตกลง / รอยืนยันคิว', split.pending],
         ['unfilled', 'ยังหาคนไม่ได้', split.unfilled]
     ].filter(p => Number(p[2]) > 0);
     if (!parts.length) return null;

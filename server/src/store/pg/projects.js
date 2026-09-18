@@ -237,6 +237,42 @@ const projects = {
         });
     },
 
+    // เพิ่มรายการจ้าง 1 แถวต่อท้าย (ฟอร์มสั้นหน้า Talent) — ล็อกแถว อ่านของล่าสุด ต่อท้าย คิดงบใหม่ ในทรานแซกชันเดียว
+    // ไม่แตะแถวอื่นเลย และไม่เช็ค expected_updated_at: การเพิ่มแถวไม่ทับงานของใคร (แบบเดียวกับเส้นที่ใช้ patchHireItems)
+    // guard({ status, campaign_type }) ตัดสินจากค่าที่ล็อกไว้ — คืน { error } เพื่อตีกลับ (ส่งต่อให้ route ตามนั้น)
+    // item = แถวที่ผ่าน newHireRow แล้ว · ไม่เจองาน = null · สำเร็จ = { item, items, updated_at }
+    async addHireItem(id, item, { userId = null, guard } = {}) {
+        const n = intId(id);
+        if (n === null) return null;
+        return await withTransaction(async (c) => {
+            const r = await c.query(
+                'SELECT hire_items, status, campaign_type, start_date, end_date FROM projects WHERE id = $1 FOR UPDATE', [n]);
+            if (!r.rows.length) return null;
+            const cur = r.rows[0];
+            const bad = typeof guard === 'function' ? guard({ status: cur.status, campaign_type: cur.campaign_type || 'kol' }) : null;
+            if (bad && bad.error) return bad;
+            const items = Array.isArray(cur.hire_items) ? cur.hire_items : [];
+            // key ต้องไม่ชนกับแถวที่มีอยู่ ไม่งั้นรูป/การยืนยันคิวของแถวเดิมจะถูกหยิบผิดแถว (เส้นอื่นหาแถวด้วย key)
+            const row = clone(item);
+            const keys = new Set(items.filter(Boolean).map(it => String(it.key)));
+            while (!row.key || keys.has(String(row.key))) row.key = 'h' + Math.random().toString(36).slice(2, 9);
+            const next = [...items, row];
+            const budget = next.reduce((s, it) => s + hireRowFee(it), 0);
+            // ช่วงวันของงานต้องครอบวันใช้งานเสมอ (ฟอร์มเต็มคิดใหม่ทุกครั้งที่บันทึก) ไม่งั้นงานหายจากตัวกรองเดือน
+            // ขยายอย่างเดียว ไม่หด — แถวเดิมยังอยู่ครบ
+            const d = typeof row.use_date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(row.use_date) ? row.use_date : null;
+            const start = d && (!cur.start_date || d < cur.start_date) ? d : (cur.start_date || null);
+            const end = d && (!cur.end_date || d > cur.end_date) ? d : (cur.end_date || null);
+            // updated_by = คนที่เพิ่มคนล่าสุด (เหมือน PUT /projects/:id) · ไม่รู้ว่าใคร = คงค่าเดิม
+            const u = await c.query(
+                `UPDATE projects SET hire_items = $1, budget = $2, start_date = $3, end_date = $4, updated_at = $5,
+                        updated_by = COALESCE($6, updated_by)
+                  WHERE id = $7 RETURNING updated_at`,
+                [asJson(next, []), budget, start, end, now(), userId == null ? null : intId(userId), n]);
+            return { item: clone(row), items: clone(next), updated_at: u.rows[0] ? u.rows[0].updated_at : null };
+        });
+    },
+
     // บันทึกไฟล์บรีฟของสินค้าหนึ่งตัว (เก็บใน product_briefs[code].file)
     async setProductBriefFile(id, code, meta) {
         const n = intId(id);

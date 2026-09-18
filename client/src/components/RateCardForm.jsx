@@ -69,7 +69,7 @@ export default function RateCardForm({ onClose, onSaved, defaultBrand = '' }) {
 
     async function submit(e) {
         e.preventDefault();
-        if (!chosen) { setError('กรุณาเลือกก่อนว่าสอบถามราคาของ KOL หรือ Presenter'); return; }
+        if (!chosen) { setError('กรุณาเลือกก่อนว่าถามราคาของ KOL หรือ Presenter'); return; }
         // แถวที่ไม่ได้ใส่ชื่อถือว่าไม่ได้ใช้ ตัดทิ้งไปเลย
         const people = f.people
             .map(p => ({ name: (p.name || '').trim(), link: (p.link || '').trim() || null }))
@@ -102,11 +102,11 @@ export default function RateCardForm({ onClose, onSaved, defaultBrand = '' }) {
     return (
         <div className="modal-backdrop" onClick={onClose}>
             <div className="modal" onClick={e => e.stopPropagation()}>
-                <div className="modal-head"><h3>สอบถามราคา</h3><button className="modal-x" onClick={onClose}>×</button></div>
+                <div className="modal-head"><h3>ถามราคา</h3><button className="modal-x" onClick={onClose}>×</button></div>
                 {error && <div className="alert-error">{error}</div>}
                 <form onSubmit={submit}>
                     <div className="field">
-                        <label>สอบถามราคาของ *</label>
+                        <label>ถามราคาของ *</label>
                         <select value={f.request_type} onChange={e => pickType(e.target.value)}>
                             {/* ตัวเลือกว่างมีเฉพาะตอนยังไม่ได้เลือก — เลือกแล้วย้อนกลับไปว่างไม่ได้ ข้อมูลที่กรอกจะได้ไม่หาย */}
                             {!chosen && <option value="">— เลือก —</option>}
@@ -214,7 +214,7 @@ export default function RateCardForm({ onClose, onSaved, defaultBrand = '' }) {
 
                     <div className="modal-actions">
                         <button type="button" className="btn-ghost" onClick={onClose}>ยกเลิก</button>
-                        <button type="submit" className="btn-primary" disabled={saving || !chosen}>{saving ? 'กำลังส่ง...' : 'ส่งคำขอสอบถามราคา'}</button>
+                        <button type="submit" className="btn-primary" disabled={saving || !chosen}>{saving ? 'กำลังส่ง...' : 'ส่งคำถามราคา'}</button>
                     </div>
                 </form>
             </div>

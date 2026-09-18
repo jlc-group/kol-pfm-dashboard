@@ -4,52 +4,54 @@ import Icon from './Icon.jsx';
 import DatePicker from './DatePicker.jsx';
 import { useAuth } from '../auth/AuthContext.jsx';
 import { visibleBrands } from '../data/brands.js';
+import {
+    T, STAGE_LABEL, BOOKING_LABEL, CAND_LABEL, JOB_STATUS_OPTIONS, jobStatusLabel, jobStatusValue,
+    PAYABLE_STATUS, feeMissing, needsFee, NEED_FEE_MSG
+} from '../data/talentLabels.js';
+
+// ป้ายของขั้นตอน/คนที่เลือกแล้ว/ชื่อที่เสนอ ย้ายไปอยู่ในคำศัพท์ชุดเดียวของหน้า Talent แล้ว
+// ส่งต่อจากที่นี่ด้วยชื่อเดิม — ไฟล์อื่นที่ import จากฟอร์มนี้อยู่แล้วไม่ต้องแก้
+export { STAGE_LABEL, BOOKING_LABEL, CAND_LABEL };
 
 // ฟอร์มแคมเปญ "Other" — งานจ้างที่ไม่ใช่ KOL (นางแบบ/นักแสดง/Live สด/พิธีกร ฯลฯ)
 // ตั้งใจแยกจาก ProjectForm เพราะงานพวกนี้ไม่มี Platform / Content Type / Tier / Gencode / ค่าแอด
 // สิ่งที่ต้องรู้จริง ๆ คือ "จ้างใคร ทำอะไร วันไหน เท่าไร" เท่านั้น
 
 export const HIRE_KINDS = ['นางแบบ', 'นายแบบ', 'นักแสดง', 'Live สด', 'พิธีกร', 'ช่างภาพ', 'ช่างวิดีโอ', 'เสียงพากย์', 'Event', 'อื่น ๆ'];
-// สถานะของแต่ละคน ไม่ใช่ของทั้งแคมเปญ — คนหนึ่งถ่ายเสร็จแล้วอีกคนเพิ่งทาบทามเป็นเรื่องปกติ
+// สถานะของแต่ละคน ไม่ใช่ของทั้งแคมเปญ — คนหนึ่งถ่ายเสร็จแล้วอีกคนเพิ่งเริ่มคุยเป็นเรื่องปกติ
+// ค่าในฐานยังเป็นคำเดิม (ทาบทาม = ป้าย "กำลังคุย") — ป้ายที่โชว์ใช้ hireStatusLabel จาก talentLabels.js
 export const HIRE_STATUS = ['ทาบทาม', 'ตกลงแล้ว', 'ถ่ายเสร็จ', 'ส่งงานแล้ว'];
-// ใบขอจัดหา (ยังไม่มีตัวคน) เดินสถานะคนละชุด — ต้องหาคนให้ได้ก่อนถึงจะเข้าเส้นเดียวกับแถวที่ระบุคนเอง
+// ใบขอให้หา (ยังไม่มีตัวคน) เดินสถานะคนละชุด — ต้องหาคนให้ได้ก่อนถึงจะเข้าเส้นเดียวกับแถวที่มีคนแล้ว
 export const CASTING_STATUS = ['กำลังหา', 'เสนอชื่อแล้ว', 'ตกลงแล้ว', 'ถ่ายเสร็จ', 'ส่งงานแล้ว'];
-// แถวเก่าที่บันทึกก่อนมีฟีเจอร์นี้ไม่มี mode — ถือเป็น "ระบุคนเอง" เสมอ
+// แถวเก่าที่บันทึกก่อนมีฟีเจอร์นี้ไม่มี mode — ถือเป็น "มีคนแล้ว" (direct) เสมอ
 export const isCasting = it => (it && it.mode) === 'casting';
 export const statusesOf = it => (isCasting(it) ? CASTING_STATUS : HIRE_STATUS);
 // แถวที่เพิ่งเพิ่มยังไม่ได้เลือกรูปแบบ — ยังไม่ขึ้นช่องกรอกให้รก (ของเก่าในฐานถือเป็น direct เสมอ)
 export const hasMode = it => !!it && (it.mode === 'direct' || it.mode === 'casting');
-const STATUS = [
-    { value: 'Draft', label: 'ร่าง' },
-    { value: 'Active', label: 'กำลังทำ' },
-    { value: 'Completed', label: 'เสร็จสิ้น' },
-    { value: 'Cancelled', label: 'ยกเลิก' }
-];
 
 const genKey = () => 'h' + Math.random().toString(36).slice(2, 9);
 const num = v => Number(String(v ?? '').replace(/[^0-9.]/g, '')) || 0;
 const S = v => (v == null ? '' : String(v));
-// งบของแถว — ใบขอจัดหาคิด งบต่อคน × จำนวนคนที่ขอ ส่วนแถวที่ระบุคนเองคือค่าตัวตรง ๆ
-// จำนวนคนที่ "ยังต้องหา" ของใบขอจัดหา — คนที่หาได้แล้ว (filled) ถูกย้ายไปเป็นแถวของตัวเองแล้ว
+// งบของแถว — ใบขอให้หาคิด งบต่อคน × จำนวนคนที่ขอ ส่วนแถวที่มีคนแล้วคือค่าตัวตรง ๆ
+// จำนวนคนที่ "ยังต้องหา" ของใบขอให้หา — คนที่หาได้แล้ว (filled) ถูกย้ายไปเป็นแถวของตัวเองแล้ว
 export const hireLeft = it => (isCasting(it) ? Math.max(0, (num(it && it.headcount) || 1) - num(it && it.filled)) : 0);
 // ต้องตรงกับ hireRowFee ฝั่งเซิร์ฟเวอร์ (server/src/store/logic.js) ไม่งั้นงบสองฝั่งจะไม่ตรงกัน
 export const rowFee = it => num(it && it.fee) * (isCasting(it) ? hireLeft(it) : 1);
 
-// ===== ขั้นตอนของใบขอจัดหา — ต้องตรงกับ hireWaiting / hireNeedMore / hireStage ฝั่งเซิร์ฟเวอร์ (server/src/store/logic.js) =====
+// ===== ขั้นตอนของใบขอให้หา — ต้องตรงกับ hireWaiting / hireNeedMore / hireStage ฝั่งเซิร์ฟเวอร์ (server/src/store/logic.js) =====
 export const HIRE_JOB_CLOSED = ['Completed', 'Cancelled'];
-// ชื่อที่เสนอมาแล้วรอทีมอนุมัติ (ในฐานเก็บเป็น 'เสนอ')
+// ชื่อที่ส่งมาแล้วรอทีมเลือก (ในฐานเก็บเป็น 'เสนอ')
 export const hireWaiting = it => (isCasting(it)
     ? (Array.isArray(it.candidates) ? it.candidates : []).filter(c => c && (String(c.status || '').trim() || 'เสนอ') === 'เสนอ').length
     : 0);
-// คนหายังต้องหาเพิ่มอีกกี่คน (ชื่อที่รออนุมัติอยู่นับว่าหามาให้แล้ว)
+// คนช่วยหายังต้องหาเพิ่มอีกกี่คน (ชื่อที่รอเลือกอยู่นับว่าหามาให้แล้ว)
 export const hireNeedMore = it => Math.max(0, hireLeft(it) - hireWaiting(it));
-// ขั้นคอนเฟิร์มคิวของคนที่อนุมัติจากใบขอจัดหา (hire_items[].booking) — แถวเก่าที่ไม่มี booking ถือว่าคอนเฟิร์มแล้ว
+// ขั้นยืนยันคิวของคนที่เลือกจากใบขอให้หา (hire_items[].booking) — แถวเก่าที่ไม่มี booking ถือว่ายืนยันแล้ว
 export const BOOK_PENDING = 'pending';
 export const BOOK_FEE = 'fee_review';
 export const bookingState = it => (it && it.booking && it.booking.state) || null;
 export const bookingOpen = it => bookingState(it) === BOOK_PENDING || bookingState(it) === BOOK_FEE;
-export const BOOKING_LABEL = { pending: 'รอคอนเฟิร์มคิว', fee_review: 'รออนุมัติค่าตัวใหม่' };
-// คนที่ได้จากใบ key และยังค้างขั้นคอนเฟิร์ม (items = hire_items ทั้งงาน)
+// คนที่ได้จากใบ key และยังค้างขั้นยืนยันคิว (items = hire_items ทั้งงาน)
 export const hireBookings = (items, key) => (Array.isArray(items) ? items : []).filter(it => it && it.mode !== 'casting'
     && it.from_request != null && key != null && String(it.from_request) === String(key) && bookingOpen(it));
 export const hireStage = (it, jobStatus, items) => {
@@ -64,18 +66,13 @@ export const hireStage = (it, jobStatus, items) => {
     if (!it || it.assignee_id === null || it.assignee_id === undefined || it.assignee_id === '') return 'unassigned';
     return 'finding';
 };
-export const STAGE_LABEL = {
-    unassigned: 'รอมอบหมายคนหา', finding: 'กำลังหา', deciding: 'รอทีมอนุมัติ',
-    booking: 'รอคอนเฟิร์มคิว', fee: 'รออนุมัติค่าตัวใหม่', full: 'ได้ครบแล้ว', closed: 'งานปิดแล้ว'
-};
-// ชื่อที่โชว์ของสถานะชื่อที่เสนอ (ในฐานยังเก็บคำเดิม ไม่ต้องย้ายข้อมูล)
-export const CAND_LABEL = { 'เสนอ': 'รออนุมัติ', 'เลือกแล้ว': 'อนุมัติแล้ว', 'ไม่เอา': 'ไม่ผ่าน' };
 // แถวใหม่เริ่มที่ "ยังไม่เลือกรูปแบบ" — เลือกจาก dropdown ก่อน ช่องกรอกถึงจะขึ้น
+// คนที่มีแล้วเริ่มที่ 'ทาบทาม' (กำลังคุย) เสมอ — ยังไม่รู้ค่าตัวก็บันทึกได้
 const newItem = (mode = '') => ({
     key: genKey(), mode: (mode === 'casting' || mode === 'direct') ? mode : '',
     kind: '', name: '', contact: '', agency: '',
     qty: '', fee: '', use_date: '', use_time: '', place: '', link: '', note: '', image: null,
-    // เฉพาะใบขอจัดหา
+    // เฉพาะใบขอให้หา
     headcount: mode === 'casting' ? '1' : '', spec: '', deadline: '',
     status: mode === 'casting' ? CASTING_STATUS[0] : (mode === 'direct' ? HIRE_STATUS[0] : '')
 });
@@ -112,16 +109,20 @@ export default function OtherProjectForm({ editing, onClose, onSaved, onConflict
     // รูป/คอมการ์ดที่เพิ่งเลือกไว้ (ยังไม่ได้อัป) — คีย์คือ key ของแถว ค่าเป็นไฟล์
     // ต้องอัปหลังบันทึกงานเสร็จ เพราะตอนสร้างใหม่ยังไม่มีรหัสงานให้ผูกไฟล์
     const [rowFiles, setRowFiles] = useState({});
-    // แถวที่มีอยู่ในฐานแล้วตอนเปิดฟอร์ม — สลับรูปแบบไม่ได้ และใบขอจัดหาที่บันทึกแล้วแก้ในฟอร์มไม่ได้
-    // (แก้/มอบหมาย/ลบใบทำที่การ์ดในหน้างานที่เดียว ไม่ให้สองที่แก้ของชิ้นเดียวกัน)
+    // แถวที่มีอยู่ในฐานแล้วตอนเปิดฟอร์ม — สลับรูปแบบไม่ได้ และใบขอให้หาที่บันทึกแล้วแก้ในฟอร์มไม่ได้
+    // (แก้/เลือกคนช่วยหา/ลบใบทำที่การ์ดในหน้างานที่เดียว ไม่ให้สองที่แก้ของชิ้นเดียวกัน)
     const [savedKeys] = useState(() => new Set((Array.isArray(editing?.hire_items) ? editing.hire_items : [])
         .map(it => it && it.key).filter(Boolean).map(String)));
+    // สถานะ/ค่าตัวเดิมของแต่ละแถวตอนเปิดฟอร์ม — ใช้ตัดสินว่าแถว "ตกลงแล้วแต่ไม่มีค่าตัว" เพิ่งถูกแก้ในฟอร์มนี้หรือเป็นของเก่า
+    // (ของเก่าที่ไม่ได้แตะต้องบันทึกผ่าน — กติกาเดียวกับ payableWithoutFee ฝั่งเซิร์ฟเวอร์)
+    const [savedRows] = useState(() => new Map((Array.isArray(editing?.hire_items) ? editing.hire_items : [])
+        .filter(it => it && it.key).map(it => [String(it.key), { status: it.status || '', fee: num(it.fee) }])));
     const isLocked = it => isCasting(it) && savedKeys.has(String(it.key));
     const [error, setError] = useState('');
     const [baseUpdatedAt] = useState(() => (editing && editing.updated_at) || null);
     const [saving, setSaving] = useState(false);
-    // [{ id, name }] — ใช้ชื่อสำหรับช่องผู้ติดต่อ/ผู้ดูแลงาน (ของเดิมเก็บเป็นชื่อ)
-    // และใช้ id สำหรับผู้รับผิดชอบจัดหา เพราะงานที่มอบหมายต้องผูกกับบัญชีจริง ไม่ใช่ข้อความชื่อ
+    // [{ id, name }] — ใช้ชื่อสำหรับช่องผู้ดูแลงาน (ของเดิมเก็บเป็นชื่อ)
+    // และใช้ id สำหรับคนช่วยหา เพราะงานที่ฝากหาต้องผูกกับบัญชีจริง ไม่ใช่ข้อความชื่อ
     const [people, setPeople] = useState([]);
     useEffect(() => {
         api('/users/options')
@@ -143,7 +144,7 @@ export default function OtherProjectForm({ editing, onClose, onSaved, onConflict
         const last = list[list.length - 1] || {};
         return [...list, { ...newItem(), kind: last.kind || '', use_date: last.use_date || '', place: last.place || '' }];
     });
-    // มอบหมายคนจัดหาจากในฟอร์ม — เก็บทั้ง id (ตัวจริงที่ใช้เทียบสิทธิ์) และชื่อ (ไว้โชว์ย้อนหลัง)
+    // เลือกคนช่วยหาจากในฟอร์ม — เก็บทั้ง id (ตัวจริงที่ใช้เทียบสิทธิ์) และชื่อ (ไว้โชว์ย้อนหลัง)
     const setAssignee = (i, id) => setItems(list => list.map((x, idx) => {
         if (idx !== i) return x;
         const hit = people.find(u => String(u.id) === String(id));
@@ -163,7 +164,7 @@ export default function OtherProjectForm({ editing, onClose, onSaved, onConflict
     const removeItem = i => setItems(list => list.length > 1 ? list.filter((_, idx) => idx !== i) : list);
 
     // งบรวมของแคมเปญ = ผลรวมของทุกแถว (ไม่มีช่องให้กรอกงบเอง เพื่อไม่ให้สองตัวเลขขัดกัน)
-    // ใบขอจัดหานับ งบต่อคน × จำนวนคน เพราะยังไม่รู้ตัวคน แต่รู้กรอบเงินที่จะใช้แล้ว
+    // ใบขอให้หานับ งบต่อคน × จำนวนคน เพราะยังไม่รู้ตัวคน แต่รู้กรอบเงินที่จะใช้แล้ว
     const totalFee = items.reduce((s, it) => s + rowFee(it), 0);
 
     // แถวที่เริ่มกรอกแล้วเท่านั้นถึงจะบันทึก — แถวว่างที่กดเพิ่มไว้เฉย ๆ ไม่ต้องเก็บ
@@ -172,17 +173,26 @@ export default function OtherProjectForm({ editing, onClose, onSaved, onConflict
     const rowFilled = it => savedKeys.has(String(it.key)) || (hasMode(it) && (isCasting(it)
         ? !!(it.kind || num(it.fee) > 0 || it.spec.trim())
         : !!(it.name.trim() || num(it.fee) > 0)));
-    // แถวที่ครบพอจะนับเป็นรายการจ้างจริง — ต้องเลือกรูปแบบก่อน แล้วระบุคนเองต้องมีชื่อ ใบขอจัดหาต้องมีจำนวนคน
+    // แถวที่ครบพอจะนับเป็นรายการจ้างจริง — ต้องเลือกรูปแบบก่อน
+    // มีคนแล้ว: ประเภทงาน + ชื่อ (ค่าตัวเว้นได้ — แถวใหม่เป็น "กำลังคุย" ใส่ค่าตัวทีหลังได้)
+    // ขอให้ช่วยหา: ประเภทงาน + จำนวนคน + งบต่อคน (คนช่วยหาต้องรู้กรอบเงินก่อนไปคุยกับใคร)
     const rowOk = it => hasMode(it) && (isCasting(it)
         ? !!(it.kind && num(it.headcount) > 0 && num(it.fee) > 0)
-        : !!(it.kind && it.name.trim() && num(it.fee) > 0));
+        : !!(it.kind && it.name.trim()));
+    // แถวที่ "ตกลงแล้ว" ขึ้นไปแต่ค่าตัวว่าง และเพิ่งถูกแก้ในฟอร์มนี้ (แถวใหม่ / สถานะหรือค่าตัวเปลี่ยน)
+    // server ตีกลับอยู่แล้ว — เช็คก่อนส่งเพื่อบอกชื่อคนให้ชัด ไม่ต้องรอข้อความจากเซิร์ฟเวอร์
+    const feeBlocked = it => {
+        if (!hasMode(it) || isCasting(it) || !needsFee(it.status, it.fee)) return false;
+        const before = savedRows.get(String(it.key));
+        return !before || before.status !== it.status || before.fee !== num(it.fee);
+    };
 
     function validate() {
         const m = [];
         if (!form.name.trim()) m.push('ชื่องาน');
         if (!form.brand) m.push('Brand');
         const itemsOk = items.some(rowOk);
-        if (!itemsOk) m.push('รายการจ้าง (เลือกรูปแบบก่อน แล้วกรอก — ระบุคนเอง: ประเภทงาน + ชื่อ + ค่าตัว · ให้ช่วยจัดหา: ประเภทงาน + จำนวนคน + งบต่อคน อย่างน้อย 1 แถว)');
+        if (!itemsOk) m.push('รายการจ้าง (เลือกรูปแบบก่อน แล้วกรอก — มีคนแล้ว: ประเภทงาน + ชื่อ · ขอให้ช่วยหา: ประเภทงาน + จำนวนคน + งบต่อคน อย่างน้อย 1 แถว)');
         return m;
     }
 
@@ -192,6 +202,8 @@ export default function OtherProjectForm({ editing, onClose, onSaved, onConflict
             const m = validate();
             if (m.length) { setError('กรุณากรอกให้ครบทุกช่อง: ' + m.join(', ')); return; }
         }
+        const noFee = items.filter(rowFilled).find(feeBlocked);
+        if (noFee) { setError(`ใส่ค่าตัวของ "${noFee.name.trim() || 'คนนี้'}" ก่อน จึงจะตั้งเป็น "ตกลงแล้ว" ได้`); return; }
         setError(''); setSaving(true);
         try {
             // เก็บเฉพาะแถวที่กรอกจริง — แถวว่างที่กดเพิ่มไว้แล้วไม่ได้ใช้ไม่ต้องบันทึก
@@ -205,17 +217,17 @@ export default function OtherProjectForm({ editing, onClose, onSaved, onConflict
                         contact: casting ? null : (it.contact.trim() || null),
                         agency: casting ? null : (it.agency.trim() || null),
                         qty: casting ? null : (it.qty.trim() || null),
-                        // ใบขอจัดหา: fee คือ "งบต่อคน" — จำนวนคนอยู่ที่ headcount
+                        // ใบขอให้หา: fee คือ "งบต่อคน" — จำนวนคนอยู่ที่ headcount
                         fee: num(it.fee),
                         headcount: casting ? Math.max(1, num(it.headcount), Number(it.filled) || 0) : null,
                         spec: casting ? (it.spec.trim() || null) : null,
                         deadline: casting ? (it.deadline || null) : null,
-                        // ผู้รับผิดชอบจัดหาเลือกได้ในฟอร์ม (server ตรวจกับฐานผู้ใช้อีกชั้น)
+                        // คนช่วยหาเลือกได้ในฟอร์ม (server ตรวจกับฐานผู้ใช้อีกชั้น)
                         // ส่วนฟิลด์ที่ระบบเป็นคนตั้ง — รายชื่อที่เสนอ / จำนวนที่หาได้แล้ว / คนขอ / ไฟล์แนบ / ใบต้นทาง —
                         // ไม่ต้องส่ง: server ยึดของในฐานเสมอ (ป้องกันหน้าเว็บที่ถือข้อมูลเก่าเขียนทับงานของคนอื่น)
                         assignee_id: casting ? (it.assignee_id == null ? null : it.assignee_id) : null,
                         use_date: it.use_date || null, place: it.place.trim() || null,
-                        // เวลาใช้งาน (คนหาใส่ตอนคอนเฟิร์มคิว) — ใบขอจัดหาไม่ส่ง server จะคงของเดิมไว้
+                        // เวลาใช้งาน (คนช่วยหาใส่ตอนยืนยันคิว) — ใบขอให้หาไม่ส่ง server จะคงของเดิมไว้
                         use_time: casting ? undefined : (it.use_time.trim() || null),
                         link: casting ? null : (it.link.trim() || null),
                         status: it.status || (casting ? CASTING_STATUS[0] : HIRE_STATUS[0]),
@@ -243,7 +255,7 @@ export default function OtherProjectForm({ editing, onClose, onSaved, onConflict
                 end_date: useDates[useDates.length - 1] || (isEdit ? (editing.end_date || null) : null)
             };
             if (isEdit) body.status = form.status;
-            // เวลาแก้ล่าสุดของข้อมูลที่ฟอร์มนี้เปิดมา — ถ้าระหว่างนั้นมีคนเสนอชื่อ/เลือกคนในใบขอจัดหา
+            // เวลาแก้ล่าสุดของข้อมูลที่ฟอร์มนี้เปิดมา — ถ้าระหว่างนั้นมีคนเสนอชื่อ/เลือกคนในใบขอให้หา
             // server จะตีกลับแทนการเขียนทับเงียบ ๆ (รายการจ้างเก็บเป็นก้อนเดียว ทับแล้วของคนอื่นหายทั้งแถว)
             if (isEdit) body.expected_updated_at = baseUpdatedAt;
             // ประเภทแคมเปญเปลี่ยนทีหลังไม่ได้ (server ตีกลับ) — ตอนแก้ไขจึงไม่ส่งไปซ้ำ
@@ -262,10 +274,10 @@ export default function OtherProjectForm({ editing, onClose, onSaved, onConflict
             onSaved(saved);
         } catch (err) {
             if (err.status === 409) {
-                // ค่าในฟอร์มเก่ากว่าในฐานแล้ว — รวมให้อัตโนมัติไม่ปลอดภัย (อาจทับรายชื่อที่คนจัดหาเพิ่งเสนอ)
+                // ค่าในฟอร์มเก่ากว่าในฐานแล้ว — รวมให้อัตโนมัติไม่ปลอดภัย (อาจทับรายชื่อที่คนช่วยหาเพิ่งส่งมา)
                 // จึงให้หน้าแม่โหลดค่าล่าสุดไว้ แล้วบอกให้เปิดฟอร์มใหม่
                 if (onConflict) onConflict();
-                setError('ข้อมูลของงานนี้เพิ่งเปลี่ยนระหว่างที่ฟอร์มเปิดอยู่ (เช่น มีคนเสนอชื่อหรือเลือกคนในใบขอจัดหา) — ปิดฟอร์มแล้วเปิดใหม่เพื่อแก้จากค่าล่าสุด ค่าที่พิมพ์ในฟอร์มนี้ยังไม่ถูกบันทึก');
+                setError('ข้อมูลของงานนี้เพิ่งเปลี่ยนระหว่างที่ฟอร์มเปิดอยู่ (เช่น มีคนส่งชื่อหรือเลือกคนในใบขอให้หา) — ปิดฟอร์มแล้วเปิดใหม่เพื่อแก้จากค่าล่าสุด ค่าที่พิมพ์ในฟอร์มนี้ยังไม่ถูกบันทึก');
             } else {
                 setError(err.message);
             }
@@ -300,8 +312,9 @@ export default function OtherProjectForm({ editing, onClose, onSaved, onConflict
                         {isEdit && (
                             <div className="field">
                                 <label>สถานะ</label>
-                                <select value={form.status} onChange={e => update('status', e.target.value)}>
-                                    {STATUS.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
+                                {/* งาน Draft โชว์เป็น "กำลังทำ" (ป้ายเดียวกัน) — ค่าในฐานคง Draft ไว้จนกว่าจะเลือกสถานะอื่นเอง */}
+                                <select value={jobStatusValue(form.status)} onChange={e => update('status', e.target.value)}>
+                                    {JOB_STATUS_OPTIONS.map(s => <option key={s} value={s}>{jobStatusLabel(s)}</option>)}
                                 </select>
                             </div>
                         )}
@@ -322,7 +335,7 @@ export default function OtherProjectForm({ editing, onClose, onSaved, onConflict
 
                     {/* รายการจ้าง — 1 แถว = คน 1 คน (คนเดิมจ้างสองงานคนละวัน ให้แยกสองแถว ค่าตัวจะได้ตรง) */}
                     <div className="field">
-                        <label>รายการจ้าง <span className="dash-section-sub">เลือกรูปแบบได้ทีละแถว — ระบุคนเองถ้าได้ตัวคนแล้ว หรือให้ช่วยจัดหาถ้ายังไม่มีคนในใจ</span></label>
+                        <label>รายการจ้าง <span className="dash-section-sub">เลือกรูปแบบได้ทีละแถว — "มีคนแล้ว" ถ้าได้ตัวคนแล้ว หรือ "ขอให้ช่วยหา" ถ้ายังไม่มีคนในใจ</span></label>
 
                         {items.map((it, i) => (
                             <div className={'hire-row' + (isCasting(it) ? ' casting' : '')} key={it.key}>
@@ -330,14 +343,14 @@ export default function OtherProjectForm({ editing, onClose, onSaved, onConflict
                                     <span className="hire-row-no">#{i + 1}</span>
                                     <span className="hire-mode-hint">
                                         {isLocked(it)
-                                            ? 'ใบขอจัดหาที่บันทึกแล้ว'
+                                            ? `${T.request}ที่บันทึกแล้ว`
                                             : bookingOpen(it)
-                                            ? `อนุมัติจากใบขอจัดหาแล้ว · ${BOOKING_LABEL[bookingState(it)]} (สถานะจะเปลี่ยนเองเมื่อคอนเฟิร์ม)`
+                                            ? `เลือกจาก${T.request}แล้ว · ${BOOKING_LABEL[bookingState(it)]} (สถานะจะเปลี่ยนเองเมื่อ${T.confirmQueue})`
                                             : !hasMode(it)
                                             ? 'เลือกรูปแบบการจ้างก่อน แล้วช่องกรอกจะขึ้นให้'
                                             : isCasting(it)
-                                                ? 'ยังไม่มีคนในใจ — ระบุสเปค จำนวนคน และงบต่อคนไว้ก่อน แล้วเติมชื่อทีหลัง'
-                                                : 'มีชื่อคนหรือเอเจนซี่ในมือแล้ว — กรอกชื่อและค่าตัวได้เลย'}
+                                                ? 'ยังไม่มีคนในใจ — ระบุสเปค จำนวนคน และงบต่อคนไว้ก่อน แล้วคนช่วยหาจะส่งรายชื่อมาให้เลือก'
+                                                : 'มีชื่อคนหรือเอเจนซี่ในมือแล้ว — กรอกชื่อได้เลย ค่าตัวยังไม่รู้ก็เว้นไว้ได้'}
                                     </span>
                                     {rowFee(it) > 0 && (
                                         <span className="hire-row-sum">
@@ -347,9 +360,9 @@ export default function OtherProjectForm({ editing, onClose, onSaved, onConflict
                                     )}
                                     {items.length > 1 && !isLocked(it) && (
                                         <button type="button" className="hire-del" title="ลบแถวนี้" onClick={() => {
-                                            // คนที่ได้จากใบขอจัดหา — ลบแล้วที่ว่างจะคืนให้ใบ (บอกก่อน จะได้ไม่ตกใจว่าใบกลับมาต้องหาคน)
+                                            // คนที่ได้จากใบขอให้หา — ลบแล้วที่ว่างจะคืนให้ใบ (บอกก่อน จะได้ไม่ตกใจว่าใบกลับมาต้องหาคน)
                                             if (it.from_request && savedKeys.has(String(it.key))
-                                                && !window.confirm(`"${it.name || 'คนนี้'}" ได้มาจากใบขอจัดหา — ลบแล้วที่ว่างจะคืนให้ใบนั้นหาคนใหม่ (บันทึกฟอร์มแล้วจึงมีผล) ต้องการลบไหม?`)) return;
+                                                && !window.confirm(`"${it.name || 'คนนี้'}" ได้มาจาก${T.request} — ลบแล้วที่ว่างจะคืนให้ใบนั้นหาคนใหม่ (บันทึกฟอร์มแล้วจึงมีผล) ต้องการลบไหม?`)) return;
                                             removeItem(i);
                                         }}>
                                             <Icon name="trash" size={14} />
@@ -363,10 +376,10 @@ export default function OtherProjectForm({ editing, onClose, onSaved, onConflict
                                             <b>{it.kind || 'ไม่ระบุประเภทงาน'}</b>
                                             {' · '}{hireLeft(it) > 0 ? `ต้องหาอีก ${hireLeft(it)} จาก ${num(it.headcount) || 1} คน` : 'ได้ครบแล้ว'}
                                             {' · '}฿{num(it.fee).toLocaleString('th-TH')} / คน
-                                            {' · '}{it.assignee_name ? `คนหา: ${it.assignee_name}` : 'ยังไม่มอบหมายคนหา'}
+                                            {' · '}{it.assignee_name ? `${T.finder}: ${it.assignee_name}` : `ยังไม่ได้เลือก${T.finder}`}
                                         </div>
                                         <div className="hire-locked-note">
-                                            แก้รายละเอียด มอบหมายคนหา หรือลบใบนี้ ได้ที่การ์ดของใบในหน้างาน (ปิดฟอร์มนี้แล้วเลื่อนไปที่ส่วน "ใบขอจัดหา")
+                                            แก้รายละเอียด เลือก{T.finder} หรือลบใบนี้ ได้ที่การ์ดของใบในหน้างาน (ปิดฟอร์มนี้แล้วเลื่อนไปที่ส่วน "{T.request}")
                                         </div>
                                     </div>
                                 ) : (
@@ -375,13 +388,13 @@ export default function OtherProjectForm({ editing, onClose, onSaved, onConflict
                                         <span>รูปแบบการจ้าง *</span>
                                         {savedKeys.has(String(it.key)) ? (
                                             // แถวที่บันทึกแล้วสลับรูปแบบไม่ได้ — ข้อมูลของรูปแบบเดิม (ชื่อ ไฟล์ ค่าตัว) จะหาย
-                                            <div className="hire-mode-fixed">ระบุคนเอง</div>
+                                            <div className="hire-mode-fixed">มีคนแล้ว (ระบุชื่อ)</div>
                                         ) : (
                                             <select value={it.mode} onChange={e => setMode(i, e.target.value)}>
                                                 {/* ตัวเลือกว่างมีเฉพาะตอนยังไม่ได้เลือก — เลือกแล้วย้อนกลับไปว่างไม่ได้ ข้อมูลที่กรอกจะได้ไม่หาย */}
                                                 {!hasMode(it) && <option value="">— เลือก —</option>}
-                                                <option value="direct">ระบุคนเอง</option>
-                                                <option value="casting">ให้ช่วยจัดหา</option>
+                                                <option value="direct">มีคนแล้ว (ระบุชื่อ)</option>
+                                                <option value="casting">ขอให้ช่วยหา</option>
                                             </select>
                                         )}
                                     </label>
@@ -400,7 +413,7 @@ export default function OtherProjectForm({ editing, onClose, onSaved, onConflict
                                                 <input value={it.name} onChange={e => setItem(i, 'name', e.target.value)} placeholder="ชื่อ-นามสกุล หรือชื่อเล่น" />
                                             </label>
                                             <label className="hire-f">
-                                                <span>ช่องทางติดต่อ</span>
+                                                <span>{T.contact}</span>
                                                 <input value={it.contact} onChange={e => setItem(i, 'contact', e.target.value)} placeholder="เบอร์ / LINE / IG" />
                                             </label>
                                             <label className="hire-f">
@@ -412,9 +425,15 @@ export default function OtherProjectForm({ editing, onClose, onSaved, onConflict
                                                 <input value={it.qty} onChange={e => setItem(i, 'qty', e.target.value)} placeholder="เช่น 2 วัน หรือ 3 รอบไลฟ์" />
                                             </label>
                                             <label className="hire-f">
-                                                <span>ค่าตัว (บาท) *</span>
+                                                {/* ค่าตัวบังคับเฉพาะคนที่ "ตกลงแล้ว" ขึ้นไป — คนที่ยังกำลังคุยบันทึกไว้ก่อนได้ */}
+                                                <span>ค่าตัว (บาท){PAYABLE_STATUS.includes(it.status) ? ' *' : ''}</span>
                                                 <input inputMode="numeric" value={it.fee}
                                                     onChange={e => setItem(i, 'fee', e.target.value.replace(/[^0-9]/g, ''))} placeholder="0" />
+                                                {feeBlocked(it)
+                                                    ? <span className="tc-need-fee">{NEED_FEE_MSG}</span>
+                                                    : feeMissing(it.fee) && !PAYABLE_STATUS.includes(it.status)
+                                                        ? <span className="cast-sub">ยังไม่รู้ก็เว้นไว้ได้ — ใส่ทีหลังได้</span>
+                                                        : null}
                                             </label>
                                             <div className="hire-f">
                                                 <span>วันที่ใช้งาน</span>
@@ -449,10 +468,10 @@ export default function OtherProjectForm({ editing, onClose, onSaved, onConflict
                                                 <DatePicker value={it.deadline} onChange={v => setItem(i, 'deadline', v)} />
                                             </div>
                                             <label className="hire-f">
-                                                <span>ผู้รับผิดชอบจัดหา</span>
+                                                <span>{T.finder}</span>
                                                 <select value={it.assignee_id == null ? '' : String(it.assignee_id)}
                                                     onChange={e => setAssignee(i, e.target.value)}>
-                                                    <option value="">— ยังไม่มอบหมาย —</option>
+                                                    <option value="">— ไว้เลือกทีหลัง —</option>
                                                     {people.map(u => <option key={u.id} value={String(u.id)}>{u.name}</option>)}
                                                     {/* คนที่เคยรับงานแต่ไม่อยู่ในรายชื่อแล้ว ต้องยังโชว์ ไม่งั้นกดบันทึกแล้วงานหลุดมือเงียบ ๆ */}
                                                     {it.assignee_id != null && !people.some(u => String(u.id) === String(it.assignee_id)) && (
@@ -494,7 +513,7 @@ export default function OtherProjectForm({ editing, onClose, onSaved, onConflict
                                     </label>
                                     </>)}
                                     <label className="hire-f wide">
-                                        <span>โน้ต</span>
+                                        <span>{T.note}</span>
                                         <input value={it.note} onChange={e => setItem(i, 'note', e.target.value)} placeholder="เงื่อนไข ข้อตกลง หรือสิ่งที่ต้องจำ" />
                                     </label>
                                     </>)}
@@ -509,13 +528,13 @@ export default function OtherProjectForm({ editing, onClose, onSaved, onConflict
 
                         <div className="hire-total">
                             งบรวมทั้งงาน <b>฿{totalFee.toLocaleString('th-TH')}</b>
-                            <span className="hire-total-note">ค่าตัวของแถวที่ระบุคนเอง + (งบต่อคน × จำนวนคน) ของใบขอจัดหา</span>
+                            <span className="hire-total-note">ค่าตัวของคนที่มีแล้ว + (งบต่อคน × จำนวนคน) ของ{T.request}</span>
                         </div>
                     </div>
 
-                    {/* ผู้ติดต่อของงาน — อยู่ท้ายฟอร์มตามที่ทีมขอ (ทีมใช้บัญชีเดียวร่วมกัน ระบบบันทึกได้แค่ "System Admin" ต้องเลือกชื่อจริงเอง) */}
+                    {/* ผู้ดูแลงาน (เก็บในช่อง creator เหมือนเดิม) — อยู่ท้ายฟอร์มตามที่ทีมขอ (ทีมใช้บัญชีเดียวร่วมกัน ระบบบันทึกได้แค่ "System Admin" ต้องเลือกชื่อจริงเอง) */}
                     <div className="field">
-                        <label>ผู้ติดต่อ</label>
+                        <label>{T.owner}</label>
                         <select value={form.creator} onChange={e => update('creator', e.target.value)}>
                             <option value="">— เลือก —</option>
                             {owners.map(n => <option key={n} value={n}>{n}</option>)}

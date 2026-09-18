@@ -14,7 +14,7 @@ router.use(authenticate);
 const { UPLOAD_DIR, uploadPath } = require('../config/uploads');
 const {
     mergeHireItems, mergeBriefFiles, hireRowFee, cleanFee, cleanHeadcount, safeId,
-    HIRE_BOOKED, BOOK_PENDING, BOOK_FEE, HIRE_JOB_CLOSED, hireBookings,
+    HIRE_BOOKED, BOOK_PENDING, BOOK_FEE, HIRE_JOB_CLOSED, hireBookings, newHireRow, payableWithoutFee,
     releaseToRequest, bookingConfirm, bookingFeeDecision, bookingUnavailable, carryProductTargets, carryProductBudgets, carryProductConcepts
 } = require('../store/logic');
 const BOOKING_ACTIONS = ['confirm', 'unavailable', 'fee-approve', 'fee-reject'];
@@ -72,9 +72,13 @@ const hireVideo = multer({
     }
 });
 
+// ป้ายสถานะงานในประวัติการแก้ไข — แคมเปญ KOL ยังใช้คำเดิม (หน้า KOL มีตัวเลือก "ร่าง" / "เสร็จสิ้น")
+// งาน Talent: "ร่าง" กับ "กำลังทำ" ใช้ป้ายเดียวกัน (ตรงกับ JOB_STATUS_LABEL ฝั่งหน้าเว็บ)
 const STATUS_LABEL = { Draft: 'ร่าง', Active: 'กำลังทำ', Completed: 'เสร็จสิ้น', Cancelled: 'ยกเลิก' };
+const TALENT_STATUS_LABEL = { Draft: 'กำลังทำ', Active: 'กำลังทำ', Completed: 'จบแล้ว', Cancelled: 'ยกเลิก' };
 
 // ตรวจว่าผู้ใช้มีสิทธิ์แก้ project นี้ไหม (admin ได้ทุกอัน, member เฉพาะทีมตัวเอง)
+// คืน project ที่อ่านมาแล้วไปด้วย — เส้นที่ต้องใช้ชื่อ/ประเภท/สถานะงานไม่ต้องอ่านซ้ำอีกรอบ
 async function canEditProject(req, projectId) {
     const proj = await store.projects.findByIdFull(projectId);
     if (!proj) return { ok: false, code: 404, message: 'ไม่พบ Project' };
@@ -82,8 +86,16 @@ async function canEditProject(req, projectId) {
     if (!canSeeBrand(req.account || req.user, proj.brand)) {
         return { ok: false, code: 403, message: 'ไม่มีสิทธิ์แก้ไขแคมเปญของแบรนด์อื่น' };
     }
-    return { ok: true };
+    return { ok: true, project: proj };
 }
+
+// ยอดเงินในข้อความประวัติของงานจ้าง (฿1,500) — แยกชื่อจาก baht ของส่วนค่าตัว KOL ท้ายไฟล์ (รูปแบบต่างกัน มีเทสต์ยึดไว้)
+const hireBaht = n => '฿' + (Number(n) || 0).toLocaleString('th-TH');
+// ข้อความตอนตั้งคนเป็น "ตกลงแล้ว" ทั้งที่ยังไม่มีค่าตัว — บอกชื่อคนให้หาแถวเจอในฟอร์มที่มีหลายคน
+const needFeeMessage = row => {
+    const who = String((row && (row.name || row.kind)) || '').trim().slice(0, 100) || 'คนที่ยังไม่ใส่ชื่อ';
+    return `ใส่ค่าตัวของ "${who}" ก่อน จึงจะตั้งเป็น "ตกลงแล้ว" ได้`;
+};
 
 // ---------- เช็คสิทธิ์ก่อนรับไฟล์ ----------
 // multer เขียนไฟล์ลงดิสก์ทันทีที่รับ ถ้าเช็คสิทธิ์ทีหลัง คนที่ไม่มีสิทธิ์ก็ส่งไฟล์ใหญ่ (คลิปถึง 95MB) มาให้เขียนลงเครื่องได้
@@ -211,6 +223,11 @@ router.post('/', async (req, res, next) => {
         if (req.body.hire_items !== undefined && req.body.hire_items !== null && !Array.isArray(req.body.hire_items)) {
             return res.status(400).json({ status: 'error', message: 'รายการจ้างไม่ถูกต้อง' });
         }
+        // งาน Talent ใหม่: คนที่ตั้งเป็น "ตกลงแล้ว" ต้องมีค่าตัว (งานใหม่ไม่มีแถวเดิม ทุกแถวถือเป็นแถวใหม่)
+        if (req.body.campaign_type === 'other' && Array.isArray(req.body.hire_items)) {
+            const unpaid = payableWithoutFee([], req.body.hire_items);
+            if (unpaid) return res.status(400).json({ status: 'error', message: needFeeMessage(unpaid) });
+        }
         // ไฟล์ต้องมาจากเส้นอัปโหลดเท่านั้น — แคมเปญใหม่ยังไม่มีไฟล์ในฐาน ทุก file จึงเป็น null
         delete createFields.brief_file;
         if (req.body.product_briefs !== undefined) createFields.product_briefs = mergeBriefFiles({}, req.body.product_briefs);
@@ -276,11 +293,19 @@ router.put('/:id', async (req, res, next) => {
             if (!req.body.expected_updated_at) {
                 return res.status(409).json({ status: 'error', code: 'STALE', message: 'ข้อมูลของงานนี้เพิ่งเปลี่ยน — โหลดค่าล่าสุดแล้วบันทึกอีกครั้ง' });
             }
+            // ไม่มีค่าตัว ห้ามตั้งเป็น "ตกลงแล้ว" — ตรวจเฉพาะแถวที่ใหม่ / เปลี่ยนสถานะ / เปลี่ยนค่าตัวในครั้งนี้
+            // (ของเก่าที่เป็นแบบนี้อยู่แล้วไม่บล็อก) · ตรวจใต้ล็อกเท่านั้น หลังเช็คว่าหน้าเว็บถือข้อมูลล่าสุด
+            // ถ้าตรวจก่อน หน้าที่เปิดค้าง (ข้อมูลเก่า) จะได้ 400 เรื่องแถวที่ตัวเองไม่ได้แตะ แทนที่จะได้ 409 ให้โหลดใหม่
+            let unpaid = null;
             const users = await resolveAssignees(req.body.hire_items);
             delete patch.budget;     // งบคำนวณใหม่จากรายการจ้างที่รวมแล้ว
             // รายการจ้าง + ช่องอื่นของงาน บันทึกพร้อมกันในทรานแซกชันเดียว (สำเร็จทั้งหมด หรือไม่บันทึกอะไรเลย)
-            const saved = await store.projects.updateWithHireItems(req.params.id, patch, req.body.expected_updated_at,
-                current => mergeHireItems(current, req.body.hire_items, { userId: req.user.id, users, actor: actorName(req) }));
+            const saved = await store.projects.updateWithHireItems(req.params.id, patch, req.body.expected_updated_at, current => {
+                unpaid = payableWithoutFee(current, req.body.hire_items);
+                if (unpaid) return null;
+                return mergeHireItems(current, req.body.hire_items, { userId: req.user.id, users, actor: actorName(req) });
+            });
+            if (unpaid) return res.status(400).json({ status: 'error', message: needFeeMessage(unpaid) });
             if (!saved) return res.status(404).json({ status: 'error', message: 'ไม่พบ Project' });
             if (saved.conflict) {
                 return res.status(409).json({ status: 'error', code: 'STALE', message: 'ข้อมูลของงานนี้เพิ่งเปลี่ยนระหว่างที่เปิดอยู่ — โหลดค่าล่าสุดแล้วบันทึกอีกครั้ง' });
@@ -291,7 +316,7 @@ router.put('/:id', async (req, res, next) => {
         }
         // ถ้าแก้แค่สถานะ บันทึกเป็น "เปลี่ยนสถานะ" มิฉะนั้นเป็น "แก้ไขข้อมูล"
         const summary = (bodyKeys.length === 1 && bodyKeys[0] === 'status')
-            ? `เปลี่ยนสถานะเป็น ${STATUS_LABEL[req.body.status] || req.body.status}`
+            ? `เปลี่ยนสถานะเป็น ${((curProject && (curProject.campaign_type || 'kol') === 'other') ? TALENT_STATUS_LABEL : STATUS_LABEL)[req.body.status] || req.body.status}`
             : 'แก้ไขข้อมูลแคมเปญ';
         await record(req, req.params.id, 'update', summary, data.name, data.team_id);
         res.json({ status: 'success', data });
@@ -466,11 +491,11 @@ async function castingRow(req, projectId, key) {
     if (!project) return { ok: false, code: 404, message: 'ไม่พบ Project' };
     const row = (Array.isArray(project.hire_items) ? project.hire_items : [])
         .find(it => String(it.key) === String(key));
-    if (!row) return { ok: false, code: 404, message: 'ไม่พบใบขอจัดหานี้' };
-    if (row.mode !== 'casting') return { ok: false, code: 400, message: 'รายการนี้ไม่ใช่ใบขอจัดหา' };
+    if (!row) return { ok: false, code: 404, message: 'ไม่พบใบขอให้หานี้' };
+    if (row.mode !== 'casting') return { ok: false, code: 400, message: 'รายการนี้ไม่ใช่ใบขอให้หา' };
     const isOwner = canSeeBrand(req.account || req.user, project.brand);
     const isAssignee = row.assignee_id != null && String(row.assignee_id) === String(req.user.id);
-    if (!isOwner && !isAssignee) return { ok: false, code: 403, message: 'ไม่มีสิทธิ์เข้าถึงใบขอจัดหานี้' };
+    if (!isOwner && !isAssignee) return { ok: false, code: 403, message: 'ไม่มีสิทธิ์เข้าถึงใบขอให้หานี้' };
     return { ok: true, project, row, isOwner, isAssignee };
 }
 
@@ -478,6 +503,55 @@ async function castingRow(req, projectId, key) {
 const visibleItems = (items, acc, key) =>
     (acc.isOwner ? items : (Array.isArray(items) ? items : []).filter(it => it
         && (String(it.key) === String(key) || (it.from_request != null && String(it.from_request) === String(key)))));
+
+// POST /api/projects/:id/hires — เพิ่มรายการจ้าง 1 แถวจากฟอร์มสั้นหน้า Talent
+//  mode 'direct'  = มีคนแล้ว (รู้ชื่อ) · บันทึกได้โดยยังไม่มีค่าตัว (กำลังคุย) แต่ "ตกลงแล้ว" ต้องมีค่าตัว
+//  mode 'casting' = ขอให้ช่วยหา (เกิดใบขอให้หา 1 ใบ สถานะเริ่มที่กำลังหาเสมอ)
+// ทีมของแบรนด์เท่านั้น (คนช่วยหาที่ไม่มีสิทธิ์แบรนด์เพิ่มไม่ได้) · ช่องที่ระบบเป็นคนตั้งผ่าน newHireRow → mergeHireItems เหมือนฟอร์มเต็ม
+// ต่อท้ายแถวเดียวใต้ล็อก ไม่ต้องส่ง expected_updated_at (ไม่ทับแถวของใคร) · ตอบ 201 { item, items, updated_at }
+router.post('/:id/hires', async (req, res, next) => {
+    try {
+        const check = await canEditProject(req, req.params.id);          // 404 / 403
+        if (!check.ok) return res.status(check.code).json({ status: 'error', message: check.message });
+        const b = req.body;
+        if (!b || typeof b !== 'object' || Array.isArray(b)) {
+            return res.status(400).json({ status: 'error', message: 'ข้อมูลไม่ถูกต้อง' });
+        }
+        // ตีกลับเร็วจากข้อมูลที่อ่านมาแล้ว (ด่านจริงอยู่ใน guard ใต้ล็อกด้านล่าง เผื่องานเปลี่ยนระหว่างนั้น)
+        const onlyTalent = job => ((job.campaign_type || 'kol') !== 'other'
+            ? { error: { code: 400, message: 'เพิ่มรายการจ้างได้เฉพาะงาน Talent' } } : null);
+        // งานจบแล้ว/ยกเลิก: ใบใหม่จะกลายเป็น "งานปิดแล้ว" ทันทีและไม่มีใครทำต่อได้ — คนที่มีตัวแล้วยังบันทึกเพิ่มได้
+        const closedForCasting = job => (b.mode === 'casting' && HIRE_JOB_CLOSED.includes(job.status)
+            ? { error: { code: 409, message: 'งานนี้จบแล้ว — ขอให้ช่วยหาเพิ่มไม่ได้' } } : null);
+        const early = onlyTalent(check.project) || closedForCasting(check.project);
+        if (early) return res.status(early.error.code).json({ status: 'error', message: early.error.message });
+
+        // คนช่วยหาที่เลือกมาต้องเป็นผู้ใช้จริงที่ใช้งานอยู่ (ไม่ใช่เอเจนซี่) — merge ถอดคนที่ไม่ผ่านแบบเงียบ ๆ
+        // แต่ฟอร์มที่ตั้งใจเลือกมาควรได้ข้อความ (เหมือนเส้น /assign)
+        const want = b.mode === 'casting' && b.assignee_id !== null && b.assignee_id !== undefined && b.assignee_id !== ''
+            ? b.assignee_id : null;
+        const users = want !== null ? await resolveAssignees([{ assignee_id: want }]) : {};
+        if (want !== null && !users[String(want)]) {
+            return res.status(400).json({ status: 'error', message: 'เลือกคนช่วยหาไม่ถูกต้อง' });
+        }
+        const built = newHireRow(b, { userId: req.user.id, users, actor: actorName(req), at: new Date().toISOString() });
+        if (built.error) return res.status(built.error.code).json({ status: 'error', message: built.error.message });
+
+        const saved = await store.projects.addHireItem(req.params.id, built.item, {
+            userId: req.user.id,
+            guard: job => onlyTalent(job) || closedForCasting(job)
+        });
+        if (!saved) return res.status(404).json({ status: 'error', message: 'ไม่พบ Project' });
+        if (saved.error) return res.status(saved.error.code).json({ status: 'error', message: saved.error.message });
+
+        const it = saved.item;
+        await record(req, req.params.id, 'update', it.mode === 'casting'
+            ? `ขอให้ช่วยหา${it.kind || 'คน'} ${it.headcount} คน${it.assignee_name ? ' — มอบให้ ' + it.assignee_name : ' — ยังไม่ได้เลือกคนช่วยหา'}`
+            : `เพิ่มคน ${it.name}${it.kind ? ' (' + it.kind + ')' : ''}${it.fee > 0 ? ' ค่าตัว ' + hireBaht(it.fee) : ' (ยังไม่ใส่ค่าตัว)'}`,
+        check.project.name, check.project.team_id);
+        res.status(201).json({ status: 'success', data: { item: saved.item, items: saved.items, updated_at: saved.updated_at } });
+    } catch (err) { next(err); }
+});
 
 // PUT /api/projects/:id/hires/:key/assign — มอบหมาย / เปลี่ยน / ถอนคนรับผิดชอบจัดหา
 router.put('/:id/hires/:key/assign', async (req, res, next) => {
@@ -491,7 +565,7 @@ router.put('/:id/hires/:key/assign', async (req, res, next) => {
         if (raw !== null && raw !== undefined && raw !== '') {
             const u = await store.users.findById(raw);
             if (!u || u.is_active === false || (u.status || 'active') !== 'active' || u.role === 'agency') {
-                return res.status(400).json({ status: 'error', message: 'เลือกผู้รับผิดชอบไม่ถูกต้อง' });
+                return res.status(400).json({ status: 'error', message: 'เลือกคนช่วยหาไม่ถูกต้อง' });
             }
             // เก็บทั้ง id และชื่อ: id คือตัวจริงที่ใช้เทียบสิทธิ์ ส่วนชื่อเก็บไว้โชว์ย้อนหลังแม้คนนั้นถูกลบไปแล้ว
             assignee = { id: u.id, name: u.nickname || u.full_name || u.username };
@@ -507,9 +581,9 @@ router.put('/:id/hires/:key/assign', async (req, res, next) => {
                 status: it.status || CAST_FIND
             } : it));
         });
-        if (!items) return res.status(404).json({ status: 'error', message: 'ไม่พบใบขอจัดหานี้' });
+        if (!items) return res.status(404).json({ status: 'error', message: 'ไม่พบใบขอให้หานี้' });
         await record(req, req.params.id, 'update',
-            assignee ? `มอบงานจัดหาให้ ${assignee.name}` : 'ถอนผู้รับผิดชอบงานจัดหา');
+            assignee ? `ให้ ${assignee.name} เป็นคนช่วยหา` : 'เอาคนช่วยหาออก (รอเลือกใหม่)');
         res.json({ status: 'success', data: items });
     } catch (err) { next(err); }
 });
@@ -542,8 +616,8 @@ router.put('/:id/hires/:key', async (req, res, next) => {
             if (b.status !== undefined) patch.status = txt(b.status) || row.status;
             return list.map(it => (String(it.key) === String(req.params.key) ? patch : it));
         });
-        if (!items) return res.status(404).json({ status: 'error', message: 'ไม่พบใบขอจัดหานี้' });
-        await record(req, req.params.id, 'update', `แก้ไขใบขอจัดหา${hit && hit.kind ? ' (' + hit.kind + ')' : ''}`);
+        if (!items) return res.status(404).json({ status: 'error', message: 'ไม่พบใบขอให้หานี้' });
+        await record(req, req.params.id, 'update', `แก้ไขใบขอให้หา${hit && hit.kind ? ' (' + hit.kind + ')' : ''}`);
         res.json({ status: 'success', data: items });
     } catch (err) { next(err); }
 });
@@ -569,7 +643,7 @@ router.delete('/:id/hires/:key', async (req, res, next) => {
                 : rest;
         });
         if (openBookings > 0) {
-            return res.status(409).json({ status: 'error', message: `ใบนี้ยังมี ${openBookings} คนที่อนุมัติแล้วรอคอนเฟิร์มคิว/รออนุมัติค่าตัว — คอนเฟิร์ม หรือกดคิวไม่ว่าง ให้ครบก่อนจึงลบใบได้` });
+            return res.status(409).json({ status: 'error', message: `ใบนี้ยังมี ${openBookings} คนที่เลือกแล้วแต่รอยืนยันคิว/รอตัดสินค่าตัวใหม่ — ยืนยันคิว หรือกด "คนนี้มาไม่ได้" ให้ครบก่อนจึงลบใบได้` });
         }
         if (!items) return res.status(404).json({ status: 'error', message: 'ไม่พบรายการนี้' });
 
@@ -579,7 +653,7 @@ router.delete('/:id/hires/:key', async (req, res, next) => {
             candsOf(gone).forEach(c => { removeFileIfUnused(c.image, items); removeFileIfUnused(c.video, items); });
         }
         await record(req, req.params.id, 'update',
-            `ลบ${gone && gone.mode === 'casting' ? 'ใบขอจัดหา' : 'รายการจ้าง'}${gone && gone.kind ? ' (' + gone.kind + ')' : ''}`);
+            `ลบ${gone && gone.mode === 'casting' ? 'ใบขอให้หา' : 'รายการจ้าง'}${gone && gone.kind ? ' (' + gone.kind + ')' : ''}`);
         res.json({ status: 'success', data: items });
     } catch (err) { next(err); }
 });
@@ -611,8 +685,8 @@ router.post('/:id/hires/:key/candidates', async (req, res, next) => {
                 status: leftOf(it) > 0 ? CAST_PROPOSED : (it.status || CAST_DONE)
             } : it));
         });
-        if (!items) return res.status(404).json({ status: 'error', message: 'ไม่พบใบขอจัดหานี้' });
-        await record(req, req.params.id, 'update', `เสนอชื่อ ${name} ให้ใบขอจัดหา${acc.row.kind ? ' (' + acc.row.kind + ')' : ''}`);
+        if (!items) return res.status(404).json({ status: 'error', message: 'ไม่พบใบขอให้หานี้' });
+        await record(req, req.params.id, 'update', `เสนอชื่อ ${name} ในใบขอให้หา${acc.row.kind ? ' (' + acc.row.kind + ')' : ''}`);
         res.json({ status: 'success', data: visibleItems(items, acc, req.params.key) });
     } catch (err) { next(err); }
 });
@@ -676,19 +750,20 @@ router.patch('/:id/hires/:key/candidates/:ckey', async (req, res, next) => {
             return out;
         });
         if (full) return res.status(409).json({ status: 'error', message: 'ใบนี้ได้คนครบจำนวนที่ขอแล้ว — ถ้าต้องการเพิ่มคน ให้แก้จำนวนคนที่ต้องการในใบก่อน' });
-        if (!items) return res.status(404).json({ status: 'error', message: 'ไม่พบชื่อที่เสนอนี้ หรืออนุมัติไปแล้ว' });
+        if (!items) return res.status(404).json({ status: 'error', message: 'ไม่พบชื่อที่เสนอนี้ หรือเลือกไปแล้ว' });
         await record(req, req.params.id, 'update', want === CAND_PICKED
-            ? `อนุมัติ ${pickedName} จากใบขอจัดหา`
+            ? `เลือก ${pickedName} จากใบขอให้หา`
             : want === CAND_DROPPED
-                ? `ไม่ผ่าน ${candName || ''} ในใบขอจัดหา${reason ? ' — ' + reason : ''}`
-                : `ดึง ${candName || ''} กลับมาพิจารณาในใบขอจัดหา`);
+                ? `ไม่เอา ${candName || ''} ในใบขอให้หา${reason ? ' — ' + reason : ''}`
+                : `เอา ${candName || ''} กลับมาพิจารณาในใบขอให้หา`);
         res.json({ status: 'success', data: items });
     } catch (err) { next(err); }
 });
 
-// POST /api/projects/:id/hires/:key/bookings/:rowKey/:action — ขั้นคอนเฟิร์มคิวของคนที่อนุมัติแล้วจากใบ :key
-//  confirm      คนหา (หรือทีมแบรนด์) คอนเฟิร์มคิว + ค่าตัวจริง → ตกลงแล้ว หรือรอทีมอนุมัติค่าตัวใหม่ถ้าแพงกว่าที่อนุมัติ
-//  unavailable  คิวไม่ว่าง / ถอนตัว → เอาออกจากงาน คืนที่ว่างให้คนหาหาใหม่
+// POST /api/projects/:id/hires/:key/bookings/:rowKey/:action — ขั้นยืนยันคิวของคนที่ทีมเลือกแล้วจากใบ :key
+//  confirm      คนช่วยหา (หรือทีมแบรนด์) ยืนยันคิว + ค่าตัวจริง → ตกลงแล้ว หรือรอทีมตัดสินค่าตัวใหม่ถ้าแพงกว่าที่ตกลงไว้
+//               ค่าตัวสุดท้ายเป็น 0 (ไม่ได้ใส่ และตอนเลือกก็ไม่มีค่าตัว) → 400 ให้ใส่ค่าตัวก่อน
+//  unavailable  คนนี้มาไม่ได้ → เอาออกจากงาน คืนที่ว่างให้คนช่วยหาหาใหม่
 //  fee-approve / fee-reject  ทีมแบรนด์ตัดสินค่าตัวใหม่
 router.post('/:id/hires/:key/bookings/:rowKey/:action', async (req, res, next) => {
     try {
@@ -702,11 +777,11 @@ router.post('/:id/hires/:key/bookings/:rowKey/:action', async (req, res, next) =
         if (!acc.ok) return res.status(acc.code).json({ status: 'error', message: acc.message });
         // ค่าตัวเป็นเรื่องงบของแบรนด์ — คนหาอนุมัติ/ไม่อนุมัติค่าตัวเองไม่ได้
         if (feeDecision && !acc.isOwner) {
-            return res.status(403).json({ status: 'error', message: 'การอนุมัติค่าตัวต้องเป็นทีมของแบรนด์นี้' });
+            return res.status(403).json({ status: 'error', message: 'การตัดสินค่าตัวใหม่ต้องเป็นทีมของแบรนด์นี้' });
         }
         // งานที่ปิดแล้ว (เสร็จสิ้น/ยกเลิก) เหลือให้ทีมแบรนด์เก็บคนที่ค้างอยู่ได้อย่างเดียว
         if (HIRE_JOB_CLOSED.includes(acc.project.status) && !acc.isOwner) {
-            return res.status(409).json({ status: 'error', message: 'งานนี้ปิดแล้ว — ให้ทีมแบรนด์เป็นคนจัดการคนที่ยังค้างคอนเฟิร์ม' });
+            return res.status(409).json({ status: 'error', message: 'งานนี้ปิดแล้ว — ให้ทีมแบรนด์เป็นคนจัดการคนที่ยังรอยืนยันคิว' });
         }
         const b = req.body || {};
         const who = { actor: actorName(req), at: new Date().toISOString() };
@@ -719,20 +794,20 @@ router.post('/:id/hires/:key/bookings/:rowKey/:action', async (req, res, next) =
                         { ...who, expected_fee: b.expected_fee, expected_confirmed_at: b.expected_confirmed_at });
             return result.error ? null : result.list;
         });
+        // error จากขั้นตอน (รวม 400 "ใส่ค่าตัวที่ตกลงจริงก่อนยืนยันคิว") ส่งต่อรหัสและข้อความตามนั้น
         if (result && result.error) return res.status(result.error.code).json({ status: 'error', message: result.error.message });
-        if (!items) return res.status(404).json({ status: 'error', message: 'ไม่พบใบขอจัดหานี้' });
+        if (!items) return res.status(404).json({ status: 'error', message: 'ไม่พบใบขอให้หานี้' });
 
         const r = result.row || {};
-        const baht = n => '฿' + (Number(n) || 0).toLocaleString('th-TH');
         const summary = action === 'confirm'
             ? (r.booking && r.booking.state === BOOK_FEE
-                ? `คอนเฟิร์มคิว ${r.name} — ขอค่าตัวใหม่ ${baht(r.booking.requested_fee)} (อนุมัติไว้ ${baht(r.fee)}) รอทีมอนุมัติ`
-                : `คอนเฟิร์มคิว ${r.name} แล้ว (ค่าตัว ${baht(r.fee)})`)
+                ? `ยืนยันคิว ${r.name} — ขอค่าตัวใหม่ ${hireBaht(r.booking.requested_fee)} (ตกลงไว้ ${hireBaht(r.fee)}) รอทีมตัดสิน`
+                : `ยืนยันคิว ${r.name} แล้ว (ค่าตัว ${hireBaht(r.fee)})`)
             : action === 'unavailable'
-                ? `${r.name} คิวไม่ว่าง — คืนที่ว่างให้ใบขอจัดหา${txt(b.reason) ? ' (' + String(txt(b.reason)).slice(0, 300) + ')' : ''}`
+                ? `${r.name} มาไม่ได้ — คืนที่ว่างให้ใบขอให้หา${txt(b.reason) ? ' (' + String(txt(b.reason)).slice(0, 300) + ')' : ''}`
                 : action === 'fee-approve'
-                    ? `อนุมัติค่าตัวใหม่ของ ${r.name} ${baht(r.booking && r.booking.requested_fee)}`
-                    : `ไม่อนุมัติค่าตัวใหม่ของ ${r.name}${txt(b.note) ? ' — ' + String(txt(b.note)).slice(0, 300) : ''}`;
+                    ? `ยอมรับค่าตัวใหม่ของ ${r.name} ${hireBaht(r.booking && r.booking.requested_fee)}`
+                    : `ไม่ยอมรับค่าตัวใหม่ของ ${r.name}${txt(b.note) ? ' — ' + String(txt(b.note)).slice(0, 300) : ''}`;
         await record(req, id, 'update', summary);
         res.json({ status: 'success', data: acc.isOwner ? items : visibleItems(items, acc, key) });
     } catch (err) { next(err); }
@@ -746,7 +821,7 @@ router.delete('/:id/hires/:key/candidates/:ckey', async (req, res, next) => {
         const cand = candsOf(acc.row).find(c => String(c.key) === String(req.params.ckey));
         if (!cand) return res.status(404).json({ status: 'error', message: 'ไม่พบชื่อที่เสนอนี้' });
         if ((cand.status || CAND_NEW) === CAND_PICKED) {
-            return res.status(400).json({ status: 'error', message: 'คนที่อนุมัติแล้วถอนออกจากใบไม่ได้ — ให้ไปลบแถวผู้รับงานแทน' });
+            return res.status(400).json({ status: 'error', message: 'คนที่เลือกแล้วถอนชื่อออกจากใบไม่ได้ — ให้ลบคนนั้นออกจากรายชื่อคนในงานแทน' });
         }
         // คนอื่นที่ไม่ใช่คนเสนอเองต้องมีสิทธิ์ในแคมเปญนี้ถึงจะถอนให้ได้
         if (String(cand.by_id) !== String(req.user.id) && !acc.isOwner) {
@@ -762,13 +837,13 @@ router.delete('/:id/hires/:key/candidates/:ckey', async (req, res, next) => {
                 : it));
         });
         if (pickedMeanwhile) {
-            return res.status(409).json({ status: 'error', message: 'คนนี้เพิ่งได้รับอนุมัติเป็นผู้รับงานไปแล้ว ถอนจากใบไม่ได้' });
+            return res.status(409).json({ status: 'error', message: 'คนนี้เพิ่งถูกเลือกไปแล้ว ถอนชื่อออกจากใบไม่ได้' });
         }
-        if (!items) return res.status(404).json({ status: 'error', message: 'ไม่พบใบขอจัดหานี้' });
+        if (!items) return res.status(404).json({ status: 'error', message: 'ไม่พบใบขอให้หานี้' });
         // เก็บกวาดไฟล์ของชื่อที่ถอนออก (ข้ามไฟล์ที่ยังมีแถวอื่นใช้อยู่)
         removeFileIfUnused(cand.image, items);
         removeFileIfUnused(cand.video, items);
-        await record(req, req.params.id, 'update', `ถอนชื่อ ${cand.name} ออกจากใบขอจัดหา`);
+        await record(req, req.params.id, 'update', `ถอนชื่อ ${cand.name} ออกจากใบขอให้หา`);
         res.json({ status: 'success', data: visibleItems(items, acc, req.params.key) });
     } catch (err) { next(err); }
 });
@@ -799,7 +874,7 @@ router.post('/:id/hires/:key/candidates/:ckey/image', guardCandidateFile, (req, 
                 list.map(it => (String(it.key) === String(req.params.key)
                     ? { ...it, candidates: candsOf(it).map(c => (String(c.key) === String(req.params.ckey) ? { ...c, image: meta } : c)) }
                     : it)));
-            if (!items) { dropUploaded(); return res.status(404).json({ status: 'error', message: 'ไม่พบใบขอจัดหานี้' }); }
+            if (!items) { dropUploaded(); return res.status(404).json({ status: 'error', message: 'ไม่พบใบขอให้หานี้' }); }
             removeFileIfUnused(oldImage, items);
             res.json({ status: 'success', data: visibleItems(items, acc, req.params.key) });
         } catch (e) { dropUploaded(); next(e); }
@@ -853,10 +928,10 @@ router.put('/:id/hires/:key/candidates/:ckey', async (req, res, next) => {
             list.map(it => (String(it.key) === String(req.params.key)
                 ? { ...it, candidates: candsOf(it).map(c => (String(c.key) === String(req.params.ckey) ? { ...c, ...patch } : c)) }
                 : it)));
-        if (!items) return res.status(404).json({ status: 'error', message: 'ไม่พบใบขอจัดหานี้' });
+        if (!items) return res.status(404).json({ status: 'error', message: 'ไม่พบใบขอให้หานี้' });
         removeFileIfUnused(dropImage, items);
         removeFileIfUnused(dropVideo, items);
-        await record(req, req.params.id, 'update', `แก้ข้อมูลของ ${name} ในใบขอจัดหา`);
+        await record(req, req.params.id, 'update', `แก้ข้อมูลของ ${name} ในใบขอให้หา`);
         res.json({ status: 'success', data: visibleItems(items, acc, req.params.key) });
     } catch (err) { next(err); }
 });
@@ -887,7 +962,7 @@ router.post('/:id/hires/:key/candidates/:ckey/video', guardCandidateFile, (req, 
                 list.map(it => (String(it.key) === String(req.params.key)
                     ? { ...it, candidates: candsOf(it).map(c => (String(c.key) === String(req.params.ckey) ? { ...c, video: meta } : c)) }
                     : it)));
-            if (!items) { dropUploaded(); return res.status(404).json({ status: 'error', message: 'ไม่พบใบขอจัดหานี้' }); }
+            if (!items) { dropUploaded(); return res.status(404).json({ status: 'error', message: 'ไม่พบใบขอให้หานี้' }); }
             removeFileIfUnused(oldVideo, items);
             res.json({ status: 'success', data: visibleItems(items, acc, req.params.key) });
         } catch (e) { dropUploaded(); next(e); }

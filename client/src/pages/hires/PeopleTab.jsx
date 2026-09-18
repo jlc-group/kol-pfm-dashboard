@@ -4,10 +4,11 @@ import { api } from '../../api/client.js';
 import Icon from '../../components/Icon.jsx';
 import { useAuth } from '../../auth/AuthContext.jsx';
 import { visibleBrands } from '../../data/brands.js';
+import { T } from '../../data/talentLabels.js';
 
-// แท็บ "คนที่เคยจ้าง" — รวมรายชื่อผู้รับงานจากงานจ้างอื่น ๆ ทุกงาน (อ่านอย่างเดียว ไว้ค้นประวัติคน/ค่าตัว)
+// "คนและราคา / คนที่เคยจ้าง" — รวมรายชื่อผู้รับงานจากงาน Talent ทุกงาน (อ่านอย่างเดียว ไว้ค้นประวัติคน/ค่าตัว)
 // แยกจากหน้าอินฟลูเอนเซอร์ตั้งใจ — งานพวกนี้ไม่มียอดวิว/CPM ถ้าเอาไปปนกัน ค่าเฉลี่ยของหน้านั้นจะเพี้ยน
-// server รวมรายชื่อให้แล้ว (1 แถว = 1 คน) · ชื่อที่ถูกเสนอแต่ยังไม่ผ่านการอนุมัติไม่อยู่ที่นี่
+// server รวมรายชื่อให้แล้ว (1 แถว = 1 คน) · ชื่อที่คนช่วยหาส่งมาแต่ทีมยังไม่ได้เลือกไม่อยู่ที่นี่
 const B = n => '฿' + (Number(n) || 0).toLocaleString('th-TH');
 const fmtD = d => {
     if (!d) return '—';
@@ -50,7 +51,7 @@ export default function PeopleTab() {
                 <div className="ka-search">
                     <Icon name="search" size={15} />
                     <input value={search} onChange={e => setSearch(e.target.value)}
-                        placeholder="ค้นหาชื่อ / สังกัด / เบอร์ติดต่อ / งาน..." />
+                        placeholder="ค้นหาชื่อ / สังกัด / เบอร์/LINE / งาน..." />
                     {search && (
                         <button type="button" className="ka-search-x" onClick={() => setSearch('')} title="ล้างคำค้นหา">✕</button>
                     )}
@@ -106,7 +107,7 @@ export default function PeopleTab() {
                     <table className="data-table hires-table">
                         <thead>
                             <tr>
-                                <th>ชื่อผู้รับงาน</th><th>ประเภทงาน</th><th>สังกัด</th><th>ติดต่อ</th>
+                                <th>ชื่อผู้รับงาน</th><th>ประเภทงาน</th><th>สังกัด</th><th>{T.contact}</th>
                                 <th className="num">จำนวนงาน</th><th className="num">ค่าตัวล่าสุด</th><th className="num">ค่าตัวเฉลี่ย</th>
                                 <th>งานล่าสุด</th><th>แบรนด์</th><th>งาน</th>
                             </tr>
@@ -117,7 +118,7 @@ export default function PeopleTab() {
                             ) : shown.length === 0 ? (
                                 <tr><td colSpan="10" className="empty">
                                     {rows.length === 0
-                                        ? 'ยังไม่มีคนที่เคยจ้าง — คนที่ใส่ในงาน (ระบุคนเอง) หรือผ่านการอนุมัติจากใบขอจัดหาจะขึ้นที่นี่'
+                                        ? `ยังไม่มีคนที่เคยจ้าง — คนที่บันทึกไว้ในงาน และคนที่ทีมเลือกจาก${T.request} จะขึ้นที่นี่`
                                         : 'ไม่พบผู้รับงานตามเงื่อนไขที่เลือก'}
                                 </td></tr>
                             ) : shown.map(r => (
@@ -127,8 +128,8 @@ export default function PeopleTab() {
                                     <td className="muted">{r.agency || '—'}</td>
                                     <td className="muted">{r.contact || '—'}</td>
                                     <td className="num">{r.jobs}</td>
-                                    <td className="num">{B(r.last_fee)}</td>
-                                    <td className="num muted">{B(r.avg_fee)}</td>
+                                    <td className="num">{r.last_fee > 0 ? B(r.last_fee) : <span className="muted">ยังไม่ใส่ค่าตัว</span>}</td>
+                                    <td className="num muted">{r.avg_fee > 0 ? B(r.avg_fee) : '—'}</td>
                                     <td className="muted">{fmtD(r.last_date)}</td>
                                     <td>{(r.brands || []).map(b => <span className="tag" key={b}>{b}</span>)}</td>
                                     <td className="muted">

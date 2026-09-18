@@ -1,11 +1,12 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../../api/client.js';
 import Icon from '../../components/Icon.jsx';
 import RateCardForm from '../../components/RateCardForm.jsx';
 import RateAnswerModal from '../../components/RateAnswerModal.jsx';
 
-// แท็บ "สอบถามราคา" — คำขอราคา KOL / Presenter (ตาราง rate_requests ไม่ผูกกับงานจ้าง)
-// เปิดคำขอได้จากปุ่มบนแท็บนี้ที่เดียว — เดิมอยู่ในดรอปดาวน์ของฟอร์มงานจ้าง ทำให้เข้าใจผิดว่าเป็นส่วนหนึ่งของงาน
+// "คนและราคา / ถามราคา" — คำขอราคา KOL / Presenter (ตาราง rate_requests ไม่ผูกกับงานจ้าง)
+// เปิดคำขอได้จากปุ่มบนแท็บนี้ และการ์ด "ถามราคาก่อน" ในหน้าหลัก — ไม่อยู่ในฟอร์มงาน (เดิมทำให้เข้าใจผิดว่าเป็นส่วนหนึ่งของงาน)
+// onLoaded(list) = ส่งรายการล่าสุดกลับให้หน้าแม่ (เลขเหลืองบนแท็บ + สรุปในหน้าหลัก) · justSent = เพิ่งส่งคำถามจากหน้าหลัก
 const B = n => '฿' + (Number(n) || 0).toLocaleString('th-TH');
 const fmtDT = s => {
     if (!s) return '—';
@@ -22,7 +23,7 @@ const SHOW = [
 ];
 const stOf = r => r.status || 'open';
 
-export default function RatesTab({ onOpenCount }) {
+export default function RatesTab({ onLoaded, justSent = false }) {
     const [rates, setRates] = useState(null);
     const [error, setError] = useState('');
     const [search, setSearch] = useState('');
@@ -30,15 +31,19 @@ export default function RatesTab({ onOpenCount }) {
     const [show, setShow] = useState(null);         // null = ตั้งตามข้อมูล (มีรอตอบ → รอตอบ · ไม่มี → ทั้งหมด)
     const [asking, setAsking] = useState(false);
     const [openRate, setOpenRate] = useState(null);
-    const [sent, setSent] = useState(false);
+    const [sent, setSent] = useState(justSent);
+    useEffect(() => { if (justSent) setSent(true); }, [justSent]);
 
+    // เก็บ callback ของหน้าแม่ไว้ใน ref — หน้าแม่ส่งฟังก์ชันใหม่ทุกครั้งที่ render ถ้าผูกกับ load ตรง ๆ จะโหลดวนไม่หยุด
+    const loadedRef = useRef(onLoaded);
+    loadedRef.current = onLoaded;
     const load = useCallback(() => {
         api('/rate-requests').then(res => {
             const list = res.data || [];
             setRates(list); setError('');
-            if (onOpenCount) onOpenCount(list.filter(r => stOf(r) === 'open').length);
+            if (loadedRef.current) loadedRef.current(list);
         }).catch(err => setError(err.message));
-    }, [onOpenCount]);
+    }, []);
     useEffect(() => { load(); }, [load]);
 
     const rows = rates || [];
@@ -56,7 +61,7 @@ export default function RatesTab({ onOpenCount }) {
         <div className="hub-tab">
             <div className="hub-toolbar">
                 <button className="btn-primary" onClick={() => { setSent(false); setAsking(true); }}>
-                    <Icon name="plus" size={16} /> สอบถามราคา
+                    <Icon name="plus" size={16} /> ถามราคา
                 </button>
                 <div className="ka-search">
                     <Icon name="search" size={15} />
@@ -66,7 +71,7 @@ export default function RatesTab({ onOpenCount }) {
             </div>
 
             {error && <div className="alert-error">{error}</div>}
-            {sent && <div className="rate-sent-note">✓ ส่งคำขอสอบถามราคาแล้ว — รายการใหม่อยู่ในตารางด้านล่าง</div>}
+            {sent && <div className="rate-sent-note">✓ ส่งคำถามราคาแล้ว — รายการใหม่อยู่ในตารางด้านล่าง</div>}
 
             <div className="proc-platfilter">
                 <span className="proc-platfilter-lbl">แสดง:</span>
@@ -104,8 +109,8 @@ export default function RatesTab({ onOpenCount }) {
                             ) : shown.length === 0 ? (
                                 <tr><td colSpan="10" className="empty">
                                     {rows.length === 0
-                                        ? 'ยังไม่มีคำขอสอบถามราคา — กด "สอบถามราคา" ด้านบนได้เลย'
-                                        : 'ไม่พบคำขอตามเงื่อนไขที่เลือก'}
+                                        ? 'ยังไม่มีคำถามราคา — กด "ถามราคา" ด้านบนได้เลย'
+                                        : 'ไม่พบคำถามราคาตามเงื่อนไขที่เลือก'}
                                 </td></tr>
                             ) : shown.map(r => {
                                 const st = stOf(r);

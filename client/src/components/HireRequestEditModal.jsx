@@ -2,8 +2,9 @@ import { useState } from 'react';
 import { api } from '../api/client.js';
 import DatePicker from './DatePicker.jsx';
 import { HIRE_KINDS } from './OtherProjectForm.jsx';
+import { T } from '../data/talentLabels.js';
 
-// แก้รายละเอียดของใบขอจัดหาหนึ่งใบ (จากปุ่มดินสอบนการ์ดของใบ ไม่ต้องเปิดฟอร์มทั้งงาน)
+// แก้รายละเอียดของใบขอให้หาหนึ่งใบ (จากปุ่มดินสอบนการ์ดของใบ ไม่ต้องเปิดฟอร์มทั้งงาน)
 // แก้ได้เฉพาะสิ่งที่ "ขอ" — รายชื่อที่เสนอเข้ามาและคนที่เลือกไปแล้วมีเส้นของตัวเอง ที่นี่ไม่แตะ
 export default function HireRequestEditModal({ request, onClose, onSaved }) {
     const [f, setF] = useState({
@@ -42,7 +43,7 @@ export default function HireRequestEditModal({ request, onClose, onSaved }) {
         <div className="modal-backdrop" onClick={onClose}>
             <div className="modal wide" onClick={e => e.stopPropagation()}>
                 <div className="modal-head">
-                    <h3>แก้ไขใบขอจัดหา</h3>
+                    <h3>แก้ไข{T.request}</h3>
                     <button type="button" className="modal-x" onClick={onClose}>×</button>
                 </div>
                 <p className="ctype-lead">{request.project_name}{request.brand ? ` · ${request.brand}` : ''}</p>
@@ -87,7 +88,7 @@ export default function HireRequestEditModal({ request, onClose, onSaved }) {
                             placeholder="เช่น หญิง 20-25 ปี สูง 165 ขึ้นไป เคยถ่ายงานสกินแคร์" />
                     </label>
                     <label className="hire-f wide">
-                        <span>โน้ต</span>
+                        <span>{T.note}</span>
                         <input value={f.note} onChange={e => up('note', e.target.value)} placeholder="เงื่อนไข ข้อตกลง หรือสิ่งที่ต้องจำ" />
                     </label>
                 </div>

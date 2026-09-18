@@ -54,17 +54,22 @@ const hires = {
             if (!row) {
                 row = {
                     key: personKey(j), name: j.name, kind: j.kind, agency: j.agency, contact: j.contact,
-                    jobs: 0, total_fee: 0, last_fee: 0, last_date: null,
+                    jobs: 0, fee_jobs: 0, total_fee: 0, last_fee: 0, last_date: null, fee_date: null,
                     brands: [], campaigns: [], statuses: []
                 };
                 byPerson.set(row.key, row);
             }
             row.jobs += 1;
             row.total_fee += j.fee;
+            if (j.date && (!row.last_date || j.date > row.last_date)) row.last_date = j.date;
+            // ค่าตัวล่าสุด / เฉลี่ย นับเฉพาะงานที่ใส่ค่าตัวแล้ว — คนที่บันทึกไว้ตอนยังคุยราคา (฿0) ไม่ใช่ค่าตัวจริง
             // ค่าตัวล่าสุด = ของงานที่วันใหม่สุด · งานที่ไม่มีวันเลยใช้เป็นค่าตั้งต้นไปก่อน
-            if (j.date ? (!row.last_date || j.date > row.last_date) : (!row.last_date && !row.last_fee)) {
-                row.last_date = j.date || row.last_date;
-                row.last_fee = j.fee;
+            if (j.fee > 0) {
+                row.fee_jobs += 1;
+                if (j.date ? (!row.fee_date || j.date > row.fee_date) : (!row.fee_date && !row.last_fee)) {
+                    row.fee_date = j.date || row.fee_date;
+                    row.last_fee = j.fee;
+                }
             }
             if (!row.agency && j.agency) row.agency = j.agency;
             if (!row.contact && j.contact) row.contact = j.contact;
@@ -74,7 +79,7 @@ const hires = {
         });
 
         const rows = [...byPerson.values()]
-            .map(r => ({ ...r, avg_fee: r.jobs ? Math.round((r.total_fee / r.jobs) * 100) / 100 : 0 }))
+            .map(({ fee_date, ...r }) => ({ ...r, avg_fee: r.fee_jobs ? Math.round((r.total_fee / r.fee_jobs) * 100) / 100 : 0 }))
             .sort((a, b) => (b.last_date || '').localeCompare(a.last_date || '')
                 || b.total_fee - a.total_fee
                 || a.name.localeCompare(b.name));
@@ -99,8 +104,11 @@ const hires = {
     // เห็นได้ 3 ทาง: แบรนด์ที่ตัวเองมีสิทธิ์ · ใบที่ถูกมอบหมายให้ตัวเอง · ใบที่ตัวเองเป็นคนขอ
     // สองทางหลังตั้งใจให้ข้ามสิทธิ์แบรนด์ได้ เพราะคนที่ถูกมอบงานต้องเห็นงานของตัวเองเสมอ
     // (เห็นเฉพาะ "ใบนั้น" ไม่ได้เปิดทั้งแคมเปญให้ — เส้นแก้ไขก็ตรวจซ้ำอีกชั้นที่ routes/projects.js)
-    async tasks({ userId = null, scopeBrands = null, mine = '', status, search, brand } = {}) {
-        const snap = await loadSnapshot(['other_projects']);
+    // withNames = แปะชื่อคนขอ (requested_by_name) ด้วยไหม — เส้นนับเลขแดงถูกเรียกทุก 60 วินาทีจากทุกหน้า ไม่ต้องใช้ชื่อ จึงปิดไว้
+    async tasks({ userId = null, scopeBrands = null, mine = '', status, search, brand, withNames = true } = {}) {
+        const snap = await loadSnapshot(withNames ? ['other_projects', 'user_names'] : ['other_projects']);
+        // ชื่อโชว์แบบเดียวกับคนช่วยหา (ชื่อเล่น → ชื่อจริง → username) · อ่านจากคิวรีเบาที่ไม่มีรหัสผ่าน
+        const nameOf = new Map((snap.user_names || []).map(u => [String(u.id), str(u.nickname) || str(u.full_name) || str(u.username) || null]));
         const uid = userId == null ? null : String(userId);
         const today = todayTH();
         const rows = [];
@@ -140,6 +148,9 @@ const hires = {
                     assignee_id: it.assignee_id == null ? null : it.assignee_id,
                     assignee_name: str(it.assignee_name) || null,
                     requested_by_id: it.requested_by_id == null ? null : it.requested_by_id,
+                    // คนขอ + เวลาที่ขอ (ประทับตอนสร้างใบใน mergeHireItems) — ผู้ใช้ที่ถูกลบไปแล้ว = null
+                    requested_by_name: it.requested_by_id == null ? null : (nameOf.get(String(it.requested_by_id)) || null),
+                    requested_at: it.requested_at || null,
                     candidates: cands,
                     candidate_count: cands.length,
                     waiting_count: waiting,

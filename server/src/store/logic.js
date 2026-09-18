@@ -141,11 +141,11 @@ const clipText = (v, n) => { const s = v == null ? '' : String(v).trim(); return
 function bookingTarget(list, reqKey, rowKey) {
     const arr = Array.isArray(list) ? list : [];
     const req = arr.find(it => it && String(it.key) === String(reqKey));
-    if (!req || req.mode !== 'casting') return { error: { code: 404, message: 'ไม่พบใบขอจัดหานี้' } };
+    if (!req || req.mode !== 'casting') return { error: { code: 404, message: 'ไม่พบใบขอให้หานี้' } };
     const idx = arr.findIndex(it => it && String(it.key) === String(rowKey));
     const row = idx >= 0 ? arr[idx] : null;
     if (!row || row.mode === 'casting' || row.from_request == null || String(row.from_request) !== String(reqKey)) {
-        return { error: { code: 404, message: 'ไม่พบคนที่อนุมัติจากใบขอจัดหานี้' } };
+        return { error: { code: 404, message: 'ไม่พบคนที่เลือกจากใบขอให้หานี้' } };
     }
     return { arr, req, row, idx };
 }
@@ -192,12 +192,15 @@ function bookingConfirm(list, reqKey, rowKey, body = {}, { actor = null, at = no
     const t = bookingTarget(list, reqKey, rowKey);
     if (t.error) return t;
     if (bookingState(t.row) !== BOOK_PENDING) {
-        return { error: { code: 409, message: 'คนนี้ไม่ได้อยู่ในขั้นรอคอนเฟิร์มคิวแล้ว — โหลดหน้าใหม่เพื่อดูสถานะล่าสุด' } };
+        return { error: { code: 409, message: 'คนนี้ไม่ได้อยู่ในขั้นรอยืนยันคิวแล้ว — โหลดหน้าใหม่เพื่อดูสถานะล่าสุด' } };
     }
     const b = body && typeof body === 'object' ? body : {};
     const approved = Number(t.row.fee) || 0;
     const asked = cleanFee(b.fee);
     const fee = asked > 0 ? asked : approved;
+    // กติกาเดียวกับทั้งระบบ: ไม่มีค่าตัว = ยัง "ตกลงแล้ว" ไม่ได้ — ปุ่มยืนยันคลิกเดียวกับคนที่เลือกมาแบบไม่มีค่าตัว (fee 0)
+    // เคยได้ "ตกลงแล้ว ค่าตัว 0" ซึ่งทำให้รอบทำจ่ายนับเป็นคนที่จ่ายได้แต่ไม่มียอด
+    if (fee <= 0) return { error: { code: 400, message: 'ใส่ค่าตัวที่ตกลงจริงก่อนยืนยันคิว' } };
     const patch = {
         use_date: b.use_date === undefined ? (t.row.use_date || null) : (isDateStr(b.use_date) ? b.use_date : null),
         use_time: b.use_time === undefined ? (t.row.use_time || null) : clipText(b.use_time, 60),
@@ -221,7 +224,7 @@ function bookingFeeDecision(list, reqKey, rowKey, approve, note, { actor = null,
     const t = bookingTarget(list, reqKey, rowKey);
     if (t.error) return t;
     if (bookingState(t.row) !== BOOK_FEE) {
-        return { error: { code: 409, message: 'ไม่มีค่าตัวใหม่ที่รออนุมัติสำหรับคนนี้แล้ว — โหลดหน้าใหม่เพื่อดูสถานะล่าสุด' } };
+        return { error: { code: 409, message: 'ไม่มีค่าตัวใหม่ที่รอตัดสินสำหรับคนนี้แล้ว — โหลดหน้าใหม่เพื่อดูสถานะล่าสุด' } };
     }
     const bk = t.row.booking || {};
     // ต้องเป็นยอดเดียวกับที่ทีมเห็นบนหน้าจอ — ไม่ส่งยอดมา หรือคนหาคอนเฟิร์มรอบใหม่ไปแล้ว = ให้โหลดใหม่ก่อน
@@ -245,7 +248,7 @@ function bookingUnavailable(list, reqKey, rowKey, reason, { actor = null, at = n
     const t = bookingTarget(list, reqKey, rowKey);
     if (t.error) return t;
     if (!bookingOpen(t.row)) {
-        return { error: { code: 409, message: 'คนนี้คอนเฟิร์มคิวแล้ว — ถ้าหลุดงานภายหลัง ให้ทีมแบรนด์ลบออกจากรายชื่อผู้รับงาน (ที่ว่างจะคืนให้ใบเอง)' } };
+        return { error: { code: 409, message: 'คนนี้ยืนยันคิวแล้ว — ถ้ามาไม่ได้ภายหลัง ให้ทีมแบรนด์ลบออกจากรายชื่อคนในงาน (ที่ว่างจะคืนให้ใบเอง)' } };
     }
     const why = clipText(reason, 300);
     const without = t.arr.filter((_, i) => i !== t.idx);
@@ -384,6 +387,95 @@ function mergeHireItems(current, incoming, { userId = null, at = now(), users = 
         result = releaseToRequest(result, prev, { reason: 'ถูกลบออกจากรายชื่อผู้รับงาน', actor, at });
     });
     return result;
+}
+
+// ===== เพิ่มคน 1 แถวจากฟอร์มสั้นหน้า Talent (POST /projects/:id/hires) =====
+// ฟอร์มสั้นมีสองแบบ: "มีคนแล้ว" (direct = รู้ชื่อคนแล้ว) กับ "ขอให้ช่วยหา" (casting = ใบขอให้หา)
+// รับเฉพาะช่องที่ฟอร์มกรอกได้ (whitelist) — ห้าม spread body ทั้งก้อน เพราะ mergeHireItems ส่งต่อทุกช่องที่ได้มาตรง ๆ
+// แล้วส่งแถวเดียวเข้า mergeHireItems([], ...) ให้ช่องที่ระบบเป็นคนตั้ง (รูป, booking, from_*, candidates, filled,
+// requested_by_id/at, คนช่วยหา) ได้กติกาเดียวกับฟอร์มเต็มเป๊ะ
+// ไม่ส่งแถวเดิมของงานเข้า merge ด้วย — ไม่งั้นใบเก่าที่ไม่มี requested_by จะถูกประทับเป็นคนกดบันทึกครั้งนี้
+// และแถวเก่าที่ key ซ้ำกันจะโดนเปลี่ยน key · key ชนกับของในฐานให้ store ตรวจใต้ล็อกแถว (projects.addHireItem)
+const HIRE_DIRECT_STATUS = ['ทาบทาม', 'ตกลงแล้ว', 'ถ่ายเสร็จ', 'ส่งงานแล้ว'];   // ค่าในฐาน (= HIRE_STATUS ฝั่งหน้าเว็บ)
+const NEED_FEE_MSG = 'ใส่ค่าตัวก่อน จึงจะตั้งเป็น "ตกลงแล้ว" ได้';                // ต้องตรงกับ NEED_FEE_MSG ฝั่งหน้าเว็บ (talentLabels.js)
+
+// วันที่ต้องเป็นวันที่มีอยู่จริงแบบ YYYY-MM-DD ไม่งั้นเป็นว่าง — วันใช้งานถูกเอาไปขยายช่วงวันของงาน (คอลัมน์ DATE)
+// ถ้าปล่อย '2026-02-31' ผ่านไป Postgres จะโยน error ทั้งคำขอ
+function realDate(v) {
+    if (!isDateStr(v)) return null;
+    const t = new Date(v + 'T00:00:00Z');
+    return Number.isFinite(t.getTime()) && t.toISOString().slice(0, 10) === v ? v : null;
+}
+
+function newHireRow(body, { userId = null, users = {}, actor = null, at = now() } = {}) {
+    const b = body && typeof body === 'object' && !Array.isArray(body) ? body : null;
+    if (!b) return { error: { code: 400, message: 'ข้อมูลไม่ถูกต้อง' } };
+    const mode = b.mode === 'casting' || b.mode === 'direct' ? b.mode : null;
+    if (!mode) return { error: { code: 400, message: 'เลือกก่อนว่า มีคนแล้ว หรือ ขอให้ช่วยหา' } };
+    // ช่องข้อความรับแค่สตริง/ตัวเลข (object ที่ปลอมมาจะไม่กลายเป็น "[object Object]") ตัดช่องว่างหัวท้ายและจำกัดความยาว
+    const text = (v, n) => (typeof v === 'string' || typeof v === 'number' ? clipText(v, n) : null);
+    const kind = text(b.kind, 100);
+    if (!kind) return { error: { code: 400, message: 'กรุณาระบุประเภทงาน' } };
+    const fee = cleanFee(b.fee);
+    let raw;
+    if (mode === 'direct') {
+        const name = text(b.name, 200);
+        if (!name) return { error: { code: 400, message: 'กรุณาระบุชื่อคน' } };
+        const want = text(b.status, 40);
+        const status = HIRE_DIRECT_STATUS.includes(want) ? want : HIRE_BOOKED;
+        // บันทึกคนที่ยังไม่รู้ค่าตัวได้ (กำลังคุย) แต่ "ตกลงแล้ว" และขั้นหลังจากนั้นต้องมีค่าตัว ไม่งั้นรอบทำจ่ายนับเป็นยอด 0
+        if (HIRE_PAYABLE.includes(status) && fee <= 0) return { error: { code: 400, message: NEED_FEE_MSG } };
+        raw = {
+            mode, kind, name,
+            contact: text(b.contact, 200), agency: text(b.agency, 200), qty: text(b.qty, 100),
+            fee, use_date: realDate(b.use_date), use_time: text(b.use_time, 60), place: text(b.place, 200),
+            link: text(b.link, 1000), note: text(b.note, 1000), status
+        };
+    } else {
+        raw = {
+            // ใบขอให้หาห้ามมีชื่อคน — hires.list() นับทุกแถวที่มีชื่อเป็น "คนที่เคยจ้าง"
+            mode, kind, name: null, contact: null, agency: null, qty: null, link: null,
+            fee,                                        // งบต่อคน (0 ได้ = ยังไม่กำหนดงบ)
+            headcount: b.headcount,                     // merge ปัดผ่าน cleanHeadcount (1…999)
+            spec: text(b.spec, 1000), deadline: realDate(b.deadline),
+            use_date: realDate(b.use_date), place: text(b.place, 200), note: text(b.note, 1000),
+            // คนช่วยหาต้องผ่านการตรวจกับฐานผู้ใช้ (users จาก route) ไม่งั้น merge ถอดออกเป็นว่าง
+            assignee_id: typeof b.assignee_id === 'string' || typeof b.assignee_id === 'number' ? b.assignee_id : null,
+            status: 'กำลังหา'                          // ใบใหม่เริ่มที่ "กำลังหา" เสมอ (หน้าเว็บตั้งสถานะใบเองไม่ได้)
+        };
+    }
+    const [item] = mergeHireItems([], [raw], { userId, users, actor, at });
+    return { item };
+}
+
+// ===== กติกา "ไม่มีค่าตัว ห้ามตกลงแล้ว" ของฟอร์มที่ส่งรายการจ้างมาทั้งก้อน (PUT /projects/:id, POST /projects) =====
+// คืนแถวแรกที่ผิดกติกา (หรือ null): แถวคนที่สถานะ ตกลงแล้ว/ถ่ายเสร็จ/ส่งงานแล้ว แต่ค่าตัว 0 และ "เพิ่งเป็นแบบนี้" ในการบันทึกครั้งนี้
+// = แถวใหม่ หรือสถานะเปลี่ยน หรือค่าตัวเปลี่ยน · แถวเก่าที่เป็นแบบนี้อยู่แล้วและไม่ได้แตะ ต้องผ่าน
+// (ไม่งั้นงานเก่าที่เคยบันทึกค่าตัว 0 ไว้ จะบันทึกอะไรในงานนั้นไม่ได้อีกเลย)
+// เทียบตัวตนแถวแบบเดียวกับ mergeHireItems: key เดียวกัน = แถวเดิม · key ว่าง / ซ้ำในก้อน = แถวใหม่
+function payableWithoutFee(currentItems, incomingItems) {
+    const cur = Array.isArray(currentItems) ? currentItems : [];
+    const byKey = new Map(cur.filter(it => it && it.key).map(it => [String(it.key), it]));
+    const seen = new Set();
+    const st = v => String(v == null ? '' : v).trim();
+    for (const raw of (Array.isArray(incomingItems) ? incomingItems : [])) {
+        if (!raw || typeof raw !== 'object' || Array.isArray(raw)) continue;
+        const key = raw.key ? String(raw.key) : '';
+        const prev = !key || seen.has(key) ? null : (byKey.get(key) || null);
+        if (key) seen.add(key);
+        if (raw.mode === 'casting') continue;
+        // ใบขอให้หาที่เดินงานไปแล้ว merge คงใบเดิมไว้ทั้งแถว — แถวคนที่ส่งมาแทนไม่ถูกบันทึกอยู่แล้ว
+        if (prev && prev.mode === 'casting'
+            && ((Number(prev.filled) || 0) > 0 || (Array.isArray(prev.candidates) && prev.candidates.length > 0))) continue;
+        const was = prev && prev.mode !== 'casting' ? prev : null;
+        // ระหว่างรอยืนยันคิว / รอตัดสินค่าตัวใหม่ merge ล็อกสถานะไว้ตามของเดิม — สถานะที่ส่งมาไม่มีผล
+        const locked = !!was && bookingOpen(was) && was.from_request != null
+            && cur.some(c => c && c.mode === 'casting' && String(c.key) === String(was.from_request));
+        const status = locked ? (st(was.status) || HIRE_BOOKED) : st(raw.status);
+        if (!HIRE_PAYABLE.includes(status) || cleanFee(raw.fee) > 0) continue;
+        if (!was || status !== st(was.status) || cleanFee(was.fee) !== cleanFee(raw.fee)) return raw;
+    }
+    return null;
 }
 
 // Platform ของกลุ่ม — รองรับทั้ง platforms[] แบบใหม่ และ platform เดี่ยว/ที่ติดอยู่กับ allocation แบบเดิม
@@ -735,6 +827,7 @@ module.exports = {
     HIRE_JOB_CLOSED, hireWaiting, hireNeedMore, hireStage,
     BOOK_PENDING, BOOK_FEE, BOOK_OK, HIRE_BOOKED, HIRE_AGREED, bookingState, bookingOpen, hireBookings,
     releaseToRequest, bookingConfirm, bookingFeeDecision, bookingUnavailable, hireBreakdown, pfmManagedSpend,
+    HIRE_PAYABLE, HIRE_DIRECT_STATUS, newHireRow, payableWithoutFee, isDateStr, clipText,
     resolveInside, sameInstant, mergeHireItems, mergeBriefFiles, cleanFee, cleanHeadcount, safeId, safeSlug,
     linkGroupPlatforms, resolveGroupClips, resolveGroupTarget, productCodesIn, carryProductTargets, carryProductBudgets, carryProductConcepts,
     resolveGroupProducts, resolveGroupCtype, resolveGroupMedia, resolveGroupCampaign,

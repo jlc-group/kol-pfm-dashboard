@@ -1,84 +1,31 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { api } from '../../api/client.js';
+import { useMemo, useState } from 'react';
 import Icon from '../../components/Icon.jsx';
-import HireRequestModal from '../../components/HireRequestModal.jsx';
-import { STAGE_LABEL } from '../../components/OtherProjectForm.jsx';
+import { T, STAGE_LABEL, baht } from '../../data/talentLabels.js';
+import { fmtD, whoShort, countsTip, candsOf, isUnavailNote } from './requestText.js';
 
-// แท็บ "ใบขอจัดหา" — คิวงานข้ามทุกงาน บอกว่าแต่ละใบ "ถึงตาใคร"
-// แท็บนี้ไม่มีปุ่มแก้/ลบ/อนุมัติของตัวเอง ทุกอย่างทำที่การ์ดของใบ (บ้านเดียวของการกระทำกับใบ):
-//  • คนที่มีสิทธิ์แบรนด์ → พาไปที่การ์ดในหน้างาน (เห็นงบและคนที่มีอยู่แล้วประกอบการอนุมัติ)
-//  • คนหาที่ไม่มีสิทธิ์แบรนด์ → เปิดการ์ดใบเดียวกันในกล่อง (เสนอชื่อได้อย่างเดียว)
-const B = n => '฿' + (Number(n) || 0).toLocaleString('th-TH');
-const fmtD = d => {
-    if (!d) return '—';
-    const [y, m, dd] = String(d).split('-');
-    return `${Number(dd)}/${Number(m)}/${String(y).slice(2)}`;
-};
+// แท็บ "ใบขอให้หา" — ตารางใบขอให้หาทุกใบข้ามงาน บอกว่าแต่ละใบ "ถึงตาใคร"
+// แท็บนี้แสดงอย่างเดียว: ข้อมูลมาจากหน้าแม่ (ชุดเดียวกับเลขแดง/หน้าหลัก) และกดแถวไหนก็เปิดลิ้นชักของใบนั้นบนหน้าเดิม
+// ทุกการกระทำกับใบทำในการ์ดของลิ้นชัก (บ้านเดียวของการกระทำกับใบ) — ไม่พาไปหน้างาน กดปิดแล้วกลับมาที่ตารางเดิม
+// ชื่อที่ไม่ได้ไปต่อ แยก "ทีมไม่เอา" กับ "คนนี้มาไม่ได้" (server เก็บเป็น status เดียวกัน ต่างกันที่ note)
+const rejectedOf = r => candsOf(r).filter(c => c && c.status === 'ไม่เอา' && !isUnavailNote(c.decided_note)).length;
+const unavailOf = r => candsOf(r).filter(c => c && c.status === 'ไม่เอา' && isUnavailNote(c.decided_note)).length;
+
 const MINE = [
     { key: 'todo', label: 'รอฉันทำ' },
-    { key: 'find', label: 'ที่ฉันต้องหา' },
+    { key: 'find', label: 'ที่ฉันช่วยหา' },
     { key: 'ask', label: 'ที่ฉันขอไว้' },
     { key: '', label: 'ทั้งหมด' }
 ];
 
-// ข้อความ "รอใคร" ของแต่ละใบ — เป็นเราเองให้เขียนว่า "คุณ" จะได้เห็นทันทีว่าต้องทำอะไร
-function waitingText(r) {
-    const todo = r.todo || [];
-    if (todo.includes('fee')) return `คุณ · อนุมัติค่าตัวใหม่ ${r.fee_review} คน`;
-    if (todo.includes('confirm') && !todo.includes('find')) return `คุณ · คอนเฟิร์มคิว ${r.booking_pending} คน`;
-    if (r.stage === 'deciding' && todo.includes('find')) return `คุณ · หาเพิ่มอีก ${r.need_more} คน`;
-    if (r.stage === 'booking') {
-        // ใบที่ไม่มีคนหา → ทีมแบรนด์ (คนขอ) คอนเฟิร์มเอง
-        const noFinder = r.assignee_id == null || r.assignee_id === '';
-        return `${r.is_assignee || (noFinder && r.is_requester) ? 'คุณ' : noFinder ? 'ทีมแบรนด์' : (r.assignee_name || 'คนหา')} · คอนเฟิร์มคิว`;
-    }
-    if (r.stage === 'fee') return 'ทีมแบรนด์ · อนุมัติค่าตัวใหม่';
-    if (r.waiting_on === 'assign') return r.is_requester ? 'คุณ · มอบหมายคนหา' : 'ทีมแบรนด์ · มอบหมายคนหา';
-    if (r.waiting_on === 'finder') return r.is_assignee ? 'คุณ · หาคน' : `${r.assignee_name || 'คนหา'} · หาคน`;
-    if (r.waiting_on === 'team') return r.is_requester ? 'คุณ · อนุมัติชื่อ' : 'ทีมแบรนด์ · อนุมัติชื่อ';
-    return '—';
-}
-
-export default function RequestsTab({ counts, hasBrand = true }) {
-    const navigate = useNavigate();
-    const [params, setParams] = useSearchParams();
-    const [data, setData] = useState(null);
-    const [error, setError] = useState('');
+export default function RequestsTab({ tasks, loading = false, error = '', hasBrand = true, onOpen, onNewRequest }) {
     const [search, setSearch] = useState('');
     const [brand, setBrand] = useState('');
     const [mine, setMine] = useState(null);          // null = ยังไม่ได้เลือก (ตั้งตามข้อมูลตอนโหลดเสร็จ)
     const [hideDone, setHideDone] = useState(true);
-    const [open, setOpen] = useState(null);          // ใบที่เปิดในกล่อง (คนหาที่ไม่มีสิทธิ์แบรนด์)
 
-    const load = useCallback(() => {
-        api('/hires/tasks').then(res => { setData(res.data); setError(''); }).catch(err => setError(err.message));
-    }, []);
-    useEffect(() => { load(); }, [load]);
-    // ตัวเลขแดงเปลี่ยน (เช่นมีคนเสนอชื่อ/อนุมัติจากที่อื่น) → โหลดคิวใหม่ด้วย ไม่ให้เลขกับตารางไม่ตรงกัน
-    useEffect(() => {
-        window.addEventListener('kol:hire-tasks-changed', load);
-        return () => window.removeEventListener('kol:hire-tasks-changed', load);
-    }, [load]);
-
-    const rows = data?.rows || [];
+    const rows = (tasks && tasks.rows) || [];
     const todoCount = rows.filter(r => r.my_todo).length;
     const current = mine === null ? (todoCount > 0 ? 'todo' : '') : mine;
-
-    // ลิงก์ที่คัดลอกจากการ์ด (?open=<งาน>~<ใบ>) — คนมีสิทธิ์แบรนด์ไปที่การ์ดในหน้างาน · คนหาเปิดกล่อง
-    const openParam = params.get('open');
-    useEffect(() => {
-        if (!openParam || !data) return;
-        const [pid, key] = String(openParam).split('~');
-        const hit = rows.find(r => String(r.project_id) === pid && String(r.key) === key);
-        if (!hit) {
-            setError('ไม่พบใบขอจัดหาจากลิงก์นี้ — ใบอาจถูกลบไปแล้ว หรือคุณไม่มีสิทธิ์เปิดใบนี้');
-            setParams({ tab: 'requests' }, { replace: true });
-            return;
-        }
-        if (hit.in_brand) navigate(`/projects/${hit.project_id}#req-${hit.key}`, { replace: true });
-        else setOpen(hit);
-    }, [openParam, data]);   // eslint-disable-line react-hooks/exhaustive-deps
 
     const q = search.trim().toLowerCase();
     const matchBase = r => (!brand || r.brand === brand)
@@ -97,29 +44,23 @@ export default function RequestsTab({ counts, hasBrand = true }) {
     const waiting = shown.reduce((n, r) => n + (r.remaining > 0 && r.stage !== 'closed' ? Number(r.waiting_count) || 0 : 0), 0);
     const overdue = shown.filter(r => r.overdue).length;
     const brandOptions = [...new Set(rows.map(r => r.brand).filter(Boolean))].sort();
+    const reason = tasks ? countsTip(tasks.counts) : '';
 
-    function closeModal() {
-        setOpen(null);
-        if (openParam) setParams({ tab: 'requests' }, { replace: true });
-    }
-
-    const reason = counts
-        ? [counts.to_find ? `หาคน ${counts.to_find}` : '', counts.to_decide ? `อนุมัติชื่อ ${counts.to_decide}` : '', counts.to_assign ? `มอบหมายคนหา ${counts.to_assign}` : '',
-            counts.to_confirm ? `คอนเฟิร์มคิว ${counts.to_confirm}` : '', counts.to_fee ? `อนุมัติค่าตัวใหม่ ${counts.to_fee}` : '']
-            .filter(Boolean).join(' · ')
-        : '';
+    const open = r => onOpen && onOpen(r);
 
     return (
         <div className="hub-tab">
             <div className="hub-toolbar">
+                {hasBrand && onNewRequest && (
+                    <button type="button" className="btn-primary" onClick={onNewRequest}>
+                        <Icon name="plus" size={16} /> ขอให้ช่วยหาคน
+                    </button>
+                )}
                 <div className="ka-search">
                     <Icon name="search" size={15} />
-                    <input value={search} onChange={e => setSearch(e.target.value)} placeholder="ค้นหางาน / ประเภทงาน / สเปค / คนหา..." />
+                    <input value={search} onChange={e => setSearch(e.target.value)} placeholder={`ค้นหางาน / ประเภทงาน / สเปค / ${T.finder}...`} />
                     {search && <button type="button" className="ka-search-x" onClick={() => setSearch('')} title="ล้างคำค้นหา">✕</button>}
                 </div>
-                {hasBrand && (
-                    <span className="hub-hint">เปิดใบขอจัดหาใหม่ได้ในงาน: แท็บงานจ้าง → เปิดงาน → แก้ไข / เพิ่มคน → เลือก "ให้ช่วยจัดหา"</span>
-                )}
             </div>
 
             {error && <div className="alert-error">{error}</div>}
@@ -129,21 +70,21 @@ export default function RequestsTab({ counts, hasBrand = true }) {
                     <div className="ka-sum-ico"><Icon name="folder" size={22} /></div>
                     <div>
                         <div className="ka-sum-k">ใบที่แสดง</div>
-                        <div className="ka-sum-v">{data ? shown.length : '—'}</div>
+                        <div className="ka-sum-v">{tasks ? shown.length : '—'}</div>
                     </div>
                 </div>
                 <div className="ka-sum-card">
                     <div className="ka-sum-ico blue"><Icon name="team" size={22} /></div>
                     <div>
-                        <div className="ka-sum-k">ยังต้องหาอีก / ชื่อรออนุมัติ</div>
-                        <div className="ka-sum-v">{data ? `${needed} คน / ${waiting} ชื่อ` : '—'}</div>
+                        <div className="ka-sum-k">ยังต้องหาอีก / ชื่อรอเลือก</div>
+                        <div className="ka-sum-v">{tasks ? `${needed} คน / ${waiting} ชื่อ` : '—'}</div>
                     </div>
                 </div>
                 <div className="ka-sum-card">
                     <div className="ka-sum-ico amber"><Icon name="history" size={22} /></div>
                     <div>
                         <div className="ka-sum-k">เลยกำหนดส่งรายชื่อ</div>
-                        <div className="ka-sum-v">{data ? `${overdue} ใบ` : '—'}</div>
+                        <div className="ka-sum-v">{tasks ? `${overdue} ใบ` : '—'}</div>
                     </div>
                 </div>
             </div>
@@ -178,52 +119,53 @@ export default function RequestsTab({ counts, hasBrand = true }) {
 
             <div className="panel no-pad">
                 <div className="ka-table-scroll">
-                    <table className="data-table tasks-table">
+                    <table className="data-table tasks-table th-req-table">
                         <thead>
                             <tr>
                                 <th>ขั้นตอน</th><th>รอใคร</th><th>งาน</th><th>ประเภทงาน</th>
                                 <th className="num">ต้องหาอีก</th><th className="num">งบต่อคน</th>
-                                <th>วันใช้งาน</th><th>กำหนดส่งรายชื่อ</th><th>คนหา</th><th>ชื่อที่เสนอ</th><th></th>
+                                <th>วันใช้งาน</th><th>กำหนดส่งรายชื่อ</th><th>{T.finder}</th><th>ชื่อที่ส่งมา</th><th></th>
                             </tr>
                         </thead>
                         <tbody>
-                            {!data ? (
-                                <tr><td colSpan="11" className="empty">กำลังโหลด...</td></tr>
+                            {!tasks ? (
+                                <tr><td colSpan="11" className="empty">{loading ? 'กำลังโหลด...' : '—'}</td></tr>
                             ) : shown.length === 0 ? (
                                 <tr><td colSpan="11" className="empty">
                                     {rows.some(r => matchMine(r, current)) && current !== 'todo'
                                         // มีใบอยู่แต่ถูกซ่อน/กรองออก — อย่าบอกว่า "ยังไม่มีใบ"
                                         ? (hideDone ? 'ไม่พบใบตามเงื่อนไขที่เลือก — ใบที่ได้ครบแล้ว / งานปิดแล้วถูกซ่อนอยู่ (เอาติ๊กออกเพื่อดู)' : 'ไม่พบใบตามเงื่อนไขที่เลือก')
                                         : current === 'todo' ? 'ไม่มีใบที่ถึงตาคุณตอนนี้'
-                                            : current === 'find' ? 'ยังไม่มีใบขอจัดหาที่มอบหมายให้คุณ'
-                                                : current === 'ask' ? 'คุณยังไม่ได้เปิดใบขอจัดหาไว้'
-                                                    : !hasBrand ? 'ยังไม่มีใบขอจัดหาที่มอบหมายให้คุณ'
-                                                        : 'ยังไม่มีใบขอจัดหา — เปิดได้ในงาน: แท็บงานจ้าง → เปิดงาน → แก้ไข / เพิ่มคน → เลือก "ให้ช่วยจัดหา"'}
+                                            : current === 'find' || !hasBrand ? `ยังไม่มี${T.request}ที่มอบให้คุณช่วยหา`
+                                                : current === 'ask' ? 'คุณยังไม่ได้ขอให้ช่วยหาคน'
+                                                    : `ยังไม่มี${T.request} — กด "ขอให้ช่วยหาคน" ด้านบนได้เลย`}
                                 </td></tr>
                             ) : shown.map(r => (
-                                <tr key={`${r.project_id}-${r.key}`} className={r.my_todo ? 'row-todo' : ''}>
+                                // ทั้งแถวกดได้ (และกด Enter ได้ตอนเลื่อนโฟกัสมาถึง) → เปิดลิ้นชักของใบ
+                                <tr key={`${r.project_id}-${r.key}`} className={'th-row-link' + (r.my_todo ? ' row-todo' : '')}
+                                    tabIndex={0} onClick={() => open(r)}
+                                    onKeyDown={e => { if (e.key === 'Enter' && e.target === e.currentTarget) { e.preventDefault(); open(r); } }}
+                                    aria-label={`เปิด${T.request} ${r.kind || ''} ${r.project_name || ''}`}>
                                     <td>
                                         <span className={'stage-chip st-' + r.stage}>{STAGE_LABEL[r.stage] || r.stage}</span>
                                         {r.overdue && <span className="stage-chip st-late">เลยกำหนด</span>}
                                     </td>
                                     <td className={r.my_todo ? 'req-mine' : 'muted'}>
-                                        {waitingText(r)}
+                                        {whoShort(r)}
                                         {r.stage === 'deciding' && (r.todo || []).includes('find') ? (
-                                            <span className="cast-sub">ทีมแบรนด์กำลังพิจารณา {r.waiting_count} ชื่อ</span>
+                                            <span className="cast-sub">ทีมแบรนด์กำลังเลือกจาก {r.waiting_count} ชื่อ</span>
                                         ) : r.stage === 'deciding' && r.need_more > 0 ? (
-                                            <span className="cast-sub">คนหายังต้องหาเพิ่มอีก {r.need_more} คน</span>
+                                            <span className="cast-sub">{T.finder}ยังต้องหาเพิ่มอีก {r.need_more} คน</span>
                                         ) : null}
-                                        {/* ใบที่ยังขาดคนแต่มีคนที่อนุมัติแล้วรอคอนเฟิร์มอยู่ด้วย — บอกไว้ไม่ให้หลุดสายตา */}
+                                        {/* ใบที่ยังขาดคนแต่มีคนที่เลือกแล้วรอยืนยันคิวอยู่ด้วย — บอกไว้ไม่ให้หลุดสายตา */}
                                         {r.stage !== 'booking' && r.stage !== 'fee' && r.stage !== 'closed' && (r.booking_pending > 0 || r.fee_review > 0) && (
                                             <span className="cast-sub">
-                                                {[r.booking_pending ? `รอคอนเฟิร์มคิว ${r.booking_pending} คน` : '', r.fee_review ? `รออนุมัติค่าตัวใหม่ ${r.fee_review} คน` : ''].filter(Boolean).join(' · ')}
+                                                {[r.booking_pending ? `รอ${T.confirmQueue} ${r.booking_pending} คน` : '', r.fee_review ? `รอตัดสินค่าตัวใหม่ ${r.fee_review} คน` : ''].filter(Boolean).join(' · ')}
                                             </span>
                                         )}
                                     </td>
                                     <td>
-                                        {r.in_brand
-                                            ? <Link className="act-project" to={`/projects/${r.project_id}`}>{r.project_name}</Link>
-                                            : <span title="งานของแบรนด์อื่น — เปิดใบเพื่อดูรายละเอียดของใบนี้">{r.project_name}</span>}
+                                        <span className="th-proj-name">{r.project_name}</span>
                                         {r.brand && <span className="cast-sub">{r.brand}</span>}
                                     </td>
                                     <td>{r.kind ? <span className="proc-ctype-chip">{r.kind}</span> : <span className="muted">—</span>}</td>
@@ -231,30 +173,26 @@ export default function RequestsTab({ counts, hasBrand = true }) {
                                         {r.remaining > 0 ? <strong>{r.remaining}</strong> : <span className="muted">ครบแล้ว</span>}
                                         <span className="cast-sub">จาก {r.headcount} คน</span>
                                     </td>
-                                    <td className="num">{B(r.fee)}</td>
-                                    <td className="muted">{fmtD(r.use_date)}</td>
-                                    <td className={r.overdue ? 'req-late' : 'muted'}>{fmtD(r.deadline)}</td>
-                                    <td className="muted">{r.assignee_name || <span className="ctype-none">— ยังไม่มอบหมาย —</span>}</td>
+                                    <td className="num">{baht(r.fee)}</td>
+                                    <td className="muted">{fmtD(r.use_date) || '—'}</td>
+                                    <td className={r.overdue ? 'req-late' : 'muted'}>{fmtD(r.deadline) || '—'}</td>
+                                    <td className="muted">{r.assignee_name || <span className="ctype-none">— ยังไม่ได้เลือก —</span>}</td>
                                     <td>
                                         {r.candidate_count > 0 ? (
                                             <span className={'tag' + (r.waiting_count && r.remaining > 0 ? ' warn' : '')}>
                                                 {r.candidate_count} ชื่อ
-                                                {r.waiting_count && r.remaining > 0 && r.stage !== 'closed' ? ` · รออนุมัติ ${r.waiting_count}` : ''}
-                                                {r.waiting_count && r.remaining <= 0 ? ` · ตัวสำรอง ${r.waiting_count}` : ''}
-                                                {r.rejected_count ? ` · ไม่ผ่าน ${r.rejected_count}` : ''}
+                                                {r.waiting_count && r.remaining > 0 && r.stage !== 'closed' ? ` · รอเลือก ${r.waiting_count}` : ''}
+                                                {r.waiting_count && r.remaining <= 0 ? ` · ${T.spare} ${r.waiting_count}` : ''}
+                                                {rejectedOf(r) ? ` · ${T.reject} ${rejectedOf(r)}` : ''}
+                                                {unavailOf(r) ? ` · มาไม่ได้ ${unavailOf(r)}` : ''}
                                             </span>
                                         ) : <span className="muted">—</span>}
                                     </td>
                                     <td>
-                                        {r.in_brand ? (
-                                            <Link className="btn-ghost req-go" to={`/projects/${r.project_id}#req-${r.key}`}>
-                                                ไปที่ใบ →
-                                            </Link>
-                                        ) : (
-                                            <button type="button" className="btn-ghost req-go" onClick={() => setOpen(r)}>
-                                                เปิดใบ / เสนอชื่อ
-                                            </button>
-                                        )}
+                                        <button type="button" className="btn-ghost req-go"
+                                            onClick={e => { e.stopPropagation(); open(r); }}>
+                                            เปิดใบ
+                                        </button>
                                     </td>
                                 </tr>
                             ))}
@@ -262,11 +200,6 @@ export default function RequestsTab({ counts, hasBrand = true }) {
                     </table>
                 </div>
             </div>
-
-            {open && (
-                <HireRequestModal request={open} canDecide={false} canPropose
-                    onClose={closeModal} onSaved={load} />
-            )}
         </div>
     );
 }

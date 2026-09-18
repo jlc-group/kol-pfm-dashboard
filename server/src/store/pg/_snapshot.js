@@ -96,7 +96,7 @@ async function loadSnapshot(only) {
     const snap = {
         teams: [], users: [], kols: [], projects: [], project_kols: [],
         submissions: [], payments: [], installments: [], pay_batches: [],
-        rate_requests: [], activity_logs: [], other_projects: []
+        rate_requests: [], activity_logs: [], other_projects: [], user_names: []
     };
     const simple = {
         teams: 'SELECT * FROM teams ORDER BY id',
@@ -110,6 +110,8 @@ async function loadSnapshot(only) {
         rate_requests: 'SELECT * FROM rate_requests ORDER BY id',
         // หน้างานจ้างอื่น ๆ / งานจัดหา / ตัวเลขแดงบนเมนู ใช้แค่นี้ — ไม่ต้องโหลดลิงก์/แชทเอเจนซี่ทั้งฐานแบบ projects
         other_projects: "SELECT id, name, brand, status, owner, creator, start_date, end_date, campaign_type, hire_items, created_at, updated_at FROM projects WHERE campaign_type = 'other' ORDER BY id",
+        // แค่ชื่อที่ใช้โชว์ (ไม่มีรหัสผ่าน/สิทธิ์) — หน้า Talent ใช้บอกว่า "ใครขอ" ไม่ต้องลาก users ทั้งแถวที่มี password_hash ออกมา
+        user_names: 'SELECT id, username, full_name, nickname FROM users ORDER BY id',
         activity_logs: 'SELECT * FROM activity_logs ORDER BY id'
     };
     const jobs = [];

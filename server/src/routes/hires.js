@@ -32,7 +32,7 @@ router.get('/jobs', async (req, res, next) => {
     } catch (err) { next(err); }
 });
 
-// GET /api/hires/tasks — ใบขอจัดหา (งานที่ต้องหาคน) เท่าที่ตัวเองมีสิทธิ์เห็น
+// GET /api/hires/tasks — ใบขอให้หา (งานที่ต้องหาคน) เท่าที่ตัวเองมีสิทธิ์เห็น · แต่ละใบมีชื่อคนขอ (requested_by_name) และเวลาที่ขอ
 // mine=todo (ถึงตาฉัน) · mine=find (งานที่ฉันต้องหา) · mine=ask (ใบที่ฉันขอไว้) · ไม่ส่ง = ทั้งหมดที่เห็นได้
 router.get('/tasks', async (req, res, next) => {
     try {
@@ -50,11 +50,13 @@ router.get('/tasks', async (req, res, next) => {
 });
 
 // GET /api/hires/tasks/count — ตัวเลขแดงบนเมนู (ส่งแค่จำนวน ไม่ต้องลากรายการทั้งหมดไปหน้าเว็บทุกนาที)
+// ทุกหน้าเรียกเส้นนี้ทุก 60 วินาที — ไม่โหลดชื่อผู้ใช้ (withNames: false) เพราะตัวเลขไม่ต้องใช้
 router.get('/tasks/count', async (req, res, next) => {
     try {
         const data = await store.hires.tasks({
             userId: req.user.id,
-            scopeBrands: allowedBrands(req.account || req.user)
+            scopeBrands: allowedBrands(req.account || req.user),
+            withNames: false
         });
         res.json({ status: 'success', data: data.counts });
     } catch (err) { next(err); }

@@ -73,10 +73,10 @@ export default function Layout() {
                 setTaskCount(c.total || 0);
                 setTaskTip([
                     c.to_find ? `หาคน ${c.to_find}` : '',
-                    c.to_decide ? `อนุมัติชื่อ ${c.to_decide}` : '',
-                    c.to_assign ? `มอบหมายคนหา ${c.to_assign}` : '',
-                    c.to_confirm ? `คอนเฟิร์มคิว ${c.to_confirm}` : '',
-                    c.to_fee ? `อนุมัติค่าตัวใหม่ ${c.to_fee}` : ''
+                    c.to_decide ? `เลือกชื่อ ${c.to_decide}` : '',
+                    c.to_assign ? `เลือกคนช่วยหา ${c.to_assign}` : '',
+                    c.to_confirm ? `ยืนยันคิว ${c.to_confirm}` : '',
+                    c.to_fee ? `ตัดสินค่าตัวใหม่ ${c.to_fee}` : ''
                 ].filter(Boolean).join(' · '));
             })
             .catch(() => {});
@@ -121,7 +121,7 @@ export default function Layout() {
                     <span className="nav-badge" title={`มี ${pendingCount} คนรออนุมัติ`}>{pendingCount}</span>
                 )}
                 {item.to === '/hires' && taskCount > 0 && (
-                    <span className="nav-badge" title={`ใบขอจัดหาที่ถึงตาคุณ ${taskCount} ใบ${taskTip ? ` (${taskTip})` : ''}`}>{taskCount}</span>
+                    <span className="nav-badge" title={`ใบขอให้หาที่ถึงตาคุณ ${taskCount} ใบ${taskTip ? ` (${taskTip})` : ''}`}>{taskCount}</span>
                 )}
             </NavLink>
         );

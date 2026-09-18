@@ -664,3 +664,30 @@ test('hires list filters by kind, brand, search and date range', async () => {
     assert.equal(mali.jobs, 1);
     assert.equal(mali.avg_fee, 15000);
 });
+
+test('people saved before the fee is agreed do not count as a ฿0 fee in the hired-before list', async () => {
+    const saved = FIXTURE.other_projects;
+    FIXTURE.other_projects = [{
+        id: 91, name: 'งาน ก', brand: 'Jdent', status: 'Active', campaign_type: 'other', start_date: null, end_date: null,
+        hire_items: [
+            { key: 'a1', mode: 'direct', kind: 'นางแบบ', name: 'มายด์', fee: 8000, status: 'ตกลงแล้ว', use_date: '2026-09-01' },
+            // งานใหม่กว่า บันทึกไว้ตอนยังคุยราคา (ยังไม่มีค่าตัว)
+            { key: 'a2', mode: 'direct', kind: 'นางแบบ', name: 'มายด์', fee: 0, status: 'ทาบทาม', use_date: '2026-10-01' },
+            { key: 'a3', mode: 'direct', kind: 'พิธีกร', name: 'เจ', fee: 0, status: 'ทาบทาม', use_date: '2026-10-02' }
+        ]
+    }];
+    try {
+        const rows = (await hires.list({})).rows;
+        const mind = rows.find(r => r.name === 'มายด์');
+        assert.equal(mind.jobs, 2);                 // ยังนับว่าเคยจ้าง 2 งาน
+        assert.equal(mind.last_fee, 8000);          // ค่าตัวล่าสุดที่ใส่จริง ไม่ใช่ ฿0
+        assert.equal(mind.avg_fee, 8000);           // เฉลี่ยจากงานที่มีค่าตัวเท่านั้น
+        assert.equal(mind.last_date, '2026-10-01'); // วันล่าสุดยังเป็นงานล่าสุดจริง
+        const jay = rows.find(r => r.name === 'เจ');
+        assert.equal(jay.last_fee, 0);
+        assert.equal(jay.avg_fee, 0);
+        assert.equal(jay.fee_jobs, 0);
+    } finally {
+        FIXTURE.other_projects = saved;
+    }
+});
