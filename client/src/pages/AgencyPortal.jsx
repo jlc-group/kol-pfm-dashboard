@@ -560,6 +560,8 @@ export default function AgencyPortal() {
             snap[s.id] = {
                 fb: [s.feedback, s.feedback2, s.feedback3, s.feedback4, s.feedback5].map(x => x || '').join('¦'),
                 st: s.draft_status || '',
+                pc: s.post_check || '',
+                pcNote: s.post_check_note || '',
                 name: s.account_name
             };
         });
@@ -568,6 +570,10 @@ export default function AgencyPortal() {
             subs.forEach(s => {
                 const p = prev[s.id]; const c = snap[s.id];
                 if (!p) return;
+                // ทีมส่งข้อมูลโพสต์กลับให้แก้ — เด้งเสมอ (อยู่แท็บไหนก็เห็น)
+                if (c.pc === 'returned' && p.pc !== 'returned') {
+                    pushToast(`↩ ทีมให้แก้ข้อมูลโพสต์: ${c.name}${c.pcNote ? ' — ' + c.pcNote : ''} (ดูที่แท็บ On Process)`, 'warn');
+                }
                 if (c.fb !== p.fb && c.fb.replace(/¦/g, '').trim()) {
                     pushToast(`💬 มี Feedback ใหม่จากทีม: ${c.name} — เปิด View Draft เพื่อดู`, 'fb');
                 } else if (c.st !== p.st && c.st) {
@@ -773,6 +779,12 @@ export default function AgencyPortal() {
                     </button>
                     <button className={tab === 'process' ? 'active' : ''} onClick={() => setTab('process')}>
                         On Process {subs.filter(s => s.status === 'confirmed').length > 0 && <span className="agency-tab-count">{subs.filter(s => s.status === 'confirmed').length}</span>}
+                        {/* ทีมส่งข้อมูลโพสต์กลับให้แก้ — ป้ายค้างจนกว่าจะแก้ (เปิดหน้าใหม่ก็ยังเห็น) */}
+                        {subs.some(s => s.status === 'confirmed' && s.post_check === 'returned') && (
+                            <span className="tab-check-count returned" title="ทีมส่งข้อมูลโพสต์กลับให้แก้">
+                                ให้แก้ {subs.filter(s => s.status === 'confirmed' && s.post_check === 'returned').length}
+                            </span>
+                        )}
                         {badges.processNew && <span className="tab-new-dot" title="มีอัปเดตใหม่" />}
                     </button>
                 </div>

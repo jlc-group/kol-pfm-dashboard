@@ -6,6 +6,7 @@
  */
 const fs = require('fs');
 const path = require('path');
+const { nextPostCheck, postCheckDecision, postCheckWaiting, POST_CHECK_OPEN, sameInstant: sameInstantPC } = require('./logic');
 
 const DATA_DIR = path.join(__dirname, '..', '..', 'data');
 const DATA_FILE = path.join(DATA_DIR, 'db.json');
@@ -1416,9 +1417,10 @@ const submissions = {
         return head;
     },
     // อัปเดตได้ทั้งสถานะคัดเลือก + ข้อมูลดราฟงาน
-    async update(subId, projectId, fields, byName) {
+    async update(subId, projectId, fields, byName, opts = {}) {
         const s = db.submissions.find(x => x.id === Number(subId) && (projectId == null || x.project_id === Number(projectId)));
         if (!s) return null;
+        const prevRow = { ...s };   // แถวก่อนแก้ — ตัดสินสถานะตรวจข้อมูลโพสต์
         // ช่องที่บันทึกว่าใครแก้ล่าสุดเมื่อไหร่
         // post_date อยู่ในนี้ด้วย เพราะต้องรู้ว่า "แจ้งวันลงงานเข้าระบบตอนไหน"
         // เทียบกับวันที่ลงงานจริง จะได้แยกออกว่ายิงแอดช้าเพราะเราช้า หรือเพราะเพิ่งได้รับแจ้ง
@@ -1471,6 +1473,27 @@ const submissions = {
         // เช็คทุกครั้งที่ข้อมูลขยับ — ค่าแอดถึงเกณฑ์แล้วและมีผลงานให้ตัดสิน ก็สแตมป์ทันที
         // (กรอกผลงานทีหลังก็สแตมป์ตอนนั้น ไม่ต้องรอให้ค่าแอดขยับอีกรอบ)
         maybeStamp(s);
+        const check = nextPostCheck(prevRow, s, opts && opts.actor, byName, now());
+        if (check) Object.assign(s, check);
+        persist();
+        return clone(s);
+    },
+    async setPostCheck(subId, projectId, action, note, byName, seenAt) {
+        const s = db.submissions.find(x => x.id === Number(subId) && x.project_id === Number(projectId));
+        const patch = postCheckDecision(action, note, byName, now());
+        if (!s || !patch) return null;
+        if (!POST_CHECK_OPEN.includes(s.post_check) || !sameInstantPC(s.post_check_at, seenAt)) {
+            const e = new Error('ข้อมูลโพสต์เพิ่งถูกแก้หรือมีคนตรวจไปแล้ว — โหลดค่าล่าสุดแล้วตรวจอีกครั้ง');
+            e.status = 409;
+            throw e;
+        }
+        if (action === 'return' && s.post_check === 'changed') {
+            const e = new Error('โพสต์นี้ยิงแอดแล้ว ส่งกลับไม่ได้ (จะหลุดจากหน้า Ads) — ถ้าค่าผิดให้กดแก้ไขในแถวนี้เอง');
+            e.status = 409;
+            throw e;
+        }
+        if (action === 'return') patch.work_updated_at = now();
+        Object.assign(s, patch);
         persist();
         return clone(s);
     },
@@ -1575,6 +1598,7 @@ const ads = {
                     gencode_at: s.gencode_at || null, gencode_by: s.gencode_by || null,
                     id_post_at: s.id_post_at || null, id_post_by: s.id_post_by || null,
                     post_date_at: s.post_date_at || null, post_date_by: s.post_date_by || null,
+                    post_check: s.post_check || null,
                     project_id: s.project_id,
                     project_name: p ? p.name : null,
                     brand: p ? (p.brand || 'อื่นๆ') : 'อื่นๆ',
@@ -1626,6 +1650,9 @@ const ads = {
 
         rows = scopeProjects(rows, scopeBrands);
         if (brand) rows = rows.filter(r => r.brand === brand);
+        // โพสต์ที่ยังรอทีมตรวจยังไม่ขึ้นหน้า Ads — กติกาเดียวกับ pg
+        const checkWaiting = rows.filter(postCheckWaiting);
+        rows = rows.filter(r => !postCheckWaiting(r));
         if (status) rows = rows.filter(r => r.ad_status === status);
         if (from) rows = rows.filter(r => !r.post_date || r.post_date >= from);
         if (to) rows = rows.filter(r => !r.post_date || r.post_date <= to);
@@ -1654,6 +1681,15 @@ const ads = {
                 total_posts: rows.length,
                 done_count: doneCount,
                 pending_count: rows.length - doneCount,
+                check_waiting: checkWaiting.length,
+                check_pending: checkWaiting.filter(r => r.post_check === 'pending').length,     // รอทีมตรวจ
+                check_returned: checkWaiting.filter(r => r.post_check === 'returned').length,   // รอเอเจนซี่แก้
+                check_waiting_projects: Object.values(checkWaiting.reduce((m, r) => {
+                    m[r.project_id] = m[r.project_id] || { project_id: r.project_id, project_name: r.project_name, count: 0, pending: 0, returned: 0 };
+                    m[r.project_id].count += 1;
+                    m[r.project_id][r.post_check === 'returned' ? 'returned' : 'pending'] += 1;
+                    return m;
+                }, {})),
                 total_spend: totalSpend,
                 total_reach: totalReach,
                 cpm: adCpm(totalSpend, totalReach),

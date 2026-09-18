@@ -408,7 +408,9 @@ export default function ProjectDetail() {
     const [newLinkKol, setNewLinkKol] = useState('');
     const [copiedToken, setCopiedToken] = useState('');
     const [stage, setStage] = useState('all');   // ตัวกรองขั้นงานจากการ์ดสรุป
-    const [subTab, setSubTab] = useState('list');
+    // ลิงก์จากหน้า Ads (?tab=process&check=1) เปิดแท็บ On Process พร้อมตัวกรอง "รอตรวจ"
+    const [subTab, setSubTab] = useState(() => (new URLSearchParams(window.location.search).get('tab') === 'process' ? 'process' : 'list'));
+    const [openCheckOnly] = useState(() => new URLSearchParams(window.location.search).get('check') === '1');
     // กรองรายชื่อตาม Platform — โชว์เมื่อแคมเปญมีมากกว่า 1 Platform
     const [listPlat, setListPlat] = useState('all');
     // กรองย่อยตาม Content Type ในแพลตฟอร์มนั้น (เช่น Facebook มี Awareness / Engagement)
@@ -1336,6 +1338,12 @@ export default function ProjectDetail() {
                 </button>
                 <button className={subTab === 'process' ? 'active' : ''} onClick={() => setSubTab('process')}>
                     On Process {submissions.filter(s => s.status === 'confirmed').length > 0 && <span className="agency-tab-count">{submissions.filter(s => s.status === 'confirmed').length}</span>}
+                    {/* ข้อมูลโพสต์ที่เอเจนซี่ส่งมารอทีมตรวจ (ยังไม่ขึ้นหน้า Ads) */}
+                    {submissions.some(s => s.status === 'confirmed' && (s.post_check === 'pending' || s.post_check === 'changed')) && (
+                        <span className="tab-check-count" title="ข้อมูลโพสต์ที่เอเจนซี่ส่งมา/แก้ รอทีมตรวจ">
+                            รอตรวจ {submissions.filter(s => s.status === 'confirmed' && (s.post_check === 'pending' || s.post_check === 'changed')).length}
+                        </span>
+                    )}
                     {badges.processNew && <span className="tab-new-dot" title="มีอัปเดตใหม่" />}
                 </button>
             </div>
@@ -1428,6 +1436,12 @@ export default function ProjectDetail() {
                         <div className="panel">
                             <OnProcessTable subs={submissions} groups={project.ad_groups || []} showAds scope={id}
                                 putSubmission={putSubmission} reload={loadSubs}
+                                initialCheckOnly={openCheckOnly}
+                                onPostCheck={async (subId, action, note, seenAt) => {
+                                    // โหลดใหม่เสมอ — ถ้าได้ 409 (เอเจนซี่แก้แทรก) ทีมจะเห็นค่าล่าสุดก่อนตรวจอีกรอบ
+                                    try { await api(`/projects/${id}/submissions/${subId}/post-check`, { method: 'POST', body: { action, note, seen_at: seenAt } }); }
+                                    finally { loadSubs(); }
+                                }}
                                 stage={stage} onClearStage={() => setStage('all')} />
                         </div>
                     </>

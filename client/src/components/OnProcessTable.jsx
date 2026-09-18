@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { workStage, STAGES } from '../data/workStage.js';
 import Icon from './Icon.jsx';
 import DatePicker from './DatePicker.jsx';
@@ -20,7 +20,14 @@ const NO_IDPOST = ['Facebook', 'Lemon8', 'YouTube', 'X'];
 
 // แถวตาราง On Process — อัปเดตงานของ KOL ที่ถูกคัดเลือกแล้ว
 // putSubmission(subId, payload) = ผู้เรียกเป็นคนยิง API (agency ใช้ token / ทีมใช้ /projects)
-function ProcessRow({ sub, putSubmission, reload, showAds = false, group = null, scope = '', directEdit = false, seq = 1 }) {
+// ช่องข้อมูลโพสต์ที่ทีมตรวจ — ชื่อที่โชว์ในป้าย "แก้หลังยืนยัน"
+const POST_CHECK_LABEL = { post_url: 'ลิงก์โพสต์', post_date: 'วันที่โพสต์', gencode: 'Gencode', id_post: 'ID Post', code_expire: 'Code Expire' };
+// แถบสถานะขึ้นเมื่อ: รอทีมตรวจ / ทีมส่งกลับให้แก้ / เอเจนซี่แก้หลังยิงแอด (ยังอยู่หน้า Ads)
+const postCheckShown = s => s.post_check === 'pending' || s.post_check === 'returned' || s.post_check === 'changed';
+const postCheckTeamTodo = s => s.post_check === 'pending' || s.post_check === 'changed';
+
+// onPostCheck(subId, action, note) = ฝั่งทีมเท่านั้น (ยืนยัน / ส่งกลับให้แก้) · ฝั่งเอเจนซี่ไม่ส่งมา = เห็นแค่สถานะ
+function ProcessRow({ sub, putSubmission, reload, showAds = false, group = null, scope = '', directEdit = false, seq = 1, onPostCheck }) {
     const [draftNew, setDraftNew] = useState(false);
     useEffect(() => { setDraftNew(draftIsNew(scope, sub)); }, [scope, sub.id, sub.draft_updated_at]);
     const openDraft = () => { markDraftSeen(scope, sub); setDraftNew(false); setShowDraft(true); };
@@ -31,6 +38,9 @@ function ProcessRow({ sub, putSubmission, reload, showAds = false, group = null,
     const [gencode, setGencode] = useState(sub.gencode || '');
     const [idPost, setIdPost] = useState(sub.id_post || '');
     const [codeExpire, setCodeExpire] = useState(sub.code_expire || 60);
+    // ข้อมูลโหลดใหม่เป็นระยะ — ช่องที่ผู้ใช้ยังไม่ได้พิมพ์ทับ ต้องเปลี่ยนตามค่าล่าสุด
+    // (ไม่งั้นทีมเห็นค่าเก่าแล้วกดยืนยันค่าใหม่ที่เอเจนซี่เพิ่งแก้ โดยไม่เคยเห็น)
+    const serverVals = useRef({ post_url: sub.post_url || '', post_date: sub.post_date || '', gencode: sub.gencode || '', id_post: sub.id_post || '', code_expire: Number(sub.code_expire) || 60 });
     const [showDraft, setShowDraft] = useState(false);
     const [showPerf, setShowPerf] = useState(false);
     const perfFetchUrl = directEdit ? `/agency/${scope}/submissions/${sub.id}/fetch-tiktok` : `/projects/${scope}/submissions/${sub.id}/fetch-tiktok`;
@@ -38,6 +48,33 @@ function ProcessRow({ sub, putSubmission, reload, showAds = false, group = null,
     const [saving, setSaving] = useState(false);
     const [saved, setSaved] = useState(false);
     const [editing, setEditing] = useState(false); // false = ล็อก (อ่านอย่างเดียว), true = กำลังแก้ไข
+    useEffect(() => {
+        const prev = serverVals.current;
+        const next = { post_url: sub.post_url || '', post_date: sub.post_date || '', gencode: sub.gencode || '', id_post: sub.id_post || '', code_expire: Number(sub.code_expire) || 60 };
+        serverVals.current = next;
+        if (editing) return;   // ทีมกำลังแก้อยู่ ไม่ทับ (กดยกเลิกแล้วจะได้ค่าล่าสุด)
+        if (postUrl === prev.post_url) setPostUrl(next.post_url);
+        if (postDate === prev.post_date) setPostDate(next.post_date);
+        if (gencode === prev.gencode) setGencode(next.gencode);
+        if (idPost === prev.id_post) setIdPost(next.id_post);
+        if (Number(codeExpire) === prev.code_expire) setCodeExpire(next.code_expire);
+    }, [sub.post_url, sub.post_date, sub.gencode, sub.id_post, sub.code_expire]);
+    // ตรวจข้อมูลโพสต์ที่เอเจนซี่ส่งมา (ฝั่งทีม)
+    const [returning, setReturning] = useState(false);
+    const [returnNote, setReturnNote] = useState('');
+    const [checking, setChecking] = useState(false);
+    async function decide(action) {
+        if (action === 'return' && !returnNote.trim()) return;
+        setChecking(true);
+        try {
+            // ส่ง post_check_at ที่เห็นไปด้วย — เอเจนซี่แก้แทรกระหว่างนี้ server จะตอบ 409 ให้โหลดใหม่
+            await onPostCheck(sub.id, action, action === 'return' ? returnNote.trim() : null, sub.post_check_at);
+            setReturning(false); setReturnNote('');
+        } catch (err) { alert(err.message); }
+        finally { setChecking(false); }
+    }
+    const checkChanges = sub.post_check_changes && typeof sub.post_check_changes === 'object'
+        ? Object.entries(sub.post_check_changes).filter(([f]) => POST_CHECK_LABEL[f]) : [];
     const unlocked = directEdit || editing; // directEdit (ฝั่งเอเจนซี่) = กรอกได้เลยไม่ต้องกดแก้ไข
     const noIdPost = NO_IDPOST.includes(sub.platform); // แพลตฟอร์มนี้ไม่ใช้ ID Post
     // Content Type ผูกกับคน (1 Platform ในกลุ่มเดียวมีได้หลายอย่าง) — ของเก่าที่ยังไม่ระบุค่อยถอยไปใช้ของกลุ่ม
@@ -182,6 +219,52 @@ function ProcessRow({ sub, putSubmission, reload, showAds = false, group = null,
                 )}
             </div>
 
+            {/* ตรวจข้อมูลโพสต์: เอเจนซี่ส่งมา/แก้ = รอทีมตรวจก่อนขึ้นหน้า Ads · ทีมส่งกลับให้แก้พร้อมเหตุผลได้ */}
+            {postCheckShown(sub) && (
+                <div className={'proc-check ' + sub.post_check}>
+                    <div className="proc-check-msg">
+                        {sub.post_check === 'returned'
+                            ? <b>{onPostCheck ? '↩ ส่งกลับให้เอเจนซี่แก้แล้ว' : '↩ ทีมให้แก้ข้อมูลโพสต์'}</b>
+                            : sub.post_check === 'changed'
+                                ? <b>{onPostCheck ? '✏ เอเจนซี่แก้ข้อมูลหลังยิงแอดแล้ว' : '✏ แก้ข้อมูลหลังยิงแอดแล้ว'}</b>
+                                : <b>{onPostCheck ? '🕵 รอตรวจข้อมูลโพสต์ที่เอเจนซี่ส่งมา' : '🕵 รอทีมตรวจข้อมูลโพสต์'}</b>}
+                        <span className="proc-check-sub">{sub.post_check === 'changed'
+                            ? (onPostCheck ? ' — ยังอยู่หน้า Ads (แอดวิ่งอยู่) เช็คว่าค่าที่แก้ถูกต้อง' : ' — ทีมได้รับแจ้งแล้ว โพสต์ยังอยู่หน้า Ads ตามเดิม')
+                            : ' — ยังไม่ขึ้นหน้า Ads จนกว่าทีมจะยืนยัน'}</span>
+                        {sub.post_check_note && <div className="proc-check-note">เหตุผล: {sub.post_check_note}</div>}
+                        {checkChanges.length > 0 && (
+                            <div className="proc-check-changes">
+                                <span>แก้หลังทีมยืนยัน:</span>
+                                {checkChanges.map(([f, c]) => (
+                                    <span className="proc-check-chg" key={f} title={`${c.from || '(ว่าง)'} → ${c.to || '(ว่าง)'}`}>
+                                        <b>{POST_CHECK_LABEL[f]}</b> {c.from || '(ว่าง)'} → {c.to || '(ว่าง)'}
+                                    </span>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                    {onPostCheck && (
+                        returning ? (
+                            <div className="proc-check-return">
+                                <input value={returnNote} onChange={e => setReturnNote(e.target.value)} maxLength={500} autoFocus
+                                    placeholder="บอกเอเจนซี่ว่าต้องแก้อะไร เช่น ID Post ไม่ตรงกับลิงก์" />
+                                <button type="button" className="proc-check-btn warn" disabled={checking || !returnNote.trim()} onClick={() => decide('return')}>ส่งกลับ</button>
+                                <button type="button" className="proc-check-btn" disabled={checking} onClick={() => { setReturning(false); setReturnNote(''); }}>ยกเลิก</button>
+                            </div>
+                        ) : (
+                            <div className="proc-check-actions">
+                                <button type="button" className="proc-check-btn ok" disabled={checking || editing || dirty} onClick={() => decide('ok')}
+                                    title={editing || dirty ? 'บันทึกหรือยกเลิกการแก้ไขในแถวนี้ก่อน' : sub.post_check === 'changed' ? 'ค่าที่แก้ถูกต้อง — เอาป้ายออก' : 'ข้อมูลถูกต้อง — ขึ้นหน้า Ads'}>✓ ยืนยันถูกต้อง</button>
+                                {/* ยิงแอดแล้ว: ไม่ส่งกลับ (จะดึงแถวออกจากหน้า Ads ทั้งที่แอดวิ่งอยู่) — ค่าผิดให้ทีมกดแก้ไขในแถวเอง */}
+                                {sub.post_check !== 'returned' && sub.post_check !== 'changed' && (
+                                    <button type="button" className="proc-check-btn" disabled={checking} onClick={() => setReturning(true)}>ส่งกลับให้แก้</button>
+                                )}
+                            </div>
+                        )
+                    )}
+                </div>
+            )}
+
             {showDraft && (
                 <DraftModal
                     sub={sub}
@@ -235,12 +318,15 @@ function GroupBar({ group, gi, count, scope }) {
  * props: subs, groups (ad_groups — ถ้ามีจะแบ่งเป็นกลุ่มสินค้า), putSubmission(subId, payload), reload()
  */
 // conceptScope(group) → { products, platforms } = ขอบเขตที่ผู้ดูเห็น (หน้าเอเจนซี่ส่งมา · หน้าทีมไม่ส่ง = เห็นทั้งกลุ่ม)
-export default function OnProcessTable({ subs = [], groups = [], showAds = false, scope = '', putSubmission, reload, directEdit = false, stage = 'all', onClearStage, conceptScope }) {
+// onPostCheck(subId, action, note, seenAt) = ฝั่งทีมยืนยัน/ส่งกลับข้อมูลโพสต์ (ฝั่งเอเจนซี่ไม่ส่ง = เห็นแค่สถานะ)
+// initialCheckOnly = เปิดมาพร้อมตัวกรอง "รอตรวจ" (ลิงก์จากหน้า Ads)
+export default function OnProcessTable({ subs = [], groups = [], showAds = false, scope = '', putSubmission, reload, directEdit = false, stage = 'all', onClearStage, conceptScope, onPostCheck, initialCheckOnly = false }) {
     const [platFilter, setPlatFilter] = useState('all');   // ตัวกรองตามแพลตฟอร์ม
     const [ctypeFilter, setCtypeFilter] = useState('all'); // ตัวกรองย่อยตาม Content Type
     const [clipFilter, setClipFilter] = useState('all');   // ตัวกรองตามคลิป (กลุ่มที่ 1 คนส่งหลายคลิป)
     const [groupFilter, setGroupFilter] = useState('all'); // ตัวกรองตามกลุ่มสินค้า ('__none' = คนที่ไม่อยู่กลุ่มไหน)
     const [prodFilter, setProdFilter] = useState([]);      // ตัวกรองตามสินค้า — เลือกได้หลายตัว ([] = ทุกสินค้า)
+    const [checkOnly, setCheckOnly] = useState(!!initialCheckOnly);   // ดูเฉพาะแถวที่ข้อมูลโพสต์รอทีมตรวจ / ถูกส่งกลับ / แก้หลังยิงแอด
     // เรียงเก่า -> ใหม่ ให้ตรงกับแท็บรายชื่อและฝั่งลิงก์เอเจนซี่ (API ส่งมาแบบใหม่สุดขึ้นก่อน)
     const confirmed = subs.filter(s => s.status === 'confirmed')
         .slice().sort((a, b) => (a.submitted_at || '').localeCompare(b.submitted_at || '') || (a.id - b.id));
@@ -268,13 +354,14 @@ export default function OnProcessTable({ subs = [], groups = [], showAds = false
         .filter(s => clipFilter === 'all' || (s.clip_name || '') === clipFilter)
         .filter(s => groupFilter === 'all' || (groupFilter === '__none' ? isUngrouped(s) : s.group_key === groupFilter))
         .filter(s => matchProducts(s, prodFilter, knownCodes))
+        .filter(s => !checkOnly || postCheckShown(s))
         .filter(s => stage === 'all' || workStage(s) === stage);   // ตัวกรองจากการ์ดสรุปด้านบน
 
     const groupMap = {};
     groups.forEach(g => { groupMap[g.key] = g; });
     const tblCls = 'proc-tbl' + (showAds ? ' with-ads' : '');
     const rowsFor = list => list.map((s, i) => (
-        <ProcessRow key={s.id} sub={s} seq={i + 1} putSubmission={putSubmission} reload={reload} showAds={showAds} scope={scope} group={groupMap[s.group_key] || null} directEdit={directEdit} />
+        <ProcessRow key={s.id} sub={s} seq={i + 1} putSubmission={putSubmission} reload={reload} showAds={showAds} scope={scope} group={groupMap[s.group_key] || null} directEdit={directEdit} onPostCheck={onPostCheck} />
     ));
 
     // บอกให้ชัดว่าตารางถูกกรองอยู่ ไม่งั้นงงว่าทำไมรายชื่อหายไป
@@ -327,6 +414,21 @@ export default function OnProcessTable({ subs = [], groups = [], showAds = false
         <>
             <ProductFilter options={productFilterOptions(confirmed, knownCodes)} value={prodFilter}
                 onChange={setProdFilter} total={confirmed.length} unit="" />
+            {/* แถวที่ข้อมูลโพสต์รอทีมตรวจ / ถูกส่งกลับ — โชว์เมื่อมี (หรือกำลังกรองค้างอยู่) */}
+            {(confirmed.some(postCheckShown) || checkOnly) && (
+                <div className="proc-platfilter">
+                    <button type="button" aria-pressed={checkOnly}
+                        className={'proc-plat-chip check-filter-chip' + (checkOnly ? ' on' : '')}
+                        onClick={() => setCheckOnly(v => !v)}>
+                        {checkOnly ? '✓ ' : ''}🕵 {onPostCheck
+                            // ฝั่งทีม: ที่ต้องตรวจ (รอตรวจ + แก้หลังยิงแอด) · ที่ส่งกลับไปแล้ว (รอเอเจนซี่)
+                            ? `รอตรวจ ${confirmed.filter(postCheckTeamTodo).length}` + (confirmed.some(s => s.post_check === 'returned') ? ` · ส่งกลับแล้ว ${confirmed.filter(s => s.post_check === 'returned').length}` : '')
+                            : [['รอทีมตรวจ', 'pending'], ['ทีมให้แก้', 'returned'], ['แก้หลังยิงแอด', 'changed']]
+                                .map(([label, st]) => [label, confirmed.filter(s => s.post_check === st).length])
+                                .filter(([, n]) => n > 0).map(([label, n]) => `${label} ${n}`).join(' · ')}
+                    </button>
+                </div>
+            )}
             {platforms.length > 1 && (
                 <div className="proc-platfilter">
                     <span className="proc-platfilter-lbl">แพลตฟอร์ม:</span>

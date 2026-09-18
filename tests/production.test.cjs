@@ -637,6 +637,17 @@ test('ad spend and reach typed on the Ads page are cleaned before saving', async
     assert.equal((await put({ ad_spend: 900, ad_spend_from: 1000 })).status, 409);
     assert.equal((await put({ ad_spend: 900, ad_spend_from: 1200.5 })).status, 200);
     assert.equal((await put({ ad_reach: 90, ad_reach_from: 10 })).status, 409);
+
+    // หน้า Ads ที่เปิดค้าง: เอเจนซี่เพิ่งแก้ข้อมูลโพสต์ (รอทีมตรวจ) → กด "ยิงแล้ว" ไม่ได้ แต่เรื่องอื่นยังบันทึกได้
+    sub = { ...sub, ad_spend: 0, ad_reach: 0, post_check: 'pending' };
+    assert.equal((await put({ ad_status: 'ยิงแล้ว' })).status, 409);
+    sub = { ...sub, post_check: 'returned' };
+    assert.equal((await put({ ad_status: 'ยิงแล้ว' })).status, 409);
+    assert.equal((await put({ ad_status: 'ยังไม่ยิง' })).status, 200);
+    sub = { ...sub, post_check: 'changed' };                                   // แก้หลังยิงแอด = ยังอยู่หน้า Ads
+    assert.equal((await put({ ad_status: 'ยิงแล้ว' })).status, 200);
+    sub = { ...sub, post_check: 'ok' };
+    assert.equal((await put({ ad_status: 'ยิงแล้ว' })).status, 200);
 });
 
 test('staff can only open agency links of brands they may see', async () => {
@@ -791,4 +802,55 @@ test('saving from a tab opened before the per-product concept deploy keeps the p
     assert.equal((await put([{ key: 'g1', concept: 'หลัก', blocks: [{ platform: 'TikTok', products: ['L3', 'L4'], concept_split: false }] }])).status, 200);
     assert.equal(sent.ad_groups[0].blocks[0].concept_split, false);
     assert.equal(sent.ad_groups[0].blocks[0].product_concepts, undefined);
+});
+
+test('post-check: agency edits are marked as agency, team edits as team, and only the team decides', async () => {
+    const { row } = agencyFixture();
+    const calls = [];
+    store.submissions.update = async (id, pid, fields, byName, opts) => { calls.push({ byName, opts }); return row; };
+    store.submissions.updatePerson = async (id, pid, fields, byName, opts) => { calls.push({ byName, opts }); return row; };
+    const send = (url, method, body) => request(url, adminToken, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    // บัญชีเอเจนซี่แก้ข้อมูลโพสต์ = agency (ต้องรอทีมตรวจ)
+    user({ role: 'agency', agency_tokens: ['tok1'] });
+    assert.equal((await send('/api/agency/tok1/submissions/5', 'PUT', { id_post: '123' })).status, 200);
+    assert.equal(calls[0].opts.actor, 'agency');
+    assert.equal(calls[0].byName, 'Fixture Agency (เอเจนซี่)');
+    // ทีมที่เปิดลิงก์เดียวกัน = team (นับว่าตรวจแล้ว) และบันทึกชื่อทีมจริง
+    user();
+    assert.equal((await send('/api/agency/tok1/submissions/5', 'PUT', { id_post: '124' })).status, 200);
+    assert.equal(calls[1].opts.actor, 'team');
+    assert.equal(calls[1].byName, 'fixture');
+
+    // ทีมตัดสินผลตรวจ
+    const project = { id: 41, name: 'fixture', brand: 'Jdent', team_id: 1 };
+    store.projects.findByIdFull = async () => project;
+    const decided = [], logs = [];
+    let cur = { id: 5, project_id: 41, account_name: 'kol', post_url: 'https://x.test/v/1', post_check: 'pending' };
+    store.submissions.get = async () => cur;
+    store.submissions.setPostCheck = async (id, pid, action, note, byName, seenAt) => {
+        if (seenAt === 'stale') { const e = new Error('ข้อมูลโพสต์เพิ่งถูกแก้'); e.status = 409; throw e; }
+        decided.push({ action, note, byName, seenAt }); return { ...cur, post_check: action === 'ok' ? 'ok' : 'returned' };
+    };
+    store.activity.log = async entry => { logs.push(entry); };
+    const check = body => send('/api/projects/41/submissions/5/post-check', 'POST', body);
+    assert.equal((await check({ action: 'ok', seen_at: '2026-09-18T10:00:00.000Z' })).status, 200);
+    assert.deepEqual(decided[0], { action: 'ok', note: null, byName: 'fixture', seenAt: '2026-09-18T10:00:00.000Z' });
+    // เอเจนซี่แก้แทรกระหว่างที่ทีมดูอยู่ → 409 ไม่บันทึกกิจกรรม
+    assert.equal((await check({ action: 'ok', seen_at: 'stale' })).status, 409);
+    assert.equal((await check({ action: 'return', note: '  ' })).status, 400);        // ส่งกลับต้องมีเหตุผล
+    assert.equal((await check({ action: 'return', note: 'ID ไม่ตรง' })).status, 200);
+    assert.deepEqual(decided[1], { action: 'return', note: 'ID ไม่ตรง', byName: 'fixture', seenAt: undefined });
+    assert.equal((await check({ action: 'approve' })).status, 400);                   // คำสั่งอื่นไม่รับ
+    assert.equal((await check({ action: 'return', note: 'x'.repeat(501) })).status, 400);
+    cur = { ...cur, project_id: 99 };                                                  // แถวของแคมเปญอื่น
+    assert.equal((await check({ action: 'ok' })).status, 404);
+    cur = { id: 5, project_id: 41, account_name: 'kol', post_url: null, gencode: null, id_post: null };
+    assert.equal((await check({ action: 'ok' })).status, 400);                        // ยังไม่มีข้อมูลโพสต์
+    assert.equal(decided.length, 2);
+    assert.equal(logs.length, 2);
+    // บัญชีเอเจนซี่เรียกเส้นนี้ไม่ได้
+    user({ role: 'agency', agency_tokens: ['tok1'] });
+    cur = { id: 5, project_id: 41, account_name: 'kol', post_url: 'https://x.test/v/1', post_check: 'pending' };
+    assert.notEqual((await check({ action: 'ok' })).status, 200);
+    assert.equal(decided.length, 2);
 });

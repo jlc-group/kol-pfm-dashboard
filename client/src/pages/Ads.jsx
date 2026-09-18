@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback } from 'react';
+import { Link } from 'react-router-dom';
 import ColumnFilter from '../components/ColumnFilter.jsx';
 import { api } from '../api/client.js';
 import Icon from '../components/Icon.jsx';
@@ -466,6 +467,22 @@ export default function Ads() {
             )}
 
             {error && <div className="alert-error">{error}</div>}
+
+            {/* โพสต์ที่เอเจนซี่ส่งมาแต่ทีมยังไม่ตรวจ — ยังไม่ขึ้นตารางนี้ บอกว่ารออยู่ที่แคมเปญไหน */}
+            {s && s.check_waiting > 0 && (
+                <div className="ads-check-banner">
+                    🕵 ยังไม่ขึ้นหน้านี้:
+                    {s.check_pending > 0 && <span>รอทีมตรวจ <b>{s.check_pending}</b> โพสต์</span>}
+                    {s.check_returned > 0 && <span>ส่งกลับให้เอเจนซี่แก้ <b>{s.check_returned}</b> โพสต์</span>}
+                    —
+                    {(s.check_waiting_projects || []).map(p => (
+                        <Link key={p.project_id} to={`/projects/${p.project_id}?tab=process&check=1`} className="ads-check-link"
+                            title={`รอทีมตรวจ ${p.pending || 0} · ส่งกลับให้แก้ ${p.returned || 0}`}>
+                            {p.project_name || 'แคมเปญ'} ({p.count})
+                        </Link>
+                    ))}
+                </div>
+            )}
 
             {/* การ์ดสรุปค่าแอด */}
             <div className="summary-grid">

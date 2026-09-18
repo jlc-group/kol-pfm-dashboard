@@ -309,6 +309,13 @@ router.put('/:token/submissions/:subId', async (req, res, next) => {
         const personFields = ['account_name', 'followers', 'platform', 'product', 'link_account', 'agency', 'content_type', 'tier'];
         const isPersonEdit = personFields.some(f => req.body[f] !== undefined);
         const writer = isPersonEdit ? store.submissions.updatePerson : store.submissions.update;
+        // ใครแก้: บัญชีเอเจนซี่ = ข้อมูลโพสต์ต้องรอทีมตรวจก่อนขึ้นหน้า Ads · ทีมที่เปิดลิงก์เดียวกัน = นับว่าตรวจแล้ว
+        const actor = (req.account || req.user || {}).role === 'agency' ? 'agency' : 'team';
+        let byName = link.name ? `${link.name} (เอเจนซี่)` : 'เอเจนซี่';   // ฝั่งนี้ไม่มีบัญชีผู้ใช้ ใช้ชื่อจากลิงก์แทน
+        if (actor === 'team') {
+            const me = await store.users.findById(req.user.id);
+            if (me) byName = me.full_name || me.username;
+        }
         const data = await writer.call(store.submissions, req.params.subId, project.id, {
             account_name: account_name !== undefined ? String(account_name).trim() : undefined,
             followers: followers !== undefined ? (Number(followers) || 0) : undefined,
@@ -320,7 +327,7 @@ router.put('/:token/submissions/:subId', async (req, res, next) => {
             approved, draft_status, post_url, post_date, id_post, code_expire,
             views: views !== undefined ? (Number(views) || 0) : undefined, likes: likes !== undefined ? (Number(likes) || 0) : undefined, comments: comments !== undefined ? (Number(comments) || 0) : undefined, saves: saves !== undefined ? (Number(saves) || 0) : undefined, shares: shares !== undefined ? (Number(shares) || 0) : undefined,
             reposts: reposts !== undefined ? (Number(reposts) || 0) : undefined
-        }, link.name ? `${link.name} (เอเจนซี่)` : 'เอเจนซี่');   // ฝั่งนี้ไม่มีบัญชีผู้ใช้ ใช้ชื่อจากลิงก์แทน
+        }, byName, { actor });
         if (!data) return res.status(404).json({ status: 'error', message: 'ไม่พบรายการ' });
         res.json({ status: 'success', data: rowsFor(req, [data])[0] });
     } catch (err) { next(err); }

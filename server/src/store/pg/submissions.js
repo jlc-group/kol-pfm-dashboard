@@ -9,7 +9,7 @@
  * 1 แถว = 1 คลิป ของ 1 คน — คนเดียวกันผูกกันด้วย person_key
  */
 const { query, withTransaction, insertRow, updateRow, asNum, asBool, asText, asJson } = require('./_base');
-const { now, maybeStamp } = require('../logic');
+const { now, maybeStamp, nextPostCheck, postCheckDecision, POST_CHECK_OPEN, sameInstant } = require('../logic');
 
 // id ที่แปลงเป็นตัวเลขไม่ได้ = ไม่มีวันเจอแถว (jsonStore เทียบ x.id === NaN ได้ false เสมอ)
 // ต้องดักไว้ก่อนยิง SQL ไม่งั้น PostgreSQL จะโยน error แทนที่จะคืน null เหมือนเดิม
@@ -137,6 +137,7 @@ async function updateOne(client, subId, projectId, fields, byName, opts = {}) {
     // perf_stamp ห้ามเซ็ตจากภายนอกเด็ดขาด ระบบเป็นคนสแตมป์เองเท่านั้น
     delete fields.perf_stamp;
 
+    const prevRow = { ...s };               // แถวก่อนแก้ — ใช้ตัดสินสถานะตรวจข้อมูลโพสต์
     const patch = {};                       // คอลัมน์ที่จะเขียนกลับลง DB
     const before = {};
     STAMP_F.forEach(f => { before[f] = s[f]; });
@@ -177,6 +178,12 @@ async function updateOne(client, subId, projectId, fields, byName, opts = {}) {
     // (กรอกผลงานทีหลังก็สแตมป์ตอนนั้น ไม่ต้องรอให้ค่าแอดขยับอีกรอบ)
     const stamped = maybeStamp(s);
     if (stamped) patch.perf_stamp = asJson(stamped);
+    // ข้อมูลโพสต์เปลี่ยน: เอเจนซี่แก้ = รอทีมตรวจก่อนขึ้นหน้า Ads · ทีมแก้เอง = นับว่าตรวจแล้ว (opts.actor บอกว่าใครแก้)
+    const check = nextPostCheck(prevRow, s, opts && opts.actor, byName, now());
+    if (check) {
+        Object.assign(s, check);
+        Object.assign(patch, check, { post_check_changes: check.post_check_changes ? asJson(check.post_check_changes) : null });
+    }
 
     return updateRow('submissions', s.id, patch, client);
 }
@@ -241,7 +248,8 @@ const submissions = {
         });
     },
     // แก้ข้อมูล "ตัวคน" ให้ทุกคลิปพร้อมกัน (ชื่อ/ยอดฟอล/Platform/สินค้า/ลิงก์ช่อง/ผู้ติดต่อ)
-    async updatePerson(subId, projectId, fields, byName) {
+    // opts.actor = 'team' | 'agency' — ใครแก้ข้อมูลโพสต์ (ตัดสินว่าต้องให้ทีมตรวจก่อนขึ้นหน้า Ads ไหม)
+    async updatePerson(subId, projectId, fields, byName, opts = {}) {
         const id = numOr(subId), pid = numOr(projectId);
         if (id === null || pid === null) return null;
         return withTransaction(async (client) => {
@@ -256,15 +264,42 @@ const submissions = {
                 : [target];
             let head = null;
             for (const sib of sibs) {
-                const r = await updateOne(client, sib.id, projectId, fields, byName);
+                const r = await updateOne(client, sib.id, projectId, fields, byName, { actor: opts.actor });
                 if (sib.id === target.id) head = r;
             }
             return head;
         });
     },
     // อัปเดตได้ทั้งสถานะคัดเลือก + ข้อมูลดราฟงาน
-    async update(subId, projectId, fields, byName) {
-        return withTransaction(client => updateOne(client, subId, projectId, fields, byName));
+    async update(subId, projectId, fields, byName, opts = {}) {
+        // ส่งต่อเฉพาะ actor — allowFee เปิดได้ทางเดียวคือ setFees
+        return withTransaction(client => updateOne(client, subId, projectId, fields, byName, { actor: opts.actor }));
+    },
+    // ทีมตัดสินผลตรวจข้อมูลโพสต์ — action 'ok' ยืนยัน (ขึ้นหน้า Ads) | 'return' ส่งกลับให้เอเจนซี่แก้ (note = เหตุผล)
+    // seenAt = post_check_at ที่หน้าเว็บเห็นตอนกด — เอเจนซี่แก้แทรกระหว่างนั้น (เวลาไม่ตรง) = 409 ห้ามยืนยันค่าที่ทีมยังไม่เห็น
+    async setPostCheck(subId, projectId, action, note, byName, seenAt) {
+        const id = numOr(subId), pid = numOr(projectId);
+        const patch = postCheckDecision(action, note, byName, now());
+        if (id === null || pid === null || !patch) return null;
+        return withTransaction(async (client) => {
+            const r = await client.query('SELECT id, post_check, post_check_at FROM submissions WHERE id = $1 AND project_id = $2 FOR UPDATE', [id, pid]);
+            const cur = r.rows[0];
+            if (!cur) return null;
+            if (!POST_CHECK_OPEN.includes(cur.post_check) || !sameInstant(cur.post_check_at, seenAt)) {
+                const e = new Error('ข้อมูลโพสต์เพิ่งถูกแก้หรือมีคนตรวจไปแล้ว — โหลดค่าล่าสุดแล้วตรวจอีกครั้ง');
+                e.status = 409;
+                throw e;
+            }
+            if (action === 'return' && cur.post_check === 'changed') {
+                const e = new Error('โพสต์นี้ยิงแอดแล้ว ส่งกลับไม่ได้ (จะหลุดจากหน้า Ads) — ถ้าค่าผิดให้กดแก้ไขในแถวนี้เอง');
+                e.status = 409;
+                throw e;
+            }
+            // ส่งกลับให้แก้ = งานเปลี่ยน → จุดแจ้งเตือนแท็บ On Process ฝั่งเอเจนซี่ขึ้น
+            if (action === 'return') patch.work_updated_at = now();
+            if ('post_check_changes' in patch) patch.post_check_changes = patch.post_check_changes ? asJson(patch.post_check_changes) : null;
+            return updateRow('submissions', id, patch, client);
+        });
     },
     /**
      * ตั้งค่าตัว (ต่อคลิป) หลายแถวในคำขอเดียว — กรอกรายคน / หารเฉลี่ย / ล้างค่าตัว จากหน้า Dashboard

@@ -668,8 +668,69 @@ function feeCostAverages(rows) {
 }
 
 
+// ---------- ทีมตรวจข้อมูลโพสต์ที่เอเจนซี่กรอก ก่อนขึ้นหน้า Ads ----------
+// post_check: null = ไม่ต้องตรวจ (ข้อมูลเดิม / ทีมกรอกเอง) · 'pending' รอทีมตรวจ · 'returned' ทีมส่งกลับให้แก้ · 'ok' ทีมยืนยันแล้ว
+// · 'changed' เอเจนซี่แก้วันที่/Code expire หลังยิงแอด (ยังอยู่หน้า Ads แต่มีป้ายให้ทีมรับทราบ)
+// หน้า Ads แสดงเฉพาะแถวที่ไม่ได้รอตรวจ (null / ok / changed)
+const POST_CHECK_FIELDS = ['post_url', 'post_date', 'gencode', 'id_post', 'code_expire'];
+const POST_CHECK_WAITING = ['pending', 'returned'];
+const postCheckWaiting = s => !!s && POST_CHECK_WAITING.includes(s.post_check);
+// สถานะที่ทีมยังต้องตัดสิน/รับทราบ (ปุ่มยืนยันใช้ได้เฉพาะแถวเหล่านี้)
+const POST_CHECK_OPEN = ['pending', 'returned', 'changed'];
+const postFieldText = (f, v) => (f === 'code_expire' ? String(Number(v) || 60) : String(v == null ? '' : v).trim());
+
+// สถานะตรวจหลังแก้ข้อมูลโพสต์ — before = แถวก่อนแก้ · after = แถวหลังแก้ · actor = 'team' | 'agency'
+// คืน null = ไม่ต้องเปลี่ยน (ไม่มีช่องโพสต์ไหนเปลี่ยน / ไม่รู้ว่าใครแก้)
+// - ทีมแก้เอง = ตรวจแล้ว ('ok')
+// - เอเจนซี่แก้ แต่ยังไม่มีลิงก์/Gencode/ID Post เลย (แจ้งแค่วันลงงาน / ลบลิงก์ทิ้ง) = ไม่มีอะไรให้ตรวจ และไม่ขึ้นหน้า Ads อยู่แล้ว
+// - เอเจนซี่แก้แถวที่ยิงแอดแล้ว (เหลือแก้ได้แค่วันที่/Code expire) = 'changed' ยังอยู่หน้า Ads แต่มีป้ายให้ทีมเห็นว่าแก้อะไร
+// - เอเจนซี่แก้ที่เหลือ = 'pending' รอทีมตรวจ ถ้าเคยผ่านการตรวจ (หรือเป็นข้อมูลเดิม) จดว่าแก้ช่องไหน เดิม→ใหม่
+function nextPostCheck(before, after, actor, byName, at) {
+    if (actor !== 'team' && actor !== 'agency') return null;
+    const changed = POST_CHECK_FIELDS.filter(f => postFieldText(f, before[f]) !== postFieldText(f, after[f]));
+    if (!changed.length) return null;
+    const prev = before.post_check || null;
+    const cleared = { post_check: null, post_check_by: null, post_check_at: null, post_check_note: null, post_check_changes: null };
+    if (actor === 'team') {
+        return { post_check: 'ok', post_check_by: byName || null, post_check_at: at, post_check_note: null, post_check_changes: null };
+    }
+    const hasPost = r => ['post_url', 'gencode', 'id_post'].some(f => postFieldText(f, r[f]) !== '');
+    if (!hasPost(after)) return prev ? cleared : null;
+    const open = prev !== null && prev !== 'ok';   // ยังค้างจากการแก้รอบก่อน (pending / returned / changed)
+    const hadPost = hasPost(before) || postFieldText('post_date', before.post_date) !== '';
+    const prevChanges = before.post_check_changes && typeof before.post_check_changes === 'object' && !Array.isArray(before.post_check_changes)
+        ? before.post_check_changes : null;
+    let changes = null;
+    if (!open && hadPost) changes = {};                         // เคยผ่านการตรวจ / ข้อมูลเดิม → เริ่มจดช่องที่แก้
+    else if (open && prevChanges) changes = { ...prevChanges };  // ยังค้างจากรอบก่อน → จดต่อจากเดิม
+    if (changes) {
+        changed.forEach(f => {
+            const from = changes[f] ? changes[f].from : postFieldText(f, before[f]);
+            const to = postFieldText(f, after[f]);
+            if (from === to) delete changes[f]; else changes[f] = { from, to };
+        });
+    }
+    const list = changes && Object.keys(changes).length ? changes : null;
+    // ทีมส่งกลับพร้อมเหตุผลไว้ → เก็บเหตุผลไว้ให้ทีมเทียบว่าแก้ตามที่ขอหรือยัง (ล้างตอนทีมยืนยัน)
+    const note = open ? (before.post_check_note || null) : null;
+    if (before.ad_status === 'ยิงแล้ว') {
+        // ยิงแอดแล้ว: ไม่ดึงแถวที่แอดกำลังวิ่งออกจากหน้า Ads · แก้กลับเป็นค่าเดิมหมด = ไม่ต้องแจ้งแล้ว
+        if (!list) return prev === 'changed' ? cleared : null;
+        return { post_check: 'changed', post_check_by: byName || null, post_check_at: at, post_check_note: note, post_check_changes: list };
+    }
+    return { post_check: 'pending', post_check_by: byName || null, post_check_at: at, post_check_note: note, post_check_changes: list };
+}
+
+// ทีมตัดสินผลตรวจ: 'ok' ยืนยันถูกต้อง (ขึ้นหน้า Ads) · 'return' ส่งกลับให้เอเจนซี่แก้พร้อมเหตุผล
+function postCheckDecision(action, note, byName, at) {
+    if (action === 'ok') return { post_check: 'ok', post_check_by: byName || null, post_check_at: at, post_check_note: null, post_check_changes: null };
+    if (action === 'return') return { post_check: 'returned', post_check_by: byName || null, post_check_at: at, post_check_note: note || null };
+    return null;
+}
+
 module.exports = {
     GOOD_CPM, GOOD_CPE, TARGET_PLATFORMS, CAMPAIGN_PLATFORMS, AD_STAMP_AT, now, clone,
+    POST_CHECK_FIELDS, POST_CHECK_OPEN, postCheckWaiting, nextPostCheck, postCheckDecision,
     duplicateError, inScope, scopeProjects, hireRemaining, hireRowFee,
     HIRE_JOB_CLOSED, hireWaiting, hireNeedMore, hireStage,
     BOOK_PENDING, BOOK_FEE, BOOK_OK, HIRE_BOOKED, HIRE_AGREED, bookingState, bookingOpen, hireBookings,

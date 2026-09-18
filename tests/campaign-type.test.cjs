@@ -96,7 +96,11 @@ const FIXTURE = {
         SUB({ id: 1, account_name: 'รีวิว', group_key: 'g1', content_type: 'Review', post_url: 'https://example.test/r' }),
         SUB({ id: 2, account_name: 'แบรนดิ้ง', group_key: 'g1', content_type: 'Branding', post_url: 'https://example.test/b' }),
         SUB({ id: 3, account_name: 'เฟซบุ๊ก', group_key: 'g1', platform: 'Facebook', content_type: 'Awareness', post_url: 'https://example.test/f' }),
-        SUB({ id: 4, account_name: 'ไม่มีกลุ่ม', post_url: 'https://example.test/n' })
+        SUB({ id: 4, account_name: 'ไม่มีกลุ่ม', post_url: 'https://example.test/n' }),
+        // ตรวจข้อมูลโพสต์: รอตรวจ / ส่งกลับให้แก้ ยังไม่ขึ้นหน้า Ads · ตรวจแล้วขึ้นตามปกติ
+        SUB({ id: 5, account_name: 'รอตรวจ', post_url: 'https://example.test/p', post_check: 'pending' }),
+        SUB({ id: 6, account_name: 'ส่งกลับ', post_url: 'https://example.test/x', post_check: 'returned' }),
+        SUB({ id: 7, account_name: 'ตรวจแล้ว', post_url: 'https://example.test/o', post_check: 'ok' })
     ],
     teams: []
 };
@@ -116,4 +120,18 @@ test('Ads page rows carry the campaign set on the group for that Platform + Cont
     assert.deepEqual([by('แบรนดิ้ง').campaign, by('แบรนดิ้ง').group_format], ['Consideration Ads', 'Tie-in']);
     assert.equal(by('เฟซบุ๊ก').campaign, null);
     assert.equal(by('ไม่มีกลุ่ม').campaign, null);
+});
+
+test('posts waiting for the team check stay off the Ads page and are counted per campaign', async () => {
+    const { rows, summary } = await ads.list({ scopeBrands: ['Jdent'] });
+    const names = rows.map(r => r.account_name);
+    assert.ok(!names.includes('รอตรวจ') && !names.includes('ส่งกลับ'));
+    assert.ok(names.includes('ตรวจแล้ว') && names.includes('ไม่มีกลุ่ม'));
+    assert.equal(summary.check_waiting, 2);
+    assert.equal(summary.check_pending, 1);
+    assert.equal(summary.check_returned, 1);
+    assert.deepEqual(summary.check_waiting_projects, [{ project_id: 61, project_name: 'แคมเปญทดสอบ Campaign', count: 2, pending: 1, returned: 1 }]);
+    assert.equal(summary.total_posts, rows.length);
+    // แบรนด์อื่นไม่เห็นตัวเลขรอตรวจของแบรนด์นี้
+    assert.equal((await ads.list({ scopeBrands: ['Code Lab'] })).summary.check_waiting, 0);
 });

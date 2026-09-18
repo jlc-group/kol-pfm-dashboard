@@ -255,6 +255,15 @@ CREATE INDEX IF NOT EXISTS idx_submissions_person   ON submissions(person_key);
 CREATE INDEX IF NOT EXISTS idx_submissions_status   ON submissions(status);
 CREATE INDEX IF NOT EXISTS idx_submissions_gencode  ON submissions(gencode);
 CREATE INDEX IF NOT EXISTS idx_submissions_idpost   ON submissions(id_post);
+-- ทีมตรวจข้อมูลโพสต์ที่เอเจนซี่กรอก (ลิงก์/วันที่/Gencode/ID Post/Code expire) ก่อนขึ้นหน้า Ads
+-- post_check: NULL = ไม่ต้องตรวจ (ข้อมูลเดิมก่อนมีฟีเจอร์ / ทีมกรอกเอง) · pending รอทีมตรวจ · returned ทีมส่งกลับให้แก้ · ok ทีมยืนยันแล้ว
+-- · changed เอเจนซี่แก้วันที่/Code expire หลังยิงแอด (ยังอยู่หน้า Ads มีป้ายให้ทีมรับทราบ)
+-- post_check_changes = ช่องที่เอเจนซี่แก้หลังทีมยืนยัน { ช่อง: { from, to } } · ADD COLUMN IF NOT EXISTS รันซ้ำได้ ไม่แตะแถวเดิม
+ALTER TABLE submissions ADD COLUMN IF NOT EXISTS post_check         VARCHAR(20);
+ALTER TABLE submissions ADD COLUMN IF NOT EXISTS post_check_note    TEXT;
+ALTER TABLE submissions ADD COLUMN IF NOT EXISTS post_check_by      VARCHAR(255);
+ALTER TABLE submissions ADD COLUMN IF NOT EXISTS post_check_at      TIMESTAMPTZ;
+ALTER TABLE submissions ADD COLUMN IF NOT EXISTS post_check_changes JSONB;
 
 -- ---------- payments (สถานะเอกสาร/การจ่ายต่อแคมเปญ+เอเจนซี่) ----------
 CREATE TABLE IF NOT EXISTS payments (

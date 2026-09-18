@@ -1195,7 +1195,7 @@ router.put('/:id/submissions/:subId', async (req, res, next) => {
             team_note: team_note !== undefined ? ((team_note && String(team_note).trim()) ? String(team_note).trim() : null) : undefined,
             views: views !== undefined ? (Number(views) || 0) : undefined, likes: likes !== undefined ? (Number(likes) || 0) : undefined, comments: comments !== undefined ? (Number(comments) || 0) : undefined, saves: saves !== undefined ? (Number(saves) || 0) : undefined, shares: shares !== undefined ? (Number(shares) || 0) : undefined,
             reposts: reposts !== undefined ? (Number(reposts) || 0) : undefined
-        }, byName);
+        }, byName, { actor: 'team' });   // ทีมแก้ข้อมูลโพสต์เอง = นับว่าตรวจแล้ว
         if (!data) return res.status(404).json({ status: 'error', message: 'ไม่พบรายการ' });
         if (status !== undefined) {
             const label = status === 'confirmed' ? 'คัดเลือก KOL' : status === 'rejected' ? 'ไม่เลือก KOL' : 'รีเซ็ตสถานะ KOL';
@@ -1292,6 +1292,37 @@ router.put('/:id/fees', async (req, res, next) => {
         if (err.status === 400 || err.status === 409) {
             return res.status(err.status).json({ status: 'error', message: err.message });
         }
+        next(err);
+    }
+});
+
+// POST /api/projects/:id/submissions/:subId/post-check — ทีมตรวจข้อมูลโพสต์ที่เอเจนซี่กรอก ก่อนขึ้นหน้า Ads
+// body: { action: 'ok' | 'return', note } · ok = ยืนยันถูกต้อง · return = ส่งกลับให้เอเจนซี่แก้ (ต้องมีเหตุผล)
+router.post('/:id/submissions/:subId/post-check', async (req, res, next) => {
+    try {
+        const check = await canEditProject(req, req.params.id);
+        if (!check.ok) return res.status(check.code).json({ status: 'error', message: check.message });
+        const action = req.body && req.body.action;
+        if (action !== 'ok' && action !== 'return') return res.status(400).json({ status: 'error', message: 'คำสั่งไม่ถูกต้อง' });
+        const note = action === 'return' ? String((req.body && req.body.note) || '').trim() : null;
+        if (action === 'return' && !note) return res.status(400).json({ status: 'error', message: 'ใส่เหตุผลที่ส่งกลับให้แก้ก่อน' });
+        if (note && note.length > 500) return res.status(400).json({ status: 'error', message: 'เหตุผลยาวเกินไป (ไม่เกิน 500 ตัวอักษร)' });
+        const cur = await store.submissions.get(req.params.subId);
+        if (!cur || Number(cur.project_id) !== Number(req.params.id)) return res.status(404).json({ status: 'error', message: 'ไม่พบรายการ' });
+        if (![cur.post_url, cur.gencode, cur.id_post].some(v => v && String(v).trim())) {
+            return res.status(400).json({ status: 'error', message: 'ยังไม่มีข้อมูลโพสต์ให้ตรวจ' });
+        }
+        const user = await store.users.findById(req.user.id);
+        const byName = user ? (user.full_name || user.username) : null;
+        const data = await store.submissions.setPostCheck(req.params.subId, req.params.id, action, note, byName, req.body.seen_at);
+        if (!data) return res.status(404).json({ status: 'error', message: 'ไม่พบรายการ' });
+        await record(req, req.params.id, 'update', action === 'ok'
+            ? `ยืนยันข้อมูลโพสต์ของ ${cur.account_name || '-'}`
+            : `ส่งข้อมูลโพสต์ของ ${cur.account_name || '-'} กลับให้เอเจนซี่แก้: ${note}`);
+        res.json({ status: 'success', data });
+    } catch (err) {
+        // 409 = ข้อมูลเปลี่ยนระหว่างที่ทีมดูอยู่ (ตั้งใจปฏิเสธ) ไม่ใช่บั๊กของระบบ
+        if (err.status === 409) return res.status(409).json({ status: 'error', message: err.message });
         next(err);
     }
 });
