@@ -27,6 +27,30 @@ function uploadDirectory(env = process.env) {
     return configured ? path.resolve(configured) : path.join(root, 'server', 'uploads');
 }
 
+function validateBeauterryPfmSync(env = process.env) {
+    if (env.BEAUTERRY_PFM_SYNC_ENABLED === undefined) {
+        throw new Error('Production requires BEAUTERRY_PFM_SYNC_ENABLED to be explicit (true or false)');
+    }
+    const enabled = String(env.BEAUTERRY_PFM_SYNC_ENABLED).toLowerCase() !== 'false';
+    if (!enabled) return;
+
+    const missing = ['BEAUTERRY_PFM_BASE_URL', 'BEAUTERRY_PFM_EXPORT_KEY']
+        .filter(key => !env[key]);
+    if (missing.length) {
+        throw new Error(`Missing production Beauterry PFM sync settings: ${missing.join(', ')}`);
+    }
+
+    let parsed;
+    try {
+        parsed = new URL(env.BEAUTERRY_PFM_BASE_URL);
+    } catch {
+        throw new Error('BEAUTERRY_PFM_BASE_URL must be a valid http(s) URL');
+    }
+    if (!['http:', 'https:'].includes(parsed.protocol)) {
+        throw new Error('BEAUTERRY_PFM_BASE_URL must use http or https');
+    }
+}
+
 function validateRuntime(env = process.env) {
     if (env.NODE_ENV !== 'production') return;
     const missing = ['JWT_SECRET', 'DB_HOST', 'DB_PORT', 'DB_NAME', 'DB_USER', 'DB_PASSWORD', 'PORT']
@@ -41,9 +65,10 @@ function validateRuntime(env = process.env) {
         }
     }
     uploadDirectory(env);
+    validateBeauterryPfmSync(env);
     if (!fs.existsSync(path.join(root, 'client', 'dist', 'index.html'))) {
         throw new Error('Frontend build missing; run npm run build before starting production');
     }
 }
 
-module.exports = { root, uploadDirectory, validateRuntime };
+module.exports = { root, uploadDirectory, validateBeauterryPfmSync, validateRuntime };

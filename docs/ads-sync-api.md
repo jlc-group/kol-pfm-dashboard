@@ -111,11 +111,14 @@ Organic metrics จาก PFM จะไม่ถูกเขียนทับ�
 
 | ตัวแปร | ค่าเริ่มต้น |
 |---|---|
-| `BEAUTERRY_PFM_SYNC_ENABLED` | `true` |
-| `BEAUTERRY_PFM_BASE_URL` | `http://127.0.0.1:8202` |
-| `BEAUTERRY_PFM_EXPORT_KEY` | ถ้าไม่กำหนดจะใช้ `ADS_SYNC_KEY` |
+| `BEAUTERRY_PFM_SYNC_ENABLED` | Dev ใช้ `false`; production ต้องตั้งให้ชัดเจน |
+| `BEAUTERRY_PFM_BASE_URL` | Dev ใช้ `http://127.0.0.1:8202`; production ต้องตั้งให้ชัดเจน |
+| `BEAUTERRY_PFM_EXPORT_KEY` | ต้องเป็น key คู่กับ `KOL_PFM_EXPORT_KEY` ของ Beauterry; ไม่มี fallback |
 | `BEAUTERRY_PFM_SYNC_INTERVAL_SECONDS` | `3600` |
 | `BEAUTERRY_PFM_SYNC_INITIAL_DELAY_SECONDS` | `30` |
+
+`ADS_SYNC_KEY` เป็น key สำหรับ endpoint รับข้อมูลเข้าของ KOL Dashboard
+เท่านั้น ห้ามนำมาใช้เป็น key สำหรับเรียก Beauterry PFM
 
 สั่งดึงทันทีได้ที่ `POST /api/ads-sync/pull-beauterry` และดูรอบล่าสุดที่
 `GET /api/ads-sync/beauterry-status` โดยทั้งสอง endpoint ใช้ header

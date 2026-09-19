@@ -19,7 +19,9 @@ function config(env = process.env) {
     return {
         enabled: String(env.BEAUTERRY_PFM_SYNC_ENABLED || 'true').toLowerCase() !== 'false',
         baseUrl: String(env.BEAUTERRY_PFM_BASE_URL || DEFAULT_BASE_URL).replace(/\/+$/, ''),
-        apiKey: env.BEAUTERRY_PFM_EXPORT_KEY || env.ADS_SYNC_KEY || '',
+        // This is a separate service-to-service credential. Never fall back to
+        // ADS_SYNC_KEY: that key controls the dashboard's own inbound endpoint.
+        apiKey: env.BEAUTERRY_PFM_EXPORT_KEY || '',
         intervalMs: Number.isFinite(intervalSeconds) && intervalSeconds >= 60
             ? intervalSeconds * 1000 : DEFAULT_INTERVAL_MS,
         initialDelayMs: Number.isFinite(initialDelaySeconds) && initialDelaySeconds >= 0

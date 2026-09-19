@@ -2,7 +2,7 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 
 process.env.NODE_ENV = 'test';
-const { sanitizeRow, fetchBatch, runSync } = require('../server/src/services/beauterryPfmSync');
+const { config, sanitizeRow, fetchBatch, runSync } = require('../server/src/services/beauterryPfmSync');
 const { shouldApplyOrganicMetrics, shouldApplyCumulativeMetric } = require('../server/src/store/metricSync');
 
 test('Beauterry rows are limited to fields accepted by the dashboard', () => {
@@ -31,6 +31,11 @@ test('PFM cumulative metrics cannot move backwards', () => {
     assert.equal(shouldApplyCumulativeMetric(90, 100, false), true);
 });
 
+test('Beauterry PFM sync never reuses the dashboard inbound key', () => {
+    assert.equal(config({ ADS_SYNC_KEY: 'legacy-only' }).apiKey, '');
+    assert.equal(config({ BEAUTERRY_PFM_EXPORT_KEY: 'pfm-key' }).apiKey, 'pfm-key');
+});
+
 test('fetchBatch authenticates and validates the Beauterry response', async () => {
     let request;
     const fetchImpl = async (url, options) => {
@@ -41,7 +46,7 @@ test('fetchBatch authenticates and validates the Beauterry response', async () =
     };
     const result = await fetchBatch(['123', '456'], {
         fetchImpl,
-        env: { ADS_SYNC_KEY: 'fixture', BEAUTERRY_PFM_BASE_URL: 'http://pfm.local/' }
+        env: { BEAUTERRY_PFM_EXPORT_KEY: 'fixture', BEAUTERRY_PFM_BASE_URL: 'http://pfm.local/' }
     });
     assert.equal(request.url, 'http://pfm.local/api/v1/integrations/kol-pfm/metrics');
     assert.equal(request.options.headers['X-PFM-API-Key'], 'fixture');
@@ -58,7 +63,10 @@ test('runSync requests known IDs and applies normalized rows', async () => {
     } };
     const fetchImpl = async () => ({ ok: true, json: async () => ({ status: 'success',
         data: { rows: [{ id_post: '123', views: 42 }], not_found: [] } }) });
-    const result = await runSync({ storeImpl, fetchImpl, env: { ADS_SYNC_KEY: 'fixture' } });
+    const result = await runSync({ storeImpl, fetchImpl, env: {
+        BEAUTERRY_PFM_EXPORT_KEY: 'fixture',
+        BEAUTERRY_PFM_BASE_URL: 'http://pfm.local'
+    } });
     assert.equal(result.requested, 1);
     assert.equal(result.updated, 1);
     assert.equal(calls[0][0].views, 42);

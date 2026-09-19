@@ -669,7 +669,8 @@ test('staff can only open agency links of brands they may see', async () => {
 test('production refuses missing settings, sample secrets and invalid ports', () => {
     assert.throws(() => validateRuntime({ NODE_ENV: 'production' }), /Missing production settings/);
     const env = { NODE_ENV: 'production', JWT_SECRET: process.env.JWT_SECRET, DB_HOST: 'fixture', DB_PORT: '5432',
-        DB_NAME: 'fixture', DB_USER: 'fixture', DB_PASSWORD: 'fixture', PORT: '3080', UPLOAD_DIR: process.env.UPLOAD_DIR };
+        DB_NAME: 'fixture', DB_USER: 'fixture', DB_PASSWORD: 'fixture', PORT: '3080', UPLOAD_DIR: process.env.UPLOAD_DIR,
+        BEAUTERRY_PFM_SYNC_ENABLED: 'false' };
     assert.doesNotThrow(() => validateRuntime(env));
     assert.throws(() => validateRuntime({ ...env, JWT_SECRET: 'change_this_to_a_long_random_secret' }), /JWT_SECRET/);
     assert.throws(() => validateRuntime({ ...env, PORT: '0' }), /PORT/);
@@ -689,7 +690,8 @@ test('production process exits when its database is unavailable so PM2 can resta
             DB_PASSWORD: 'unavailable',
             PORT: '3080',
             HOST: '127.0.0.1',
-            UPLOAD_DIR: process.env.UPLOAD_DIR
+            UPLOAD_DIR: process.env.UPLOAD_DIR,
+            BEAUTERRY_PFM_SYNC_ENABLED: 'false'
         },
         stdio: ['ignore', 'pipe', 'pipe']
     });
