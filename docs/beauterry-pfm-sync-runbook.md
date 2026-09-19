@@ -76,3 +76,32 @@ HTTP 401 จาก Beauterry โดยไม่ส่ง key แปลว่า 
 4. รัน test ทั้งสอง repo
 5. deploy provider ก่อน แล้วจึง deploy consumer
 6. ตรวจสถานะ sync หลัง deploy
+
+## Developer push boundaries
+
+โปรเจคนี้ใช้ GitHub webhook auto deploy ดังนั้นการ merge หรือ push เข้า
+`main` ถือว่าเป็นการขอ deploy production ด้วย ไม่ควร push งานที่ยังไม่ผ่าน
+review หรือยังไม่ได้รันทดสอบขึ้น `main`
+
+ทีม Dev ทำได้:
+
+- พัฒนาและทดสอบในเครื่อง dev โดยใช้ `BEAUTERRY_PFM_SYNC_ENABLED=false`
+- แก้ code, test และเอกสารใน repo ที่เป็นเจ้าของเรื่องนั้น
+- เปิด PR ให้ตรวจ diff, test และผลกระทบก่อน merge เข้า `main`
+- ใช้ `npm test` และ `npm run check:production` ก่อนส่ง release
+
+ทีม Dev ห้ามทำ:
+
+- commit หรือ push ไฟล์ `.env`, key จริง, password หรือค่าของ production
+- ใช้ `ADS_SYNC_KEY` แทน `BEAUTERRY_PFM_EXPORT_KEY`
+- แก้ไฟล์ในโฟลเดอร์ `Production` เพื่อทำเป็น deployment หลัก
+- รัน setup database, seed หรือ migration บน production โดยไม่ได้รับอนุมัติและ
+  ไม่มีแผน backup/rollback
+- deploy API consumer ก่อน provider เมื่อมีการเปลี่ยน contract
+
+การเปลี่ยนค่า production-only เช่น key, database, `UPLOAD_DIR`, port หรือ PM2
+ให้ทำผ่านขั้นตอนดูแล production ที่ได้รับอนุมัติ แล้ว restart เฉพาะ process ที่
+เกี่ยวข้อง จากนั้นตรวจ readiness และสถานะ sync ทุกครั้ง
+
+ถ้าเป็นเอกสารหรือ code ที่ไม่ควรขึ้น production ทันที ให้ทำงานบน branch/PR
+และอย่า merge เข้า `main` จนกว่าจะพร้อมรับผลของ auto deploy
