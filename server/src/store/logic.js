@@ -134,6 +134,73 @@ function hireBreakdown(items) {
     return out;
 }
 
+// ===== ความคืบหน้าของงาน Talent ทั้งงาน (การ์ดงาน / หน้างาน) — คิดตอนอ่าน ไม่เก็บลงฐาน =====
+// ต้องตรงกับ jobProgress ฝั่งหน้าเว็บ (client/src/data/hireProgress.js) — เทสต์เทียบผลสองฝั่ง (tests/talent-r2-parity.test.cjs)
+// people นับเป็น "ตำแหน่ง": แถวคน 1 แถว = 1 ตำแหน่ง · ใบขอให้หาที่ยังขาดคน = ตำแหน่งที่ยังต้องหา (need)
+//   talking = กำลังคุย (ยังไม่ตกลง) · booking = เลือกจากใบแล้วรอยืนยันคิว / ค่าตัวใหม่ · agreed / shot / delivered = ตกลงแล้ว / ถ่ายเสร็จ / ส่งงานแล้ว
+// money = hireBreakdown (ชุดเดียวกับหน้ารอบทำจ่าย)
+// todo = เรื่องที่ค้างในงานนี้ เรียงตามความสำคัญ (keys = ใบขอให้หา / แถวคนที่เกี่ยว ไว้เปิดต่อ) · next = เรื่องแรก หรือสถานะเมื่อไม่มีอะไรค้าง
+// today = 'YYYY-MM-DD' ตามเวลาไทย (ไม่ส่ง = ไม่เช็คเลยกำหนด / เลยวันงาน)
+const HIRE_TALK = 'ทาบทาม';
+const noAssignee = it => !it || it.assignee_id === null || it.assignee_id === undefined || it.assignee_id === '';
+function jobProgress(items, jobStatus, today) {
+    const list = (Array.isArray(items) ? items : []).filter(Boolean);
+    const closed = HIRE_JOB_CLOSED.includes(jobStatus);
+    const st = it => String(it.status || '').trim();
+    const direct = list.filter(it => it.mode !== 'casting');
+    const requests = list.filter(it => it.mode === 'casting');
+    const people = { total: 0, talking: 0, no_fee: 0, booking: 0, agreed: 0, shot: 0, delivered: 0, need: 0 };
+    direct.forEach(it => {
+        if (bookingOpen(it)) people.booking += 1;
+        else if (st(it) === 'ส่งงานแล้ว') people.delivered += 1;
+        else if (st(it) === 'ถ่ายเสร็จ') people.shot += 1;
+        else if (st(it) === HIRE_AGREED) people.agreed += 1;
+        else { people.talking += 1; if (!((Number(it.fee) || 0) > 0)) people.no_fee += 1; }
+    });
+    // งานที่ปิดแล้วไม่มีใครต้องหาต่อ (ตรงกับ hireStage = closed)
+    const open = closed ? [] : requests.filter(it => hireRemaining(it) > 0);
+    people.need = open.reduce((s, it) => s + hireRemaining(it), 0);
+    people.total = direct.length + people.need;
+    const money = hireBreakdown(list);
+    if (closed) return { people, money, todo: [], next: { code: 'closed', n: 0, keys: [] } };
+
+    const todo = [];
+    const keysOf = (rows, field = 'key') => [...new Set(rows.map(it => String(it[field])))];
+    const add = (code, n, keys) => { if (n > 0) todo.push({ code, n, keys }); };
+    const fromReq = it => it.from_request !== null && it.from_request !== undefined;
+    const feeRows = direct.filter(it => fromReq(it) && bookingState(it) === BOOK_FEE);
+    const pendRows = direct.filter(it => fromReq(it) && bookingState(it) === BOOK_PENDING);
+    const deciding = open.filter(it => hireWaiting(it) > 0);
+    const unassigned = open.filter(it => hireWaiting(it) === 0 && noAssignee(it));
+    const overdue = today ? open.filter(it => it.deadline && hireNeedMore(it) > 0 && String(it.deadline) < today) : [];
+    const finding = open.filter(it => hireNeedMore(it) > 0 && !noAssignee(it));
+    const talking = direct.filter(it => !bookingOpen(it) && ![HIRE_AGREED, 'ถ่ายเสร็จ', 'ส่งงานแล้ว'].includes(st(it)));
+    // ตกลงแล้วแต่เลยวันงานไปแล้ว — ถ่ายเสร็จหรือยัง (หน้ารอบทำจ่ายหยิบยอดตามสถานะ)
+    const late = today ? direct.filter(it => !bookingOpen(it) && st(it) === HIRE_AGREED && it.use_date && String(it.use_date) < today) : [];
+    add('fee', feeRows.length, keysOf(feeRows, 'from_request'));
+    add('decide', deciding.reduce((s, it) => s + hireWaiting(it), 0), keysOf(deciding));
+    add('assign', unassigned.length, keysOf(unassigned));
+    add('overdue', overdue.length, keysOf(overdue));
+    add('confirm', pendRows.length, keysOf(pendRows, 'from_request'));
+    add('finding', finding.reduce((s, it) => s + hireNeedMore(it), 0), keysOf(finding));
+    add('talking', talking.length, keysOf(talking));
+    add('past', late.length, keysOf(late));
+
+    let next = todo[0];
+    if (!next) {
+        const left = direct.filter(it => st(it) !== 'ส่งงานแล้ว');
+        if (!direct.length) next = { code: 'empty', n: 0, keys: [] };
+        else if (!left.length) next = { code: 'close', n: direct.length, keys: [] };
+        else if (left.every(it => st(it) === 'ถ่ายเสร็จ')) next = { code: 'deliver', n: left.length, keys: keysOf(left) };
+        else {
+            // ครบแล้ว รอวันงาน — บอกวันงานถัดไปที่ยังไม่ถึง
+            const dates = left.map(it => it.use_date).filter(Boolean).map(String).filter(d => !today || d >= today).sort();
+            next = { code: 'ready', n: left.length, keys: [], date: dates[0] || null };
+        }
+    }
+    return { people, money, todo, next };
+}
+
 // ----- การเปลี่ยนขั้นคอนเฟิร์มคิว (ฟังก์ชันบริสุทธิ์: รับ hire_items ทั้งงาน คืน { list, row } หรือ { error }) -----
 const isDateStr = v => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v);
 const clipText = (v, n) => { const s = v == null ? '' : String(v).trim(); return s ? s.slice(0, n) : null; };
@@ -476,6 +543,83 @@ function payableWithoutFee(currentItems, incomingItems) {
         if (!was || status !== st(was.status) || cleanFee(was.fee) !== cleanFee(raw.fee)) return raw;
     }
     return null;
+}
+
+// ===== แก้คน 1 คนในงาน Talent (PATCH /projects/:id/hires/:key/person — ปุ่ม "ถัดไป" และลิ้นชักคนในหน้างาน) =====
+// หน้างานส่งมาเฉพาะช่องที่แก้ (set) พร้อมค่าที่หน้าเห็นก่อนแก้ (expect) — ไม่ส่งทั้งก้อนแบบฟอร์มเต็ม
+// จึงไม่ทับงานคนอื่นที่แก้คนละช่อง / คนละคนในเวลาเดียวกัน · ค่าที่เห็นไม่ตรงของในฐาน = มีคนแก้ไปแล้ว → 409 ให้โหลดใหม่
+// ช่องที่แก้ได้ = ช่องเดียวกับที่ฟอร์มสั้นกรอกได้ (newHireRow) — ช่องที่ระบบเป็นคนตั้ง (รูป, booking, from_*, key) แก้ทางนี้ไม่ได้
+// ความยาวของแต่ละช่องตรงกับ newHireRow ไม่งั้นแก้ทีหลังจะยาวกว่าตอนสร้างได้
+const PERSON_TEXT_MAX = { name: 200, kind: 100, contact: 200, agency: 200, qty: 100, use_time: 60, place: 200, link: 1000, note: 1000 };
+const PERSON_FIELDS = [...Object.keys(PERSON_TEXT_MAX), 'fee', 'use_date', 'status'];
+
+// row = แถวคนตามที่อยู่ในฐาน (ใต้ล็อก) · requestExists = ใบขอให้หาต้นทางของคนนี้ยังอยู่ในงานไหม
+// คืน { row: แถวใหม่, changed: [ช่องที่เปลี่ยนจริง] } หรือ { error: { code, message, stale? } }
+// changed ว่าง = ส่งค่าเดิมมา (เช่นกดเลิกทำซ้ำ) ไม่มีอะไรต้องเขียน
+function personPatch(row, set, expect, { requestExists = false } = {}) {
+    if (!row || typeof row !== 'object') return { error: { code: 404, message: 'ไม่พบรายการนี้' } };
+    if (row.mode === 'casting') return { error: { code: 400, message: 'แก้ได้เฉพาะคนในงาน — ใบขอให้หาแก้ในใบ' } };
+    const isObj = v => !!v && typeof v === 'object' && !Array.isArray(v);
+    const has = (o, k) => isObj(o) && Object.prototype.hasOwnProperty.call(o, k) && o[k] !== undefined;
+    // ช่องที่ไม่รู้จักทิ้งเงียบ ๆ (หน้าเว็บรุ่นใหม่กว่าอาจส่งมาเกิน) — เหลือไม่มีเลย = ไม่มีอะไรให้บันทึก
+    const keys = PERSON_FIELDS.filter(k => has(set, k));
+    if (!keys.length) return { error: { code: 400, message: 'ไม่มีอะไรให้บันทึก' } };
+
+    // ตัวแปลงค่าให้เทียบกันได้: ข้อความตัดช่องว่าง/ความยาวแบบเดียวกับตอนสร้าง (ว่าง = null) · ค่าตัวผ่าน cleanFee ('' = 0 = null)
+    // วันที่เทียบเป็นสตริง · สถานะที่ไม่รู้จัก (ข้อมูลเก่า / ว่าง) ถือเป็นกำลังคุย แบบเดียวกับหน้าเว็บ (personStep)
+    const text = (v, n) => (typeof v === 'string' || typeof v === 'number' ? clipText(v, n) : null);
+    const statusOf = v => { const s = text(v, 40); return HIRE_DIRECT_STATUS.includes(s) ? s : HIRE_BOOKED; };
+    const dateOf = v => (typeof v === 'string' && v.trim() ? v.trim() : null);
+    const norm = (k, v) => (k === 'fee' ? cleanFee(v)
+        : k === 'status' ? statusOf(v)
+            : k === 'use_date' ? dateOf(v)
+                : text(v, PERSON_TEXT_MAX[k]));
+    const who = String(text(row.name, 200) || text(row.kind, 100) || 'คนนี้').slice(0, 100);
+
+    // เช็คก่อนตรวจค่าที่ส่งมา — หน้าที่เปิดค้าง (ข้อมูลเก่า) ต้องได้ 409 ให้โหลดใหม่ ไม่ใช่ 400 เรื่องค่าที่ตัวเองไม่ได้แตะ
+    // เทียบเฉพาะช่องที่ส่ง expect มา (หน้าเว็บส่งค่าเดิมของทุกช่องที่แก้)
+    const stale = PERSON_FIELDS.find(k => has(expect, k) && norm(k, expect[k]) !== norm(k, row[k]));
+    if (stale) {
+        return { error: { code: 409, stale: true, message: `ข้อมูลของ ${who} เพิ่งเปลี่ยน — โหลดค่าล่าสุดให้แล้ว ตรวจแล้วบันทึกอีกครั้ง` } };
+    }
+
+    const next = {};
+    for (const k of keys) {
+        const v = set[k];
+        if (k === 'fee') next.fee = cleanFee(v);
+        else if (k === 'status') {
+            const s = text(v, 40);
+            if (!HIRE_DIRECT_STATUS.includes(s)) return { error: { code: 400, message: 'สถานะไม่ถูกต้อง' } };
+            next.status = s;
+        } else if (k === 'use_date') {
+            // ว่าง = ล้างวัน · วันที่ผิดรูป/ไม่มีจริงตีกลับ (ไม่ล้างเงียบ ๆ แบบฟอร์มสร้าง — ที่นี่คือแก้วันที่มีอยู่แล้ว พิมพ์ผิดแล้ววันหายจะไม่มีใครรู้)
+            if (v === null || (typeof v === 'string' && !v.trim())) next.use_date = null;
+            else if (realDate(typeof v === 'string' ? v.trim() : v)) next.use_date = v.trim();
+            else return { error: { code: 400, message: 'วันที่ไม่ถูกต้อง (ต้องเป็น ปี-เดือน-วัน)' } };
+        } else next[k] = text(v, PERSON_TEXT_MAX[k]);
+    }
+    if (keys.includes('name') && !next.name) return { error: { code: 400, message: 'กรุณาระบุชื่อคน' } };
+    if (keys.includes('kind') && !next.kind) return { error: { code: 400, message: 'กรุณาระบุประเภทงาน' } };
+
+    // เขียนเฉพาะช่องที่เปลี่ยนจริง — ช่องที่ส่งค่าเดิมมาคงของในฐานไว้ตามเดิมทุกตัวอักษร
+    const changed = keys.filter(k => norm(k, next[k]) !== norm(k, row[k]));
+    const out = { ...row };
+    changed.forEach(k => { out[k] = next[k]; });
+
+    if (changed.includes('status') && bookingOpen(row)) {
+        // ระหว่างรอยืนยันคิว / รอตัดสินค่าตัวใหม่ สถานะเดินตามปุ่มในใบเท่านั้น (กติกาเดียวกับ mergeHireItems)
+        if (requestExists) return { error: { code: 409, message: 'คนนี้ยังรอยืนยันคิวในใบขอให้หา — ยืนยันคิวในใบก่อน' } };
+        // ใบต้นทางหายไปแล้ว ไม่มีใครกดยืนยันคิวให้ได้อีก — ตั้งสถานะเองแล้วปิดขั้นยืนยันคิวไปด้วย
+        // ไม่งั้นคนนี้ค้าง "รอยืนยัน" ในความคืบหน้า/รอบทำจ่ายตลอดไปทั้งที่ตั้งสถานะแล้ว
+        out.booking = { ...(row.booking || {}), state: BOOK_OK };
+    }
+    // ไม่มีค่าตัว ห้ามตกลงแล้ว — ตรวจเฉพาะเมื่อครั้งนี้แตะสถานะหรือค่าตัว (แถวเก่าที่ตกลงแล้วค่าตัว 0 ยังแก้ช่องอื่นได้)
+    if ((changed.includes('status') || changed.includes('fee'))
+        && HIRE_PAYABLE.includes(statusOf(out.status)) && !bookingOpen(out) && cleanFee(out.fee) <= 0) {
+        const name = String(text(out.name, 200) || text(out.kind, 100) || 'คนที่ยังไม่ใส่ชื่อ').slice(0, 100);
+        return { error: { code: 400, message: `ใส่ค่าตัวของ "${name}" ก่อน จึงจะตั้งเป็น "ตกลงแล้ว" ได้` } };
+    }
+    return { row: out, changed };
 }
 
 // Platform ของกลุ่ม — รองรับทั้ง platforms[] แบบใหม่ และ platform เดี่ยว/ที่ติดอยู่กับ allocation แบบเดิม
@@ -826,8 +970,9 @@ module.exports = {
     duplicateError, inScope, scopeProjects, hireRemaining, hireRowFee,
     HIRE_JOB_CLOSED, hireWaiting, hireNeedMore, hireStage,
     BOOK_PENDING, BOOK_FEE, BOOK_OK, HIRE_BOOKED, HIRE_AGREED, bookingState, bookingOpen, hireBookings,
-    releaseToRequest, bookingConfirm, bookingFeeDecision, bookingUnavailable, hireBreakdown, pfmManagedSpend,
+    releaseToRequest, bookingConfirm, bookingFeeDecision, bookingUnavailable, hireBreakdown, jobProgress, pfmManagedSpend,
     HIRE_PAYABLE, HIRE_DIRECT_STATUS, newHireRow, payableWithoutFee, isDateStr, clipText,
+    PERSON_FIELDS, personPatch,
     resolveInside, sameInstant, mergeHireItems, mergeBriefFiles, cleanFee, cleanHeadcount, safeId, safeSlug,
     linkGroupPlatforms, resolveGroupClips, resolveGroupTarget, productCodesIn, carryProductTargets, carryProductBudgets, carryProductConcepts,
     resolveGroupProducts, resolveGroupCtype, resolveGroupMedia, resolveGroupCampaign,

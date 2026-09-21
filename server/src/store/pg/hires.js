@@ -8,7 +8,7 @@
  * คนเดิมที่ถูกจ้างสองงานจะมีสองแถวคนละ key เสมอ
  */
 const { loadSnapshot } = require('./_snapshot');
-const { clone, scopeProjects, inScope, hireRemaining, hireRowFee, hireWaiting, hireNeedMore, hireStage, HIRE_JOB_CLOSED, hireBookings, bookingOpen } = require('../logic');
+const { clone, scopeProjects, inScope, hireRemaining, hireRowFee, hireWaiting, hireNeedMore, hireStage, HIRE_JOB_CLOSED, hireBookings, bookingOpen, jobProgress } = require('../logic');
 
 const isOther = p => (p.campaign_type || 'kol') === 'other';
 const str = v => String(v == null ? '' : v).trim();
@@ -105,7 +105,8 @@ const hires = {
     // สองทางหลังตั้งใจให้ข้ามสิทธิ์แบรนด์ได้ เพราะคนที่ถูกมอบงานต้องเห็นงานของตัวเองเสมอ
     // (เห็นเฉพาะ "ใบนั้น" ไม่ได้เปิดทั้งแคมเปญให้ — เส้นแก้ไขก็ตรวจซ้ำอีกชั้นที่ routes/projects.js)
     // withNames = แปะชื่อคนขอ (requested_by_name) ด้วยไหม — เส้นนับเลขแดงถูกเรียกทุก 60 วินาทีจากทุกหน้า ไม่ต้องใช้ชื่อ จึงปิดไว้
-    async tasks({ userId = null, scopeBrands = null, mine = '', status, search, brand, withNames = true } = {}) {
+    // project = id งาน (ตัวเลข) → rows / summary เหลือเฉพาะใบของงานนั้น (หน้างานเปิดลิ้นชักใบจากแถวนี้) · counts ยังนับทุกใบเหมือนเดิม
+    async tasks({ userId = null, scopeBrands = null, mine = '', status, search, brand, project = null, withNames = true } = {}) {
         const snap = await loadSnapshot(withNames ? ['other_projects', 'user_names'] : ['other_projects']);
         // ชื่อโชว์แบบเดียวกับคนช่วยหา (ชื่อเล่น → ชื่อจริง → username) · อ่านจากคิวรีเบาที่ไม่มีรหัสผ่าน
         const nameOf = new Map((snap.user_names || []).map(u => [String(u.id), str(u.nickname) || str(u.full_name) || str(u.username) || null]));
@@ -180,10 +181,12 @@ const hires = {
         });
 
         const q = str(search).toLowerCase();
+        const pid = project === null || project === undefined || project === '' ? null : String(project);
         const picked = rows.filter(r =>
             (mine !== 'find' || r.is_assignee)
             && (mine !== 'ask' || r.is_requester)
             && (mine !== 'todo' || r.my_todo)
+            && (pid === null || String(r.project_id) === pid)
             && (!brand || r.brand === brand)
             && (!status || r.status === status)
             && (!q || [r.project_name, r.brand, r.kind, r.spec, r.assignee_name, r.place]
@@ -229,8 +232,10 @@ const hires = {
     },
 
     // งานจ้างอื่น ๆ รายงาน (1 แถว = 1 งาน) เฉพาะแบรนด์ที่มีสิทธิ์ — คนหาที่ไม่มีสิทธิ์แบรนด์ (scope = []) ได้รายการว่าง
+    // progress = ความคืบหน้าของงาน (คน / เงิน / เรื่องที่ต้องทำ) ชุดเดียวกับที่หน้างานคิดเองจาก hire_items (jobProgress)
     async jobs({ scopeBrands = null } = {}) {
         const snap = await loadSnapshot(['other_projects']);
+        const today = todayTH();
         const rows = scopeProjects(snap.other_projects.slice(), scopeBrands).filter(isOther).map(p => {
             const items = (Array.isArray(p.hire_items) ? p.hire_items : []).filter(Boolean);
             const people = items.filter(it => it.mode !== 'casting' && str(it.name));
@@ -258,7 +263,8 @@ const hires = {
                 fee_review: closed ? 0 : items.filter(it => it.mode !== 'casting' && it.from_request != null && bookingOpen(it) && it.booking.state === 'fee_review').length,
                 total_fee: items.reduce((s, it) => s + hireRowFee(it), 0),
                 closed,
-                created_at: p.created_at || null, updated_at: p.updated_at || null
+                created_at: p.created_at || null, updated_at: p.updated_at || null,
+                progress: jobProgress(items, p.status, today)
             };
         });
         // งานที่ยังไม่จบและมีเรื่องค้าง (รออนุมัติ / ยังต้องหา) ขึ้นก่อน แล้วงานใหม่สุดก่อน
@@ -269,13 +275,26 @@ const hires = {
             || String(b.created_at || '').localeCompare(String(a.created_at || ''))
             || (Number(b.id) || 0) - (Number(a.id) || 0));
         const open = rows.filter(r => !r.closed);
+        // เงิน / ตำแหน่งรวมของงานที่ยังไม่จบ (กล่องสรุปบนแท็บงานทั้งหมด) — บวกจาก progress ของแต่ละงาน ตัวเลขจึงตรงกับการ์ดเสมอ
+        // slots.agreed = ตกลงแล้ว + ถ่ายเสร็จ + ส่งงานแล้ว · slots.pending = กำลังคุย + รอยืนยันคิว · slots.need = ยังต้องหา
+        const sum = pick => open.reduce((s, r) => s + pick(r.progress), 0);
         return clone({
             summary: {
                 jobs: rows.length,
                 open_jobs: open.length,
                 people: open.reduce((s, r) => s + r.people_count, 0),
                 remaining: open.reduce((s, r) => s + r.remaining, 0),
-                total_fee: open.reduce((s, r) => s + r.total_fee, 0)
+                total_fee: open.reduce((s, r) => s + r.total_fee, 0),
+                money: {
+                    agreed: sum(g => g.money.agreed),
+                    pending: sum(g => g.money.pending),
+                    unfilled: sum(g => g.money.unfilled)
+                },
+                slots: {
+                    agreed: sum(g => g.people.agreed + g.people.shot + g.people.delivered),
+                    pending: sum(g => g.people.talking + g.people.booking),
+                    need: sum(g => g.people.need)
+                }
             },
             brands: [...new Set(rows.map(r => r.brand).filter(Boolean))].sort(),
             rows

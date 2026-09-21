@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { api, uploadFile } from '../api/client.js';
 import Icon from './Icon.jsx';
 import DatePicker from './DatePicker.jsx';
@@ -66,7 +66,9 @@ export const hireStage = (it, jobStatus, items) => {
     if (!it || it.assignee_id === null || it.assignee_id === undefined || it.assignee_id === '') return 'unassigned';
     return 'finding';
 };
-// แถวใหม่เริ่มที่ "ยังไม่เลือกรูปแบบ" — เลือกจาก dropdown ก่อน ช่องกรอกถึงจะขึ้น
+// แถวใหม่ในฟอร์มนี้เริ่มเป็น "มีคนแล้ว" (direct) — ส่วนใหญ่มีตัวคนในมือแล้ว ช่องกรอกขึ้นทันที
+// ยังเปลี่ยนเป็น "ขอให้ช่วยหา" ได้จาก dropdown รูปแบบการจ้าง (แถวที่ยังไม่ได้บันทึก)
+// newItem('') (ยังไม่เลือกรูปแบบ) ยังรองรับไว้ — hasMode / rowFilled ด้านล่างเช็คกรณีนี้อยู่
 // คนที่มีแล้วเริ่มที่ 'ทาบทาม' (กำลังคุย) เสมอ — ยังไม่รู้ค่าตัวก็บันทึกได้
 const newItem = (mode = '') => ({
     key: genKey(), mode: (mode === 'casting' || mode === 'direct') ? mode : '',
@@ -104,7 +106,7 @@ export default function OtherProjectForm({ editing, onClose, onSaved, onConflict
     });
     const [items, setItems] = useState(() => {
         const src = Array.isArray(editing?.hire_items) ? editing.hire_items : [];
-        return src.length ? src.map(toItem) : [newItem()];
+        return src.length ? src.map(toItem) : [newItem('direct')];
     });
     // รูป/คอมการ์ดที่เพิ่งเลือกไว้ (ยังไม่ได้อัป) — คีย์คือ key ของแถว ค่าเป็นไฟล์
     // ต้องอัปหลังบันทึกงานเสร็จ เพราะตอนสร้างใหม่ยังไม่มีรหัสงานให้ผูกไฟล์
@@ -121,6 +123,20 @@ export default function OtherProjectForm({ editing, onClose, onSaved, onConflict
     const [error, setError] = useState('');
     const [baseUpdatedAt] = useState(() => (editing && editing.updated_at) || null);
     const [saving, setSaving] = useState(false);
+    // กดบันทึกแล้วยังกรอกไม่ครบ → ขึ้นข้อความใต้ช่องที่ขาด แล้วเลื่อนไปช่องแรกที่ขาด
+    // (ก่อนกดบันทึกครั้งแรกไม่ขึ้น ไม่งั้นฟอร์มเปล่าจะแดงทั้งฟอร์มตั้งแต่เปิด)
+    const [tried, setTried] = useState(false);
+    const [scrollTick, setScrollTick] = useState(0);
+    const formRef = useRef(null);
+    useEffect(() => {
+        if (!scrollTick || !formRef.current) return;
+        const msg = formRef.current.querySelector('[data-missing]');
+        if (!msg) return;
+        const box = msg.closest('.field, .hire-f') || msg;
+        box.scrollIntoView({ block: 'center', behavior: 'smooth' });
+        const input = box.querySelector('input:not([type=file]), select, textarea');
+        if (input) input.focus({ preventScroll: true });
+    }, [scrollTick]);
     // [{ id, name }] — ใช้ชื่อสำหรับช่องผู้ดูแลงาน (ของเดิมเก็บเป็นชื่อ)
     // และใช้ id สำหรับคนช่วยหา เพราะงานที่ฝากหาต้องผูกกับบัญชีจริง ไม่ใช่ข้อความชื่อ
     const [people, setPeople] = useState([]);
@@ -139,10 +155,11 @@ export default function OtherProjectForm({ editing, onClose, onSaved, onConflict
     function update(k, v) { setForm(f => ({ ...f, [k]: v })); }
     const setItem = (i, k, v) => setItems(list => list.map((x, idx) => idx === i ? { ...x, [k]: v } : x));
     // เพิ่มแถว — ก๊อปประเภทงาน/วันที่/สถานที่ของแถวก่อนหน้ามาให้ (งานกองเดียวกันมักซ้ำกันทั้งชุด)
-    // รูปแบบการจ้างไม่ก๊อปมา ต้องเลือกใหม่ทุกแถว ช่องกรอกถึงจะขึ้น
+    // แถวใหม่เริ่มเป็น "มีคนแล้ว" เสมอ (ไม่ก๊อปรูปแบบของแถวก่อน) — จะขอให้ช่วยหาก็เปลี่ยนที่ dropdown ของแถวนั้น
+    // ประเภทงานที่ก๊อปมาไม่ทำให้แถวนับว่ากรอกแล้ว (rowFilled ต้องมีชื่อหรือค่าตัว) — กดเพิ่มไว้เฉย ๆ ไม่ได้แถวว่างติดไป
     const addItem = () => setItems(list => {
         const last = list[list.length - 1] || {};
-        return [...list, { ...newItem(), kind: last.kind || '', use_date: last.use_date || '', place: last.place || '' }];
+        return [...list, { ...newItem('direct'), kind: last.kind || '', use_date: last.use_date || '', place: last.place || '' }];
     });
     // เลือกคนช่วยหาจากในฟอร์ม — เก็บทั้ง id (ตัวจริงที่ใช้เทียบสิทธิ์) และชื่อ (ไว้โชว์ย้อนหลัง)
     const setAssignee = (i, id) => setItems(list => list.map((x, idx) => {
@@ -161,7 +178,13 @@ export default function OtherProjectForm({ editing, onClose, onSaved, onConflict
             status: allowed.includes(x.status) ? x.status : allowed[0]
         };
     }));
-    const removeItem = i => setItems(list => list.length > 1 ? list.filter((_, idx) => idx !== i) : list);
+    // ไฟล์ที่เลือกค้างไว้ของแถวนี้ต้องหายไปด้วย (ไม่งั้นยังถูกอัปตอนบันทึก)
+    const dropFile = k => setRowFiles(m => { if (k == null || !(k in m)) return m; const n = { ...m }; delete n[k]; return n; });
+    const removeItem = i => {
+        if (items.length <= 1) return;
+        dropFile(items[i] && items[i].key);
+        setItems(list => list.length > 1 ? list.filter((_, idx) => idx !== i) : list);
+    };
 
     // งบรวมของแคมเปญ = ผลรวมของทุกแถว (ไม่มีช่องให้กรอกงบเอง เพื่อไม่ให้สองตัวเลขขัดกัน)
     // ใบขอให้หานับ งบต่อคน × จำนวนคน เพราะยังไม่รู้ตัวคน แต่รู้กรอบเงินที่จะใช้แล้ว
@@ -192,15 +215,48 @@ export default function OtherProjectForm({ editing, onClose, onSaved, onConflict
         if (!form.name.trim()) m.push('ชื่องาน');
         if (!form.brand) m.push('Brand');
         const itemsOk = items.some(rowOk);
-        if (!itemsOk) m.push('รายการจ้าง (เลือกรูปแบบก่อน แล้วกรอก — มีคนแล้ว: ประเภทงาน + ชื่อ · ขอให้ช่วยหา: ประเภทงาน + จำนวนคน + งบต่อคน อย่างน้อย 1 แถว)');
+        if (!itemsOk) m.push('รายการจ้าง (มีคนแล้ว: ประเภทงาน + ชื่อ · ขอให้ช่วยหา: ประเภทงาน + จำนวนคน + งบต่อคน อย่างน้อย 1 แถว)');
         return m;
     }
+    // ตอนแก้ไขเช็คแค่ชื่องาน (เดิมช่องนี้ใช้ required ของเบราว์เซอร์ — ย้ายมาเตือนที่ช่องแบบเดียวกับช่องอื่น)
+    // รายการจ้าง/แบรนด์ตอนแก้ไขไม่บังคับเหมือนเดิม
+    const missing = isEdit ? (form.name.trim() ? [] : ['ชื่องาน']) : validate();
+
+    // ช่องที่ขาดของแถวหนึ่งแถว → ข้อความที่ขึ้นใต้ช่องนั้น
+    const rowMissing = it => {
+        const m = {};
+        if (!hasMode(it) || isLocked(it)) return m;
+        if (!it.kind) m.kind = 'เลือกประเภทงาน';
+        if (isCasting(it)) {
+            if (!(num(it.headcount) > 0)) m.headcount = 'ใส่จำนวนคน';
+            if (!(num(it.fee) > 0)) m.fee = 'ใส่งบต่อคน';
+        } else if (!it.name.trim()) {
+            m.name = 'ใส่ชื่อคนก่อนนะ';
+        }
+        return m;
+    };
+    // แถวที่ต้องชี้ให้กรอกต่อ (เฉพาะตอนสร้างใหม่ที่ยังไม่มีแถวไหนครบ): แถวที่เริ่มกรอกแล้ว
+    // — ยังไม่ได้เริ่มสักแถว ชี้แถวแรก · แถวว่างที่กดเพิ่มไว้เฉย ๆ ไม่ต้องแดง (ตอนบันทึกก็ไม่ถูกเก็บอยู่แล้ว)
+    const flagKeys = (() => {
+        if (!tried || isEdit || items.some(rowOk)) return new Set();
+        const open = items.filter(it => hasMode(it) && !isLocked(it));
+        const started = open.filter(it => rowFilled(it) || !!it.kind);
+        return new Set((started.length ? started : open.slice(0, 1)).map(it => String(it.key)));
+    })();
+    const rowMiss = it => (flagKeys.has(String(it.key)) ? rowMissing(it) : {});
+    const nameMiss = tried && !form.name.trim();
+    const brandMiss = tried && !isEdit && !form.brand;
+    // ข้อความใต้ช่อง — data-missing ใช้หาช่องแรกที่ต้องเลื่อนไปหา
+    const ferr = text => (text ? <span className="tc2-ferr" data-missing="1" role="alert">{text}</span> : null);
 
     async function handleSubmit(e) {
         e.preventDefault();
-        if (!isEdit) {
-            const m = validate();
-            if (m.length) { setError('กรุณากรอกให้ครบทุกช่อง: ' + m.join(', ')); return; }
+        if (missing.length) {
+            // ขึ้นข้อความใต้ช่องที่ขาด + เลื่อนไปช่องแรก · สรุปรวมยังอยู่ใต้ฟอร์ม (form-missing-hint)
+            setTried(true);
+            setScrollTick(t => t + 1);
+            setError('');
+            return;
         }
         const noFee = items.filter(rowFilled).find(feeBlocked);
         if (noFee) { setError(`ใส่ค่าตัวของ "${noFee.name.trim() || 'คนนี้'}" ก่อน จึงจะตั้งเป็น "ตกลงแล้ว" ได้`); return; }
@@ -267,8 +323,11 @@ export default function OtherProjectForm({ editing, onClose, onSaved, onConflict
             const saved = res.data;
             // อัปรูป/คอมการ์ดทีละแถวหลังบันทึก — อ้างแถวด้วย key ชุดเดียวกับที่เพิ่งบันทึกไป
             const pid = isEdit ? editing.id : saved.id;
-            for (const [key, file] of Object.entries(rowFiles)) {
-                try { await uploadFile(`/projects/${pid}/hires/${key}/image`, file); }
+            // เฉพาะแถวคน (direct) ที่ส่งไปในครั้งนี้ — ไฟล์ของแถวที่ลบทิ้ง / ไม่ได้กรอก / สลับเป็นขอให้ช่วยหา ไม่ต้องอัป
+            for (const it of hire_items) {
+                const file = it.mode === 'casting' ? null : rowFiles[it.key];
+                if (!file) continue;
+                try { await uploadFile(`/projects/${pid}/hires/${it.key}/image`, file); }
                 catch (err) { alert(`อัปโหลดรูปไม่สำเร็จ: ${err.message}`); }
             }
             onSaved(saved);
@@ -286,9 +345,6 @@ export default function OtherProjectForm({ editing, onClose, onSaved, onConflict
         }
     }
 
-    const missing = validate();
-    const canSubmit = isEdit || missing.length === 0;
-
     return (
         <div className="modal-backdrop" onClick={onClose}>
             <div className="modal wide" onClick={e => e.stopPropagation()}>
@@ -298,16 +354,18 @@ export default function OtherProjectForm({ editing, onClose, onSaved, onConflict
                 </div>
                 <p className="ctype-lead">งานจ้างนอกเหนือจาก KOL — ไม่เข้าหน้าโฆษณาและรายงานแคมเปญ แต่ค่าตัวยังเข้ารอบทำจ่ายตามปกติ</p>
 
-                <form onSubmit={handleSubmit}>
+                <form onSubmit={handleSubmit} ref={formRef}>
 
                     <div className="field-row">
                         <div className="field">
                             <label>Brand</label>
-                            <select value={form.brand} onChange={e => update('brand', e.target.value)}>
+                            <select value={form.brand} onChange={e => update('brand', e.target.value)}
+                                className={brandMiss ? 'tc2-invalid' : undefined} aria-invalid={brandMiss ? 'true' : undefined}>
                                 <option value="">{brandOpts.length || keepBrand ? 'เลือกแบรนด์' : 'ยังไม่ได้รับสิทธิ์แบรนด์ — ติดต่อผู้ดูแลระบบ'}</option>
                                 {brandOpts.map(b => <option key={b} value={b}>{b}</option>)}
                                 {keepBrand && <option value={keepBrand}>{keepBrand}</option>}
                             </select>
+                            {brandMiss && ferr('เลือกแบรนด์')}
                         </div>
                         {isEdit && (
                             <div className="field">
@@ -322,8 +380,11 @@ export default function OtherProjectForm({ editing, onClose, onSaved, onConflict
 
                     <div className="field">
                         <label>ชื่องาน *</label>
+                        {/* ไม่ใช้ required ของเบราว์เซอร์ — ข้อความเตือนขึ้นใต้ช่องแบบเดียวกับช่องอื่น (ช่องลิงก์ยังให้เบราว์เซอร์ตรวจรูปแบบ URL เหมือนเดิม) */}
                         <input value={form.name} onChange={e => update('name', e.target.value)}
-                            placeholder="เช่น ถ่าย Lookbook คอลเลกชันใหม่" required autoFocus />
+                            className={nameMiss ? 'tc2-invalid' : undefined} aria-invalid={nameMiss ? 'true' : undefined}
+                            placeholder="เช่น ถ่าย Lookbook คอลเลกชันใหม่" autoFocus />
+                        {nameMiss && ferr('ใส่ชื่องาน')}
                     </div>
 
                     <div className="field">
@@ -337,7 +398,9 @@ export default function OtherProjectForm({ editing, onClose, onSaved, onConflict
                     <div className="field">
                         <label>รายการจ้าง <span className="dash-section-sub">เลือกรูปแบบได้ทีละแถว — "มีคนแล้ว" ถ้าได้ตัวคนแล้ว หรือ "ขอให้ช่วยหา" ถ้ายังไม่มีคนในใจ</span></label>
 
-                        {items.map((it, i) => (
+                        {items.map((it, i) => {
+                            const miss = rowMiss(it);
+                            return (
                             <div className={'hire-row' + (isCasting(it) ? ' casting' : '')} key={it.key}>
                                 <div className="hire-row-head">
                                     <span className="hire-row-no">#{i + 1}</span>
@@ -350,7 +413,9 @@ export default function OtherProjectForm({ editing, onClose, onSaved, onConflict
                                             ? 'เลือกรูปแบบการจ้างก่อน แล้วช่องกรอกจะขึ้นให้'
                                             : isCasting(it)
                                                 ? 'ยังไม่มีคนในใจ — ระบุสเปค จำนวนคน และงบต่อคนไว้ก่อน แล้วคนช่วยหาจะส่งรายชื่อมาให้เลือก'
-                                                : 'มีชื่อคนหรือเอเจนซี่ในมือแล้ว — กรอกชื่อได้เลย ค่าตัวยังไม่รู้ก็เว้นไว้ได้'}
+                                                : savedKeys.has(String(it.key))
+                                                    ? 'มีชื่อคนหรือเอเจนซี่ในมือแล้ว — กรอกชื่อได้เลย ค่าตัวยังไม่รู้ก็เว้นไว้ได้'
+                                                    : 'มีชื่อคนหรือเอเจนซี่ในมือแล้ว — กรอกชื่อได้เลย ค่าตัวยังไม่รู้ก็เว้นไว้ได้ · ยังไม่มีคนในใจ เปลี่ยนรูปแบบเป็น "ขอให้ช่วยหา" ได้'}
                                     </span>
                                     {rowFee(it) > 0 && (
                                         <span className="hire-row-sum">
@@ -390,7 +455,7 @@ export default function OtherProjectForm({ editing, onClose, onSaved, onConflict
                                             // แถวที่บันทึกแล้วสลับรูปแบบไม่ได้ — ข้อมูลของรูปแบบเดิม (ชื่อ ไฟล์ ค่าตัว) จะหาย
                                             <div className="hire-mode-fixed">มีคนแล้ว (ระบุชื่อ)</div>
                                         ) : (
-                                            <select value={it.mode} onChange={e => setMode(i, e.target.value)}>
+                                            <select value={it.mode} onChange={e => { if (e.target.value === 'casting') dropFile(it.key); setMode(i, e.target.value); }}>
                                                 {/* ตัวเลือกว่างมีเฉพาะตอนยังไม่ได้เลือก — เลือกแล้วย้อนกลับไปว่างไม่ได้ ข้อมูลที่กรอกจะได้ไม่หาย */}
                                                 {!hasMode(it) && <option value="">— เลือก —</option>}
                                                 <option value="direct">มีคนแล้ว (ระบุชื่อ)</option>
@@ -401,16 +466,22 @@ export default function OtherProjectForm({ editing, onClose, onSaved, onConflict
                                     {hasMode(it) && (<>
                                     <label className="hire-f">
                                         <span>ประเภทงาน *</span>
-                                        <select value={it.kind} onChange={e => setItem(i, 'kind', e.target.value)}>
+                                        <select value={it.kind} onChange={e => setItem(i, 'kind', e.target.value)}
+                                            className={miss.kind ? 'tc2-invalid' : undefined} aria-invalid={miss.kind ? 'true' : undefined}>
                                             <option value="">— เลือก —</option>
                                             {HIRE_KINDS.map(k => <option key={k} value={k}>{k}</option>)}
+                                            {/* ประเภทเก่าที่ไม่อยู่ในรายการแล้วต้องยังโชว์ ไม่งั้นช่องว่างแต่ค่ายังอยู่ */}
+                                            {it.kind && !HIRE_KINDS.includes(it.kind) && <option value={it.kind}>{it.kind}</option>}
                                         </select>
+                                        {ferr(miss.kind)}
                                     </label>
                                     {!isCasting(it) ? (
                                         <>
                                             <label className="hire-f">
                                                 <span>ชื่อผู้รับงาน *</span>
-                                                <input value={it.name} onChange={e => setItem(i, 'name', e.target.value)} placeholder="ชื่อ-นามสกุล หรือชื่อเล่น" />
+                                                <input value={it.name} onChange={e => setItem(i, 'name', e.target.value)} placeholder="ชื่อ-นามสกุล หรือชื่อเล่น"
+                                                    className={miss.name ? 'tc2-invalid' : undefined} aria-invalid={miss.name ? 'true' : undefined} />
+                                                {ferr(miss.name)}
                                             </label>
                                             <label className="hire-f">
                                                 <span>{T.contact}</span>
@@ -449,7 +520,9 @@ export default function OtherProjectForm({ editing, onClose, onSaved, onConflict
                                             <label className="hire-f">
                                                 <span>จำนวนคนที่ต้องการ *</span>
                                                 <input inputMode="numeric" value={it.headcount}
+                                                    className={miss.headcount ? 'tc2-invalid' : undefined} aria-invalid={miss.headcount ? 'true' : undefined}
                                                     onChange={e => setItem(i, 'headcount', e.target.value.replace(/[^0-9]/g, ''))} placeholder="1" />
+                                                {ferr(miss.headcount)}
                                                 {num(it.filled) > 0 && (
                                                     <span className="cast-sub">หาได้แล้ว {num(it.filled)} คน — ลดต่ำกว่านี้ไม่ได้</span>
                                                 )}
@@ -457,7 +530,9 @@ export default function OtherProjectForm({ editing, onClose, onSaved, onConflict
                                             <label className="hire-f">
                                                 <span>งบต่อคน (บาท) *</span>
                                                 <input inputMode="numeric" value={it.fee}
+                                                    className={miss.fee ? 'tc2-invalid' : undefined} aria-invalid={miss.fee ? 'true' : undefined}
                                                     onChange={e => setItem(i, 'fee', e.target.value.replace(/[^0-9]/g, ''))} placeholder="0" />
+                                                {ferr(miss.fee)}
                                             </label>
                                             <div className="hire-f">
                                                 <span>วันที่ต้องใช้งาน</span>
@@ -520,7 +595,8 @@ export default function OtherProjectForm({ editing, onClose, onSaved, onConflict
                                 </div>
                                 )}
                             </div>
-                        ))}
+                            );
+                        })}
 
                         <button type="button" className="btn-ghost hire-add" onClick={addItem}>
                             <Icon name="plus" size={15} /> เพิ่มรายการจ้าง
@@ -543,12 +619,14 @@ export default function OtherProjectForm({ editing, onClose, onSaved, onConflict
                     </div>
 
                     {error && <div className="alert-error">{error}</div>}
-                    {!isEdit && missing.length > 0 && (
+                    {/* สรุปช่องที่ยังขาด — ตอนสร้างใหม่ขึ้นตลอด · ตอนแก้ไขขึ้นหลังกดบันทึกแล้วยังขาด (อัปเดตตามที่กรอก) */}
+                    {(!isEdit || tried) && missing.length > 0 && (
                         <div className="form-missing-hint">⚠️ กรุณากรอกให้ครบก่อนบันทึก: {missing.join(' · ')}</div>
                     )}
                     <div className="modal-actions">
                         <button type="button" className="btn-ghost" onClick={onClose}>ยกเลิก</button>
-                        <button type="submit" className="btn-primary" disabled={saving || !canSubmit}>
+                        {/* กดได้แม้ยังกรอกไม่ครบ — กดแล้วจะชี้ช่องที่ขาดให้ (เดิมปุ่มเทาเฉย ๆ ไม่รู้ว่าขาดอะไร) */}
+                        <button type="submit" className="btn-primary" disabled={saving}>
                             {saving ? 'กำลังบันทึก...' : (isEdit ? 'บันทึกการแก้ไข' : 'สร้างงานจ้าง')}
                         </button>
                     </div>

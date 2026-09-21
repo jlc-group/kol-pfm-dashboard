@@ -136,6 +136,15 @@ const projects = {
         return rows[0] ? rows[0].team_id : undefined;
     },
 
+    // อ่านแค่แบรนด์ + รายการจ้างของงานเดียว — เส้นเปิดรูป/คลิปถูกเรียกทีละหลายรูปตอนเปิดหน้างาน
+    // (findByIdFull โหลดทุกตารางทั้งฐาน ถ้าใช้กับทุกรูปฐานกลางจะรับไม่ไหว)
+    async findHireFiles(id) {
+        const n = intId(id);
+        if (n === null) return null;
+        const { rows } = await query('SELECT id, brand, campaign_type, hire_items FROM projects WHERE id = $1', [n]);
+        return rows[0] ? clone(rows[0]) : null;
+    },
+
     async findByIdFull(id) {
         const n = intId(id);
         if (n === null) return null;
@@ -264,6 +273,48 @@ const projects = {
             const start = d && (!cur.start_date || d < cur.start_date) ? d : (cur.start_date || null);
             const end = d && (!cur.end_date || d > cur.end_date) ? d : (cur.end_date || null);
             // updated_by = คนที่เพิ่มคนล่าสุด (เหมือน PUT /projects/:id) · ไม่รู้ว่าใคร = คงค่าเดิม
+            const u = await c.query(
+                `UPDATE projects SET hire_items = $1, budget = $2, start_date = $3, end_date = $4, updated_at = $5,
+                        updated_by = COALESCE($6, updated_by)
+                  WHERE id = $7 RETURNING updated_at`,
+                [asJson(next, []), budget, start, end, now(), userId == null ? null : intId(userId), n]);
+            return { item: clone(row), items: clone(next), updated_at: u.rows[0] ? u.rows[0].updated_at : null };
+        });
+    },
+
+    // แก้รายการจ้าง 1 แถว (คนในงาน — หน้างาน Talent) — ล็อกแถว อ่านของล่าสุด แก้เฉพาะแถวนั้น คิดงบใหม่ ในทรานแซกชันเดียว
+    // build(row, items, job) ตัดสินใต้ล็อก: คืน { row: แถวใหม่ } หรือ { error } (ส่งต่อให้ route ตามนั้น ไม่เขียนอะไร)
+    //   job = { status, campaign_type } ของงานตอนล็อก · key ของแถวเปลี่ยนไม่ได้ (เส้นอื่นหาแถวด้วย key)
+    // แถวใหม่เหมือนเดิมทุกช่อง = ไม่เขียน (ไม่ขยับ updated_at — หน้าอื่นที่เปิดค้างไม่ต้องโหลดใหม่เพราะคำขอที่ไม่ได้เปลี่ยนอะไร)
+    // ไม่เจองาน / ไม่เจอแถว = null · สำเร็จ = { item, items, updated_at }
+    async updateHireRow(id, key, build, { userId = null } = {}) {
+        const n = intId(id);
+        if (n === null) return null;
+        return await withTransaction(async (c) => {
+            const r = await c.query(
+                'SELECT hire_items, status, campaign_type, start_date, end_date, updated_at FROM projects WHERE id = $1 FOR UPDATE', [n]);
+            if (!r.rows.length) return null;
+            const cur = r.rows[0];
+            const items = Array.isArray(cur.hire_items) ? cur.hire_items : [];
+            const idx = items.findIndex(it => it && String(it.key) === String(key));
+            if (idx < 0) return null;
+            const out = typeof build === 'function'
+                ? build(clone(items[idx]), clone(items), { status: cur.status, campaign_type: cur.campaign_type || 'kol' })
+                : null;
+            if (!out || typeof out !== 'object') return null;
+            if (out.error) return out;
+            if (!out.row || typeof out.row !== 'object' || Array.isArray(out.row)) return null;
+            const row = { ...clone(out.row), key: items[idx].key };
+            if (JSON.stringify(row) === JSON.stringify(items[idx])) {
+                return { item: clone(row), items: clone(items), updated_at: cur.updated_at || null };
+            }
+            const next = items.slice();
+            next[idx] = row;
+            const budget = next.reduce((s, it) => s + hireRowFee(it), 0);
+            // ช่วงวันของงานต้องครอบวันใช้งานเสมอ (แบบเดียวกับ addHireItem) — ขยายอย่างเดียว ไม่หด แถวอื่นยังใช้ช่วงเดิมอยู่
+            const d = typeof row.use_date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(row.use_date) ? row.use_date : null;
+            const start = d && (!cur.start_date || d < cur.start_date) ? d : (cur.start_date || null);
+            const end = d && (!cur.end_date || d > cur.end_date) ? d : (cur.end_date || null);
             const u = await c.query(
                 `UPDATE projects SET hire_items = $1, budget = $2, start_date = $3, end_date = $4, updated_at = $5,
                         updated_by = COALESCE($6, updated_by)

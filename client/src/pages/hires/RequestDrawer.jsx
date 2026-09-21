@@ -8,7 +8,8 @@ import { turnText, requesterText } from './requestText.js';
 // ลิ้นชักของใบขอให้หา — ทุกบทบาทเปิดแบบเดียวกันบนหน้าเดิม (ไม่พาไปหน้างาน กดปิดแล้วกลับที่เดิม)
 // request = แถวสดจาก GET /hires/tasks ที่หน้าแม่หามาใหม่ทุกครั้งที่ render — ห้ามเก็บสำเนาไว้เอง ไม่งั้นเห็นขั้นเก่าหลังโหลดใหม่
 // สิทธิ์ของการ์ดตรงกับที่ server บังคับ: ตัดสิน/แก้/ลบ = คนในแบรนด์ · เสนอชื่อ = คนในแบรนด์ หรือคนที่ถูกมอบให้ช่วยหา
-export default function RequestDrawer({ request, onClose, onChanged }) {
+// onJobPage = เปิดจากหน้างานของใบนี้เอง → ไม่ต้องมีลิงก์ "เปิดหน้างาน" (ลิงก์ชี้หน้าเดิม กดแล้วไม่เกิดอะไร)
+export default function RequestDrawer({ request, onClose, onChanged, onJobPage = false }) {
     const { user } = useAuth();
     if (!request) return null;
     const pid = request.project_id;
@@ -26,7 +27,7 @@ export default function RequestDrawer({ request, onClose, onChanged }) {
             className="th-req-drawer">
             <div className={'th-turn' + (turn.mine ? ' mine' : '')} role="status">{turn.text}</div>
             {/* คนนอกแบรนด์เปิดหน้างานไม่ได้ (403) — ลิงก์นี้จึงมีเฉพาะคนในแบรนด์ */}
-            {request.in_brand && (
+            {request.in_brand && !onJobPage && (
                 <div className="th-drawer-links">
                     <Link className="th-link" to={`/projects/${pid}#req-${key}`}>เปิดหน้างาน →</Link>
                 </div>

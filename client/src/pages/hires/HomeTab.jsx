@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Link } from 'react-router-dom';
 import { api } from '../../api/client.js';
 import { useAuth } from '../../auth/AuthContext.jsx';
 import Icon from '../../components/Icon.jsx';
@@ -7,9 +6,10 @@ import {
     T, CAND_LABEL, baht, feeDiff, timeAgo, daysLate, requestLink
 } from '../../data/talentLabels.js';
 import {
-    fmtD, bookingsOf, bookingStateOf, candsOf, shownNote, isUnavailNote, teamCanHelp,
+    bookingsOf, bookingStateOf, candsOf, shownNote, isUnavailNote, teamCanHelp,
     waitingSentence, todoCards, todoTitle, todoMeta, requesterText
 } from './requestText.js';
+import JobCard from './JobCard.jsx';
 
 // แท็บ "หน้าหลัก" ของ Talent — เปิดเมนูมาเจอหน้านี้เสมอ
 // บนสุดคือทางเริ่ม 3 ทาง ถัดมาคือ "รอคุณทำ" เรื่องละการ์ด (เรื่องง่ายกดจบในการ์ด เรื่องที่ต้องดูรายละเอียดเปิดลิ้นชักบนหน้าเดิม)
@@ -30,7 +30,7 @@ export default function HomeTab(props) {
 }
 
 // ===================== ทีมแบรนด์ =====================
-function BrandHome({ tasks, loading, error, brands = [], rates, onOpen, onStart, onAskRate, onGoTab, jobsVersion }) {
+function BrandHome({ tasks, loading, error, brands = [], rates, onOpen, onOpenRequest, onStart, onAskRate, onGoTab, jobsVersion }) {
     const rows = (tasks && tasks.rows) || [];
     const cards = useMemo(() => todoCards(rows), [rows]);
     const [flash, say] = useFlash();
@@ -91,7 +91,9 @@ function BrandHome({ tasks, loading, error, brands = [], rates, onOpen, onStart,
 
             <RateSummary rates={rates} onGoTab={onGoTab} />
 
-            <OpenJobs version={jobsVersion} onGoTab={onGoTab} />
+            <OpenJobs version={jobsVersion} onGoTab={onGoTab} onStart={onStart}
+                // หน้าแม่ส่งตัวเปิดใบแบบ (งาน, ใบ) มาให้ — ถ้าไม่มีก็ใช้ onOpen เดิมที่รับแถวใบ
+                onOpenRequest={onOpenRequest || ((pid, key) => onOpen({ project_id: pid, key }))} />
         </div>
     );
 }
@@ -381,7 +383,8 @@ function RateSummary({ rates, onGoTab }) {
 }
 
 // ===== งานที่กำลังทำ (5 ใบแรกตามลำดับของ server: งานที่มีเรื่องค้างขึ้นก่อน) =====
-function OpenJobs({ version, onGoTab }) {
+// การ์ดแบบย่อ (compact) ของแท็บงานทั้งหมด: แถบได้คนแล้ว + เรื่องถัดไปพร้อมปุ่ม — ไม่มีเมนู ⋯ และบรรทัดเงิน
+function OpenJobs({ version, onGoTab, onStart, onOpenRequest }) {
     const [jobs, setJobs] = useState(null);
     const [err, setErr] = useState('');
     useEffect(() => {
@@ -404,25 +407,10 @@ function OpenJobs({ version, onGoTab }) {
             ) : shown.length === 0 ? (
                 <p className="th-hint">ยังไม่มีงานที่กำลังทำ</p>
             ) : (
-                <div className="th-jobs">
-                    {shown.map(j => {
-                        const range = j.start_date
-                            ? (j.end_date && j.end_date !== j.start_date ? `${fmtD(j.start_date)} – ${fmtD(j.end_date)}` : fmtD(j.start_date))
-                            : '';
-                        return (
-                            <Link key={j.id} className="th-job" to={`/projects/${j.id}`}>
-                                <span className="th-job-name">{j.name}</span>
-                                <span className="th-job-meta">
-                                    {j.brand && <span className="tag">{j.brand}</span>}
-                                    {range && <span>{range}</span>}
-                                </span>
-                                <span className="th-job-foot">
-                                    <span>{Number(j.people_count) || 0} คน</span>
-                                    {Number(j.remaining) > 0 && <span className="th-job-need">ต้องหาอีก {j.remaining}</span>}
-                                </span>
-                            </Link>
-                        );
-                    })}
+                <div className="tl-grid compact">
+                    {shown.map(j => (
+                        <JobCard key={j.id} job={j} compact onOpenRequest={onOpenRequest} onStart={onStart} />
+                    ))}
                 </div>
             )}
         </section>

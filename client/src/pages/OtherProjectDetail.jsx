@@ -1,170 +1,365 @@
-import { useEffect, useMemo, useState } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { api } from '../api/client.js';
 import Icon from '../components/Icon.jsx';
 import OtherProjectForm, {
-    HIRE_STATUS, HIRE_JOB_CLOSED, isCasting, statusesOf, rowFee, hireLeft, hireStage, hireWaiting,
-    bookingOpen, bookingState, hireBookings
+    HIRE_JOB_CLOSED, isCasting, hireLeft, hireStage, hireWaiting, hireNeedMore, bookingOpen, bookingState, hireBookings
 } from '../components/OtherProjectForm.jsx';
-import HireRequestCard from '../components/HireRequestCard.jsx';
 import QuickHireForm from '../components/QuickHireForm.jsx';
-import FilePreviewModal from '../components/FilePreviewModal.jsx';
+import RequestDrawer from './hires/RequestDrawer.jsx';
+import PersonDrawer, { PersonThumb } from './hires/PersonDrawer.jsx';
+import JobInfoDrawer from './hires/JobInfoDrawer.jsx';
+import { waitingSentence, fmtD } from './hires/requestText.js';
+import { useAuth } from '../auth/AuthContext.jsx';
 import { fmtRange } from '../utils/date.js';
 import { setNavSection } from '../utils/navSection.js';
 import {
-    T, STAGE_LABEL, BOOKING_LABEL, JOB_STATUS_OPTIONS, jobStatusLabel, jobStatusValue,
-    hireStatusLabel, PAYABLE_STATUS, feeMissing, NEED_FEE_MSG
+    T, baht, STAGE_LABEL, BOOKING_LABEL, jobStatusLabel, PAYABLE_STATUS, feeMissing, todayTH, daysLate
 } from '../data/talentLabels.js';
+import {
+    jobProgress, todoText, PERSON_STEPS, PERSON_STEP_LABEL, personStep, personNext, personGroup, PERSON_GROUPS
+} from '../data/hireProgress.js';
 
-// หน้ารายละเอียดของแคมเปญ "งานจ้างอื่น ๆ" (campaign_type = 'other')
-// งานแบบนี้ไม่มี Platform / คลิป / ค่าแอด / เอเจนซี่ — สิ่งที่ต้องดูคือ "จ้างใคร ทำอะไร วันไหน เท่าไร"
-// จึงเป็นคนละหน้ากับแคมเปญ KOL ทั้งหน้า (ProjectDetail เรียกหน้านี้แทนเมื่อเป็นประเภท other)
-const B = n => '฿' + (Number(n) || 0).toLocaleString('th-TH');
-const fmtD = d => {
-    if (!d) return '—';
-    const [y, m, dd] = String(d).split('-');
-    return `${Number(dd)}/${Number(m)}/${String(y).slice(2)}`;
-};
+// หน้างานของ Talent (campaign_type = 'other') — ProjectDetail เรียกหน้านี้แทนเมื่อเป็นประเภท other
+// งานแบบนี้ไม่มี Platform / คลิป / ค่าแอด / เอเจนซี่ — สิ่งที่ต้องดูคือ "ใคร ทำอะไร วันไหน เท่าไร ถึงขั้นไหนแล้ว"
+// รอบ 2: เลิกตารางที่แก้ในหน้าแล้วต้องกดแถบ "บันทึกการแก้ไข" (ลืมกดแล้วงานหาย / ชน 409 กับคนช่วยหา)
+//   • เปลี่ยนขั้นของคนด้วยปุ่ม "ถัดไป" คลิกเดียว บันทึกทันที มีแถบเลิกทำ 5 วินาที
+//   • แก้คนทีละคนในลิ้นชัก (PersonDrawer) ผ่านเส้นแก้แถวเดียว PATCH .../hires/:key/person
+//   • ใบขอให้หาของงานนี้เป็นบรรทัดสรุป กดแล้วเปิดลิ้นชักใบ (ตัวเดียวกับหน้า Talent) บนหน้านี้
+// ตัวเลขคน/เงิน/เรื่องที่ต้องทำ คิดด้วย jobProgress ชุดเดียวกับการ์ดงาน (server คิดแบบเดียวกัน มีเทสต์เทียบ)
+
 // #req-<key> มาจาก URL ที่คนพิมพ์/วางเองได้ — % ที่ไม่ครบชุดทำให้ decodeURIComponent โยน error แล้วหน้าพังทั้งหน้า
 const safeDecode = s => { try { return decodeURIComponent(s); } catch { return s; } };
-// ตัวกรองสถานะ: ใบขอให้หาใช้ "ขั้นตอน" ที่คิดจากข้อมูล (ชุดเดียวกับการ์ดและแท็บใบขอให้หา) · ผู้รับงานใช้สถานะของคน
-// ทุกตัวเป็น "ป้ายที่โชว์" (ทาบทาม → กำลังคุย) — labelOf ด้านล่างต้องแปลงด้วยชุดเดียวกัน ไม่งั้นชิปนับได้ 0
-const CHIP_ORDER = [...new Set([...Object.values(STAGE_LABEL), ...Object.values(BOOKING_LABEL), ...HIRE_STATUS.map(hireStatusLabel)])];
-// แถวเก่าที่บันทึกก่อนมี key ต้องมีรหัสประจำแถวเสมอ ไม่งั้น React จะสลับแถวตอนแก้ไขในตาราง
-const rowsOf = p => (Array.isArray(p.hire_items) ? p.hire_items : []).map((it, i) => ({ ...it, key: it.key || 'h' + i }));
+// แถวเก่าที่บันทึกก่อนมี key ต้องมีรหัสให้ React เสมอ — แต่เส้นแก้แถวเดียวหาแถวนั้นไม่เจอ จึงติดป้าย _nokey ไว้ (แก้ได้ในฟอร์มเต็ม)
+const rowsOf = list => (Array.isArray(list) ? list : []).filter(Boolean)
+    .map((it, i) => (it.key ? it : { ...it, key: 'h' + i, _nokey: true }));
+// ?show= ที่การ์ดงานส่งมา (ยังไม่ตกลง / ตกลงแล้ว / เสร็จแล้ว)
+const SHOW_KEYS = ['pending', 'agreed', 'done'];
+// เรื่องที่ต้องทำแบบ "ดูคน" → ชิปกรองที่ตรงกัน
+const GROUP_OF_TODO = { talking: 'pending', past: 'agreed', deliver: 'done' };
+// ใบที่ต้องมีคนทำก่อนขึ้นก่อน ใบที่ครบ/ปิดแล้วไปท้าย
+const STAGE_ORDER = ['fee', 'deciding', 'unassigned', 'booking', 'finding', 'full', 'closed'];
+// เวลา a ใหม่กว่า b ไหม (ISO) — อ่านไม่ออกถือว่าไม่ใหม่กว่า
+const newerThan = (a, b) => { const x = Date.parse(a); const y = Date.parse(b); return Number.isFinite(x) && Number.isFinite(y) && x > y; };
+const tasksChanged = () => window.dispatchEvent(new CustomEvent('kol:hire-tasks-changed'));
+
+// ปุ่มที่กางเมนู (ปิดงาน ▾ / ⋯) — กดนอกเมนูหรือ Esc แล้วปิด · มือถือกางเป็นแผ่นล่างจอ (CSS)
+function HeroMenu({ label, ariaLabel, title, className = 'tc-hero-ghost', disabled = false, items }) {
+    const [open, setOpen] = useState(false);
+    const [alignLeft, setAlignLeft] = useState(false);
+    const wrap = useRef(null);
+    const btn = useRef(null);
+    const menu = useRef(null);
+
+    useEffect(() => {
+        if (!open) return undefined;
+        const onDown = e => { if (wrap.current && !wrap.current.contains(e.target)) setOpen(false); };
+        const onKey = e => {
+            if (e.key !== 'Escape') return;
+            setOpen(false);
+            if (btn.current) btn.current.focus();
+        };
+        document.addEventListener('mousedown', onDown);
+        document.addEventListener('touchstart', onDown);
+        document.addEventListener('keydown', onKey);
+        // โฟกัสรายการแรก — ใช้คีย์บอร์ดเลือกต่อได้ทันที
+        const first = menu.current && menu.current.querySelector('button:not(:disabled)');
+        if (first) first.focus({ preventScroll: true });
+        return () => {
+            document.removeEventListener('mousedown', onDown);
+            document.removeEventListener('touchstart', onDown);
+            document.removeEventListener('keydown', onKey);
+        };
+    }, [open]);
+
+    function toggle() {
+        if (!open && wrap.current) {
+            // เมนูกว้าง ~280px: ปุ่มที่อยู่ชิดซ้ายของจอ (หัวงานบนแท็บเล็ต ปุ่มลงบรรทัดใหม่) ให้กางไปทางขวา ไม่ตกขอบจอ
+            const r = wrap.current.getBoundingClientRect();
+            setAlignLeft(r.right < 300);
+        }
+        setOpen(o => !o);
+    }
+
+    return (
+        <div className="tj-menu-wrap" ref={wrap}>
+            <button ref={btn} type="button" className={className} aria-haspopup="menu" aria-expanded={open}
+                aria-label={ariaLabel} title={title} disabled={disabled} onClick={toggle}>
+                {label}
+            </button>
+            {open && (
+                <>
+                    <div className="tj-menu-backdrop" aria-hidden="true" onClick={() => setOpen(false)} />
+                    <div className={'tj-menu' + (alignLeft ? ' left' : '')} role="menu" ref={menu}>
+                        {items.filter(Boolean).map(it => (
+                            <button key={it.key} type="button" role="menuitem" className={it.danger ? 'danger' : ''}
+                                disabled={it.disabled} onClick={() => { setOpen(false); it.onClick(); }}>
+                                <strong>{it.label}</strong>
+                                {it.sub && <span>{it.sub}</span>}
+                            </button>
+                        ))}
+                    </div>
+                </>
+            )}
+        </div>
+    );
+}
 
 export default function OtherProjectDetail({ project, reload, onDeleted }) {
     const navigate = useNavigate();
     const location = useLocation();
-    // หน้านี้เป็นของเมนู "งานจ้างอื่น ๆ" แม้ URL จะเป็น /projects/:id — ให้เมนูด้านข้างไฮไลต์ถูกอัน
+    const { user } = useAuth();
+    const isAdmin = !!user && user.role === 'admin';
+    // หน้านี้เป็นของเมนู Talent แม้ URL จะเป็น /projects/:id — ให้เมนูด้านข้างไฮไลต์ถูกอัน
     useEffect(() => { setNavSection('hires'); return () => setNavSection(null); }, []);
-    const [tab, setTab] = useState('people');      // people = รายชื่อผู้รับงาน · days = ตารางงานตามวัน
-    const [statusPick, setStatusPick] = useState('');
-    // ช่องที่แก้ในตาราง (สถานะ/ลิงก์ Account/หมายเหตุ) เก็บไว้ก่อน แล้วกดบันทึกทีเดียว
-    // ฐานข้อมูลเก็บ hire_items เป็นก้อนเดียว ถ้าบันทึกทุกครั้งที่พิมพ์ จะเขียนทับกันเองและท่วมประวัติการแก้ไข
-    const [draft, setDraft] = useState({});
-    const [saving, setSaving] = useState(false);
-    const [err, setErr] = useState('');
-    const [showEdit, setShowEdit] = useState(false);
-    const [showDel, setShowDel] = useState(false);
-    const [preview, setPreview] = useState(null);      // ไฟล์แนบที่กำลังเปิดดูในหน้า
-    const [deleting, setDeleting] = useState(false);
-    // ฟอร์มสั้น (ลิ้นชักขวา): 'direct' = เพิ่มคนที่มีแล้ว · 'casting' = ขอให้ช่วยหา — ไม่แตะตารางที่แก้ค้างไว้
-    const [quick, setQuick] = useState('');
 
-    const items = useMemo(() => rowsOf(project), [project]);
-    const view = items.map(it => ({ ...it, ...(draft[it.key] || {}) }));
-    const dirty = Object.keys(draft).length > 0;
-    const setField = (key, field, value) => setDraft(d => ({ ...d, [key]: { ...(d[key] || {}), [field]: value } }));
+    // ผลล่าสุดจากเส้นแก้ทีละแถว (PATCH / DELETE / แนบรูป คืน hire_items ทั้งชุด) — โชว์ทันทีระหว่างรอ reload()
+    // ผูกกับ project ก้อนที่เห็นตอนกด: หน้าแม่โหลดก้อนใหม่มาเมื่อไร ใช้ของใหม่แทน
+    // ยกเว้นก้อนที่มาถึงช้า (คำขอโหลดที่ยิงไว้ก่อนบันทึก) ซึ่ง updated_at เก่ากว่าผลที่เพิ่งบันทึก — ไม่งั้นปุ่มที่เพิ่งกดจะเด้งกลับชั่วครู่
+    const [fresh, setFresh] = useState(null);
+    const freshOn = !!fresh && (fresh.from === project
+        || (!!fresh.at && Date.now() - fresh.t < 15000 && newerThan(fresh.at, project.updated_at)));
+    const items = useMemo(() => rowsOf(freshOn ? fresh.items : project.hire_items), [freshOn, fresh, project]);
+    const applyItems = (list, at = null) => {
+        if (Array.isArray(list)) setFresh({ from: project, items: list, at: at || null, t: Date.now() });
+    };
+    // หลังแก้อะไรสำเร็จ: โหลดงานใหม่ + บอกทุกที่ที่นับใบขอให้หา (เลขแดงบนเมนู / รายการใบของหน้านี้)
+    const afterChange = () => { reload(); tasksChanged(); };
 
-    // ใบขอให้หาคิดงบเป็น งบต่อคน × จำนวนคนที่ขอ ส่วนแถวที่มีคนแล้วคิดค่าตัวตรง ๆ
-    const totalFee = items.reduce((s, it) => s + rowFee(it), 0);
-    const people = new Set(items.map(it => String(it.name || '').trim()).filter(Boolean)).size;
-    const castingRows = items.filter(isCasting);
-    // งานที่ปิดแล้ว (จบแล้ว/ยกเลิก) ไม่มีใครต้องหา/เลือกต่อ — ให้ตรงกับการ์ดและแท็บใบขอให้หา
-    const jobClosed = HIRE_JOB_CLOSED.includes(project.status);
-    const castingHeads = jobClosed ? 0 : castingRows.reduce((n, it) => n + hireLeft(it), 0);
-    const waitingNames = jobClosed ? 0 : castingRows.reduce((n, it) => n + (hireLeft(it) > 0 ? hireWaiting(it) : 0), 0);
-    // คนที่เลือกแล้วค้างยืนยันคิว — นับเฉพาะที่ใบต้นทางยังอยู่ (ใบหายไปแล้วถือว่าไม่ค้างขั้นนี้ ให้แก้สถานะเองได้)
-    // งานปิดแล้วก็ยังโชว์ ให้ทีมเห็นว่ามีคนค้างต้องเก็บ
-    const liveReq = new Set(castingRows.map(r => String(r.key)));
-    const bookingLive = it => !isCasting(it) && it.from_request != null && liveReq.has(String(it.from_request)) && bookingOpen(it);
-    const bookingPeople = items.filter(it => bookingLive(it) && bookingState(it) === 'pending').length;
-    const feePeople = items.filter(it => bookingLive(it) && bookingState(it) === 'fee_review').length;
-    // ใบขอให้หาใบหนึ่ง + ข้อมูลงานที่การ์ดต้องใช้ (สถานะงานใช้คิดขั้นตอน "งานปิดแล้ว")
-    const reqOf = it => ({
-        ...it, project_id: project.id, project_name: project.name, brand: project.brand,
-        job_status: project.status, remaining: hireLeft(it), in_brand: true, is_assignee: true,
-        // คนที่เลือกจากใบนี้แล้วยังรอยืนยันคิว — การ์ดเป็นที่เดียวที่ยืนยันคิว/คนนี้มาไม่ได้/ตัดสินค่าตัวใหม่
-        bookings: hireBookings(items, it.key)
-    });
+    const today = todayTH();
+    const closed = HIRE_JOB_CLOSED.includes(project.status);
+    const progress = useMemo(() => jobProgress(items, project.status, today), [items, project.status, today]);
+    const P = progress.people;
+    const M = progress.money;
+    const direct = items.filter(it => !isCasting(it));
+    const requests = items.filter(isCasting);
+    const liveReq = new Set(requests.map(r => String(r.key)));
+    // ล็อกขั้นเฉพาะคนที่ยังรอยืนยันคิว และใบต้นทางยังอยู่ (กติกาเดียวกับ server) — ใบหายไปแล้วเปลี่ยนขั้นเองได้
+    const lockedRow = it => bookingOpen(it) && it.from_request != null && liveReq.has(String(it.from_request));
+    const nextOf = it => (bookingOpen(it) && !lockedRow(it) ? personNext({ ...it, booking: null }) : personNext(it));
+    // ขั้นถัดไปที่ต้องมีค่าตัวแต่ยังไม่มี (รวมแถวเก่าที่ตกลงแล้วแต่ค่าตัว 0 จะไปถ่ายเสร็จ) → ต้องใส่ค่าตัวในลิ้นชักก่อน
+    const needFeeFor = (it, nx) => !!nx && !nx.locked && (nx.needFee || (PAYABLE_STATUS.includes(nx.status) && feeMissing(it.fee)));
 
-    // มาจากหน้า Talent / ลิงก์ที่คัดลอกไว้ (#req-<ใบ>) → เลื่อนไปที่การ์ดของใบนั้นแล้วไฮไลต์ให้เห็น
-    // hashFound: ใบที่เพิ่งสร้างจากฟอร์มสั้นอาจยังไม่อยู่ในข้อมูลตอนกด "ดูใบ" — พอโหลดเสร็จแล้วมีใบนั้น ให้เลื่อนอีกรอบ
-    const hashKey = (/^#req-(.+)$/.exec(location.hash || '') || [])[1];
-    const hashFound = !!hashKey && items.some(it => String(it.key) === safeDecode(hashKey));
+    // ===== ข้อความ / แถบเลิกทำ =====
+    const [notice, setNotice] = useState(null);          // { type: 'ok' | 'error', text }
+    const [undo, setUndo] = useState(null);              // { id, key, name, from, to }
+    const [undoBusy, setUndoBusy] = useState(null);      // id ของแถบที่กำลังเลิกทำ (แถบใหม่ของอีกคนต้องกดได้ตามปกติ)
     useEffect(() => {
-        const m = /^#req-(.+)$/.exec(location.hash || '');
-        if (!m) return undefined;
-        const el = document.getElementById('req-' + safeDecode(m[1]));
-        if (!el) return undefined;
-        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        el.classList.add('req-flash');
-        const t = setTimeout(() => el.classList.remove('req-flash'), 2600);
+        if (!notice) return undefined;
+        const t = setTimeout(() => setNotice(null), notice.type === 'error' ? 9000 : 5000);
         return () => clearTimeout(t);
-    }, [location.hash, location.key, project.id, hashFound]);   // location.key: กดไปที่ใบเดิมซ้ำก็เลื่อนให้อีกครั้ง
-    const useDates = items.map(it => it.use_date).filter(Boolean).sort();
-    const rangeText = useDates.length
-        ? fmtRange(useDates[0], useDates[useDates.length - 1], ' → ')
-        : fmtRange(project.start_date, project.end_date, ' → ');
+    }, [notice]);
+    useEffect(() => {
+        if (!undo || undoBusy === undo.id) return undefined;
+        const t = setTimeout(() => setUndo(u => (u && u.id === undo.id ? null : u)), 5000);
+        return () => clearTimeout(t);
+    }, [undo, undoBusy]);
 
-    const statusOf = it => it.status || statusesOf(it)[0];
-    // ป้ายที่โชว์ (ไม่ใช่ค่าในฐาน) — ชุดเดียวกับ CHIP_ORDER
-    const labelOf = it => (isCasting(it) ? STAGE_LABEL[hireStage(it, project.status, items)]
-        : bookingLive(it) ? BOOKING_LABEL[bookingState(it)] : hireStatusLabel(statusOf(it)));
-    // สถานะที่บันทึกไว้จริงของแถว (ก่อนแก้ในตาราง) — แถวเก่าที่ "ตกลงแล้ว" แต่ไม่มีค่าตัวต้องยังเลือกค่าเดิมค้างไว้ได้
-    const savedStatus = key => { const hit = items.find(x => x.key === key); return hit ? statusOf(hit) : ''; };
-    const countStatus = s => view.filter(it => labelOf(it) === s).length;
-    const shown = statusPick ? view.filter(it => labelOf(it) === statusPick) : view;
-
-    // จัดกลุ่มตามประเภทงาน (นางแบบ / Live สด ...) — กองถ่ายหนึ่งกองมักมีหลายประเภทในงานเดียว
-    const byKind = [];
-    shown.forEach(it => {
-        const k = it.kind || 'ไม่ระบุประเภทงาน';
-        let g = byKind.find(x => x.kind === k);
-        if (!g) { g = { kind: k, rows: [] }; byKind.push(g); }
-        g.rows.push(it);
-    });
-
-    // ตารางงานตามวัน — คนที่ยังไม่ระบุวันไปอยู่ท้ายสุดเสมอ
-    const byDay = [];
-    shown.forEach(it => {
-        const d = it.use_date || '';
-        let g = byDay.find(x => x.date === d);
-        if (!g) { g = { date: d, rows: [] }; byDay.push(g); }
-        g.rows.push(it);
-    });
-    byDay.sort((a, b) => (a.date ? 0 : 1) - (b.date ? 0 : 1) || String(a.date).localeCompare(String(b.date)));
-
-    async function saveRows() {
-        setSaving(true); setErr('');
-        try {
-            // ส่งช่องที่แก้ได้ + เวลาแก้ล่าสุดของข้อมูลที่เปิดอยู่
-            // ฟิลด์ที่ระบบเป็นคนตั้ง (รายชื่อที่เสนอ / ไฟล์ / จำนวนที่หาได้แล้ว / งบ) server ยึดของในฐานเอง ไม่ต้องส่ง
-            const hire_items = items.map(({ candidates, image, filled, requested_by_id, requested_at, from_request, from_candidate, booking, ...it }) =>
-                ({ ...it, ...(draft[it.key] || {}) }));
-            await api(`/projects/${project.id}`, {
-                method: 'PUT',
-                body: { hire_items, expected_updated_at: project.updated_at || null }
+    // ===== ใบขอให้หาของงานนี้ (แถวของ GET /hires/tasks — รูปเดียวกับที่ลิ้นชักใบใช้ทุกที่) =====
+    const pid = project.id;
+    const [tasks, setTasks] = useState(null);            // null = ยังไม่เคยโหลด
+    const [tasksTick, setTasksTick] = useState(0);       // นับครั้งที่โหลดเสร็จ (สำเร็จหรือพลาด)
+    const [tasksErr, setTasksErr] = useState('');
+    const tasksSeq = useRef(0);
+    const loadTasks = useCallback(() => {
+        const seq = ++tasksSeq.current;
+        api(`/hires/tasks?project=${encodeURIComponent(pid)}`)
+            .then(res => {
+                if (seq !== tasksSeq.current) return;       // มีคำขอใหม่กว่าแล้ว — ทิ้งผลเก่า
+                // กรองซ้ำฝั่งนี้ด้วย: server รุ่นก่อนหน้าไม่รู้จัก ?project= จะส่งใบของทุกงานมา
+                const rows = (res && res.data && Array.isArray(res.data.rows) ? res.data.rows : [])
+                    .filter(r => r && String(r.project_id) === String(pid));
+                setTasks(rows);
+                setTasksErr('');
+                setTasksTick(t => t + 1);
+            })
+            .catch(err => {
+                if (seq !== tasksSeq.current) return;
+                setTasksErr(err.message || `โหลด${T.request}ไม่สำเร็จ`);
+                setTasks(t => t || []);
+                setTasksTick(t => t + 1);
             });
-            setDraft({});
+    }, [pid]);
+    useEffect(() => {
+        loadTasks();
+        window.addEventListener('kol:hire-tasks-changed', loadTasks);
+        return () => { tasksSeq.current += 1; window.removeEventListener('kol:hire-tasks-changed', loadTasks); };
+    }, [loadTasks]);
+
+    // ลิ้นชักใบเปิดตาม #req-<key> ใน URL ที่เดียว (ลิงก์จากหน้า Talent / ลิงก์ที่คัดลอกไว้ / กดในหน้านี้)
+    // ปิดลิ้นชัก = เอา hash ออก (replace — ไม่เพิ่มประวัติ ปุ่มย้อนกลับของเบราว์เซอร์ยังพากลับหน้าที่มา)
+    const hashMatch = /^#req-(.+)$/.exec(location.hash || '');
+    const openReq = hashMatch ? safeDecode(hashMatch[1]) : null;
+    const setHash = hash => navigate({ pathname: location.pathname, search: location.search, hash }, { replace: true });
+    const openRequest = key => { if (key != null && key !== '') setHash('#req-' + encodeURIComponent(String(key))); };
+    const closeRequest = () => { if (/^#req-/.test(location.hash || '')) setHash(''); };
+    const reqRow = openReq && Array.isArray(tasks) ? (tasks.find(r => String(r.key) === openReq) || null) : null;
+    // ใบที่เพิ่งสร้าง (กด "ดูใบ" จากฟอร์มสั้น) อาจยังไม่อยู่ในรายการที่โหลดไว้ → โหลดใหม่หนึ่งรอบ แล้วเปิดเมื่อเจอ
+    // โหลดใหม่แล้วก็ยังไม่เจอ = ใบถูกลบไปแล้ว / ลิงก์ผิด → บอกแล้วเอา hash ออก
+    const retry = useRef({ key: null, tick: 0 });
+    useEffect(() => {
+        if (!openReq) { retry.current = { key: null, tick: 0 }; return; }
+        if (reqRow || tasksTick === 0) return;
+        if (retry.current.key !== openReq) {
+            retry.current = { key: openReq, tick: tasksTick };
+            loadTasks();
+            return;
+        }
+        if (tasksTick > retry.current.tick) {
+            setNotice({ type: 'error', text: tasksErr ? `เปิด${T.request}ไม่ได้: ${tasksErr}` : `ไม่พบ${T.request}นี้ในงานนี้ — อาจถูกลบไปแล้ว` });
+            closeRequest();
+        }
+    }, [openReq, reqRow, tasksTick]);   // eslint-disable-line react-hooks/exhaustive-deps
+
+    // ===== คนในงานนี้: ตัวกรอง / มุมมอง =====
+    const showParam = new URLSearchParams(location.search).get('show');
+    const [group, setGroup] = useState(() => (SHOW_KEYS.includes(showParam) ? showParam : ''));
+    const [view, setView] = useState('person');          // person = ตามคน · day = ตามวัน (อ่านอย่างเดียว)
+    const peopleRef = useRef(null);
+    const goPeople = g => {
+        setGroup(g);
+        setView('person');
+        requestAnimationFrame(() => { if (peopleRef.current) peopleRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' }); });
+    };
+    // มาจากการ์ดงาน (?show=pending|agreed|done) → เลือกชิปนั้นแล้วเลื่อนลงไปที่รายชื่อ
+    useEffect(() => {
+        if (SHOW_KEYS.includes(showParam)) goPeople(showParam);
+    }, [showParam]);   // eslint-disable-line react-hooks/exhaustive-deps
+
+    const groupCount = k => (k ? direct.filter(it => personGroup(it) === k).length : direct.length);
+    const shownPeople = group ? direct.filter(it => personGroup(it) === group) : direct;
+
+    // ===== ลิ้นชักแก้คน =====
+    const [person, setPerson] = useState(null);           // { key, focusFee, agreeOnFee }
+    const personRow = person ? (direct.find(it => String(it.key) === person.key) || null) : null;
+    useEffect(() => {
+        // คนที่เปิดอยู่หายไปจากงาน (มีคนเอาออก / ถูกลบจากที่อื่น) → ปิดลิ้นชักพร้อมบอก
+        if (person && !personRow) {
+            setPerson(null);
+            setNotice({ type: 'error', text: 'ไม่พบคนนี้ในงานแล้ว — อาจถูกเอาออกไปแล้ว' });
+        }
+    }, [person, personRow]);
+    const openPerson = (key, fee = null) => setPerson({
+        key: String(key), focusFee: !!fee, agreeOnFee: fee && fee.agree ? fee.agree : null
+    });
+
+    // ===== สถานะรายแถว (ปุ่มถัดไป) =====
+    const [busyKeys, setBusyKeys] = useState({});
+    const setRowBusy = (key, on) => setBusyKeys(b => {
+        const next = { ...b };
+        if (on) next[key] = true; else delete next[key];
+        return next;
+    });
+    const patchPerson = (key, set, expect) => api(`/projects/${project.id}/hires/${encodeURIComponent(key)}/person`, {
+        method: 'PATCH', body: { set, expect }
+    });
+    function failed(e) {
+        if (e && e.status === 409) {
+            // ข้อมูลเพิ่งเปลี่ยน (มีคนแก้ก่อน / เพิ่งมีการเลือกจากใบ) — โหลดค่าล่าสุดให้เลย
             reload();
+            tasksChanged();
+            const stale = /เพิ่งเปลี่ยน/.test(e.message || '');
+            setNotice({ type: 'error', text: stale ? 'ข้อมูลเพิ่งเปลี่ยน — โหลดค่าล่าสุดให้แล้ว' : `${e.message} (โหลดค่าล่าสุดให้แล้ว)` });
+        } else if (e && e.status === 404) {
+            reload();
+            setNotice({ type: 'error', text: e.message || 'ไม่พบรายการนี้' });
+        } else {
+            setNotice({ type: 'error', text: (e && e.message) || 'บันทึกไม่สำเร็จ' });
+        }
+    }
+
+    async function stepPerson(it, nx) {
+        const key = String(it.key);
+        if (busyKeys[key] || it._nokey || !nx || nx.locked) return;
+        setRowBusy(key, true);
+        const from = personStep(it);
+        try {
+            // expect = สถานะที่หน้านี้เห็น (ค่าในฐานตรง ๆ) — มีคนเปลี่ยนไปก่อนแล้ว server ตอบ 409
+            const res = await patchPerson(key, { status: nx.status }, { status: it.status === undefined ? null : it.status });
+            applyItems(res && res.data && res.data.items, res && res.data && res.data.updated_at);
+            afterChange();
+            setNotice(null);
+            setUndo({ id: Date.now(), key, name: String(it.name || '').trim() || 'คนนี้', from, to: nx.status });
         } catch (e) {
-            if (e.status === 409) {
-                // ข้อมูลเพิ่งเปลี่ยน (เช่นมีคนส่งชื่อในใบขอให้หา) — โหลดค่าล่าสุดให้เลย ช่องที่แก้ค้างไว้ยังอยู่
-                reload();
-                setErr('ข้อมูลของงานนี้เพิ่งเปลี่ยน — โหลดค่าล่าสุดให้แล้ว ช่องที่แก้ไว้ยังอยู่ กดบันทึกอีกครั้ง');
-            } else {
-                setErr(e.message);
-            }
-        } finally { setSaving(false); }
+            failed(e);
+        } finally {
+            setRowBusy(key, false);
+        }
     }
 
+    // เลิกทำ = ย้อนสถานะด้วยเส้นเดิม (expect เป็นขั้นที่เพิ่งตั้ง — ถ้ามีคนเปลี่ยนต่อไปแล้วจะไม่ย้อนทับ)
+    async function undoStep() {
+        const u = undo;
+        if (!u || undoBusy === u.id) return;
+        setUndoBusy(u.id);
+        try {
+            const res = await patchPerson(u.key, { status: u.from }, { status: u.to });
+            applyItems(res && res.data && res.data.items, res && res.data && res.data.updated_at);
+            afterChange();
+            setUndo(cur => (cur && cur.id === u.id ? null : cur));
+            setNotice({ type: 'ok', text: `เลิกทำแล้ว — ${u.name} กลับเป็น "${PERSON_STEP_LABEL[u.from] || T.talking}"` });
+        } catch (e) {
+            setUndo(cur => (cur && cur.id === u.id ? null : cur));
+            failed(e);
+        } finally {
+            setUndoBusy(cur => (cur === u.id ? null : cur));
+        }
+    }
+
+    // ===== สถานะงาน =====
+    const [jobBusy, setJobBusy] = useState(false);
+    // คนที่เลือกแล้วค้างยืนยันคิว / ค่าตัวใหม่ (เฉพาะที่ใบต้นทางยังอยู่) — ปิดงานแล้วคนช่วยหาแตะไม่ได้ ต้องเตือนก่อน
+    const bookingPeople = direct.filter(it => lockedRow(it) && bookingState(it) === 'pending').length;
+    const feePeople = direct.filter(it => lockedRow(it) && bookingState(it) === 'fee_review').length;
     async function changeStatus(status) {
-        // ปิดงานตอนยังมีคนค้างยืนยันคิว — เตือนก่อน (ปิดแล้วคนช่วยหาแตะไม่ได้ ทีมต้องเก็บเอง)
+        if (jobBusy) return;
         if (HIRE_JOB_CLOSED.includes(status) && (bookingPeople + feePeople) > 0
-            && !window.confirm(`ยังมี ${bookingPeople + feePeople} คนที่เลือกแล้ว${BOOKING_LABEL.pending}/${BOOKING_LABEL.fee_review} — ปิดงานแล้ว${T.finder}จะแตะไม่ได้ ทีมแบรนด์ต้องจัดการเองที่การ์ดของใบ ต้องการปิดงานไหม?`)) return;
-        try { await api(`/projects/${project.id}`, { method: 'PUT', body: { status } }); reload(); }
-        catch (e) { alert(e.message); }
+            && !window.confirm(`ยังมี ${bookingPeople + feePeople} คนที่เลือกแล้ว${BOOKING_LABEL.pending}/${BOOKING_LABEL.fee_review} — ปิดงานแล้ว${T.finder}จะแตะไม่ได้ ทีมแบรนด์ต้องจัดการเองในใบ ต้องการปิดงานไหม?`)) return;
+        setJobBusy(true);
+        try {
+            await api(`/projects/${project.id}`, { method: 'PUT', body: { status } });
+            afterChange();
+            setNotice({ type: 'ok', text: status === 'Active' ? 'เปิดงานอีกครั้งแล้ว' : `ปิดงานแล้ว — ${jobStatusLabel(status)}` });
+        } catch (e) {
+            setNotice({ type: 'error', text: e.message || 'เปลี่ยนสถานะงานไม่สำเร็จ' });
+        } finally {
+            setJobBusy(false);
+        }
     }
 
+    // ===== ลบงาน (ต้องพิมพ์ชื่องานให้ตรงก่อน) =====
+    const [showDel, setShowDel] = useState(false);
+    const [delName, setDelName] = useState('');
+    const [delErr, setDelErr] = useState('');
+    const [deleting, setDeleting] = useState(false);
+    const normName = s => String(s || '').normalize('NFC').replace(/[\u200B-\u200D\uFEFF]/g, '').replace(/\s+/g, ' ').trim();
+    const jobName = normName(project.name);
+    const delOk = jobName !== '' && normName(delName) === jobName;
+    const openDelete = () => { setDelName(''); setDelErr(''); setShowDel(true); };
+    useEffect(() => {
+        if (!showDel) return undefined;
+        const onKey = e => { if (e.key === 'Escape' && !deleting) setShowDel(false); };
+        window.addEventListener('keydown', onKey);
+        return () => window.removeEventListener('keydown', onKey);
+    }, [showDel, deleting]);
     async function deleteProject() {
+        if (!delOk || deleting) return;
         setDeleting(true);
-        try { await api(`/projects/${project.id}`, { method: 'DELETE' }); onDeleted(); }
-        catch (e) { alert(e.message); setDeleting(false); }
+        setDelErr('');
+        try {
+            await api(`/projects/${project.id}`, { method: 'DELETE' });
+            tasksChanged();
+            onDeleted();
+        } catch (e) {
+            setDelErr(e.message || 'ลบไม่สำเร็จ');
+            setDeleting(false);
+        }
     }
 
-    // งานจ้างอื่น ๆ ไม่มีช่องบรีฟแล้ว เหลือแค่รายละเอียดงาน
+    // ===== ฟอร์ม / ลิ้นชักอื่น =====
+    const [quick, setQuick] = useState('');               // 'direct' = เพิ่มคนที่มีแล้ว · 'casting' = ขอให้ช่วยหา
+    const [showEdit, setShowEdit] = useState(false);      // ฟอร์มเต็ม (แก้หลายคนพร้อมกัน)
+    const [showInfo, setShowInfo] = useState(false);      // แก้ข้อมูลงาน
 
     // ปุ่มย้อนกลับ: มาจากในแอป (หน้าหลัก Talent / ลิ้นชักใบ / รายการงาน) → กลับหน้าเดิมพร้อมแท็บและตัวกรองเดิม
     // เปิดตรงจากลิงก์ (ไม่มีประวัติในแอป) → ไปหน้า Talent แทน ไม่ให้เด้งออกนอกเว็บ
@@ -173,338 +368,431 @@ export default function OtherProjectDetail({ project, reload, onDeleted }) {
         else navigate('/hires');
     }
 
+    const useDates = items.map(it => it.use_date).filter(Boolean).map(String).sort();
+    const rangeText = useDates.length
+        ? fmtRange(useDates[0], useDates[useDates.length - 1], ' → ')
+        : (project.start_date || project.end_date ? fmtRange(project.start_date, project.end_date, ' → ') : 'ยังไม่ระบุวัน');
+    const owner = project.creator || project.owner || '';
+
+    // ===== ใบขอให้หา: บรรทัดสรุปคิดจากรายการจ้างของหน้านี้ (ตัวเลขตรงกับแถบเงินและกล่องต้องทำ) =====
+    const reqLines = requests.map(it => {
+        const stage = hireStage(it, project.status, items);
+        const bk = hireBookings(items, it.key);
+        const needMore = hireNeedMore(it);
+        const cands = Array.isArray(it.candidates) ? it.candidates : [];
+        const line = {
+            key: String(it.key), kind: it.kind || '', stage, headcount: Number(it.headcount) || 1, fee: Number(it.fee) || 0,
+            remaining: hireLeft(it), waiting_count: hireWaiting(it), need_more: needMore,
+            booking_pending: bk.filter(b => bookingState(b) === 'pending').length,
+            fee_review: bk.filter(b => bookingState(b) === 'fee_review').length,
+            assignee_id: it.assignee_id == null ? null : it.assignee_id, assignee_name: it.assignee_name || null,
+            deadline: it.deadline || null, candidates: cands.length
+        };
+        line.late = stage !== 'closed' && needMore > 0 && it.deadline ? daysLate(it.deadline) : 0;
+        return line;
+    }).sort((a, b) => (b.late > 0 ? 1 : 0) - (a.late > 0 ? 1 : 0) || STAGE_ORDER.indexOf(a.stage) - STAGE_ORDER.indexOf(b.stage));
+
+    // ===== ตามวัน: คนที่ยังไม่ระบุวันไปท้ายสุด · ชิป "ทุกคน" รวมใบที่ยังต้องหาคนด้วย (เห็นว่าวันไหนยังขาดคน) =====
+    const dayRows = [...shownPeople, ...(group || closed ? [] : requests.filter(r => hireLeft(r) > 0))];
+    const byDay = [];
+    dayRows.forEach(it => {
+        const d = it.use_date ? String(it.use_date).slice(0, 10) : '';
+        let g = byDay.find(x => x.date === d);
+        if (!g) { g = { date: d, rows: [] }; byDay.push(g); }
+        g.rows.push(it);
+    });
+    byDay.sort((a, b) => (a.date ? 0 : 1) - (b.date ? 0 : 1) || String(a.date).localeCompare(String(b.date)));
+
+    const personLabel = it => (lockedRow(it) ? BOOKING_LABEL[bookingState(it)] : PERSON_STEP_LABEL[personStep(it)]);
+
+    function doTodo(item, tt) {
+        // ใบแรกที่ยังอยู่จริง (คนที่ค้างยืนยันคิวอาจชี้ใบที่ถูกลบไปแล้ว)
+        const keys = Array.isArray(item.keys) ? item.keys : [];
+        if (tt.target === 'request') openRequest(keys.find(k => liveReq.has(String(k))) || keys[0]);
+        else if (tt.target === 'people') goPeople(GROUP_OF_TODO[item.code] || '');
+    }
+
+    const empty = items.length === 0;
+
     return (
-        <div>
+        <div className="tj-page">
             <div className="pd-hero tc-hero">
                 <button className="pd-back" onClick={goBack} title="กลับหน้าที่มา" aria-label="กลับหน้าที่มา">
                     <Icon name="back" size={18} />
                 </button>
                 <div className="pd-hero-main">
                     <div className="pd-hero-top">
-                        <span className={`status status-${project.status}`}>{jobStatusLabel(project.status)}</span>
+                        <span className={`status status-${project.status || 'Draft'}`}>{jobStatusLabel(project.status)}</span>
                         <span className="ctype-chip" title="งาน Talent — ไม่เข้าหน้าโฆษณาและรายงานแคมเปญ">Talent</span>
                         {project.brand && <span className="pd-chip">{project.brand}</span>}
                     </div>
                     <h1 className="pd-title">{project.name}</h1>
+                    <div className="pd-hero-by tj-hero-by">
+                        {T.owner}: {owner || 'ยังไม่ระบุ'} · วันใช้งาน {rangeText}
+                    </div>
                 </div>
                 <div className="pd-hero-actions">
-                    <label className="quick-status">สถานะ:
-                        {/* งาน Draft โชว์เป็น "กำลังทำ" (ป้ายเดียวกัน) — ไม่เปลี่ยนค่าในฐานจนกว่าจะเลือกสถานะอื่นเอง */}
-                        <select value={jobStatusValue(project.status)} onChange={e => changeStatus(e.target.value)}>
-                            {JOB_STATUS_OPTIONS.map(s => <option key={s} value={s}>{jobStatusLabel(s)}</option>)}
-                        </select>
-                    </label>
                     <button type="button" className="pd-edit-btn" onClick={() => setQuick('direct')}
                         title="บันทึกคนที่ดีลไว้แล้วเข้างานนี้ ทีละคน">
                         <Icon name="plus" size={15} /> เพิ่มคนที่มีแล้ว
                     </button>
                     {/* งานปิดแล้วขอให้ช่วยหาเพิ่มไม่ได้ (server ตีกลับ 409) — ปิดปุ่มไว้พร้อมบอกเหตุผล */}
-                    <button type="button" className="pd-edit-btn" onClick={() => setQuick('casting')} disabled={jobClosed}
-                        title={jobClosed ? 'งานนี้จบแล้ว — ขอให้ช่วยหาเพิ่มไม่ได้' : `เปิด${T.request} ให้${T.finder}ส่งรายชื่อมาให้เลือก`}>
+                    <button type="button" className="pd-edit-btn" onClick={() => setQuick('casting')} disabled={closed}
+                        title={closed ? 'งานนี้ปิดแล้ว — ขอให้ช่วยหาเพิ่มไม่ได้ (เปิดงานอีกครั้งก่อน)' : `เปิด${T.request} ให้${T.finder}ส่งรายชื่อมาให้เลือก`}>
                         <Icon name="plus" size={15} /> ขอให้ช่วยหา
                     </button>
-                    <button type="button" className="tc-hero-ghost" onClick={() => {
-                        if (dirty && !window.confirm(`ยังมีที่แก้ในตาราง ${Object.keys(draft).length} แถวที่ยังไม่ได้บันทึก — เปิดฟอร์มแก้ไขแล้วค่าเหล่านี้จะหาย ต้องการไปต่อไหม?`)) return;
-                        setShowEdit(true);
-                    }} title="แก้ชื่องาน รายละเอียด สถานะ หรือเพิ่ม/แก้หลายคนพร้อมกันในฟอร์มเต็ม">
-                        <Icon name="edit" size={15} /> แก้ไขงาน / หลายคน
-                    </button>
-                    <button className="pd-del-btn" onClick={() => setShowDel(true)} title="ลบงานนี้">
-                        <Icon name="trash" size={15} /> ลบ
-                    </button>
-                </div>
-            </div>
-
-            <div className="pd-metrics">
-                <div className="pd-metric">
-                    <div className="pd-metric-icon budget"><Icon name="coins" size={22} /></div>
-                    <div>
-                        <div className="pd-metric-label">ค่าตัวรวม</div>
-                        <div className="pd-metric-value">{B(totalFee)}</div>
-                        <div className="pd-metric-extra">
-                            {items.length} รายการจ้าง
-                            {castingRows.length > 0 && ` · ${T.request} ${castingRows.length} ใบ`}
-                        </div>
-                    </div>
-                </div>
-                <div className="pd-metric">
-                    <div className="pd-metric-icon kol"><Icon name="team" size={22} /></div>
-                    <div>
-                        <div className="pd-metric-label">ผู้รับงาน</div>
-                        <div className="pd-metric-value">{people} คน</div>
-                        <div className="pd-metric-extra">
-                            {byKind.length} ประเภทงาน
-                            {castingHeads > 0 && ` · ต้องหาอีก ${castingHeads} คน`}
-                            {waitingNames > 0 && ` · รอเลือก ${waitingNames} ชื่อ`}
-                            {bookingPeople > 0 && ` · ${BOOKING_LABEL.pending} ${bookingPeople} คน`}
-                            {feePeople > 0 && ` · ${BOOKING_LABEL.fee_review} ${feePeople} คน`}
-                        </div>
-                    </div>
-                </div>
-                <div className="pd-metric">
-                    <div className="pd-metric-icon date"><Icon name="calendar" size={20} /></div>
-                    <div>
-                        <div className="pd-metric-label">ช่วงวันใช้งาน</div>
-                        <div className="pd-metric-value sm">{rangeText}</div>
-                        {!useDates.length && <div className="pd-metric-extra">ยังไม่ได้ระบุวันรายคน</div>}
-                    </div>
-                </div>
-                <div className="pd-metric">
-                    <div className="pd-metric-icon owner"><Icon name="users" size={20} /></div>
-                    <div>
-                        <div className="pd-metric-label">{T.owner}</div>
-                        <div className="pd-metric-value sm">{project.creator || project.owner || '—'}</div>
-                    </div>
+                    {closed ? (
+                        <button type="button" className="tc-hero-ghost" onClick={() => changeStatus('Active')} disabled={jobBusy}
+                            title="ย้ายงานกลับไปเป็น กำลังทำ">
+                            {jobBusy ? 'กำลังเปิด...' : 'เปิดงานอีกครั้ง'}
+                        </button>
+                    ) : (
+                        <HeroMenu label={jobBusy ? 'กำลังบันทึก...' : 'ปิดงาน ▾'} disabled={jobBusy} title="จบงาน หรือยกเลิกงาน"
+                            items={[
+                                { key: 'done', label: 'จบงาน', sub: 'ทำครบแล้ว — งานย้ายไปอยู่ใน "จบแล้ว"', onClick: () => changeStatus('Completed') },
+                                { key: 'cancel', label: 'ยกเลิกงาน', sub: 'งานนี้ไม่ทำแล้ว', danger: true, onClick: () => changeStatus('Cancelled') }
+                            ]} />
+                    )}
+                    <HeroMenu label="⋯" ariaLabel="เมนูเพิ่มเติมของงาน" title="แก้ข้อมูลงาน / แก้หลายคนพร้อมกัน / ลบงาน"
+                        className="tc-hero-ghost tj-more"
+                        items={[
+                            { key: 'info', label: 'แก้ข้อมูลงาน', sub: `ชื่องาน รายละเอียดงาน ${T.owner}`, onClick: () => setShowInfo(true) },
+                            { key: 'full', label: 'แก้หลายคนพร้อมกัน (ฟอร์มเต็ม)', sub: `เพิ่ม/แก้หลายคน หรือหลาย${T.request}ในครั้งเดียว`, onClick: () => setShowEdit(true) },
+                            { key: 'del', label: 'ลบงาน', sub: 'ลบงานนี้และทุกคนในงานถาวร', danger: true, onClick: openDelete }
+                        ]} />
                 </div>
             </div>
 
             {project.objective && (
                 <div className="panel pd-details">
-                    {project.objective && (
-                        <div className="pd-block">
-                            <div className="pd-block-title"><Icon name="file" size={15} /> รายละเอียดงาน</div>
-                            <p className="pd-block-text">{project.objective}</p>
-                        </div>
-                    )}
+                    <div className="pd-block">
+                        <div className="pd-block-title"><Icon name="file" size={15} /> รายละเอียดงาน</div>
+                        <p className="pd-block-text">{project.objective}</p>
+                    </div>
                 </div>
             )}
 
-            <div className="agency-tabs">
-                <button className={tab === 'people' ? 'active' : ''} onClick={() => setTab('people')}>
-                    รายชื่อผู้รับงาน <span className="agency-tab-count">{items.length}</span>
-                </button>
-                <button className={tab === 'days' ? 'active' : ''} onClick={() => setTab('days')}>
-                    ตารางงานตามวัน <span className="agency-tab-count">{byDay.length}</span>
-                </button>
-            </div>
-
-            <div className="proc-platfilter">
-                <span className="proc-platfilter-lbl">สถานะ:</span>
-                <button type="button" className={'proc-plat-chip' + (statusPick === '' ? ' on' : '')}
-                    onClick={() => setStatusPick('')}>ทั้งหมด ({view.length})</button>
-                {/* โชว์เฉพาะสถานะที่มีจริงในงานนี้ — สองรูปแบบใช้สถานะคนละชุด ถ้าโชว์หมดจะมีปุ่ม (0) เต็มไปหมด */}
-                {CHIP_ORDER.filter(s => countStatus(s) > 0 || statusPick === s).map(s => (
-                    <button type="button" key={s} className={'proc-plat-chip' + (statusPick === s ? ' on' : '')}
-                        onClick={() => setStatusPick(s)}>{s} ({countStatus(s)})</button>
-                ))}
-            </div>
-
-            {err && <div className="alert-error">{err}</div>}
-            {dirty && (
-                <div className="draft-decide">
-                    <span className="draft-decide-lbl">แก้ไขแล้วยังไม่ได้บันทึก {Object.keys(draft).length} แถว</span>
-                    <button type="button" className="btn-primary" disabled={saving} onClick={saveRows}>
-                        {saving ? 'กำลังบันทึก...' : 'บันทึกการแก้ไข'}
-                    </button>
-                    <button type="button" className="btn-ghost" disabled={saving} onClick={() => setDraft({})}>ยกเลิก</button>
+            {empty ? (
+                <div className="panel tj-empty">
+                    <div className="tj-empty-title">ยังไม่มีคนในงานนี้</div>
+                    <p>ดีลคนไว้แล้วก็บันทึกเข้างานได้เลย หรือขอให้เพื่อนในทีมช่วยหาคน แล้วเลือกจากรายชื่อที่ส่งมา</p>
+                    <div className="tj-empty-actions">
+                        <button type="button" className="tj-big" onClick={() => setQuick('direct')}>
+                            <strong><Icon name="plus" size={16} /> เพิ่มคนที่มีแล้ว</strong>
+                            <span>รู้ชื่อคนแล้ว ใส่ค่าตัว วัน สถานที่</span>
+                        </button>
+                        <button type="button" className="tj-big casting" onClick={() => setQuick('casting')} disabled={closed}
+                            title={closed ? 'งานนี้ปิดแล้ว — เปิดงานอีกครั้งก่อน' : undefined}>
+                            <strong><Icon name="search" size={16} /> ขอให้ช่วยหา</strong>
+                            <span>บอกสเปค จำนวน งบต่อคน ให้{T.finder}ส่งรายชื่อมาให้เลือก</span>
+                        </button>
+                    </div>
+                    <Link className="tj-link" to="/hires?tab=people">เลือกจากคนที่เคยจ้าง →</Link>
                 </div>
-            )}
-
-            {items.length === 0 ? (
-                <div className="panel empty-state">
-                    <div className="empty-emoji">🎬</div>
-                    <p>ยังไม่มีรายการจ้าง — กดปุ่ม "+ เพิ่มคนที่มีแล้ว" ด้านบนถ้าดีลคนไว้แล้ว หรือ "+ ขอให้ช่วยหา" ถ้ายังไม่มีคน</p>
-                </div>
-            ) : tab === 'people' ? (
-                byKind.map(g => {
-                    // แยกสองส่วนในกลุ่มเดียวกัน: ใบขอให้หา (ยังไม่ได้ตัวคน) กับผู้รับงานที่ได้ตัวแล้ว
-                    // โครงเดียวกับหน้าแคมเปญ KOL — แถบกลุ่มสีเขียว แล้วหัวข้อย่อยมีจุดสีบอกสถานะ
-                    const reqs = g.rows.filter(isCasting);
-                    const hired = g.rows.filter(it => !isCasting(it));
-                    return (
-                        <div className="sub-group" key={g.kind}>
-                            <div className="grp-bar">
-                                <span className="grp-no">{g.kind}</span>
-                                <span className="grp-count">{g.rows.length} รายการ · {B(g.rows.reduce((s, it) => s + rowFee(it), 0))}</span>
-                            </div>
-
-                            {reqs.length > 0 && (
-                                <>
-                                    <div className="sub-group-head">
-                                        <span className="sub-group-dot pending"></span>
-                                        <span className="sub-group-title">{T.request}</span>
-                                        <span className="sub-group-count">{reqs.length}</span>
-                                    </div>
-                                    {/* กางรายชื่อที่เสนอไว้ในหน้าเลย ไม่ต้องกดเปิดกล่องอีกชั้น */}
-                                    {reqs.map(it => (
-                                        <HireRequestCard key={it.key} request={reqOf(it)} canDecide canPropose
-                                            onChanged={reload} onDeleted={reload} />
-                                    ))}
-                                </>
-                            )}
-
-                            {hired.length > 0 && (
-                                <>
-                                    <div className="sub-group-head">
-                                        <span className="sub-group-dot confirmed"></span>
-                                        <span className="sub-group-title">ผู้รับงาน</span>
-                                        <span className="sub-group-count">{hired.length}</span>
-                                    </div>
-                                    <div className="panel no-pad">
-                                        <div className="sub-table-scroll">
-                                            <table className="data-table tight hire-detail-table">
-                                                <thead><tr>
-                                                    <th className="sub-no">#</th><th>ชื่อผู้รับงาน</th><th>งาน</th>
-                                                    <th className="num">ค่าตัว</th><th>วันใช้งาน</th><th>ไฟล์ / ลิงก์</th>
-                                                    <th>สถานะ</th><th>หมายเหตุ</th>
-                                                    <th className="tbl-spacer" aria-hidden="true"></th>
-                                                </tr></thead>
-                                                <tbody>
-                                                    {hired.map((it, i) => (
-                                                        <tr key={it.key}>
-                                                            <td className="sub-no">{i + 1}</td>
-                                                            {/* สังกัด/ติดต่อ ย้ายมาอยู่ใต้ชื่อ ตารางจะได้ไม่ต้องเลื่อนซ้ายขวา */}
-                                                            <td>
-                                                                <strong>{it.name || '—'}</strong>
-                                                                {(it.agency || it.contact) && (
-                                                                    <span className="cast-sub">{[it.agency, it.contact].filter(Boolean).join(' · ')}</span>
-                                                                )}
-                                                                {it.from_request && <span className="hire-assignee">ได้จาก{T.request}</span>}
-                                                            </td>
-                                                            <td className="muted">
-                                                                {it.qty || '—'}
-                                                                {it.place && <span className="cast-sub">📍 {it.place}</span>}
-                                                            </td>
-                                                            <td className="num">
-                                                                {/* คนที่ยังกำลังคุยบันทึกได้โดยไม่มีค่าตัว — บอกให้ชัดแทน ฿0 ที่ดูเหมือนจ้างฟรี */}
-                                                                {feeMissing(it.fee)
-                                                                    ? <span className="tc-fee-missing" title='ใส่ค่าตัวได้ที่ปุ่ม "แก้ไขงาน / หลายคน"'>ยังไม่ใส่ค่าตัว</span>
-                                                                    : B(rowFee(it))}
-                                                            </td>
-                                                            <td className="muted">
-                                                                {fmtD(it.use_date)}
-                                                                {it.use_time && <span className="cast-sub">{it.use_time}</span>}
-                                                            </td>
-                                                            <td>
-                                                                <div className="hire-file-cell">
-                                                                {it.image && (
-                                                                    <button type="button" className="work-link"
-                                                                        onClick={() => setPreview({ path: `/projects/${project.id}/hires/${it.key}/image`, title: it.image.original })}>
-                                                                        <Icon name="eye" size={12} /> คอมการ์ด
-                                                                    </button>
-                                                                )}
-                                                                <input className="sub-note-input" value={it.link || ''} placeholder="🔗 IG / TikTok"
-                                                                    onChange={e => setField(it.key, 'link', e.target.value)} />
-                                                                </div>
-                                                            </td>
-                                                            <td>
-                                                                {bookingLive(it) ? (
-                                                                    // ระหว่างรอยืนยันคิว สถานะเดินตามขั้นตอนบนการ์ด เปลี่ยนเองจากตารางไม่ได้
-                                                                    <>
-                                                                        <span className={'stage-chip st-' + (bookingState(it) === 'fee_review' ? 'fee' : 'booking')}>
-                                                                            {BOOKING_LABEL[bookingState(it)]}
-                                                                        </span>
-                                                                        <button type="button" className="work-link"
-                                                                            onClick={() => {
-                                                                                // ล้างตัวกรองก่อน ไม่งั้นการ์ดของใบอาจถูกกรองซ่อนอยู่ แล้วกดแล้วไม่ไปไหน
-                                                                                setStatusPick('');
-                                                                                navigate({ hash: '#req-' + it.from_request }, { replace: true });
-                                                                            }}>
-                                                                            ไปที่ใบ
-                                                                        </button>
-                                                                    </>
-                                                                ) : (
-                                                                    <select className="users-inline-sel" value={statusOf(it)}
-                                                                        onChange={e => setField(it.key, 'status', e.target.value)}>
-                                                                        {/* "ตกลงแล้ว" ขึ้นไปต้องมีค่าตัวก่อน (server ตีกลับเหมือนกัน)
-                                                                            ยกเว้นค่าที่บันทึกไว้อยู่แล้ว — แถวเก่าต้องยังโชว์/คงค่าเดิมได้ */}
-                                                                        {statusesOf(it).map(s => {
-                                                                            const blocked = PAYABLE_STATUS.includes(s) && feeMissing(it.fee) && s !== savedStatus(it.key);
-                                                                            return (
-                                                                                <option key={s} value={s} disabled={blocked} title={blocked ? NEED_FEE_MSG : undefined}>
-                                                                                    {hireStatusLabel(s)}{blocked ? ' (ใส่ค่าตัวก่อน)' : ''}
-                                                                                </option>
-                                                                            );
-                                                                        })}
-                                                                    </select>
-                                                                )}
-                                                            </td>
-                                                            <td>
-                                                                <input className="sub-note-input" value={it.note || ''} placeholder="📝 หมายเหตุ"
-                                                                    onChange={e => setField(it.key, 'note', e.target.value)} />
-                                                            </td>
-                                                            <td className="tbl-spacer"></td>
-                                                        </tr>
-                                                    ))}
-                                                </tbody>
-                                            </table>
-                                        </div>
-                                    </div>
-                                </>
-                            )}
-                        </div>
-                    );
-                })
             ) : (
-                byDay.map(g => (
-                    <div className="sub-group" key={g.date || 'no-date'}>
-                        <div className="grp-bar">
-                            <span className="grp-no">{g.date ? fmtD(g.date) : 'ยังไม่ระบุวัน'}</span>
-                            <span className="grp-concept">{[...new Set(g.rows.map(r => r.place).filter(Boolean))].join(' · ')}</span>
-                            <span className="grp-count">{g.rows.length} รายการ</span>
+                <>
+                    {/* เงิน 3 ก้อน — ชุดเดียวกับหน้ารอบทำจ่าย (hireBreakdown) */}
+                    <div className="tj-money" role="group" aria-label="คนและเงินของงานนี้">
+                        <div className="tj-money-box ok">
+                            <div className="tj-money-k">{T.agreed} <small>(จ่ายได้)</small></div>
+                            <div className="tj-money-v">{baht(M.agreed)}</div>
+                            <div className="tj-money-n">{P.agreed + P.shot + P.delivered} คน</div>
                         </div>
-                        <div className="panel no-pad">
-                            <div className="sub-table-scroll">
-                                <table className="data-table tight">
-                                    <thead><tr>
-                                        <th className="sub-no">#</th><th>ชื่อผู้รับงาน</th><th>ประเภทงาน</th><th>สถานที่</th>
-                                        <th>สถานะ</th><th className="num">ค่าตัว</th>
-                                        <th className="tbl-spacer" aria-hidden="true"></th>
-                                    </tr></thead>
-                                    <tbody>
-                                        {g.rows.map((it, i) => (
-                                            <tr key={it.key}>
-                                                <td className="sub-no">{i + 1}</td>
-                                                <td>
-                                                    {isCasting(it)
-                                                        ? <span className="cast-chip">{T.request}{it.kind ? ` · ${it.kind}` : ''} · {hireLeft(it) > 0 ? `ต้องหาอีก ${hireLeft(it)} คน` : 'ได้ครบแล้ว'}</span>
-                                                        : <strong>{it.name || '—'}</strong>}
-                                                </td>
-                                                <td>{it.kind ? <span className="proc-ctype-chip">{it.kind}</span> : <span className="ctype-none">— ยังไม่ระบุ —</span>}</td>
-                                                <td className="muted">{it.place || '—'}</td>
-                                                <td><span className="tag">{labelOf(it)}</span></td>
-                                                <td className="num">{B(rowFee(it))}</td>
-                                                <td className="tbl-spacer"></td>
-                                            </tr>
-                                        ))}
-                                    </tbody>
-                                </table>
+                        <div className="tj-money-box wait">
+                            <div className="tj-money-k">{T.pending}</div>
+                            <div className="tj-money-v">{baht(M.pending)}</div>
+                            <div className="tj-money-n">
+                                {P.talking + P.booking} คน{P.no_fee > 0 ? ` · ยังไม่ใส่ค่าตัว ${P.no_fee}` : ''}
                             </div>
+                        </div>
+                        <div className="tj-money-box hold">
+                            <div className="tj-money-k">{T.reserved} <small>(ยังไม่ได้คน)</small></div>
+                            <div className="tj-money-v">{baht(M.unfilled)}</div>
+                            <div className="tj-money-n">{P.need > 0 ? `ยังต้องหา ${P.need} คน` : 'ไม่มีที่ว่างรอหา'}</div>
                         </div>
                     </div>
-                ))
+                    <div className="tj-money-foot">
+                        {isAdmin && <Link className="tj-link" to="/payments">ไปหน้ารอบทำจ่าย →</Link>}
+                    </div>
+
+                    {progress.todo.length > 0 && (
+                        <section className="tj-todo" aria-labelledby="tj-todo-head">
+                            <h2 id="tj-todo-head">ต้องทำในงานนี้</h2>
+                            <ul>
+                                {progress.todo.map(item => {
+                                    const tt = todoText(item, P);
+                                    return (
+                                        <li key={item.code} className={tt.urgent ? 'urgent' : ''}>
+                                            <span className="tj-todo-dot" aria-hidden="true" />
+                                            <span className="tj-todo-text">{tt.text}</span>
+                                            <button type="button" className="tj-btn" onClick={() => doTodo(item, tt)}>{tt.button}</button>
+                                        </li>
+                                    );
+                                })}
+                            </ul>
+                        </section>
+                    )}
+
+                    {reqLines.length > 0 && (
+                        <section className="tj-sec" aria-labelledby="tj-req-head">
+                            <div className="tj-sec-head">
+                                <h2 id="tj-req-head">{T.request} <span className="tj-count">{reqLines.length}</span></h2>
+                            </div>
+                            {tasksErr && <div className="tj-sec-note">โหลดรายละเอียดใบไม่สำเร็จ ({tasksErr}) — กดที่ใบเพื่อลองอีกครั้ง</div>}
+                            <div className="tj-reqs">
+                                {reqLines.map(r => {
+                                    const counts = [
+                                        r.remaining > 0 ? `ต้องหาอีก ${r.remaining} คน` : 'ได้ครบแล้ว',
+                                        r.candidates > 0 ? `ส่งชื่อมาแล้ว ${r.candidates} ชื่อ` : '',
+                                        r.waiting_count > 0 ? `รอเลือก ${r.waiting_count}` : '',
+                                        r.assignee_name ? `${T.finder}: ${r.assignee_name}` : `ยังไม่มี${T.finder}`
+                                    ].filter(Boolean).join(' · ');
+                                    const kind = r.kind || 'คน';
+                                    return (
+                                        <div key={r.key} className="tj-req" role="button" tabIndex={0}
+                                            aria-label={`เปิด${T.request} ${kind} ${r.headcount} คน — ${STAGE_LABEL[r.stage] || ''}`}
+                                            onClick={() => openRequest(r.key)}
+                                            onKeyDown={e => {
+                                                if (e.key !== 'Enter' && e.key !== ' ') return;
+                                                e.preventDefault();
+                                                openRequest(r.key);
+                                            }}>
+                                            <div className="tj-req-main">
+                                                <div className="tj-req-top">
+                                                    <span className={'stage-chip st-' + r.stage}>{STAGE_LABEL[r.stage] || r.stage}</span>
+                                                    {r.late > 0 && <span className="stage-chip st-late">เลยกำหนดส่งรายชื่อ {r.late} วัน</span>}
+                                                    <b>{kind} {r.headcount} คน</b>
+                                                    <span className="tj-req-budget">งบ {baht(r.fee)}/คน</span>
+                                                </div>
+                                                <div className="tj-req-line">{waitingSentence(r)}</div>
+                                                <div className="tj-req-meta">{counts}</div>
+                                            </div>
+                                            <Icon name="chevron" size={18} />
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        </section>
+                    )}
+
+                    <section className="tj-sec" ref={peopleRef} aria-labelledby="tj-people-head">
+                        <div className="tj-sec-head">
+                            <h2 id="tj-people-head">คนในงานนี้ <span className="tj-count">{direct.length}</span></h2>
+                            <div className="tj-switch" role="group" aria-label="มุมมองรายชื่อ">
+                                <button type="button" aria-pressed={view === 'person'} className={view === 'person' ? 'on' : ''}
+                                    onClick={() => setView('person')}>ตามคน</button>
+                                <button type="button" aria-pressed={view === 'day'} className={view === 'day' ? 'on' : ''}
+                                    onClick={() => setView('day')}>ตามวัน</button>
+                            </div>
+                        </div>
+                        <div className="tj-chips" role="group" aria-label="กรองคนตามขั้น">
+                            {PERSON_GROUPS.map(g => (
+                                <button type="button" key={g.key || 'all'} aria-pressed={group === g.key}
+                                    className={'tj-chip' + (group === g.key ? ' on' : '')} onClick={() => setGroup(g.key)}>
+                                    {g.label} <span>{groupCount(g.key)}</span>
+                                </button>
+                            ))}
+                        </div>
+
+                        {view === 'person' ? (
+                            shownPeople.length === 0 ? (
+                                <div className="tj-none">
+                                    {direct.length === 0
+                                        ? `ยังไม่มีคนในงานนี้ — รอ${T.finder}ส่งชื่อเข้า${T.request} หรือกด "+ เพิ่มคนที่มีแล้ว"`
+                                        : 'ไม่มีคนในกลุ่มนี้'}
+                                </div>
+                            ) : (
+                                <div className="tj-people">
+                                    {shownPeople.map(it => {
+                                        const key = String(it.key);
+                                        const nx = nextOf(it);
+                                        const busy = !!busyKeys[key];
+                                        const needFee = needFeeFor(it, nx);
+                                        const cur = PERSON_STEPS.indexOf(personStep(it));
+                                        const meta = [fmtD(it.use_date), it.use_time, it.place].filter(Boolean).join(' · ');
+                                        return (
+                                            <div key={key} className={'tj-person' + (busy ? ' busy' : '')}
+                                                onClick={e => { if (!e.target.closest('button, a, input, label')) openPerson(key); }}>
+                                                <PersonThumb projectId={project.id} row={it} />
+                                                <div className="tj-person-main">
+                                                    <div className="tj-person-name-row">
+                                                        <button type="button" className="tj-person-name" onClick={() => openPerson(key)}
+                                                            title="เปิดแก้คนนี้">
+                                                            {String(it.name || '').trim() || '(ยังไม่ใส่ชื่อ)'}
+                                                        </button>
+                                                        {it.kind && <span className="tj-kind">{it.kind}</span>}
+                                                        {it.from_request != null && <span className="tj-from">ได้จาก{T.request}</span>}
+                                                    </div>
+                                                    <div className="tj-person-meta">{meta || 'ยังไม่ระบุวัน / สถานที่'}</div>
+                                                    <div className="tj-person-fee">
+                                                        {/* คนที่ยังกำลังคุยบันทึกได้โดยไม่มีค่าตัว — บอกให้ชัดแทน ฿0 ที่ดูเหมือนจ้างฟรี */}
+                                                        {feeMissing(it.fee) ? <span className="tc-fee-missing">ยังไม่ใส่ค่าตัว</span> : baht(it.fee)}
+                                                    </div>
+                                                </div>
+                                                <ol className="tj-steps" aria-label={`ขั้นของ ${it.name || 'คนนี้'}: ${personLabel(it)}`}>
+                                                    {PERSON_STEPS.map((s, i) => (
+                                                        <li key={s} className={i < cur ? 'done' : i === cur ? 'cur' : ''}
+                                                            aria-current={i === cur ? 'step' : undefined}>
+                                                            <span>{PERSON_STEP_LABEL[s]}</span>
+                                                        </li>
+                                                    ))}
+                                                </ol>
+                                                <div className="tj-person-act">
+                                                    {nx && nx.locked ? (
+                                                        // ระหว่างรอยืนยันคิว ขั้นเดินตามใบ — เปลี่ยนตรงนี้ไม่ได้ กดแล้วเปิดใบให้
+                                                        <button type="button" className="tj-lock" onClick={() => openRequest(it.from_request)}
+                                                            title={`เปิด${T.request}เพื่อ${T.confirmQueue}`}>
+                                                            {nx.label}
+                                                        </button>
+                                                    ) : needFee ? (
+                                                        <button type="button" className="tj-btn warn" disabled={busy || it._nokey}
+                                                            onClick={() => openPerson(key, { agree: nx.needFee ? nx.status : null })}>
+                                                            {nx.needFee ? nx.label : 'ใส่ค่าตัวก่อน'}
+                                                        </button>
+                                                    ) : nx ? (
+                                                        <button type="button" className="tj-btn next" disabled={busy || it._nokey}
+                                                            title={it._nokey ? 'แถวข้อมูลเก่า — แก้ได้ในฟอร์มเต็ม (เมนู ⋯)' : undefined}
+                                                            onClick={() => stepPerson(it, nx)}>
+                                                            {busy ? 'กำลังบันทึก...' : nx.label}
+                                                        </button>
+                                                    ) : (
+                                                        <span className="tj-done"><Icon name="check" size={14} /> ครบทุกขั้นแล้ว</span>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            )
+                        ) : (
+                            byDay.length === 0 ? (
+                                <div className="tj-none">{direct.length === 0 ? 'ยังไม่มีคนในงานนี้' : 'ไม่มีคนในกลุ่มนี้'}</div>
+                            ) : (
+                                <div className="tj-days">
+                                    {byDay.map(g => (
+                                        <div className="tj-day" key={g.date || 'no-date'}>
+                                            <div className="tj-day-head">
+                                                <b>{g.date ? fmtD(g.date) : 'ยังไม่ระบุวัน'}</b>
+                                                <span>{[...new Set(g.rows.map(r => String(r.place || '').trim()).filter(Boolean))].join(' · ')}</span>
+                                                <span className="tj-count">{g.rows.length}</span>
+                                            </div>
+                                            <ul>
+                                                {g.rows.map(it => (isCasting(it) ? (
+                                                    <li key={it.key}>
+                                                        <button type="button" className="tj-day-row req" onClick={() => openRequest(it.key)}>
+                                                            <b>{T.request}{it.kind ? ` · ${it.kind}` : ''}</b>
+                                                            <span className="tj-day-sub">ต้องหาอีก {hireLeft(it)} คน{it.place ? ` · ${it.place}` : ''}</span>
+                                                            <span className="tj-day-fee">งบ {baht(it.fee)}/คน</span>
+                                                        </button>
+                                                    </li>
+                                                ) : (
+                                                    <li key={it.key}>
+                                                        <button type="button" className="tj-day-row" onClick={() => openPerson(it.key)}>
+                                                            <b>{String(it.name || '').trim() || '(ยังไม่ใส่ชื่อ)'}</b>
+                                                            <span className="tj-day-sub">
+                                                                {[it.kind, it.use_time, it.place, personLabel(it)].filter(Boolean).join(' · ')}
+                                                            </span>
+                                                            <span className="tj-day-fee">
+                                                                {feeMissing(it.fee) ? <span className="tc-fee-missing">ยังไม่ใส่ค่าตัว</span> : baht(it.fee)}
+                                                            </span>
+                                                        </button>
+                                                    </li>
+                                                )))}
+                                            </ul>
+                                        </div>
+                                    ))}
+                                </div>
+                            )
+                        )}
+                    </section>
+                </>
             )}
 
-            {preview && (
-                <FilePreviewModal path={preview.path} title={preview.title} onClose={() => setPreview(null)} />
-            )}
+            {/* แถบบันทึกแล้ว + เลิกทำ 5 วินาที / ข้อความผลการบันทึก */}
+            <div className="tj-toasts" aria-live="polite">
+                {openReq && !reqRow && (
+                    <div className="tj-toast wait" role="status"><span>กำลังเปิด{T.request}...</span></div>
+                )}
+                {undo && (
+                    <div className="tj-toast" key={undo.id}>
+                        <span>บันทึก {undo.name}: {PERSON_STEP_LABEL[undo.from] || T.talking} → {PERSON_STEP_LABEL[undo.to] || undo.to}</span>
+                        <button type="button" onClick={undoStep} disabled={undoBusy === undo.id}>{undoBusy === undo.id ? 'กำลังเลิกทำ...' : 'เลิกทำ'}</button>
+                        {undoBusy !== undo.id && <i className="tj-toast-timer" aria-hidden="true" />}
+                    </div>
+                )}
+                {notice && (
+                    <div className={'tj-toast ' + notice.type} role={notice.type === 'error' ? 'alert' : 'status'}>
+                        <span>{notice.text}</span>
+                        <button type="button" className="x" aria-label="ปิดข้อความ" onClick={() => setNotice(null)}>×</button>
+                    </div>
+                )}
+            </div>
 
-            {showEdit && (
-                <OtherProjectForm editing={project} onClose={() => setShowEdit(false)} onConflict={reload}
-                    onSaved={() => { setShowEdit(false); setDraft({}); reload(); }} />
-            )}
-
-            {/* ฟอร์มสั้นเพิ่มทีละคน / ขอให้ช่วยหา — ต่อท้ายงานนี้ด้วยเส้น POST ของแถวเดียว ไม่ทับที่แก้ค้างในตาราง
-                "ดูใบ" หลังส่งใบ: สลับไปแท็บรายชื่อและล้างตัวกรองก่อน ไม่งั้นการ์ดของใบถูกซ่อนแล้วเลื่อนไปไม่เจอ */}
+            {/* ฟอร์มสั้นเพิ่มทีละคน / ขอให้ช่วยหา — ต่อท้ายงานนี้ด้วยเส้น POST ของแถวเดียว · "ดูใบ" เปิดลิ้นชักใบบนหน้านี้ */}
             {quick && (
                 <QuickHireForm mode={quick} job={project}
                     onClose={() => setQuick('')}
                     onSaved={() => reload()}
-                    onOpenRequest={({ key }) => {
-                        setTab('people');
-                        setStatusPick('');
-                        navigate({ hash: '#req-' + key }, { replace: true });
+                    onOpenRequest={({ key }) => openRequest(key)} />
+            )}
+
+            {personRow && (
+                <PersonDrawer key={person.key} projectId={project.id} row={personRow} locked={lockedRow(personRow)}
+                    focusFee={person.focusFee} agreeOnFee={person.agreeOnFee}
+                    onClose={() => setPerson(null)}
+                    onSaved={(data, name) => {
+                        setPerson(null);
+                        applyItems(data && data.items, data && data.updated_at);
+                        afterChange();
+                        setNotice({ type: 'ok', text: `บันทึก ${name || 'คนนี้'} แล้ว` });
+                    }}
+                    onRemoved={(list, name) => {
+                        setPerson(null);
+                        applyItems(list);
+                        afterChange();
+                        setNotice({ type: 'ok', text: `เอา ${name || 'คนนี้'} ออกจากงานแล้ว` });
+                    }}
+                    onFileChanged={list => { applyItems(list); afterChange(); }}
+                    onStale={() => { reload(); tasksChanged(); }}
+                    onOpenRequest={key => openRequest(key)} />
+            )}
+
+            {/* ลิ้นชักใบ — ได้แถวสดจาก /hires/tasks ทุกครั้ง (โหลดใหม่หลังทุกการเปลี่ยนแปลง) */}
+            {openReq && reqRow && (
+                <RequestDrawer request={reqRow} onClose={closeRequest} onJobPage
+                    onChanged={() => { reload(); loadTasks(); }} />
+            )}
+
+            {showInfo && (
+                <JobInfoDrawer project={project} onClose={() => setShowInfo(false)}
+                    onSaved={() => {
+                        setShowInfo(false);
+                        afterChange();
+                        setNotice({ type: 'ok', text: 'บันทึกข้อมูลงานแล้ว' });
                     }} />
+            )}
+
+            {showEdit && (
+                <OtherProjectForm editing={project} onClose={() => setShowEdit(false)} onConflict={reload}
+                    onSaved={() => { setShowEdit(false); afterChange(); }} />
             )}
 
             {showDel && (
                 <div className="modal-backdrop" onClick={() => !deleting && setShowDel(false)}>
-                    <div className="modal confirm-modal" onClick={e => e.stopPropagation()}>
-                        <h3>ลบงานนี้?</h3>
-                        <p>“{project.name}” และรายการจ้างทั้งหมดในงานนี้จะถูกลบถาวร</p>
+                    <div className="modal confirm-modal" role="alertdialog" aria-modal="true" aria-labelledby="tj-del-head"
+                        onClick={e => e.stopPropagation()}>
+                        <h3 id="tj-del-head">ลบงานนี้?</h3>
+                        <p className="tj-confirm-text">
+                            <span className="tj-del-name">“{project.name}”</span> และทุกคน / ทุก{T.request}ในงานนี้จะถูกลบถาวร ย้อนกลับไม่ได้
+                        </p>
+                        <label className="tj-del-label" htmlFor="tj-del-input">พิมพ์ชื่องานให้ตรงเพื่อยืนยัน</label>
+                        <input id="tj-del-input" className="tj-del-input" value={delName} autoComplete="off" autoFocus
+                            onChange={e => setDelName(e.target.value)} placeholder={jobName}
+                            onKeyDown={e => { if (e.key === 'Enter') deleteProject(); }} />
+                        {delErr && <div className="alert-error" role="alert">{delErr}</div>}
                         <div className="modal-actions">
                             <button type="button" className="btn-ghost" disabled={deleting} onClick={() => setShowDel(false)}>ยกเลิก</button>
-                            <button type="button" className="btn-danger" disabled={deleting} onClick={deleteProject}>
+                            <button type="button" className="btn-danger tj-btn-danger" disabled={!delOk || deleting} onClick={deleteProject}>
                                 {deleting ? 'กำลังลบ...' : 'ลบถาวร'}
                             </button>
                         </div>

@@ -152,6 +152,10 @@ export default function OtherWork() {
     const [form, setForm] = useState(null);     // { mode, job }
     const [asking, setAsking] = useState(false);
     const startForm = (mode, job = null) => setForm({ mode, job });
+    // การ์ดงาน (แท็บงานทั้งหมด / หน้าหลัก) ส่งงานมาด้วย → ฟอร์มสั้นล็อกงานนั้นไว้ ข้ามข้อ "งานไหน"
+    const startFromCard = (mode, job) => startForm(mode, job || null);
+    // การ์ดงานรู้แค่ (งาน, ใบ) — เปิดลิ้นชักตัวเดียวกับที่อื่น (?open=<งาน>~<ใบ>)
+    const openRequestAt = (projectId, key) => openRequest({ project_id: projectId, key });
     function onFormSaved(result) {
         loadTasks();
         setJobsVersion(v => v + 1);
@@ -223,10 +227,10 @@ export default function OtherWork() {
             {tab === 'home' ? (
                 <HomeTab tasks={tasks} loading={tasksBusy && !tasks} error={tasksError}
                     finderOnly={!hasBrand} user={user} brands={brands} rates={rates}
-                    onOpen={openRequest} onStart={mode => startForm(mode)} onAskRate={() => setAsking(true)}
+                    onOpen={openRequest} onOpenRequest={openRequestAt} onStart={startFromCard} onAskRate={() => setAsking(true)}
                     onGoTab={goTab} jobsVersion={jobsVersion} />
             ) : tab === 'jobs' ? (
-                <JobsTab onStart={mode => startForm(mode)} version={jobsVersion} />
+                <JobsTab onStart={startFromCard} onOpenRequest={openRequestAt} version={jobsVersion} />
             ) : tab === 'requests' ? (
                 <RequestsTab tasks={tasks} loading={tasksBusy && !tasks} error={tasksError} hasBrand={hasBrand}
                     onOpen={openRequest} onNewRequest={() => startForm('casting')} />

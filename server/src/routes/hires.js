@@ -34,16 +34,27 @@ router.get('/jobs', async (req, res, next) => {
 
 // GET /api/hires/tasks — ใบขอให้หา (งานที่ต้องหาคน) เท่าที่ตัวเองมีสิทธิ์เห็น · แต่ละใบมีชื่อคนขอ (requested_by_name) และเวลาที่ขอ
 // mine=todo (ถึงตาฉัน) · mine=find (งานที่ฉันต้องหา) · mine=ask (ใบที่ฉันขอไว้) · ไม่ส่ง = ทั้งหมดที่เห็นได้
+// project=<id งาน> = เฉพาะใบของงานนั้น (หน้างาน) · ว่าง = ไม่กรอง · ไม่ใช่ตัวเลข → 400
+// (ไม่ปล่อยผ่านเป็น "ไม่กรอง" เพราะหน้างานจะได้ใบของงานอื่นทั้งหมดไปแสดงเป็นของงานตัวเอง)
 router.get('/tasks', async (req, res, next) => {
     try {
-        const { mine, status, search, brand } = req.query;
+        const { mine, status, search, brand, project } = req.query;
+        let projectId = null;
+        if (project !== undefined && project !== '') {
+            const n = typeof project === 'string' && /^\d{1,10}$/.test(project) ? Number(project) : NaN;
+            if (!Number.isSafeInteger(n) || n > 2147483647) {
+                return res.status(400).json({ status: 'error', message: 'รหัสงานไม่ถูกต้อง' });
+            }
+            projectId = n;
+        }
         const data = await store.hires.tasks({
             userId: req.user.id,
             scopeBrands: allowedBrands(req.account || req.user),
             mine: (mine === 'find' || mine === 'ask' || mine === 'todo') ? mine : '',
             status: status || undefined,
             search: search || undefined,
-            brand: brand || undefined
+            brand: brand || undefined,
+            project: projectId
         });
         res.json({ status: 'success', data });
     } catch (err) { next(err); }

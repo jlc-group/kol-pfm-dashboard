@@ -15,7 +15,7 @@ const { UPLOAD_DIR, uploadPath } = require('../config/uploads');
 const {
     mergeHireItems, mergeBriefFiles, hireRowFee, cleanFee, cleanHeadcount, safeId,
     HIRE_BOOKED, BOOK_PENDING, BOOK_FEE, HIRE_JOB_CLOSED, hireBookings, newHireRow, payableWithoutFee,
-    releaseToRequest, bookingConfirm, bookingFeeDecision, bookingUnavailable, carryProductTargets, carryProductBudgets, carryProductConcepts
+    PERSON_FIELDS, personPatch, releaseToRequest, bookingConfirm, bookingFeeDecision, bookingUnavailable, carryProductTargets, carryProductBudgets, carryProductConcepts
 } = require('../store/logic');
 const BOOKING_ACTIONS = ['confirm', 'unavailable', 'fee-approve', 'fee-reject'];
 if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR, { recursive: true });
@@ -453,10 +453,13 @@ router.post('/:id/hires/:key/image', guardEdit, (req, res, next) => {
 // GET /api/projects/:id/hires/:key/image — เปิดรูป/คอมการ์ดของผู้รับงานคนนั้น
 router.get('/:id/hires/:key/image', async (req, res, next) => {
     try {
-        const check = await canEditProject(req, req.params.id);
-        if (!check.ok) return res.status(check.code).json({ status: 'error', message: check.message });
-        const project = await store.projects.findByIdFull(req.params.id);
-        const items = Array.isArray(project && project.hire_items) ? project.hire_items : [];
+        // หน้างานเปิดรูปย่อทีละหลายคน — อ่านแค่งานนี้ (สิทธิ์เดียวกับ canEditProject: ตามแบรนด์)
+        const project = await store.projects.findHireFiles(req.params.id);
+        if (!project) return res.status(404).json({ status: 'error', message: 'ไม่พบ Project' });
+        if (!canSeeBrand(req.account || req.user, project.brand)) {
+            return res.status(403).json({ status: 'error', message: 'ไม่มีสิทธิ์แก้ไขแคมเปญของแบรนด์อื่น' });
+        }
+        const items = Array.isArray(project.hire_items) ? project.hire_items : [];
         const hit = items.find(it => String(it.key) === String(req.params.key));
         const meta = hit && hit.image;
         if (!meta) return res.status(404).json({ status: 'error', message: 'ยังไม่มีรูปของผู้รับงานคนนี้' });
@@ -488,6 +491,21 @@ const actorName = req => (req.account && (req.account.nickname || req.account.fu
 // คนจัดหาอาจไม่มีสิทธิ์แบรนด์นี้ — ตั้งใจให้แตะได้เฉพาะ "ใบที่ถูกมอบหมายให้" ไม่ได้เปิดทั้งแคมเปญให้
 async function castingRow(req, projectId, key) {
     const project = await store.projects.findByIdFull(projectId);
+    if (!project) return { ok: false, code: 404, message: 'ไม่พบ Project' };
+    const row = (Array.isArray(project.hire_items) ? project.hire_items : [])
+        .find(it => String(it.key) === String(key));
+    if (!row) return { ok: false, code: 404, message: 'ไม่พบใบขอให้หานี้' };
+    if (row.mode !== 'casting') return { ok: false, code: 400, message: 'รายการนี้ไม่ใช่ใบขอให้หา' };
+    const isOwner = canSeeBrand(req.account || req.user, project.brand);
+    const isAssignee = row.assignee_id != null && String(row.assignee_id) === String(req.user.id);
+    if (!isOwner && !isAssignee) return { ok: false, code: 403, message: 'ไม่มีสิทธิ์เข้าถึงใบขอให้หานี้' };
+    return { ok: true, project, row, isOwner, isAssignee };
+}
+
+// แบบเบาสำหรับเส้นเปิดรูป/คลิป (อ่านอย่างเดียว) — สิทธิ์เหมือน castingRow ทุกอย่าง แต่อ่านแค่งานนี้
+// แกลเลอรีในใบขอให้หาเปิดรูปทีละหลายชื่อ ถ้าแต่ละรูปโหลดทั้งฐาน (findByIdFull) ฐานกลางจะหนัก
+async function castingRowFiles(req, projectId, key) {
+    const project = await store.projects.findHireFiles(projectId);
     if (!project) return { ok: false, code: 404, message: 'ไม่พบ Project' };
     const row = (Array.isArray(project.hire_items) ? project.hire_items : [])
         .find(it => String(it.key) === String(key));
@@ -550,6 +568,83 @@ router.post('/:id/hires', async (req, res, next) => {
             : `เพิ่มคน ${it.name}${it.kind ? ' (' + it.kind + ')' : ''}${it.fee > 0 ? ' ค่าตัว ' + hireBaht(it.fee) : ' (ยังไม่ใส่ค่าตัว)'}`,
         check.project.name, check.project.team_id);
         res.status(201).json({ status: 'success', data: { item: saved.item, items: saved.items, updated_at: saved.updated_at } });
+    } catch (err) { next(err); }
+});
+
+// ป้ายในประวัติการแก้คน — สถานะในฐาน "ทาบทาม" แสดงเป็น "กำลังคุย" (ตรงกับ HIRE_STATUS_LABEL ฝั่งหน้าเว็บ)
+const PERSON_STATUS_LABEL = { 'ทาบทาม': 'กำลังคุย' };
+const PERSON_FIELD_LABEL = {
+    status: 'สถานะ', fee: 'ค่าตัว', name: 'ชื่อ', kind: 'ประเภทงาน', use_date: 'วันที่', use_time: 'เวลา', place: 'สถานที่',
+    qty: 'ระยะเวลาทำงาน', agency: 'สังกัด', contact: 'เบอร์/LINE', link: 'ลิงก์', note: 'หมายเหตุ'
+};
+// ช่องสั้นบอก เดิม → ใหม่ · เบอร์/LINE ลิงก์ หมายเหตุ บอกแค่ว่าแก้ (ข้อมูลติดต่อไม่ควรไปค้างในประวัติ และหมายเหตุยาวเกินจะอ่าน)
+const PERSON_LOG_VALUE = ['name', 'kind', 'use_date', 'use_time', 'place', 'qty', 'agency'];
+function personSummary(before, after, changed) {
+    const label = v => { const s = String(v == null ? '' : v).trim() || HIRE_BOOKED; return PERSON_STATUS_LABEL[s] || s; };
+    const short = v => String(v == null ? '' : v).trim().slice(0, 60) || '—';
+    const parts = Object.keys(PERSON_FIELD_LABEL).filter(k => changed.includes(k)).map(k => (
+        k === 'status' ? `สถานะ ${label(before.status)} → ${label(after.status)}`
+            : k === 'fee' ? `ค่าตัว ${hireBaht(before.fee)} → ${hireBaht(after.fee)}`
+                : PERSON_LOG_VALUE.includes(k) ? `${PERSON_FIELD_LABEL[k]} ${short(before[k])} → ${short(after[k])}`
+                    : `แก้${PERSON_FIELD_LABEL[k]}`));
+    const who = String(after.name || after.kind || '').trim().slice(0, 100) || 'ผู้รับงาน';
+    return `อัปเดต ${who}: ${parts.join(' · ')}`;
+}
+
+// PATCH /api/projects/:id/hires/:key/person — แก้คน 1 คนในงาน Talent (ปุ่ม "ถัดไป" / เลิกทำ / ลิ้นชักคนในหน้างาน)
+// body { set: { ช่องที่แก้ }, expect: { ค่าของช่องเดียวกันที่หน้าเห็นก่อนแก้ } } — กติกาทั้งหมดอยู่ใน personPatch (logic.js)
+// ไม่ต้องส่ง expected_updated_at ทั้งงาน: expect รายช่องพอ คนอื่นแก้คนอื่น/ช่องอื่นอยู่ไม่ทำให้ใครต้องโหลดใหม่
+// ทีมของแบรนด์เท่านั้น (คนช่วยหาที่ไม่มีสิทธิ์แบรนด์แก้คนในงานไม่ได้ — ขั้นยืนยันคิวของเขาอยู่ในใบ)
+// ตอบ 200 { item, items, updated_at } · ค่าที่เห็นไม่ตรงของในฐาน = 409 code STALE
+router.patch('/:id/hires/:key/person', async (req, res, next) => {
+    try {
+        const check = await canEditProject(req, req.params.id);          // 404 / 403
+        if (!check.ok) return res.status(check.code).json({ status: 'error', message: check.message });
+        const onlyTalent = type => ((type || 'kol') !== 'other'
+            ? { error: { code: 400, message: 'แก้คนในงานได้เฉพาะงาน Talent' } } : null);
+        const early = onlyTalent(check.project.campaign_type);
+        if (early) return res.status(400).json({ status: 'error', message: early.error.message });
+        const b = req.body;
+        if (!b || typeof b !== 'object' || Array.isArray(b)) {
+            return res.status(400).json({ status: 'error', message: 'ข้อมูลไม่ถูกต้อง' });
+        }
+        // ตีกลับเร็วจากข้อมูลที่อ่านมาแล้ว ไม่ต้องเปิดทรานแซกชัน (personPatch ตรวจซ้ำใต้ล็อกอีกชั้น)
+        const set = b.set && typeof b.set === 'object' && !Array.isArray(b.set) ? b.set : {};
+        if (!PERSON_FIELDS.some(k => set[k] !== undefined)) {
+            return res.status(400).json({ status: 'error', message: 'ไม่มีอะไรให้บันทึก' });
+        }
+        const seen = (Array.isArray(check.project.hire_items) ? check.project.hire_items : [])
+            .find(it => it && String(it.key) === String(req.params.key));
+        if (!seen) return res.status(404).json({ status: 'error', message: 'ไม่พบรายการนี้' });
+        if (seen.mode === 'casting') {
+            return res.status(400).json({ status: 'error', message: 'แก้ได้เฉพาะคนในงาน — ใบขอให้หาแก้ในใบ' });
+        }
+
+        let before = null;
+        let changed = [];
+        const saved = await store.projects.updateHireRow(req.params.id, req.params.key, (row, items, job) => {
+            const bad = onlyTalent(job.campaign_type);
+            if (bad) return bad;
+            // ใบต้นทางยังอยู่ = ขั้นยืนยันคิวยังเดินต่อได้ในใบ → ล็อกสถานะไว้ให้ปุ่มในใบ
+            const requestExists = row.from_request != null && items.some(it => it && it.mode === 'casting'
+                && String(it.key) === String(row.from_request));
+            const out = personPatch(row, b.set, b.expect, { requestExists });
+            if (out.error) return out;
+            before = row;
+            changed = out.changed;
+            return { row: out.row };
+        }, { userId: req.user.id });
+        if (!saved) return res.status(404).json({ status: 'error', message: 'ไม่พบรายการนี้' });
+        if (saved.error) {
+            const e = saved.error;
+            return res.status(e.code || 400).json({ status: 'error', ...(e.stale ? { code: 'STALE' } : {}), message: e.message });
+        }
+        // ส่งค่าเดิมมา (เช่นกดเลิกทำซ้ำ) ไม่มีอะไรเปลี่ยน — ไม่ต้องลงประวัติ
+        if (changed.length) {
+            await record(req, req.params.id, 'update', personSummary(before, saved.item, changed),
+                check.project.name, check.project.team_id);
+        }
+        res.json({ status: 'success', data: { item: saved.item, items: saved.items, updated_at: saved.updated_at } });
     } catch (err) { next(err); }
 });
 
@@ -884,7 +979,7 @@ router.post('/:id/hires/:key/candidates/:ckey/image', guardCandidateFile, (req, 
 // GET /api/projects/:id/hires/:key/candidates/:ckey/image — เปิดรูปของคนที่เสนอ
 router.get('/:id/hires/:key/candidates/:ckey/image', async (req, res, next) => {
     try {
-        const acc = await castingRow(req, req.params.id, req.params.key);
+        const acc = await castingRowFiles(req, req.params.id, req.params.key);
         if (!acc.ok) return res.status(acc.code).json({ status: 'error', message: acc.message });
         const cand = candsOf(acc.row).find(c => String(c.key) === String(req.params.ckey));
         const meta = cand && cand.image;
@@ -972,7 +1067,7 @@ router.post('/:id/hires/:key/candidates/:ckey/video', guardCandidateFile, (req, 
 // GET /api/projects/:id/hires/:key/candidates/:ckey/video — เปิดคลิปแนะนำตัว (sendFile รองรับการกรอคลิปให้เอง)
 router.get('/:id/hires/:key/candidates/:ckey/video', async (req, res, next) => {
     try {
-        const acc = await castingRow(req, req.params.id, req.params.key);
+        const acc = await castingRowFiles(req, req.params.id, req.params.key);
         if (!acc.ok) return res.status(acc.code).json({ status: 'error', message: acc.message });
         const cand = candsOf(acc.row).find(c => String(c.key) === String(req.params.ckey));
         const meta = cand && cand.video;
