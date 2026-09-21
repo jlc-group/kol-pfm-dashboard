@@ -16,7 +16,8 @@ const {
     now, clone, scopeProjects,
     resolveGroupTarget, resolveGroupProducts, resolveGroupCtype, resolveGroupMedia, resolveGroupCampaign,
     engagementOf, clipCostMetrics, perfVerdict,
-    maybeStamp, stampWaitReason, pfmManagedSpend, postCheckWaiting
+    maybeStamp, stampWaitReason, pfmManagedSpend, postCheckWaiting,
+    adRanBySpend, effectiveAdStatus
 } = logic;
 
 // ===== สแตมป์ Performance ตอนค่าแอดถึงเกณฑ์ =====
@@ -181,6 +182,11 @@ const ads = {
                     team_id: p ? p.team_id : null,
                     team_name: team ? team.name : null,
                     ad_status: s.ad_status || 'ยังไม่ยิง',
+                    // สถานะที่เอาไว้โชว์และนับ — รวมแถวที่ยังไม่มีใครกดแต่ค่าแอดเดินแล้ว
+                    // ad_status ด้านบนยังเป็นค่าที่คนกดจริง (ใช้กับ guard และฟีด content export)
+                    ad_status_shown: effectiveAdStatus(s),
+                    // true = รู้ว่ายิงแล้วเพราะมีค่าแอด ไม่ใช่เพราะมีคนกดยืนยัน
+                    ad_done_from_spend: adRanBySpend(s) && s.ad_status !== 'ยิงแล้ว',
                     ad_spend: spend,
                     ad_reach: reach,
                     // ค่าแอดมาจาก PFM อัตโนมัติ (หน้าโฆษณาไม่ให้กรอกทับ)
@@ -228,7 +234,8 @@ const ads = {
         // โพสต์ที่เอเจนซี่ส่งมาแต่ทีมยังไม่ตรวจ ยังไม่ขึ้นหน้านี้ — นับไว้บอกบนหน้า Ads ว่ามีรออยู่ที่แคมเปญไหน
         const checkWaiting = rows.filter(postCheckWaiting);
         rows = rows.filter(r => !postCheckWaiting(r));
-        if (status) rows = rows.filter(r => r.ad_status === status);
+        // กรองตามสถานะที่โชว์ — ถามหา "ยังไม่ยิง" ต้องไม่ได้แถวที่ค่าแอดเดินแล้วติดมาด้วย
+        if (status) rows = rows.filter(r => r.ad_status_shown === status);
         if (from) rows = rows.filter(r => !r.post_date || r.post_date >= from);
         if (to) rows = rows.filter(r => !r.post_date || r.post_date <= to);
 
@@ -237,7 +244,8 @@ const ads = {
         // สรุปภาพรวม
         const totalSpend = rows.reduce((s, r) => s + r.ad_spend, 0);
         const totalReach = rows.reduce((s, r) => s + r.ad_reach, 0);
-        const doneCount = rows.filter(r => r.ad_status === 'ยิงแล้ว').length;
+        // นับตามสถานะที่โชว์ ไม่งั้นการ์ด "ยิงแอดแล้ว" ขึ้น 0 ทั้งที่หลายแถวมีค่าแอดเดินแล้ว
+        const doneCount = rows.filter(r => r.ad_status_shown === 'ยิงแล้ว').length;
 
         // สรุปตามแบรนด์
         const bm = {};

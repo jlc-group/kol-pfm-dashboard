@@ -1292,6 +1292,9 @@ a { text-decoration: none; color: inherit; }
 .ads-status.pending { background: #fff; color: var(--muted); }
 .ads-status.pending:hover { border-color: var(--mint); color: var(--mint-dark); }
 .ads-status.done { background: var(--grad); color: #fff; border-color: transparent; }
+/* ยิงแล้วเพราะค่าแอดเดิน ไม่ใช่เพราะมีคนกดยืนยัน — จางลงหน่อยให้แยกออกจากที่ยืนยันแล้ว */
+.ads-status.done.from-spend { background: #ecfdf5; color: var(--mint-dark); border-color: #a7f3d0; }
+.ads-status.done.from-spend em { display: block; font-style: normal; font-size: 9px; font-weight: 600; opacity: .75; margin-top: 1px; }
 .ads-status:disabled { opacity: .6; cursor: default; }
 .ads-cpm { display: flex; align-items: center; gap: 6px; font-weight: 700; color: var(--mint-dark); }
 .agency-entry { border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px 4px; margin-bottom: 12px; background: #fafdfb; }

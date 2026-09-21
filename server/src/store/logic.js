@@ -121,6 +121,22 @@ function pfmManagedSpend(s) {
     return !!(s && (s.ad_synced_at || /^\d{1,50}$/.test(String(s.id_post || '').trim())));
 }
 
+// ===== สถานะ "ยิงแล้ว" ที่ใช้แสดงผล =====
+// ad_status เป็นค่าที่คนกดเอง แต่ค่าแอดซิงก์มาจาก PFM อัตโนมัติ — พอไม่มีใครกด
+// แถวที่เงินเดินไปแล้วจึงค้างเป็น "ยังไม่ยิง" ทั้งที่แอดวิ่งจริง (การ์ดข้างบนเลยขึ้น 0/93)
+// มีค่าแอด = แอดวิ่งแล้วแน่นอน จึงนับว่ายิงแล้วตอนโชว์และตอนสรุป
+//
+// ใช้ได้เฉพาะ "แสดงผล/นับ" เท่านั้น ห้ามเขียนลงฐานและห้ามเอาไปตัดสินสิทธิ์แก้ข้อมูล:
+// การล็อก post_url/gencode/id_post, guard ตอน PUT และฟีด content export
+// ยังต้องยึด ad_status ที่คนกดจริง ไม่งั้นค่าแอดที่ซิงก์เข้ามาเองจะไปล็อก
+// แถวที่ทีมยังแก้ข้อมูลไม่เสร็จ และจะดึงคลิปหายออกจากฟีดของ beauterry
+function adRanBySpend(s) {
+    return (Number(s && s.ad_spend) || 0) > 0;
+}
+function effectiveAdStatus(s) {
+    return ((s && s.ad_status === 'ยิงแล้ว') || adRanBySpend(s)) ? 'ยิงแล้ว' : 'ยังไม่ยิง';
+}
+
 // ===== งบของงานจ้างอื่น ๆ แยกตามความคืบหน้า (หน้ารอบทำจ่าย) =====
 // งบของงาน = ผลรวมทุกแถว แต่ไม่ใช่ทั้งก้อนที่ "จ่ายได้" — ต้องแยกให้แอดมินเห็นก่อนตั้งงวด
 //  agreed   = ตกลงแล้ว / ถ่ายเสร็จ / ส่งงานแล้ว (จ่ายได้จริง)
@@ -995,6 +1011,7 @@ module.exports = {
     HIRE_JOB_CLOSED, hireWaiting, hireNeedMore, hireStage,
     BOOK_PENDING, BOOK_FEE, BOOK_OK, HIRE_BOOKED, HIRE_AGREED, bookingState, bookingOpen, hireBookings,
     releaseToRequest, bookingConfirm, bookingFeeDecision, bookingUnavailable, hireBreakdown, jobProgress, pfmManagedSpend,
+    adRanBySpend, effectiveAdStatus,
     HIRE_PAYABLE, HIRE_DIRECT_STATUS, newHireRow, payableWithoutFee, isDateStr, clipText, HIRE_SCOPE_MAX, hireScope,
     PERSON_FIELDS, personPatch,
     resolveInside, sameInstant, mergeHireItems, mergeBriefFiles, cleanFee, cleanHeadcount, safeId, safeSlug,

@@ -251,7 +251,14 @@ function AdRow({ row, onSaved, canCost }) {
         }
     }
 
+    // ค่าแอดเดินแล้ว = แอดวิ่งไปแล้วแน่นอน แม้ยังไม่มีใครกดยืนยัน — โชว์ว่ายิงแล้วไปก่อน
+    // (ไม่เขียนลงฐาน ปุ่มยังกดยืนยันได้ตามปกติ และไม่กระทบฟีดที่ beauterry ดึงไป)
+    const ranBySpend = (Number(row.ad_spend) || 0) > 0;
+    const shownStatus = (adStatus === 'ยิงแล้ว' || ranBySpend) ? 'ยิงแล้ว' : 'ยังไม่ยิง';
+    const doneFromSpend = ranBySpend && adStatus !== 'ยิงแล้ว';
+
     // ยิงแอดช้าไปกี่วันหลังวันลงคลิป (นับจาก Post Date → วันยิงแอด)
+    // แถวที่รู้จากค่าแอดไม่มีวันยิงแอดให้นับ จึงไม่เข้าเกณฑ์นี้ (ต้องกดยืนยันก่อนถึงได้วันที่)
     const lateDays = (adStatus === 'ยิงแล้ว' && row.post_date && end) ? daysBetween(row.post_date, end) : null;
     // แจ้งเข้าระบบช้าไปกี่วันหลัง KOL ลงงานจริง — แยกให้เห็นว่ายิงแอดช้าเพราะเราช้าหรือเพราะเพิ่งได้รับแจ้ง
     const reportLag = (row.post_date && row.post_date_at)
@@ -318,11 +325,20 @@ function AdRow({ row, onSaved, canCost }) {
             <div className="ads-cell">
                 {end
                     ? <span className="ads-postdate" title="วันที่ยิงแอด (ระบบลงให้ตอนกดสถานะเป็นยิงแล้ว)">{fmtDate(end)}</span>
-                    : <span className="muted">ยังไม่ยิง</span>}
+                    : doneFromSpend
+                        /* ค่าแอดบอกว่ายิงแล้ว แต่ไม่รู้วันไหน — เขียน "ยังไม่ยิง" ตรงนี้จะขัดกับสถานะข้าง ๆ */
+                        ? <span className="muted" title="ยิงไปแล้ว (รู้จากค่าแอด) แต่ยังไม่มีวันยิงแอด — กดปุ่มสถานะเพื่อลงวันที่">—</span>
+                        : <span className="muted">ยังไม่ยิง</span>}
             </div>
             <div className="ads-cell">
-                <button type="button" className={'ads-status ' + (adStatus === 'ยิงแล้ว' ? 'done' : 'pending')} onClick={toggleStatus} disabled={saving}>
-                    {adStatus === 'ยิงแล้ว' ? '✓ ยิงแล้ว' : 'ยังไม่ยิง'}
+                <button type="button"
+                    className={'ads-status ' + (shownStatus === 'ยิงแล้ว' ? 'done' : 'pending') + (doneFromSpend ? ' from-spend' : '')}
+                    onClick={toggleStatus} disabled={saving}
+                    title={doneFromSpend
+                        ? 'รู้ว่ายิงแล้วจากค่าแอดที่ PFM ซิงก์เข้ามา แต่ยังไม่มีใครกดยืนยัน — กดเพื่อยืนยันและลงวันยิงแอดเป็นวันนี้'
+                        : (shownStatus === 'ยิงแล้ว' ? 'กดเพื่อกลับเป็นยังไม่ยิง' : 'กดเมื่อยิงแอดคลิปนี้แล้ว')}>
+                    {shownStatus === 'ยิงแล้ว' ? '✓ ยิงแล้ว' : 'ยังไม่ยิง'}
+                    {doneFromSpend && <em>จากค่าแอด</em>}
                 </button>
                 {/* ย้ายตัวบอกสถานะการบันทึกมาจากช่อง CPM ที่เอาออกไป */}
                 {saving ? <span className="proc-status">…</span> : saved ? <span className="proc-status ok">✓</span> : null}
@@ -399,12 +415,17 @@ export default function Ads() {
         return lateLevel(d);
     };
     // skip = ข้ามตัวกรองตัวนั้น ใช้ตอนนับเลขบนปุ่ม (เลขบอกว่า "ถ้ากดปุ่มนี้จะเหลือกี่รายการ")
+    // ใช้สถานะที่โชว์ (ad_status_shown) เพื่อให้เลขบนปุ่มตรงกับที่ตาเห็นในตาราง
+    // แถวเก่าก่อนมีฟิลด์นี้ค่อยถอยไปใช้ ad_status
+    const shownStatusOf = r => r.ad_status_shown || r.ad_status;
     const matches = (r, skip) =>
         (skip === 'platform' || !platform || r.platform === platform) &&
-        (skip === 'status' || !status || r.ad_status === status) &&
+        (skip === 'status' || !status || shownStatusOf(r) === status) &&
         (skip === 'late' || !late || lateBucket(r) === late);
 
     // เรียง: ยังไม่ยิง อยู่บน, ยิงแล้ว ลงไปอยู่ล่าง (ของเดิมในกลุ่มเดียวกันคงลำดับตาม data)
+    // จงใจเรียงด้วย ad_status ที่คนกดจริง ไม่ใช่สถานะที่โชว์ — ไม่งั้นแถวที่ค่าแอดเพิ่งเดิน
+    // จะกระโดดลงไปท้ายตารางเองโดยที่ทีมไม่ได้ทำอะไร หาของที่เคยอยู่ตรงเดิมไม่เจอ
     const rows = allRows.filter(r => matches(r))
         .sort((a, b) => (a.ad_status === 'ยิงแล้ว' ? 1 : 0) - (b.ad_status === 'ยิงแล้ว' ? 1 : 0));
 
@@ -541,7 +562,7 @@ export default function Ads() {
                                 <span>สถานะ
                                     <ColumnFilter label="สถานะยิงแอด" value={status} onPick={setStatus}
                                         options={[{ value: '', label: 'ทุกสถานะ', count: countIf('status', () => true) },
-                                        ...STATUSES.map(st => ({ value: st, label: st === 'ยิงแล้ว' ? '✓ ยิงแล้ว' : st, count: countIf('status', r => r.ad_status === st) }))]} />
+                                        ...STATUSES.map(st => ({ value: st, label: st === 'ยิงแล้ว' ? '✓ ยิงแล้ว' : st, count: countIf('status', r => shownStatusOf(r) === st) }))]} />
                                 </span>
                                 <span title="ค่าแอดสะสม (บาท) และ Reach — กรอกเองได้ บันทึกเมื่อออกจากช่อง">ค่าแอด / REACH</span>
                                 <span>ยิงช้า
