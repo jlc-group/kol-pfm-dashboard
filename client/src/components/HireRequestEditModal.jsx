@@ -15,8 +15,12 @@ export default function HireRequestEditModal({ request, onClose, onSaved }) {
         deadline: request.deadline || '',
         place: request.place || '',
         spec: request.spec || '',
+        scope: request.scope || '',
         note: request.note || ''
     });
+    // ค่าเดิมของ Scope of Work ตอนเปิดกล่อง — ส่งไปเฉพาะเมื่อแก้จริง
+    // (ข้อมูลใบที่มาจากที่อื่นอาจยังไม่มีช่องนี้ ถ้าส่งค่าว่างไปทุกครั้ง server จะล้างของเดิมทิ้งเงียบ ๆ)
+    const [scope0] = useState(() => request.scope || '');
     const [saving, setSaving] = useState(false);
     const [err, setErr] = useState('');
     const up = (k, v) => setF(s => ({ ...s, [k]: v }));
@@ -32,7 +36,8 @@ export default function HireRequestEditModal({ request, onClose, onSaved }) {
                 body: {
                     kind: f.kind, headcount: Number(f.headcount) || 1, fee: Number(f.fee) || 0,
                     use_date: f.use_date || null, deadline: f.deadline || null,
-                    place: f.place, spec: f.spec, note: f.note
+                    place: f.place, spec: f.spec, note: f.note,
+                    ...(f.scope !== scope0 ? { scope: f.scope } : {})
                 }
             });
             onSaved(res.data);
@@ -86,6 +91,11 @@ export default function HireRequestEditModal({ request, onClose, onSaved }) {
                         <span>สเปคที่ต้องการ</span>
                         <textarea rows="2" value={f.spec} onChange={e => up('spec', e.target.value)}
                             placeholder="เช่น หญิง 20-25 ปี สูง 165 ขึ้นไป เคยถ่ายงานสกินแคร์" />
+                    </label>
+                    <label className="hire-f wide">
+                        <span>Scope of Work</span>
+                        <textarea rows="3" value={f.scope} maxLength={2000} onChange={e => up('scope', e.target.value)}
+                            placeholder="เช่น ถ่ายภาพนิ่ง 20 ลุค + วิดีโอสั้น 3 ตัว · ใช้งานออนไลน์ 6 เดือน" />
                     </label>
                     <label className="hire-f wide">
                         <span>{T.note}</span>

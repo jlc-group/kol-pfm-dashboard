@@ -48,8 +48,12 @@ const START = {
     name: '', kind: '', fee: '', status: TALKING,
     use_date: '', use_time: '', place: '',
     contact: '', agency: '', qty: '', link: '', note: '',
-    headcount: '1', spec: '', deadline: '', assignee_id: ''
+    headcount: '1', spec: '', scope: '', deadline: '', assignee_id: ''
 };
+// Scope of Work ยาวได้ไม่เกินนี้ (server ตัดที่ความยาวเดียวกัน) — กันไว้ที่ช่องเลย จะได้ไม่พิมพ์ยาวแล้วหายตอนบันทึก
+const SCOPE_MAX = 2000;
+const SCOPE_PH = 'เช่น ถ่ายภาพนิ่ง 20 ลุค + วิดีโอสั้น 3 ตัว · ใช้งานออนไลน์ 6 เดือน';
+const OWNER_MSG = 'เลือกผู้ดูแลงาน';
 // "มีอะไรพิมพ์ค้างไว้ไหม" — เทียบกับค่าตอนเปิดฟอร์ม/ตอนบันทึกล่าสุด (แบรนด์/ผู้ดูแล/งานที่เลือก เป็นแค่การกดเลือก ไม่นับ)
 const dirtyKey = (f, jobName, file) => JSON.stringify([f, String(jobName || '').trim(), file ? `${file.name}:${file.size}` : '']);
 
@@ -95,6 +99,8 @@ export default function QuickHireForm({ mode = 'direct', job = null, onClose, on
     // ผู้ดูแลงาน (เก็บเป็นชื่อในช่อง creator เหมือนฟอร์มเต็ม) — ทีมใช้บัญชีร่วมกัน ระบบเดาเองไม่ได้ จึงจำค่าที่เลือกล่าสุดไว้ให้
     const [owner, setOwner] = useState(() => readStore(OWNER_KEY));
     const [people, setPeople] = useState([]);
+    // ผู้ดูแลงานเป็นช่องบังคับ — โหลดรายชื่อไม่ได้ต้องบอก ไม่งั้นเห็นแค่ "เลือกผู้ดูแลงาน" กับช่องที่ไม่มีชื่อให้เลือก
+    const [peopleErr, setPeopleErr] = useState('');
 
     // ===== ②③ ตัวคน / ใบ =====
     const [f, setF] = useState(START);
@@ -141,8 +147,8 @@ export default function QuickHireForm({ mode = 'direct', job = null, onClose, on
     useEffect(() => {
         let alive = true;
         api('/users/options')
-            .then(res => { if (alive) setPeople(Array.isArray(res && res.data) ? res.data : []); })
-            .catch(() => { if (alive) setPeople([]); });
+            .then(res => { if (alive) { setPeople(Array.isArray(res && res.data) ? res.data : []); setPeopleErr(''); } })
+            .catch(err => { if (alive) { setPeople([]); setPeopleErr((err && err.message) || 'โหลดรายชื่อไม่สำเร็จ'); } });
         return () => { alive = false; };
     }, []);
     const ownerNames = people.map(u => u.name);
@@ -174,7 +180,7 @@ export default function QuickHireForm({ mode = 'direct', job = null, onClose, on
         { label: '3 วัน', v: addDays(today, 3) },
         { label: '1 สัปดาห์', v: addDays(today, 7) }
     ];
-    const extraCount = [f.contact, f.agency, f.qty, f.link, f.note].filter(v => String(v).trim()).length + (file ? 1 : 0);
+    const extraCount = [f.contact, f.agency, f.qty, f.note].filter(v => String(v).trim()).length + (file ? 1 : 0);
     const dirty = dirtyKey(f, jobName, file) !== cleanKey.current;
 
     function fieldErrors() {
@@ -183,6 +189,8 @@ export default function QuickHireForm({ mode = 'direct', job = null, onClose, on
             if (jobMode === 'new') {
                 if (!brand) e.brand = 'เลือกแบรนด์';
                 if (!jobName.trim()) e.jobName = 'ใส่ชื่องาน';
+                // งานใหม่ต้องมีคนที่ทีมถามเรื่องงานได้ (server ตีกลับถ้าไม่มี) — งานที่มีอยู่แล้วไม่ถามซ้ำ
+                if (!owner.trim()) e.owner = OWNER_MSG;
             } else if (!pickedJob) {
                 e.job = 'เลือกงานก่อน';
             }
@@ -239,7 +247,8 @@ export default function QuickHireForm({ mode = 'direct', job = null, onClose, on
         if (casting) {
             return {
                 mode: 'casting', kind: f.kind, headcount: hc, fee: num(f.fee),
-                spec: trimOrNull(f.spec), deadline: f.deadline || null, use_date: f.use_date || null,
+                spec: trimOrNull(f.spec), scope: trimOrNull(f.scope),
+                deadline: f.deadline || null, use_date: f.use_date || null,
                 place: trimOrNull(f.place), note: trimOrNull(f.note),
                 assignee_id: f.assignee_id === '' ? null : Number(f.assignee_id)
             };
@@ -279,7 +288,7 @@ export default function QuickHireForm({ mode = 'direct', job = null, onClose, on
                     method: 'POST',
                     body: {
                         campaign_type: 'other', name: jobName.trim(), brand,
-                        creator: owner || null, owner: null, objective: null, status: 'Active',
+                        creator: owner.trim(), owner: null, objective: null, status: 'Active',
                         hire_items: [first], budget: 0, kol_target: 0, products: [], ad_groups: [],
                         // ช่วงเวลาของงานคิดจากวันใช้งาน — ไม่มีวันเลยงานจะหลุดตัวกรองเดือนในหน้าแคมเปญ/งบ
                         start_date: f.use_date || null, end_date: f.use_date || null
@@ -587,10 +596,13 @@ export default function QuickHireForm({ mode = 'direct', job = null, onClose, on
                                     <input id={id('jobname')} value={jobName} onChange={e => setJobName(e.target.value)}
                                         placeholder="เช่น ถ่าย Lookbook คอลเลกชันใหม่" maxLength={255} />
                                 </Field>
-                                <Field label={T.owner} opt="ไม่บังคับ" htmlFor={id('owner')}
-                                    hint="ระบบจำชื่อที่เลือกล่าสุดไว้ให้ครั้งหน้า">
-                                    <select id={id('owner')} value={owner} onChange={e => chooseOwner(e.target.value)}>
-                                        <option value="">— ยังไม่ระบุ —</option>
+                                <Field label={T.owner} req err={E.owner} htmlFor={id('owner')}
+                                    hint={peopleErr
+                                        ? `โหลดรายชื่อไม่สำเร็จ (${peopleErr}) — ปิดฟอร์มแล้วเปิดใหม่อีกครั้ง`
+                                        : 'คนที่ทีมถามเรื่องงานนี้ได้ · ระบบจำชื่อที่เลือกล่าสุดไว้ให้ครั้งหน้า'}>
+                                    <select id={id('owner')} value={owner} onChange={e => chooseOwner(e.target.value)}
+                                        aria-invalid={E.owner ? 'true' : undefined}>
+                                        <option value="">— เลือก{T.owner} —</option>
                                         {ownerNames.map(n => <option key={n} value={n}>{n}</option>)}
                                         {owner && !ownerNames.includes(owner) && <option value={owner}>{owner}</option>}
                                     </select>
@@ -610,6 +622,11 @@ export default function QuickHireForm({ mode = 'direct', job = null, onClose, on
                             <Field label="ชื่อ" req err={E.name} htmlFor={id('name')}>
                                 <input id={id('name')} ref={nameRef} value={f.name} onChange={e => up('name', e.target.value)}
                                     placeholder="ชื่อ-นามสกุล หรือชื่อเล่น" maxLength={255} autoComplete="off" />
+                            </Field>
+                            {/* ลิงก์โปรไฟล์อยู่ติดชื่อ — ใช้ยืนยันว่าเป็นคนไหน ไม่ต้องกางข้อมูลเพิ่มเติมหา */}
+                            <Field label="ลิงก์ Account/Social" htmlFor={id('link')}>
+                                <input id={id('link')} type="url" value={f.link} onChange={e => up('link', e.target.value)}
+                                    placeholder="IG / TikTok / Facebook (https://...)" />
                             </Field>
                             <Field label="ประเภทงาน" req err={E.kind} labelId={id('kind')}>{kindChips}</Field>
                             <Field label="ค่าตัว (บาท)" err={E.fee} htmlFor={id('fee')} hint="ยังไม่รู้ก็เว้นไว้ได้ — ใส่ทีหลังได้">
@@ -662,6 +679,11 @@ export default function QuickHireForm({ mode = 'direct', job = null, onClose, on
                                 <textarea id={id('spec')} rows="3" value={f.spec} onChange={e => up('spec', e.target.value)}
                                     placeholder="เช่น หญิง 20-25 ปี สูง 165 ขึ้นไป เคยถ่ายงานสกินแคร์" />
                             </Field>
+                            {/* ขอบเขตงานที่คนที่หาได้ต้องทำ — สเปคบอก "คนแบบไหน" ช่องนี้บอก "ทำอะไร ใช้แค่ไหน" ให้คนช่วยหาเอาไปคุยราคาได้ตรง */}
+                            <Field label="Scope of Work" opt="ไม่บังคับ" htmlFor={id('scope')}>
+                                <textarea id={id('scope')} rows="3" value={f.scope} maxLength={SCOPE_MAX}
+                                    onChange={e => up('scope', e.target.value)} placeholder={SCOPE_PH} />
+                            </Field>
                         </>
                     )}
                 </section>
@@ -709,10 +731,6 @@ export default function QuickHireForm({ mode = 'direct', job = null, onClose, on
                                     <Field label="ระยะเวลาทำงาน" htmlFor={id('qty')}>
                                         <input id={id('qty')} value={f.qty} onChange={e => up('qty', e.target.value)}
                                             placeholder="เช่น 2 วัน หรือ 3 รอบไลฟ์" />
-                                    </Field>
-                                    <Field label="ลิงก์ Account/Social" htmlFor={id('link')}>
-                                        <input id={id('link')} type="url" value={f.link} onChange={e => up('link', e.target.value)}
-                                            placeholder="IG / TikTok / Facebook (https://...)" />
                                     </Field>
                                     <Field label="รูป/คอมการ์ด" err={fileErr} hint="รูป หรือ PDF ไม่เกิน 10MB — แนบให้หลังบันทึก">
                                         <div className="qf-file">

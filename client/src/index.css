@@ -1195,9 +1195,10 @@ a { text-decoration: none; color: inherit; }
    Target ("F_Beauty-Make up_18-44") ต้องการ 158px — เดิม 15 คอลัมน์ใช้ 1700px พอดี
    แยก CONTENT เป็น CONTENT TYPE / FORMAT / STYLE และเพิ่ม CAMPAIGN แล้ว (18 คอลัมน์) จึงขยายเป็น 1990px ให้ Target ได้ความกว้างเท่าเดิม
    เพิ่มคอลัมน์ ค่าแอด / REACH (19 คอลัมน์) จึงขยายเป็น 2110px — Target ยังได้ราว 159px เท่าเดิม
+   เอาคอลัมน์ STYLE ออก (18 คอลัมน์) จึงลดเหลือ 2010px — คอลัมน์อื่นกว้างเท่าเดิม
    ต่ำกว่านี้ Target จะโดนตัดเป็น ... / สูงกว่านี้ Target ไม่ได้กว้างขึ้นแล้ว มีแต่เลื่อนไกลขึ้นเปล่า ๆ
    หมายเหตุ: --app-zoom ตอนนี้เป็น 1 (เปลี่ยนจาก 1.2 ใน edb8dc7) ความกว้างบนจอจึงเท่ากับค่านี้ */
-.ads-tbl { min-width: 2110px; }
+.ads-tbl { min-width: 2010px; }
 /* ปุ่มกรองเล็กบนหัวคอลัมน์ (แบบตาราง Excel) */
 .colf { position: relative; display: inline-flex; vertical-align: middle; }
 .colf-btn {
@@ -1238,9 +1239,9 @@ a { text-decoration: none; color: inherit; }
 .colf-dot.none { background: #c3cdc8; }
 .ads-tbl-head, .ads-row {
     display: grid;
-    /* KOL BRANDS PRODUCT CAMPAIGN TARGET CONTENT-TYPE FORMAT STYLE POST GENCODE ID-POST วันลงงาน วันยิงแอด สถานะ ค่าแอด/REACH ยิงช้า STAMPED LIVE หมายเหตุ */
+    /* KOL BRANDS PRODUCT CAMPAIGN TARGET CONTENT-TYPE FORMAT POST GENCODE ID-POST วันลงงาน วันยิงแอด สถานะ ค่าแอด/REACH ยิงช้า STAMPED LIVE หมายเหตุ */
     /* POST เป็นไอคอนอย่างเดียวจึงให้แคบสุด เพื่อเก็บพื้นที่ไว้ให้คอลัมน์ที่มีข้อความยาว */
-    grid-template-columns: 1fr 0.95fr 0.85fr 0.85fr 1.25fr 0.7fr 0.5fr 0.75fr 0.3fr 1fr 0.95fr 0.8fr 0.65fr 0.65fr 0.85fr 0.6fr 0.7fr 0.7fr 0.9fr;
+    grid-template-columns: 1fr 0.95fr 0.85fr 0.85fr 1.25fr 0.7fr 0.5fr 0.3fr 1fr 0.95fr 0.8fr 0.65fr 0.65fr 0.85fr 0.6fr 0.7fr 0.7fr 0.9fr;
     gap: 10px; align-items: center;
 }
 .ads-note input { width: 100%; }

@@ -121,7 +121,7 @@ const FIXTURE = {
               views: 200000, likes: 5000, comments: 500, saves: 300, shares: 200, post_url: 'https://example.test/1' }),
         // น้องบี: มีค่าตัว แพงกว่า (CPM 80 · CPE 6.67)
         SUB({ id: 2, account_name: 'น้องบี', person_key: 'pb', budget: 8000, ad_reach: 80000, post_date: '2026-07-12',
-              views: 100000, likes: 1000, comments: 100, saves: 50, shares: 50 }),
+              views: 100000, likes: 1000, comments: 100, saves: 50, shares: 50, post_url: 'https://example.test/2' }),
         // น้องซี: ยังไม่ใส่ค่าตัว ยิงแอดไป 500 ยอดดีสุด — เดิม CPM/CPE ต่ำสุดจนได้ Good และคะแนนเต็ม
         SUB({ id: 3, account_name: 'น้องซี', person_key: 'pc', ad_spend: 500, ad_reach: 250000, post_date: '2026-07-15',
               views: 300000, likes: 9000, comments: 500, saves: 300, shares: 200, post_url: 'https://example.test/3' }),
@@ -246,7 +246,25 @@ test('Influencer page: a clip without a fee is not judged Pass/Fail on ad cost a
     const a = by('น้องเอ');
     assert.deepEqual([a.fee_missing, a.cpm, a.cpe, a.performance], [false, 25, 0.83, 'Good']);
     assert.equal(by('น้องบี').performance, 'Improve');
-    assert.deepEqual([by('น้องดี').fee_missing, by('น้องดี').performance], [true, null]);
+    // น้องดียังไม่ลงงาน (ไม่มีลิงก์โพสต์) → ไม่ขึ้นหน้า Influencer List และไม่นับในตัวเลขสรุป
+    assert.equal(by('น้องดี'), undefined);
+});
+
+test('Influencer page lists only people who have posted, and the summary counts only them', async () => {
+    const { rows, summary } = await kols.analytics(['Jdent']);
+    // ทุกแถวที่ขึ้นต้องมีลิงก์โพสต์ — คนที่ยังไม่ลงงานไม่ขึ้นเลย
+    assert.ok(rows.length > 0);
+    assert.ok(rows.every(r => r.post_url && String(r.post_url).trim() !== ''));
+    assert.equal(summary.total_kols, rows.length);
+    assert.equal(summary.budget, rows.reduce((s, r) => s + r.cost, 0));
+    // ลิงก์เป็นช่องว่างล้วน = ยังไม่ลงงาน
+    const saved = FIXTURE.submissions;
+    FIXTURE.submissions = [...saved, SUB({ id: 99, account_name: 'ช่องว่าง', person_key: 'px', post_url: '   ', views: 10 })];
+    try {
+        assert.equal((await kols.analytics(['Jdent'])).rows.find(r => r.kol_name === 'ช่องว่าง'), undefined);
+    } finally {
+        FIXTURE.submissions = saved;
+    }
 });
 
 test('Ads page: the live verdict waits for the fee too', async () => {

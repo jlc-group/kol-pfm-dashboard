@@ -355,7 +355,8 @@ const kols = {
         const today = new Date();
 
         const rows = db.submissions
-            .filter(s => s.status === 'confirmed' && projIds.has(s.project_id))
+            // เฉพาะคนที่ลงงานแล้ว (มีลิงก์โพสต์) — ตรงกับ pg/kols.js
+            .filter(s => s.status === 'confirmed' && projIds.has(s.project_id) && String(s.post_url == null ? '' : s.post_url).trim() !== '')
             .map(s => {
                 const p = projById[s.project_id];
                 const refDate = s.post_date || s.gen_date || (p ? p.start_date : null);

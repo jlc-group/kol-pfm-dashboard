@@ -200,8 +200,10 @@ const kols = {
         const projIds = new Set(projs.map(p => p.id));
         const today = new Date();
 
+        // เฉพาะคนที่ลงงานแล้ว (มีลิงก์โพสต์ — เกณฑ์เดียวกับหน้า Ads) · คนที่ยังไม่ลงงานไม่ขึ้นหน้านี้ และไม่นับในตัวเลขสรุป
+        const posted = s => String(s.post_url == null ? '' : s.post_url).trim() !== '';
         const rows = snap.submissions
-            .filter(s => s.status === 'confirmed' && projIds.has(s.project_id))
+            .filter(s => s.status === 'confirmed' && projIds.has(s.project_id) && posted(s))
             .map(s => {
                 const p = projById[s.project_id];
                 const refDate = s.post_date || s.gen_date || (p ? p.start_date : null);

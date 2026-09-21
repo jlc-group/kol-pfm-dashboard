@@ -33,8 +33,8 @@ export const needTarget = p => TARGET_PLATFORMS.includes(p);
 
 // Content Type ต่างกันตาม Platform
 export const CONTENT_TYPES_DEFAULT = ['Review', 'Sale'];
+// Facebook / Instagram ไม่เลือกที่ช่องนี้แล้ว — เลือก Awareness / Engagement / Reels ที่ช่อง Campaign แทน (ดู CAMPAIGN_TYPES_BY_PLATFORM)
 export const CONTENT_TYPES_BY_PLATFORM = {
-    Facebook: ['Awareness', 'Engagement', 'Reels'],
     // TikTok ใช้ค่า default เดิมทั้งสองตัว แล้วเพิ่ม Branding ที่มีเฉพาะ Platform นี้
     // (เดิมชื่อ C-ADS — ณ วันที่เปลี่ยนชื่อยังไม่มีกลุ่มหรือ KOL ไหนบันทึกค่านี้ไว้)
     TikTok: [...CONTENT_TYPES_DEFAULT, 'Branding'],
@@ -52,12 +52,35 @@ export function contentTypesFor(platformCsv, current) {
 
 // Campaign ของการยิงแอด — ตั้งต่อชุด Content Type (หน้า Ads แสดงเป็นคอลัมน์ CAMPAIGN)
 export const CAMPAIGN_TYPES = ['VDO View', 'Reach', 'Consideration Ads'];
-// ใช้เฉพาะ TikTok — Platform อื่นปิดช่องนี้ ไม่ต้องเลือก (เพิ่มชื่อในลิสต์นี้ที่เดียวถ้าวันหลังต้องใช้)
+// ตัวเลือก Campaign ต่อ Platform — Facebook / Instagram ใช้ Awareness / Engagement / Reels (ย้ายมาจากช่อง Content Type)
+// ต้องตรงกับ SOCIAL_CAMPAIGNS ฝั่ง server (server/src/store/logic.js)
+export const SOCIAL_CAMPAIGNS = ['Awareness', 'Engagement', 'Reels'];
+export const CAMPAIGN_TYPES_BY_PLATFORM = {
+    TikTok: CAMPAIGN_TYPES,
+    Facebook: SOCIAL_CAMPAIGNS,
+    Instagram: SOCIAL_CAMPAIGNS
+};
+// Platform ที่เปิดช่อง Campaign — Platform อื่นปิดช่องนี้ ไม่ต้องเลือก (เพิ่มชื่อในลิสต์นี้ที่เดียวถ้าวันหลังต้องใช้)
 // ต้องตรงกับ CAMPAIGN_PLATFORMS ฝั่ง server (server/src/store/logic.js)
-export const CAMPAIGN_PLATFORMS = ['TikTok'];
+export const CAMPAIGN_PLATFORMS = ['TikTok', 'Facebook', 'Instagram'];
 export const needCampaign = p => CAMPAIGN_PLATFORMS.includes(p);
+// Platform ที่ Campaign "คือ" ตัวแยกชุด (แทน Content Type) — ช่อง Content Type ปิดไว้ แต่ตอนบันทึกเก็บค่าเดียวกันลง content_type ด้วย
+// เหตุผล: หน้าเอเจนซี่ / หน้าแคมเปญ / On Process / หน้า Ads แยกคน นับโควตา และจับคู่ข้อมูลรายคนด้วย content_type ของชุด
+// ต้องตรงกับ CAMPAIGN_AS_CTYPE ฝั่ง server (server/src/store/logic.js)
+export const CAMPAIGN_AS_CTYPE = ['Facebook', 'Instagram'];
+export const campaignIsCtype = p => CAMPAIGN_AS_CTYPE.includes(p);
 // ค่าที่เคยบันทึกไว้ต้องคงอยู่ในลิสต์เสมอ (กติกาเดียวกับ contentTypesFor)
-export const campaignTypesFor = current => (current && !CAMPAIGN_TYPES.includes(current) ? [...CAMPAIGN_TYPES, current] : CAMPAIGN_TYPES);
+export function campaignTypesFor(platform, current) {
+    const base = CAMPAIGN_TYPES_BY_PLATFORM[platform] || CAMPAIGN_TYPES;
+    return current && !base.includes(current) ? [...base, current] : base;
+}
+// ตอนเปิดแก้แคมเปญเดิม: ชุดของ Facebook / Instagram ที่บันทึกก่อนย้าย (ค่าอยู่ที่ content_type) → ขึ้นในช่อง Campaign
+// ใช้ content_type ก่อน เพราะข้อมูลเก่าอาจมี campaign ค้างเป็นของ TikTok (เช่น 'Reach')
+// ค่าเดิมที่ไม่อยู่ในลิสต์ (เช่น Instagram 'Review') ยังคงอยู่ในช่อง Campaign — บันทึกแล้วคนเดิมยังอยู่ชุดเดิม
+export function withCampaignFromCtype(b) {
+    if (!b || !campaignIsCtype(b.platform)) return b;
+    return { ...b, sets: (b.sets || []).map(s => ({ ...s, campaign: s.content_type || s.campaign || '' })) };
+}
 
 export const emptyTier = () => ({ tier: '', kols: '' });
 export const emptySet = (over = {}) => ({ campaign: '', content_type: '', media_type: '', content_format: '', tiers: [emptyTier()], ...over });
@@ -345,7 +368,9 @@ export function packConcepts(b) {
 }
 
 // ตอนบันทึก: Platform ที่ไม่ใช้ Campaign เก็บเป็นว่างเสมอ (กันค่าค้างจากข้อมูลเก่า)
+// Facebook / Instagram: เก็บค่า Campaign ซ้ำลง content_type ด้วย (หน้าอื่นอ่านจาก content_type)
 export function packCampaigns(b) {
+    if (campaignIsCtype(b.platform)) return { ...b, sets: (b.sets || []).map(s => ({ ...s, content_type: s.campaign || '' })) };
     if (needCampaign(b.platform)) return b;
     return { ...b, sets: (b.sets || []).map(s => ({ ...s, campaign: '' })) };
 }

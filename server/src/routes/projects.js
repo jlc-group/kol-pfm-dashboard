@@ -14,7 +14,7 @@ router.use(authenticate);
 const { UPLOAD_DIR, uploadPath } = require('../config/uploads');
 const {
     mergeHireItems, mergeBriefFiles, hireRowFee, cleanFee, cleanHeadcount, safeId,
-    HIRE_BOOKED, BOOK_PENDING, BOOK_FEE, HIRE_JOB_CLOSED, hireBookings, newHireRow, payableWithoutFee,
+    HIRE_BOOKED, BOOK_PENDING, BOOK_FEE, HIRE_JOB_CLOSED, hireBookings, newHireRow, payableWithoutFee, hireScope,
     PERSON_FIELDS, personPatch, releaseToRequest, bookingConfirm, bookingFeeDecision, bookingUnavailable, carryProductTargets, carryProductBudgets, carryProductConcepts
 } = require('../store/logic');
 const BOOKING_ACTIONS = ['confirm', 'unavailable', 'fee-approve', 'fee-reject'];
@@ -96,6 +96,10 @@ const needFeeMessage = row => {
     const who = String((row && (row.name || row.kind)) || '').trim().slice(0, 100) || 'คนที่ยังไม่ใส่ชื่อ';
     return `ใส่ค่าตัวของ "${who}" ก่อน จึงจะตั้งเป็น "ตกลงแล้ว" ได้`;
 };
+// ผู้ดูแลงาน (ชื่อคนในช่อง creator) ของงาน Talent — บังคับใส่ เพราะทีมใช้บัญชีร่วมกัน ระบบบอกเองไม่ได้ว่าใครดูแลงานนี้
+// ข้อความต้องตรงกับฟอร์มฝั่งหน้าเว็บ (ฟอร์มสั้น / ฟอร์มเต็ม / ลิ้นชักข้อมูลงาน) · ชื่อรับแค่สตริง/ตัวเลข (object ถือว่าว่าง)
+const NEED_OWNER_MSG = 'เลือกผู้ดูแลงาน';
+const personName = v => (typeof v === 'string' || typeof v === 'number' ? String(v).trim() : '');
 
 // ---------- เช็คสิทธิ์ก่อนรับไฟล์ ----------
 // multer เขียนไฟล์ลงดิสก์ทันทีที่รับ ถ้าเช็คสิทธิ์ทีหลัง คนที่ไม่มีสิทธิ์ก็ส่งไฟล์ใหญ่ (คลิปถึง 95MB) มาให้เขียนลงเครื่องได้
@@ -223,6 +227,12 @@ router.post('/', async (req, res, next) => {
         if (req.body.hire_items !== undefined && req.body.hire_items !== null && !Array.isArray(req.body.hire_items)) {
             return res.status(400).json({ status: 'error', message: 'รายการจ้างไม่ถูกต้อง' });
         }
+        // งาน Talent ใหม่ต้องมีผู้ดูแลงาน (แคมเปญ KOL ไม่บังคับ) — เก็บชื่อที่ตัดช่องว่างแล้ว
+        if (req.body.campaign_type === 'other') {
+            const owner = personName(req.body.creator);
+            if (!owner) return res.status(400).json({ status: 'error', message: NEED_OWNER_MSG });
+            createFields.creator = owner;
+        }
         // งาน Talent ใหม่: คนที่ตั้งเป็น "ตกลงแล้ว" ต้องมีค่าตัว (งานใหม่ไม่มีแถวเดิม ทุกแถวถือเป็นแถวใหม่)
         if (req.body.campaign_type === 'other' && Array.isArray(req.body.hire_items)) {
             const unpaid = payableWithoutFee([], req.body.hire_items);
@@ -266,9 +276,23 @@ router.put('/:id', async (req, res, next) => {
                 return res.status(400).json({ status: 'error', message: 'เปลี่ยนประเภทแคมเปญหลังสร้างแล้วไม่ได้ — ให้สร้างแคมเปญใหม่แทน' });
             }
         }
+        // งาน Talent: ล้างผู้ดูแลงานทิ้งไม่ได้ — ตรวจเฉพาะคำขอที่ส่งช่อง creator มา (เปลี่ยนสถานะ / บันทึกรายการจ้างอย่างเดียวไม่โดน)
+        // งานเก่าที่เก็บชื่อไว้ในช่อง owner แล้วส่ง owner มาด้วย ยังผ่าน (หน้าเว็บอ่าน creator ก่อนแล้วค่อย owner)
+        const isTalent = (check.project.campaign_type || 'kol') === 'other';
+        // เทียบกับชื่อที่เก็บไว้จริง: งานเก่าที่ยังไม่มีผู้ดูแลงาน แล้วส่ง creator ว่างมา (เช่น หน้าเว็บที่เปิดค้างไว้ตั้งแต่ก่อนอัปเดต
+        // ส่งทุกช่องของฟอร์มเสมอ) ไม่ได้ล้างอะไร — ให้บันทึกได้ ไม่งั้นแก้ค่าตัว/สถานะในงานนั้นไม่ได้จนกว่าจะรีเฟรช
+        const hadOwner = !!(personName(check.project.creator) || personName(check.project.owner));
+        if (isTalent && hadOwner && Object.prototype.hasOwnProperty.call(req.body, 'creator')) {
+            const owner = personName(req.body.creator);
+            if (!owner && !personName(req.body.owner)) {
+                return res.status(400).json({ status: 'error', message: NEED_OWNER_MSG });
+            }
+        }
         const bodyKeys = Object.keys(req.body).filter(k => k !== 'expected_updated_at');
         const patch = { ...req.body, updated_by: req.user.id };
         delete patch.expected_updated_at;
+        // เก็บชื่อผู้ดูแลงานแบบตัดช่องว่างแล้ว (ตรงกับตอนสร้างงาน) — ว่างได้เฉพาะงานเก่าที่ส่ง owner มาแทน
+        if (isTalent && Object.prototype.hasOwnProperty.call(req.body, 'creator')) patch.creator = personName(req.body.creator) || null;
         const hasHire = Object.prototype.hasOwnProperty.call(req.body, 'hire_items');
         if (hasHire && !Array.isArray(req.body.hire_items)) {
             return res.status(400).json({ status: 'error', message: 'รายการจ้างไม่ถูกต้อง' });
@@ -699,6 +723,8 @@ router.put('/:id/hires/:key', async (req, res, next) => {
             const patch = { ...row };
             if (b.kind !== undefined) patch.kind = txt(b.kind);
             if (b.spec !== undefined) patch.spec = txt(b.spec);
+            // Scope of Work — ความยาว/กติกาเดียวกับตอนสร้างใบ (hireScope) · ส่ง null / ว่าง = ลบออก
+            if (b.scope !== undefined) patch.scope = hireScope(b.scope);
             if (b.place !== undefined) patch.place = txt(b.place);
             if (b.note !== undefined) patch.note = txt(b.note);
             if (b.use_date !== undefined) patch.use_date = b.use_date || null;

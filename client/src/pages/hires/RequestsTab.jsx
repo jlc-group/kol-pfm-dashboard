@@ -29,7 +29,7 @@ export default function RequestsTab({ tasks, loading = false, error = '', hasBra
 
     const q = search.trim().toLowerCase();
     const matchBase = r => (!brand || r.brand === brand)
-        && (!q || [r.project_name, r.brand, r.kind, r.spec, r.assignee_name, r.place]
+        && (!q || [r.project_name, r.brand, r.kind, r.spec, r.scope, r.assignee_name, r.place]
             .some(v => String(v == null ? '' : v).toLowerCase().includes(q)));
     const done = r => r.stage === 'full' || r.stage === 'closed';
     const matchMine = (r, key) => (key === 'todo' ? r.my_todo

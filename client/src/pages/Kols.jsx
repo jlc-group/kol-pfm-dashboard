@@ -260,7 +260,7 @@ export default function Kols() {
             <header className="page-head with-action">
                 <div>
                     <h1>KOL Analytics</h1>
-                    <p className="page-sub">Influencer Performance &amp; Demographics</p>
+                    <p className="page-sub">Influencer Performance &amp; Demographics · แสดงเฉพาะคนที่ลงงานแล้ว</p>
                 </div>
                 <div className="ka-top-filters">
                     <div className="ka-search">

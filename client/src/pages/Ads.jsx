@@ -8,9 +8,8 @@ import { ProductSummary } from '../components/ProductChips.jsx';
 import { fmtDate } from '../utils/date.js';
 import { visibleBrands, seesAllBrands } from '../data/brands.js';
 import { useAuth } from '../auth/AuthContext.jsx';
+import { campaignIsCtype } from '../data/adGroups.js';
 
-// ค่าที่เก็บเป็นสตริงคั่นด้วย , (เช่น content_format) → แยกเป็นรายตัว
-const splitCsv = v => (v ? String(v).split(',').map(x => x.trim()).filter(Boolean) : []);
 
 const STATUSES = ['ยังไม่ยิง', 'ยิงแล้ว'];
 
@@ -284,17 +283,16 @@ function AdRow({ row, onSaved, canCost }) {
                     ? asTargetArray(row.target).map(t => <span className="proc-ads-tgt" key={t} title={t}>🎯 {t}</span>)
                     : <span className="muted">—</span>}
             </div>
-            {/* CONTENT TYPE / FORMAT (Photo-VDO) / STYLE — แยกคอลัมน์ละเรื่อง ไม่กองรวมในช่องเดียว */}
+            {/* CONTENT TYPE / FORMAT (Photo-VDO) — แยกคอลัมน์ละเรื่อง ไม่กองรวมในช่องเดียว
+                (STYLE ไม่แสดงในหน้านี้ — ทีมแอดไม่ได้ใช้ ดูได้ในหน้าแคมเปญ / ฝั่งเอเจนซี่) */}
             <div className="ads-cell ads-stack">
-                {row.content_type ? <span className="proc-ctype-chip">{row.content_type}</span> : <span className="muted">—</span>}
+                {/* Facebook / Instagram: ค่านี้คือ Campaign (ขึ้นคอลัมน์ CAMPAIGN แล้ว) ไม่ต้องโชว์ซ้ำ
+                    ข้อมูลเดิมที่ไม่ใช่ Campaign (เช่น Instagram 'Review') ยังโชว์ที่ช่องนี้เหมือนเดิม */}
+                {row.content_type && !(campaignIsCtype(row.platform) && row.campaign === row.content_type)
+                    ? <span className="proc-ctype-chip">{row.content_type}</span> : <span className="muted">—</span>}
             </div>
             <div className="ads-cell ads-stack">
                 {row.media_type ? <span className="proc-ctype-chip media">{row.media_type}</span> : <span className="muted">—</span>}
-            </div>
-            <div className="ads-cell ads-stack">
-                {splitCsv(row.group_format).length
-                    ? splitCsv(row.group_format).map(x => <span className="proc-ctype-chip fmt" key={x}>{x}</span>)
-                    : <span className="muted">—</span>}
             </div>
             {/* POST — ลิงก์โพสต์จริง (ไอคอนอย่างเดียว คอลัมน์จึงแคบสุดในตาราง) */}
             <div className="ads-cell">
@@ -538,7 +536,7 @@ export default function Ads() {
                                         options={[{ value: '', label: 'ทุก Platform', count: countIf('platform', () => true) },
                                         ...platformOptions.map(p => ({ value: p, label: p, count: countIf('platform', r => r.platform === p) }))]} />
                                 </span>
-                                <span>BRANDS</span><span>PRODUCTS</span><span>CAMPAIGN</span><span>TARGET</span><span>CONTENT TYPE</span><span>FORMAT</span><span>STYLE</span>
+                                <span>BRANDS</span><span>PRODUCTS</span><span>CAMPAIGN</span><span>TARGET</span><span>CONTENT TYPE</span><span>FORMAT</span>
                                 <span>POST</span><span>GENCODE</span><span>ID POST</span><span>วันลงงาน</span><span>วันยิงแอด</span>
                                 <span>สถานะ
                                     <ColumnFilter label="สถานะยิงแอด" value={status} onPick={setStatus}

@@ -6,7 +6,9 @@ import { T } from '../../data/talentLabels.js';
 // ลิ้นชัก "แก้ข้อมูลงาน" — ชื่องาน / รายละเอียดงาน / ผู้ดูแลงาน เท่านั้น (ไม่แตะรายการจ้าง)
 // PUT /projects/:id ส่งเฉพาะช่องที่แก้ ไม่มี hire_items จึงไม่ต้องส่ง expected_updated_at และไม่ชนกับคนช่วยหาที่กำลังส่งชื่อเข้าใบ
 // ผู้ดูแลงานเก็บเป็น "ชื่อ" ในช่อง creator (แบบเดียวกับฟอร์มเต็มและฟอร์มสั้น) — งานเก่าบางงานเก็บไว้ที่ owner จึงอ่านสองช่อง
+// ผู้ดูแลงานเป็นช่องบังคับ — งานเก่าที่ยังไม่มีต้องเลือกก่อนถึงจะบันทึกได้ และล้างให้ว่างไม่ได้ (server ตีกลับด้วยข้อความเดียวกัน)
 const S = v => (v == null ? '' : String(v));
+const OWNER_MSG = 'เลือกผู้ดูแลงาน';
 
 export default function JobInfoDrawer({ project, onClose, onSaved }) {
     const uid = useId();
@@ -18,16 +20,18 @@ export default function JobInfoDrawer({ project, onClose, onSaved }) {
     }));
     const [f, setF] = useState(start);
     const [people, setPeople] = useState([]);
+    const [peopleErr, setPeopleErr] = useState('');
     const [tried, setTried] = useState(false);
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState('');
     const nameRef = useRef(null);
+    const ownerRef = useRef(null);
 
     useEffect(() => {
         let alive = true;
         api('/users/options')
-            .then(res => { if (alive) setPeople(Array.isArray(res && res.data) ? res.data : []); })
-            .catch(() => { if (alive) setPeople([]); });
+            .then(res => { if (alive) { setPeople(Array.isArray(res && res.data) ? res.data : []); setPeopleErr(''); } })
+            .catch(e => { if (alive) { setPeople([]); setPeopleErr((e && e.message) || 'โหลดรายชื่อไม่สำเร็จ'); } });
         return () => { alive = false; };
     }, []);
 
@@ -35,6 +39,7 @@ export default function JobInfoDrawer({ project, onClose, onSaved }) {
     const changed = Object.keys(start).filter(k => S(f[k]).trim() !== S(start[k]).trim());
     const dirty = changed.length > 0;
     const nameErr = tried && !f.name.trim() ? 'ใส่ชื่องาน' : '';
+    const ownerErr = tried && !S(f.creator).trim() ? OWNER_MSG : '';
     const ownerNames = [...new Set(people.map(u => u && u.name).filter(Boolean))];
 
     async function save() {
@@ -42,6 +47,8 @@ export default function JobInfoDrawer({ project, onClose, onSaved }) {
         setTried(true);
         setError('');
         if (!f.name.trim()) { if (nameRef.current) nameRef.current.focus(); return; }
+        // เช็คก่อน "ไม่ได้แก้อะไร" — งานเก่าที่ไม่มีผู้ดูแลงาน กดบันทึกเฉย ๆ ต้องถูกชี้ให้เลือก ไม่ใช่ปิดไปเงียบ ๆ
+        if (!S(f.creator).trim()) { if (ownerRef.current) ownerRef.current.focus(); return; }
         if (!dirty) { onClose && onClose(); return; }
         const body = {};
         changed.forEach(k => { body[k] = k === 'name' ? f.name.trim() : (S(f[k]).trim() || null); });
@@ -86,15 +93,22 @@ export default function JobInfoDrawer({ project, onClose, onSaved }) {
                         <textarea id={id('obj')} rows="5" value={f.objective} onChange={e => up('objective', e.target.value)}
                             placeholder="งานนี้ทำอะไร ใช้ที่ไหน มีเงื่อนไขอะไรที่ทีมควรรู้" />
                     </div>
-                    <div className="qf-field">
-                        <label className="qf-label" htmlFor={id('owner')}>{T.owner}</label>
-                        <select id={id('owner')} value={f.creator} onChange={e => up('creator', e.target.value)}>
-                            <option value="">— ยังไม่ระบุ —</option>
+                    <div className={'qf-field' + (ownerErr ? ' has-err' : '')}>
+                        <label className="qf-label" htmlFor={id('owner')}>{T.owner}<span className="qf-req" aria-hidden="true"> *</span></label>
+                        <select id={id('owner')} ref={ownerRef} value={f.creator} onChange={e => up('creator', e.target.value)}
+                            aria-invalid={ownerErr ? 'true' : undefined}>
+                            {/* ตัวเลือกว่างมีไว้เฉพาะตอนยังไม่มีชื่อ (งานเก่า) — เลือกแล้วย้อนกลับไปว่างไม่ได้ */}
+                            {!S(f.creator).trim() && <option value="">— เลือก{T.owner} —</option>}
                             {ownerNames.map(n => <option key={n} value={n}>{n}</option>)}
                             {/* ชื่อเดิมที่ไม่อยู่ในรายชื่อแล้ว (ปิดบัญชีไป / พิมพ์เองจากฟอร์มเก่า) ต้องยังเลือกค้างไว้ได้ */}
                             {f.creator && !ownerNames.includes(f.creator) && <option value={f.creator}>{f.creator}</option>}
                         </select>
-                        <div className="qf-hint">คนที่ทีมถามเรื่องงานนี้ได้ — ขึ้นในการ์ดงานและหน้างาน</div>
+                        {ownerErr && <div className="qf-err" role="alert">{ownerErr}</div>}
+                        <div className="qf-hint">
+                            {peopleErr
+                                ? `โหลดรายชื่อไม่สำเร็จ (${peopleErr}) — ปิดแล้วเปิดใหม่อีกครั้ง`
+                                : 'คนที่ทีมถามเรื่องงานนี้ได้ — ขึ้นในการ์ดงานและหน้างาน'}
+                        </div>
                     </div>
                 </section>
             </div>

@@ -465,7 +465,7 @@ export default function HireRequestCard({ request, canDecide = false, canPropose
     // ถ้าซิงก์ตาม object ตรง ๆ ผลที่เพิ่งกดจะถูกเขียนทับด้วยข้อมูลเก่าที่ยังโหลดไม่เสร็จ — ซิงก์เฉพาะตอนเนื้อในเปลี่ยนจริง
     const sig = JSON.stringify([
         request.key, request.kind, request.headcount, request.fee, request.use_date, request.deadline,
-        request.place, request.spec, request.note, request.status, request.filled, request.assignee_id,
+        request.place, request.spec, request.scope, request.note, request.status, request.filled, request.assignee_id,
         candsOf(request), bookingsOf(request)
     ]);
     // คนที่เลือกจากใบนี้แล้วยังรอยืนยันคิว (หน้าแม่ส่งมา / เส้นที่กดคืน hire_items ชุดใหม่มา)
@@ -1050,6 +1050,12 @@ export default function HireRequestCard({ request, canDecide = false, canPropose
             </div>
 
             {row.spec && <div className="req-spec"><Icon name="file" size={14} /> {row.spec}</div>}
+            {/* ขอบเขตงาน (ทำอะไร ใช้แค่ไหน) — ส่วนหนึ่งของโจทย์ที่คนช่วยหาต้องเห็นก่อนไปคุยราคา · มักพิมพ์เป็นข้อ ๆ จึงคงการขึ้นบรรทัดไว้ */}
+            {row.scope && String(row.scope).trim() && (
+                <div className="req-spec req-scope" style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>
+                    <Icon name="target" size={14} /> <b>Scope of Work:</b> {row.scope}
+                </div>
+            )}
 
             <div className="req-assign">
                 <span className="req-assign-lbl">{T.finder}</span>

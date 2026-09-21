@@ -12,8 +12,13 @@ const GOOD_CPE = 1.5;
 
 // Platform ที่มีเป้าหมาย (target) ระดับกลุ่ม
 const TARGET_PLATFORMS = ['TikTok'];
-// Platform ที่ใช้ช่อง Campaign (VDO View / Reach / Consideration Ads) — ต้องตรงกับ CAMPAIGN_PLATFORMS ฝั่งหน้าเว็บ
-const CAMPAIGN_PLATFORMS = ['TikTok'];
+// Platform ที่ใช้ช่อง Campaign — ต้องตรงกับ CAMPAIGN_PLATFORMS ฝั่งหน้าเว็บ (client/src/data/adGroups.js)
+// TikTok: VDO View / Reach / Consideration Ads · Facebook / Instagram: Awareness / Engagement / Reels
+const CAMPAIGN_PLATFORMS = ['TikTok', 'Facebook', 'Instagram'];
+// Platform ที่ Campaign คือตัวแยกชุด (แทน Content Type) — ฟอร์มเก็บค่าเดียวกันไว้ทั้ง campaign และ content_type
+// ต้องตรงกับ CAMPAIGN_AS_CTYPE / SOCIAL_CAMPAIGNS ฝั่งหน้าเว็บ (client/src/data/adGroups.js)
+const CAMPAIGN_AS_CTYPE = ['Facebook', 'Instagram'];
+const SOCIAL_CAMPAIGNS = ['Awareness', 'Engagement', 'Reels'];
 
 // ค่าแอดขั้นต่ำที่ถือว่า "ยิงจริงจังแล้ว" — ถึงเกณฑ์นี้ระบบจึงล็อกผลตัดสินคุ้ม/ไม่คุ้ม
 // (ต่ำกว่านี้ตัวเลขยังแกว่ง ตัดสินไปก็ไม่มีความหมาย)
@@ -375,6 +380,12 @@ function mergeBriefFiles(current, incoming) {
     return out;
 }
 
+// ===== Scope of Work ของใบขอให้หา (ขอบเขตงานที่คนช่วยหาต้องรู้ก่อนหาคน: ถ่ายกี่ลุค ใช้งานกี่เดือน ฯลฯ) =====
+// มีเฉพาะใบขอให้หา — แถวคนเป็น null เสมอ · ใช้ตัวเดียวกันทั้ง mergeHireItems / newHireRow / เส้นแก้ใบ (routes/projects.js)
+// ความยาวจึงตรงกันทุกทาง · รับแค่สตริง/ตัวเลข (object ที่ปลอมมาไม่กลายเป็น "[object Object]") ว่าง = null
+const HIRE_SCOPE_MAX = 2000;
+const hireScope = v => (typeof v === 'string' || typeof v === 'number' ? clipText(v, HIRE_SCOPE_MAX) : null);
+
 // ===== รวม hire_items ที่ฟอร์มส่งมาทั้งก้อน เข้ากับของในฐาน =====
 // ฟิลด์ที่ "ระบบเป็นคนตั้ง" ห้ามเชื่อจากหน้าเว็บ เพราะหน้าเว็บส่งกลับมาทั้งก้อนและปลอมได้:
 //   image (ชื่อไฟล์) · candidates · filled · requested_by_id / requested_at · from_request
@@ -419,10 +430,14 @@ function mergeHireItems(current, incoming, { userId = null, at = now(), users = 
                 out.candidates = null; out.filled = null; out.headcount = null;
                 out.assignee_id = null; out.assignee_name = null; out.assigned_at = null;
                 out.requested_by_id = null; out.requested_at = null;
+                out.scope = null;       // Scope of Work เป็นของใบขอให้หาเท่านั้น
                 return out;
             }
 
             const prevCasting = prev && prev.mode === 'casting' ? prev : null;
+            // ฟอร์มเต็ม / แท็บที่เปิดค้างจากก่อน deploy ไม่ส่งช่องนี้มา (undefined) — คงของเดิมในใบไว้ ห้ามล้างทิ้งเงียบ ๆ
+            // ส่งมาเป็น null / ว่าง = ตั้งใจลบออก
+            out.scope = raw.scope === undefined ? ((prevCasting && hireScope(prevCasting.scope)) || null) : hireScope(raw.scope);
             out.candidates = prevCasting && Array.isArray(prevCasting.candidates) ? prevCasting.candidates : [];
             out.filled = prevCasting ? (Number(prevCasting.filled) || 0) : 0;
             out.requested_by_id = prevCasting && prevCasting.requested_by_id != null ? prevCasting.requested_by_id : (userId || null);
@@ -505,6 +520,7 @@ function newHireRow(body, { userId = null, users = {}, actor = null, at = now() 
             fee,                                        // งบต่อคน (0 ได้ = ยังไม่กำหนดงบ)
             headcount: b.headcount,                     // merge ปัดผ่าน cleanHeadcount (1…999)
             spec: text(b.spec, 1000), deadline: realDate(b.deadline),
+            scope: hireScope(b.scope),                  // Scope of Work (ไม่บังคับ) — แถวคนไม่มีช่องนี้ (merge ตั้งเป็น null)
             use_date: realDate(b.use_date), place: text(b.place, 200), note: text(b.note, 1000),
             // คนช่วยหาต้องผ่านการตรวจกับฐานผู้ใช้ (users จาก route) ไม่งั้น merge ถอดออกเป็นว่าง
             assignee_id: typeof b.assignee_id === 'string' || typeof b.assignee_id === 'number' ? b.assignee_id : null,
@@ -793,6 +809,14 @@ function resolveGroupMedia(g, platform, contentType) {
 function resolveGroupCampaign(g, platform, contentType) {
     if (!g) return null;
     if (platform && !CAMPAIGN_PLATFORMS.includes(platform)) return null;
+    // Facebook / Instagram: Campaign = content_type ของชุด (ค่าเดียวกัน) — ยึด content_type เพราะแท็บที่เปิดค้างก่อน deploy
+    // อาจบันทึกทับจน campaign ว่าง และข้อมูลเก่าอาจมี campaign ค้างเป็นของ TikTok ('Reach')
+    // ค่าเดิมที่ไม่ใช่ Campaign (เช่น Instagram 'Review' ที่บันทึกก่อนย้าย) ไม่นับเป็น Campaign — ยังเป็น Content Type เหมือนเดิม
+    if (platform && CAMPAIGN_AS_CTYPE.includes(platform)) {
+        const hit = (g.allocations || []).find(a => a.platform === platform && SOCIAL_CAMPAIGNS.includes(a.content_type)
+            && (!contentType || a.content_type === contentType));
+        return hit ? hit.content_type : null;
+    }
     const hit = (g.allocations || []).find(a => a.campaign
         && (!platform || !a.platform || a.platform === platform)
         && (!contentType || a.content_type === contentType));
@@ -965,13 +989,13 @@ function postCheckDecision(action, note, byName, at) {
 }
 
 module.exports = {
-    GOOD_CPM, GOOD_CPE, TARGET_PLATFORMS, CAMPAIGN_PLATFORMS, AD_STAMP_AT, now, clone,
+    GOOD_CPM, GOOD_CPE, TARGET_PLATFORMS, CAMPAIGN_PLATFORMS, CAMPAIGN_AS_CTYPE, SOCIAL_CAMPAIGNS, AD_STAMP_AT, now, clone,
     POST_CHECK_FIELDS, POST_CHECK_OPEN, postCheckWaiting, nextPostCheck, postCheckDecision,
     duplicateError, inScope, scopeProjects, hireRemaining, hireRowFee,
     HIRE_JOB_CLOSED, hireWaiting, hireNeedMore, hireStage,
     BOOK_PENDING, BOOK_FEE, BOOK_OK, HIRE_BOOKED, HIRE_AGREED, bookingState, bookingOpen, hireBookings,
     releaseToRequest, bookingConfirm, bookingFeeDecision, bookingUnavailable, hireBreakdown, jobProgress, pfmManagedSpend,
-    HIRE_PAYABLE, HIRE_DIRECT_STATUS, newHireRow, payableWithoutFee, isDateStr, clipText,
+    HIRE_PAYABLE, HIRE_DIRECT_STATUS, newHireRow, payableWithoutFee, isDateStr, clipText, HIRE_SCOPE_MAX, hireScope,
     PERSON_FIELDS, personPatch,
     resolveInside, sameInstant, mergeHireItems, mergeBriefFiles, cleanFee, cleanHeadcount, safeId, safeSlug,
     linkGroupPlatforms, resolveGroupClips, resolveGroupTarget, productCodesIn, carryProductTargets, carryProductBudgets, carryProductConcepts,

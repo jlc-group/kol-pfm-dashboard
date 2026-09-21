@@ -20,36 +20,70 @@ const GROUP = {
 test('resolveGroupCampaign picks the campaign of the matching Platform + Content Type', () => {
     assert.equal(resolveGroupCampaign(GROUP, 'TikTok', 'Review'), 'Reach');
     assert.equal(resolveGroupCampaign(GROUP, 'TikTok', 'Branding'), 'Consideration Ads');
-    // ชุดที่ไม่ได้เลือก Campaign = null ห้ามไปหยิบของ Platform อื่นมาแทน
-    assert.equal(resolveGroupCampaign(GROUP, 'Facebook', 'Awareness'), null);
+    // Facebook: Campaign คือค่าเดียวกับ Content Type ของชุด (Awareness / Engagement / Reels)
+    assert.equal(resolveGroupCampaign(GROUP, 'Facebook', 'Awareness'), 'Awareness');
+    assert.equal(resolveGroupCampaign(GROUP, 'Facebook', 'Reels'), null);          // ไม่มีชุดนี้
+    // Instagram ค่าเดิม 'Review' (บันทึกก่อนย้าย) ไม่ใช่ Campaign → ยังเป็น null
     assert.equal(resolveGroupCampaign(GROUP, 'Instagram', 'Review'), null);
+    const ig = { key: 'ig', allocations: [{ platform: 'Instagram', tier: 'Nano 1k - 10k', kols: 1, content_type: 'Engagement', campaign: 'Engagement' }] };
+    assert.equal(resolveGroupCampaign(ig, 'Instagram', 'Engagement'), 'Engagement');
 });
 
-test('Campaign is TikTok-only: other platforms give null even when old data carries a value', () => {
+test('Campaign is TikTok / Facebook / Instagram only: other platforms give null even when old data carries a value', () => {
     const g = { key: 'g3', allocations: [
         { platform: 'Facebook', tier: 'Nano 1k - 10k', kols: 1, content_type: 'Awareness', campaign: 'Reach' },
         { platform: 'Instagram', tier: 'Nano 1k - 10k', kols: 1, content_type: 'Review', campaign: 'VDO View' },
         { platform: 'TikTok', tier: 'Nano 1k - 10k', kols: 1, content_type: 'Review', campaign: 'Reach' }
     ] };
-    assert.equal(resolveGroupCampaign(g, 'Facebook', 'Awareness'), null);
+    // Facebook ข้อมูลเก่าที่ campaign ค้างเป็นของ TikTok ('Reach') → ยึด content_type ของชุด
+    assert.equal(resolveGroupCampaign(g, 'Facebook', 'Awareness'), 'Awareness');
+    // Instagram ข้อมูลเดิม content_type 'Review' + campaign ค้าง 'VDO View' → 'Review' ไม่ใช่ Campaign ของ Instagram
     assert.equal(resolveGroupCampaign(g, 'Instagram', 'Review'), null);
     assert.equal(resolveGroupCampaign(g, 'TikTok', 'Review'), 'Reach');
+    const lemon = { key: 'l8', allocations: [{ platform: 'Lemon8', tier: 'Nano 1k - 10k', kols: 1, content_type: 'Review', campaign: 'Reach' }] };
+    assert.equal(resolveGroupCampaign(lemon, 'Lemon8', 'Review'), null);
 });
 
-test('the campaign form clears Campaign on non-TikTok blocks when saving', async () => {
+test('the campaign form clears Campaign on platforms without it, and Facebook / Instagram pick Campaign instead of Content Type', async () => {
     const { pathToFileURL } = require('node:url');
     const web = await import(pathToFileURL(path.join(__dirname, '../client/src/data/adGroups.js')).href);
     assert.equal(web.needCampaign('TikTok'), true);
-    assert.equal(web.needCampaign('Facebook'), false);
+    assert.equal(web.needCampaign('Facebook'), true);
+    assert.equal(web.needCampaign('Instagram'), true);
+    assert.equal(web.needCampaign('Lemon8'), false);
+    assert.equal(web.campaignIsCtype('Facebook'), true);
+    assert.equal(web.campaignIsCtype('Instagram'), true);
+    assert.equal(web.campaignIsCtype('TikTok'), false);
+    // ตัวเลือก Campaign ต่อ Platform — Facebook ได้ชุดที่ย้ายมาจาก Content Type · ค่าเก่าที่ไม่อยู่ในลิสต์ยังคงอยู่
+    assert.deepEqual(web.campaignTypesFor('Facebook', ''), ['Awareness', 'Engagement', 'Reels']);
+    assert.deepEqual(web.campaignTypesFor('Instagram', ''), ['Awareness', 'Engagement', 'Reels']);
+    // ข้อมูลเดิมของ Instagram ('Review') ยังเลือกค้างไว้ได้ ไม่หายตอนเปิดแก้
+    assert.deepEqual(web.campaignTypesFor('Instagram', 'Review'), ['Awareness', 'Engagement', 'Reels', 'Review']);
+    assert.deepEqual(web.campaignTypesFor('TikTok', ''), ['VDO View', 'Reach', 'Consideration Ads']);
+    assert.deepEqual(web.campaignTypesFor('Facebook', 'Old'), ['Awareness', 'Engagement', 'Reels', 'Old']);
+    assert.equal(web.CONTENT_TYPES_BY_PLATFORM.Facebook, undefined);
+
     const sets = [{ campaign: 'Reach', content_type: 'Review', tiers: [] }, { campaign: '', content_type: 'Sale', tiers: [] }];
     const tik = { platform: 'TikTok', sets };
     assert.equal(web.packCampaigns(tik), tik);
-    const fb = web.packCampaigns({ platform: 'Facebook', sets });
-    assert.deepEqual(fb.sets.map(s => s.campaign), ['', '']);
-    assert.deepEqual(fb.sets.map(s => s.content_type), ['Review', 'Sale']);
+    const l8 = web.packCampaigns({ platform: 'Lemon8', sets });
+    assert.deepEqual(l8.sets.map(s => s.campaign), ['', '']);
+    assert.deepEqual(l8.sets.map(s => s.content_type), ['Review', 'Sale']);
+    // Instagram ข้อมูลเดิม: เปิดแก้แล้วบันทึกโดยไม่แตะ → content_type 'Review' คงเดิม (คน 28 แถวยังอยู่ชุดเดิม)
+    const igLoaded = web.withCampaignFromCtype({ platform: 'Instagram', sets: [{ campaign: '', content_type: 'Review', tiers: [] }] });
+    assert.deepEqual(web.packCampaigns(igLoaded).sets.map(s => [s.campaign, s.content_type]), [['Review', 'Review']]);
     assert.equal(sets[0].campaign, 'Reach'); // ไม่แก้ของเดิมในที่
-    // allocations ที่แบนออกมาจึงไม่มี Campaign ของ Facebook
-    assert.deepEqual(web.flattenBlocks([{ platform: 'Facebook', sets: [{ campaign: '', content_type: 'Awareness', tiers: [{ tier: 'Nano 1k - 10k', kols: 1 }] }] }])[0].campaign, null);
+
+    // Facebook: ค่า Campaign ถูกเก็บซ้ำลง content_type (หน้าเอเจนซี่ / On Process / หน้า Ads แยกคนด้วย content_type)
+    const fb = web.packCampaigns({ platform: 'Facebook', sets: [{ campaign: 'Awareness', content_type: 'เก่า', tiers: [] }, { campaign: 'Reels', content_type: '', tiers: [] }] });
+    assert.deepEqual(fb.sets.map(s => [s.campaign, s.content_type]), [['Awareness', 'Awareness'], ['Reels', 'Reels']]);
+    const flat = web.flattenBlocks([{ platform: 'Facebook', sets: fb.sets.map(s => ({ ...s, tiers: [{ tier: 'Nano 1k - 10k', kols: 1 }] })) }]);
+    assert.deepEqual(flat.map(a => [a.campaign, a.content_type]), [['Awareness', 'Awareness'], ['Reels', 'Reels']]);
+    // เปิดแก้แคมเปญเดิมที่เลือก Awareness ไว้ที่ Content Type → ขึ้นในช่อง Campaign (campaign เก่าค้าง 'Reach' ไม่เอา)
+    const loaded = web.withCampaignFromCtype({ platform: 'Facebook', sets: [{ campaign: 'Reach', content_type: 'Awareness', tiers: [] }, { campaign: '', content_type: '', tiers: [] }] });
+    assert.deepEqual(loaded.sets.map(s => s.campaign), ['Awareness', '']);
+    const tikLoaded = { platform: 'TikTok', sets };
+    assert.equal(web.withCampaignFromCtype(tikLoaded), tikLoaded);
 });
 
 test('resolveGroupCampaign: no group or a group saved before the field existed gives null', () => {
@@ -118,7 +152,8 @@ test('Ads page rows carry the campaign set on the group for that Platform + Cont
     const by = name => rows.find(r => r.account_name === name);
     assert.deepEqual([by('รีวิว').campaign, by('รีวิว').content_type, by('รีวิว').media_type], ['Reach', 'Review', 'VDO']);
     assert.deepEqual([by('แบรนดิ้ง').campaign, by('แบรนดิ้ง').group_format], ['Consideration Ads', 'Tie-in']);
-    assert.equal(by('เฟซบุ๊ก').campaign, null);
+    // Facebook: Campaign คือ Awareness / Engagement / Reels ของชุด (ค่าเดียวกับ Content Type) → ขึ้นคอลัมน์ CAMPAIGN
+    assert.equal(by('เฟซบุ๊ก').campaign, 'Awareness');
     assert.equal(by('ไม่มีกลุ่ม').campaign, null);
 });
 

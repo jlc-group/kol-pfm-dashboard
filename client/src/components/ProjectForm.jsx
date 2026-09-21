@@ -11,7 +11,7 @@ import {
     groupPlatforms, splitCsv, needTarget, contentTypesFor, campaignTypesFor,
     emptyTier, emptySet, emptyBlock, blocksKol, toBlocks, flattenBlocks,
     num, blocksBudget, platformBudgets, blocksProducts, withProductTargets, packProductTargets,
-    needCampaign, packCampaigns, isSplitBudget, productBudgetSum, packBudgets,
+    needCampaign, campaignIsCtype, withCampaignFromCtype, packCampaigns, isSplitBudget, productBudgetSum, packBudgets,
     isSplitConcept, isBlockSplitConcept, packConcepts
 } from '../data/adGroups.js';
 
@@ -105,7 +105,7 @@ function initGroups(editing) {
         return editing.ad_groups.map(g => {
             const plat = migPlatform(g);
             const seededBudget = (g.budget != null && g.budget !== '') ? g.budget : ((groupsPerPlat[plat] === 1 && Number(pb[plat]) > 0) ? pb[plat] : '');
-            return newGroup({ key: g.key || genKey(), platform: plat, concept: g.concept || '', clips: [...(g.clips || [])], target: asTargetArray(g.target), content_type: g.content_type || '', media_type: g.media_type || '', content_format: g.content_format || '', brief: g.brief || '', products: [...(g.products || [])], allocations: migAllocations(g), blocks: toBlocks(g, plat).map(withProductTargets), budget: seededBudget, code_expire: Number(g.code_expire) || 60 });
+            return newGroup({ key: g.key || genKey(), platform: plat, concept: g.concept || '', clips: [...(g.clips || [])], target: asTargetArray(g.target), content_type: g.content_type || '', media_type: g.media_type || '', content_format: g.content_format || '', brief: g.brief || '', products: [...(g.products || [])], allocations: migAllocations(g), blocks: toBlocks(g, plat).map(withProductTargets).map(withCampaignFromCtype), budget: seededBudget, code_expire: Number(g.code_expire) || 60 });
         });
     }
     const prods = editing?.products || [];
@@ -188,9 +188,11 @@ export default function ProjectForm({ editing, onClose, onSaved }) {
         return { ...b, product_targets: { ...(b.product_targets || {}), [code]: cur.includes(t) ? cur.filter(v => v !== t) : [...cur, t] } };
     });
     // เพิ่มชุด Content Type — ก๊อป Campaign / Format (Photo/VDO) / Style ของชุดก่อนหน้ามาให้ กรอกน้อยลง
+    // Facebook / Instagram ไม่ก๊อป Campaign — ช่องนี้คือตัวแยกชุด (แทน Content Type) ชุดใหม่ต้องเลือกเอง ไม่งั้นได้ชุดซ้ำ
     const addSet = (i, bi) => mapBlock(i, bi, b => {
         const last = b.sets[b.sets.length - 1] || {};
-        return { ...b, sets: [...b.sets, emptySet({ campaign: needCampaign(b.platform) ? (last.campaign || '') : '', media_type: last.media_type || '', content_format: last.content_format || '' })] };
+        const copyCampaign = needCampaign(b.platform) && !campaignIsCtype(b.platform);
+        return { ...b, sets: [...b.sets, emptySet({ campaign: copyCampaign ? (last.campaign || '') : '', media_type: last.media_type || '', content_format: last.content_format || '' })] };
     });
     const removeSet = (i, bi, si) => mapBlock(i, bi, b => ({ ...b, sets: b.sets.length > 1 ? b.sets.filter((_, j) => j !== si) : b.sets }));
     const setBlockBudget = (i, bi, v) => mapBlock(i, bi, b => ({ ...b, budget: v.replace(/[^0-9]/g, '') }));
@@ -285,12 +287,13 @@ export default function ProjectForm({ editing, onClose, onSaved }) {
                 if (needTarget(b.platform) && b.products.some(code =>
                     targetsForProduct(code).length > 0 && asTargetArray((b.product_targets || {})[code]).length === 0)) return false;
                 if (!(b.sets || []).length) return false;
-                return b.sets.every(s => s.content_type
+                // Facebook / Instagram เลือกที่ช่อง Campaign แทน Content Type — ต้องเลือกทุกชุดเหมือนเดิม
+                return b.sets.every(s => (campaignIsCtype(b.platform) ? s.campaign : s.content_type)
                     && (s.tiers || []).length > 0
                     && s.tiers.every(t => t.tier && (Number(t.kols) || 0) > 0));
             });
         });
-        if (!groupsOk) m.push('กลุ่มสินค้า (Platform/สินค้า/Target ของทุกสินค้าใน TikTok/Content Type + ทุกแถว Tier กับจำนวน KOL ให้ครบ)');
+        if (!groupsOk) m.push('กลุ่มสินค้า (Platform/สินค้า/Target ของทุกสินค้าใน TikTok/Content Type (Facebook/Instagram: Campaign) + ทุกแถว Tier กับจำนวน KOL ให้ครบ)');
         if (!form.owner) m.push('Project Owner');
         // งบกรอกที่ชั้น Platform — ต้องมีทุกบล็อก
         // แยกงบต่อสินค้า = ทุกสินค้าในบล็อกต้องใส่งบ · ก้อนเดียว = งบของ Platform ต้องมากกว่า 0
@@ -316,7 +319,7 @@ export default function ProjectForm({ editing, onClose, onSaved }) {
             const groups = adGroups.filter(g => g.platform && (g.blocks || []).some(b => (b.products || []).length)).map(g => {
                 const plats = splitCsv(g.platform);
                 // Target ต่อสินค้า: เก็บเฉพาะสินค้าที่ยังอยู่ + คิด Target รวมของบล็อกใหม่ (packProductTargets)
-                // Campaign: Platform ที่ไม่ใช้ (ไม่ใช่ TikTok) เก็บเป็นว่าง (packCampaigns)
+                // Campaign: Platform ที่ไม่ใช้ (ไม่ใช่ TikTok/Facebook/Instagram) เก็บเป็นว่าง · Facebook/Instagram เก็บซ้ำลง content_type (packCampaigns)
                 // งบ: แยกต่อสินค้า → budget = ผลรวม (packBudgets)
                 // Concept แยกต่อสินค้า: เก็บเฉพาะสินค้าที่ยังอยู่และมีข้อความ (packConcepts)
                 const blocks = (g.blocks || []).filter(b => plats.includes(b.platform)).map(b => packCampaigns(packProductTargets(packBudgets(packConcepts(b)))));
@@ -673,23 +676,30 @@ export default function ProjectForm({ editing, onClose, onSaved }) {
                                             {(b.sets || []).map((s, si) => (
                                                 <div className="ctype-set" key={si}>
                                                     <div className="ctype-set-row">
-                                                        {/* Campaign ใช้เฉพาะ TikTok — Platform อื่นปิดช่องไว้ ไม่ต้องเลือก */}
+                                                        {/* Campaign ใช้เฉพาะ TikTok / Facebook / Instagram — Platform อื่นปิดช่องไว้ ไม่ต้องเลือก
+                                                            Facebook / Instagram: Campaign (Awareness / Engagement / Reels) ใช้แทน Content Type — ช่อง Content Type ปิดไว้ */}
                                                         {needCampaign(b.platform) ? (
                                                             <select className="target-add" value={s.campaign || ''}
                                                                 onChange={e => setSetField(i, bi, si, 'campaign', e.target.value)}>
                                                                 <option value="">— Campaign —</option>
-                                                                {campaignTypesFor(s.campaign).map(c => <option key={c} value={c}>{c}</option>)}
+                                                                {campaignTypesFor(b.platform, s.campaign).map(c => <option key={c} value={c}>{c}</option>)}
                                                             </select>
                                                         ) : (
-                                                            <select className="target-add" value="" disabled title="Campaign ใช้เฉพาะ TikTok">
+                                                            <select className="target-add" value="" disabled title="Campaign ใช้เฉพาะ TikTok / Facebook / Instagram">
                                                                 <option value="">— ไม่ใช้ Campaign —</option>
                                                             </select>
                                                         )}
-                                                        <select className="target-add" value={s.content_type}
-                                                            onChange={e => setSetField(i, bi, si, 'content_type', e.target.value)}>
-                                                            <option value="">— Content Type —</option>
-                                                            {contentTypesFor(b.platform, s.content_type).map(c => <option key={c} value={c}>{c}</option>)}
-                                                        </select>
+                                                        {campaignIsCtype(b.platform) ? (
+                                                            <select className="target-add" value="" disabled title={`${b.platform} เลือกที่ช่อง Campaign แทน`}>
+                                                                <option value="">— ไม่ใช้ Content Type —</option>
+                                                            </select>
+                                                        ) : (
+                                                            <select className="target-add" value={s.content_type}
+                                                                onChange={e => setSetField(i, bi, si, 'content_type', e.target.value)}>
+                                                                <option value="">— Content Type —</option>
+                                                                {contentTypesFor(b.platform, s.content_type).map(c => <option key={c} value={c}>{c}</option>)}
+                                                            </select>
+                                                        )}
                                                         <select className="target-add" value={s.media_type}
                                                             onChange={e => setSetField(i, bi, si, 'media_type', e.target.value)}>
                                                             <option value="">— Format —</option>
@@ -726,7 +736,7 @@ export default function ProjectForm({ editing, onClose, onSaved }) {
                                                 </div>
                                             ))}
                                             <button type="button" className="alloc-add" onClick={() => addSet(i, bi)}>
-                                                <Icon name="plus" size={14} /> เพิ่ม Content Type
+                                                <Icon name="plus" size={14} /> {campaignIsCtype(b.platform) ? 'เพิ่ม Campaign' : 'เพิ่ม Content Type'}
                                             </button>
                                             {/* คลิปต่อคนของ Platform นี้ — ไม่ตั้ง = 1 คน 1 คลิป */}
                                             <div className="clips-box">

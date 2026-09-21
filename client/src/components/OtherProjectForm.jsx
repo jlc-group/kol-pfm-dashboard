@@ -30,6 +30,10 @@ export const statusesOf = it => (isCasting(it) ? CASTING_STATUS : HIRE_STATUS);
 export const hasMode = it => !!it && (it.mode === 'direct' || it.mode === 'casting');
 
 const genKey = () => 'h' + Math.random().toString(36).slice(2, 9);
+// Scope of Work ของใบขอให้หา — ความยาวเท่ากับที่ server ตัด (ฟอร์มสั้น / กล่องแก้ใบ ใช้ค่าเดียวกัน)
+const SCOPE_MAX = 2000;
+const SCOPE_PH = 'เช่น ถ่ายภาพนิ่ง 20 ลุค + วิดีโอสั้น 3 ตัว · ใช้งานออนไลน์ 6 เดือน';
+const OWNER_MSG = 'เลือกผู้ดูแลงาน';
 const num = v => Number(String(v ?? '').replace(/[^0-9.]/g, '')) || 0;
 const S = v => (v == null ? '' : String(v));
 // งบของแถว — ใบขอให้หาคิด งบต่อคน × จำนวนคนที่ขอ ส่วนแถวที่มีคนแล้วคือค่าตัวตรง ๆ
@@ -75,7 +79,7 @@ const newItem = (mode = '') => ({
     kind: '', name: '', contact: '', agency: '',
     qty: '', fee: '', use_date: '', use_time: '', place: '', link: '', note: '', image: null,
     // เฉพาะใบขอให้หา
-    headcount: mode === 'casting' ? '1' : '', spec: '', deadline: '',
+    headcount: mode === 'casting' ? '1' : '', spec: '', scope: '', deadline: '',
     status: mode === 'casting' ? CASTING_STATUS[0] : (mode === 'direct' ? HIRE_STATUS[0] : '')
 });
 // ของเก่าที่บันทึกไว้อาจไม่มีคีย์ครบ และฐานเก็บช่องว่างเป็น null
@@ -88,7 +92,7 @@ const toItem = it => {
         kind: S(it.kind), name: S(it.name), contact: S(it.contact), agency: S(it.agency),
         qty: S(it.qty), fee: it.fee == null ? '' : String(it.fee),
         use_date: S(it.use_date), use_time: S(it.use_time), place: S(it.place), link: S(it.link), note: S(it.note),
-        spec: S(it.spec), deadline: S(it.deadline),
+        spec: S(it.spec), scope: S(it.scope), deadline: S(it.deadline),
         headcount: it.headcount == null ? base.headcount : String(it.headcount),
         image: it.image || null, status: S(it.status) || base.status
     };
@@ -140,10 +144,12 @@ export default function OtherProjectForm({ editing, onClose, onSaved, onConflict
     // [{ id, name }] — ใช้ชื่อสำหรับช่องผู้ดูแลงาน (ของเดิมเก็บเป็นชื่อ)
     // และใช้ id สำหรับคนช่วยหา เพราะงานที่ฝากหาต้องผูกกับบัญชีจริง ไม่ใช่ข้อความชื่อ
     const [people, setPeople] = useState([]);
+    // โหลดรายชื่อไม่ได้ต้องบอกใต้ช่องผู้ดูแลงาน (ช่องบังคับ) — ไม่งั้นเห็นแค่ข้อความให้เลือกแต่ไม่มีชื่อให้เลือก
+    const [peopleErr, setPeopleErr] = useState('');
     useEffect(() => {
         api('/users/options')
-            .then(res => setPeople(res.data || []))
-            .catch(() => setPeople([]));
+            .then(res => { setPeople(res.data || []); setPeopleErr(''); })
+            .catch(err => { setPeople([]); setPeopleErr((err && err.message) || 'โหลดรายชื่อไม่สำเร็จ'); });
     }, []);
     const owners = people.map(u => u.name);
 
@@ -194,7 +200,7 @@ export default function OtherProjectForm({ editing, onClose, onSaved, onConflict
     // แถวที่กดเพิ่มแล้วยังไม่เลือกรูปแบบ (ประเภทงานถูกก๊อปมาจากแถวก่อนให้อัตโนมัติ) ไม่นับว่ากรอกแล้ว — ไม่งั้นได้แถวคนว่าง ๆ ติดไป
     // แถวที่มีอยู่ในฐานแล้วเก็บไว้เสมอ (ลบต้องกดถังขยะเอง ไม่ใช่หายไปเพราะช่องว่าง)
     const rowFilled = it => savedKeys.has(String(it.key)) || (hasMode(it) && (isCasting(it)
-        ? !!(it.kind || num(it.fee) > 0 || it.spec.trim())
+        ? !!(it.kind || num(it.fee) > 0 || it.spec.trim() || it.scope.trim())
         : !!(it.name.trim() || num(it.fee) > 0)));
     // แถวที่ครบพอจะนับเป็นรายการจ้างจริง — ต้องเลือกรูปแบบก่อน
     // มีคนแล้ว: ประเภทงาน + ชื่อ (ค่าตัวเว้นได้ — แถวใหม่เป็น "กำลังคุย" ใส่ค่าตัวทีหลังได้)
@@ -210,17 +216,25 @@ export default function OtherProjectForm({ editing, onClose, onSaved, onConflict
         return !before || before.status !== it.status || before.fee !== num(it.fee);
     };
 
+    // ผู้ดูแลงาน: บังคับตอนสร้างใหม่ · ตอนแก้ไขบังคับเฉพาะงานที่มีชื่ออยู่แล้ว (ห้ามล้างทิ้ง)
+    // งานเก่าที่ไม่เคยใส่ยังเปิดแก้/บันทึกได้เหมือนเดิม (ตอนส่งจะไม่แนบช่องนี้ไป — ดู handleSubmit)
+    const ownerRequired = !isEdit || !!S(editing.creator).trim();
+    const ownerMissing = ownerRequired && !S(form.creator).trim();
+
     function validate() {
         const m = [];
         if (!form.name.trim()) m.push('ชื่องาน');
         if (!form.brand) m.push('Brand');
         const itemsOk = items.some(rowOk);
         if (!itemsOk) m.push('รายการจ้าง (มีคนแล้ว: ประเภทงาน + ชื่อ · ขอให้ช่วยหา: ประเภทงาน + จำนวนคน + งบต่อคน อย่างน้อย 1 แถว)');
+        if (ownerMissing) m.push(T.owner);
         return m;
     }
     // ตอนแก้ไขเช็คแค่ชื่องาน (เดิมช่องนี้ใช้ required ของเบราว์เซอร์ — ย้ายมาเตือนที่ช่องแบบเดียวกับช่องอื่น)
-    // รายการจ้าง/แบรนด์ตอนแก้ไขไม่บังคับเหมือนเดิม
-    const missing = isEdit ? (form.name.trim() ? [] : ['ชื่องาน']) : validate();
+    // + ผู้ดูแลงานของงานที่เคยมีชื่อแล้ว · รายการจ้าง/แบรนด์ตอนแก้ไขไม่บังคับเหมือนเดิม
+    const missing = isEdit
+        ? [...(form.name.trim() ? [] : ['ชื่องาน']), ...(ownerMissing ? [T.owner] : [])]
+        : validate();
 
     // ช่องที่ขาดของแถวหนึ่งแถว → ข้อความที่ขึ้นใต้ช่องนั้น
     const rowMissing = it => {
@@ -246,6 +260,7 @@ export default function OtherProjectForm({ editing, onClose, onSaved, onConflict
     const rowMiss = it => (flagKeys.has(String(it.key)) ? rowMissing(it) : {});
     const nameMiss = tried && !form.name.trim();
     const brandMiss = tried && !isEdit && !form.brand;
+    const ownerMiss = tried && ownerMissing;
     // ข้อความใต้ช่อง — data-missing ใช้หาช่องแรกที่ต้องเลื่อนไปหา
     const ferr = text => (text ? <span className="tc2-ferr" data-missing="1" role="alert">{text}</span> : null);
 
@@ -277,6 +292,8 @@ export default function OtherProjectForm({ editing, onClose, onSaved, onConflict
                         fee: num(it.fee),
                         headcount: casting ? Math.max(1, num(it.headcount), Number(it.filled) || 0) : null,
                         spec: casting ? (it.spec.trim() || null) : null,
+                        // ใบที่บันทึกแล้ว (ล็อกไว้) ส่งค่าเดิมที่โหลดมากลับไปตรง ๆ — ไม่ส่ง undefined ให้ server ต้องเดา
+                        scope: casting ? (it.scope.trim() || null) : null,
                         deadline: casting ? (it.deadline || null) : null,
                         // คนช่วยหาเลือกได้ในฟอร์ม (server ตรวจกับฐานผู้ใช้อีกชั้น)
                         // ส่วนฟิลด์ที่ระบบเป็นคนตั้ง — รายชื่อที่เสนอ / จำนวนที่หาได้แล้ว / คนขอ / ไฟล์แนบ / ใบต้นทาง —
@@ -311,6 +328,8 @@ export default function OtherProjectForm({ editing, onClose, onSaved, onConflict
                 end_date: useDates[useDates.length - 1] || (isEdit ? (editing.end_date || null) : null)
             };
             if (isEdit) body.status = form.status;
+            // งานเก่าที่ยังไม่มีผู้ดูแลงาน — ไม่ส่งช่องนี้ (ส่งค่าว่าง server ตีกลับ 'เลือกผู้ดูแลงาน') ค่าในฐานคงเดิม
+            if (isEdit && !body.creator) delete body.creator;
             // เวลาแก้ล่าสุดของข้อมูลที่ฟอร์มนี้เปิดมา — ถ้าระหว่างนั้นมีคนเสนอชื่อ/เลือกคนในใบขอให้หา
             // server จะตีกลับแทนการเขียนทับเงียบ ๆ (รายการจ้างเก็บเป็นก้อนเดียว ทับแล้วของคนอื่นหายทั้งแถว)
             if (isEdit) body.expected_updated_at = baseUpdatedAt;
@@ -443,6 +462,12 @@ export default function OtherProjectForm({ editing, onClose, onSaved, onConflict
                                             {' · '}฿{num(it.fee).toLocaleString('th-TH')} / คน
                                             {' · '}{it.assignee_name ? `${T.finder}: ${it.assignee_name}` : `ยังไม่ได้เลือก${T.finder}`}
                                         </div>
+                                        {/* แก้ไม่ได้ที่นี่ แต่ต้องเห็นว่าใบนี้ขอขอบเขตงานไว้แค่ไหน — ขึ้นหลายบรรทัดตามที่พิมพ์ไว้ */}
+                                        {it.scope.trim() && (
+                                            <div className="hire-locked-main" style={{ marginTop: 4, whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>
+                                                <b>Scope of Work:</b> {it.scope}
+                                            </div>
+                                        )}
                                         <div className="hire-locked-note">
                                             แก้รายละเอียด เลือก{T.finder} หรือลบใบนี้ ได้ที่การ์ดของใบในหน้างาน (ปิดฟอร์มนี้แล้วเลื่อนไปที่ส่วน "{T.request}")
                                         </div>
@@ -482,6 +507,11 @@ export default function OtherProjectForm({ editing, onClose, onSaved, onConflict
                                                 <input value={it.name} onChange={e => setItem(i, 'name', e.target.value)} placeholder="ชื่อ-นามสกุล หรือชื่อเล่น"
                                                     className={miss.name ? 'tc2-invalid' : undefined} aria-invalid={miss.name ? 'true' : undefined} />
                                                 {ferr(miss.name)}
+                                            </label>
+                                            {/* ลิงก์โปรไฟล์อยู่ติดชื่อ (แบบเดียวกับฟอร์มสั้น) — ใช้ยืนยันว่าเป็นคนไหน */}
+                                            <label className="hire-f wide">
+                                                <span>ลิงก์ Account / Social Media</span>
+                                                <input type="url" value={it.link} onChange={e => setItem(i, 'link', e.target.value)} placeholder="IG / TikTok / Facebook ของผู้รับงาน (https://...)" />
                                             </label>
                                             <label className="hire-f">
                                                 <span>{T.contact}</span>
@@ -560,13 +590,19 @@ export default function OtherProjectForm({ editing, onClose, onSaved, onConflict
                                         <span>สถานที่</span>
                                         <input value={it.place} onChange={e => setItem(i, 'place', e.target.value)} placeholder="เช่น สตูดิโอ ลาดพร้าว" />
                                     </label>
-                                    {isCasting(it) && (
+                                    {isCasting(it) && (<>
                                         <label className="hire-f wide">
                                             <span>สเปคที่ต้องการ</span>
                                             <textarea rows="2" value={it.spec} onChange={e => setItem(i, 'spec', e.target.value)}
                                                 placeholder="เช่น หญิง 20-25 ปี สูง 165 ขึ้นไป เคยถ่ายงานสกินแคร์" />
                                         </label>
-                                    )}
+                                        {/* สเปค = คนแบบไหน · Scope of Work = ทำอะไร ใช้แค่ไหน (คนช่วยหาเอาไปคุยราคาให้ตรง) */}
+                                        <label className="hire-f wide">
+                                            <span>Scope of Work</span>
+                                            <textarea rows="2" value={it.scope} maxLength={SCOPE_MAX}
+                                                onChange={e => setItem(i, 'scope', e.target.value)} placeholder={SCOPE_PH} />
+                                        </label>
+                                    </>)}
                                     {!isCasting(it) && (<>
                                     <div className="hire-f wide">
                                         <span>รูป / คอมการ์ด</span>
@@ -582,10 +618,6 @@ export default function OtherProjectForm({ editing, onClose, onSaved, onConflict
                                             )}
                                         </div>
                                     </div>
-                                    <label className="hire-f wide">
-                                        <span>ลิงก์ Account / Social Media</span>
-                                        <input type="url" value={it.link} onChange={e => setItem(i, 'link', e.target.value)} placeholder="IG / TikTok / Facebook ของผู้รับงาน (https://...)" />
-                                    </label>
                                     </>)}
                                     <label className="hire-f wide">
                                         <span>{T.note}</span>
@@ -609,13 +641,17 @@ export default function OtherProjectForm({ editing, onClose, onSaved, onConflict
                     </div>
 
                     {/* ผู้ดูแลงาน (เก็บในช่อง creator เหมือนเดิม) — อยู่ท้ายฟอร์มตามที่ทีมขอ (ทีมใช้บัญชีเดียวร่วมกัน ระบบบันทึกได้แค่ "System Admin" ต้องเลือกชื่อจริงเอง) */}
+                    {/* บังคับตอนสร้างใหม่ และงานที่มีชื่ออยู่แล้วล้างให้ว่างไม่ได้ (ตัวเลือกว่างกดไม่ได้) — งานเก่าที่ยังไม่มีไม่บังคับ */}
                     <div className="field">
-                        <label>{T.owner}</label>
-                        <select value={form.creator} onChange={e => update('creator', e.target.value)}>
-                            <option value="">— เลือก —</option>
+                        <label>{T.owner}{ownerRequired ? ' *' : ''}</label>
+                        <select value={form.creator} onChange={e => update('creator', e.target.value)}
+                            className={ownerMiss ? 'tc2-invalid' : undefined} aria-invalid={ownerMiss ? 'true' : undefined}>
+                            <option value="" disabled={isEdit && ownerRequired}>— เลือก{T.owner} —</option>
                             {owners.map(n => <option key={n} value={n}>{n}</option>)}
                             {form.creator && !owners.includes(form.creator) && <option value={form.creator}>{form.creator}</option>}
                         </select>
+                        {ownerMiss && ferr(OWNER_MSG)}
+                        {peopleErr && <span className="cast-sub">โหลดรายชื่อไม่สำเร็จ ({peopleErr}) — ปิดฟอร์มแล้วเปิดใหม่อีกครั้ง</span>}
                     </div>
 
                     {error && <div className="alert-error">{error}</div>}

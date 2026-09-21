@@ -140,6 +140,8 @@ const hires = {
                 rows.push({
                     project_id: p.id, project_name: p.name, brand: p.brand || null,
                     key: it.key, kind: str(it.kind) || null, spec: str(it.spec) || null,
+                    // Scope of Work — ส่วนหนึ่งของบรีฟที่คนช่วยหาต้องเห็น (ลิ้นชักใบ / การ์ดใบ) · ใบเก่าที่ไม่มี = null
+                    scope: str(it.scope) || null,
                     fee: Number(it.fee) || 0,
                     headcount: Number(it.headcount) || 1, filled: Number(it.filled) || 0,
                     remaining, budget: hireRowFee(it),
@@ -189,7 +191,7 @@ const hires = {
             && (pid === null || String(r.project_id) === pid)
             && (!brand || r.brand === brand)
             && (!status || r.status === status)
-            && (!q || [r.project_name, r.brand, r.kind, r.spec, r.assignee_name, r.place]
+            && (!q || [r.project_name, r.brand, r.kind, r.spec, r.scope, r.assignee_name, r.place]
                 .some(v => String(v == null ? '' : v).toLowerCase().includes(q))));
 
         // งานที่ถึงตาเราขึ้นก่อน → เลยกำหนด → ยังต้องหา → กำหนดส่งรายชื่อที่ใกล้ที่สุด (ใบที่ไม่ได้กำหนดไปท้ายสุด)
