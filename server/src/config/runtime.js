@@ -51,6 +51,20 @@ function validateBeauterryPfmSync(env = process.env) {
     }
 }
 
+function validateKolContentExport(env = process.env) {
+    if (env.KOL_CONTENT_EXPORT_ENABLED === undefined) {
+        throw new Error('Production requires KOL_CONTENT_EXPORT_ENABLED to be explicit (true or false)');
+    }
+    const enabled = String(env.KOL_CONTENT_EXPORT_ENABLED).toLowerCase() === 'true';
+    if (!enabled) return;
+
+    const missing = ['KOL_CONTENT_EXPORT_KEY', 'KOL_CONTENT_EXPORT_BRAND']
+        .filter(key => !env[key]);
+    if (missing.length) {
+        throw new Error(`Missing production KOL content export settings: ${missing.join(', ')}`);
+    }
+}
+
 function validateRuntime(env = process.env) {
     if (env.NODE_ENV !== 'production') return;
     const missing = ['JWT_SECRET', 'DB_HOST', 'DB_PORT', 'DB_NAME', 'DB_USER', 'DB_PASSWORD', 'PORT']
@@ -66,9 +80,10 @@ function validateRuntime(env = process.env) {
     }
     uploadDirectory(env);
     validateBeauterryPfmSync(env);
+    validateKolContentExport(env);
     if (!fs.existsSync(path.join(root, 'client', 'dist', 'index.html'))) {
         throw new Error('Frontend build missing; run npm run build before starting production');
     }
 }
 
-module.exports = { root, uploadDirectory, validateBeauterryPfmSync, validateRuntime };
+module.exports = { root, uploadDirectory, validateBeauterryPfmSync, validateKolContentExport, validateRuntime };

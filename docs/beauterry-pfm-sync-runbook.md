@@ -77,6 +77,11 @@ HTTP 401 จาก Beauterry โดยไม่ส่ง key แปลว่า 
 5. deploy provider ก่อน แล้วจึง deploy consumer
 6. ตรวจสถานะ sync หลัง deploy
 
+การเพิ่มคลิปจาก KOL เข้า Beauterry เป็นคนละ contract กับ metrics sync:
+`kol-pfm-dashboard` เป็น provider ของ content feed ใหม่ ส่วน `beauterry-pfm`
+เป็น consumer ของ feed นี้ แต่ `beauterry-pfm` ยังเป็น provider ของ metrics API
+เดิมเหมือนเดิม ดูรายละเอียดที่ `docs/kol-content-export-api.md`
+
 ## Developer push boundaries
 
 โปรเจคนี้ใช้ GitHub webhook auto deploy ดังนั้นการ merge หรือ push เข้า
