@@ -9,13 +9,13 @@ import Avatar from '../components/Avatar.jsx';
 import OnProcessTable from '../components/OnProcessTable.jsx';
 import StageCards from '../components/StageCards.jsx';
 import ProductChips, { ProductSummary } from '../components/ProductChips.jsx';
-import ConceptLines from '../components/ConceptLines.jsx';
+import GroupNeedHead, { groupClipNeed } from '../components/GroupNeedHead.jsx';
 import { productLabel } from '../data/products.js';
 import {
     groupPlatforms, allocsInScope, contentTypesOf, mediaFor,
-    tiersOf, productsFor, clipCountFor, quotaOf, contentCells, cellKeyOf, cellKey, hasOwnConcepts
+    tiersOf, productsFor, quotaOf, contentCells, cellKeyOf, cellKey
 } from '../data/adGroups.js';
-import { groupClips, clipCount, collapseByPerson, countPeople } from '../data/clips.js';
+import { collapseByPerson, countPeople } from '../data/clips.js';
 import ProductFilter from '../components/ProductFilter.jsx';
 import { knownProductCodes, matchProducts, productFilterOptions } from '../data/productFilter.js';
 import { tabBadges, markSeen, seedDraftsSeen } from '../utils/tabUpdates.js';
@@ -416,9 +416,8 @@ function GroupSection({ token, group, gi, subs, onReload, onEdit, onDelete, onNo
     // หน้านี้ = หน้าคัดเลือก "คน" จึงยุบแถวพี่น้อง (คนเดียวกันหลายคลิป) ให้เหลือคนละ 1 แถว
     const groupSubs = collapseByPerson(groupRows);
     // 1 คนทำกี่ Content ขึ้นกับ Platform — ต่าง Platform ตั้งไม่เท่ากันได้ (0 = ไม่เท่ากัน)
-    const clipsPerHead = [...new Set(scopePlats.map(p => clipCountFor(group, p)))];
-    const perClip = clipsPerHead.length === 1 ? clipsPerHead[0] : (clipsPerHead.length ? 0 : clipCount(group));
-    const clipNames = groupClips(group);
+    // คิดด้วยตัวช่วยเดียวกับแท็บรายชื่อฝั่งทีม (GroupNeedHead) ตัวเลขสองฝั่งจะได้ตรงกัน
+    const { perClip, clips: scopeClips } = groupClipNeed(group, scopePlats);
     const total = myKol || group.kol_count || 0;
 
     // ช่องกรอก 1 ช่อง = Platform + Content Type — กรอกในช่องไหนก็เป็นของช่องนั้น ไม่ต้องติ๊กเอง
@@ -432,7 +431,7 @@ function GroupSection({ token, group, gi, subs, onReload, onEdit, onDelete, onNo
     const matchesFilter = filtering ? s => matchProducts(s, productFilter, knownCodes) : null;
 
     // เป้าจำนวน Content = ผลรวมของ (คนที่ต้องการ × Content ต่อคน) ของแต่ละ Platform ในขอบเขต
-    const totalClips = scopePlats.reduce((s, p) => s + quotaOf(group, p) * clipCountFor(group, p), 0) || total;
+    const totalClips = scopeClips || total;
     // แถบงบกลุ่ม + ปุ่มหารเฉลี่ย/ล้างงบ ย้ายไปอยู่หน้าแคมเปญฝั่งทีมแล้ว (ProjectDetail → DivideFeesModal)
     // ที่นั่นมีตัวอย่างก่อนบันทึก กันคนแก้ทับกัน และบันทึกประวัติ — หน้านี้จึงไม่มีปุ่มที่เขียนค่าตัวทั้งกลุ่มอีก
     // รอบ 2: ค่าตัวรายคนก็ย้ายไปด้วย หน้านี้ไม่มีช่องกรอก/ไม่แสดงค่าตัวเลย (บัญชีเอเจนซี่ได้ budget เป็น null อยู่แล้ว)
@@ -441,33 +440,11 @@ function GroupSection({ token, group, gi, subs, onReload, onEdit, onDelete, onNo
     let runningNo = 1;
     return (
         <div className="agency-card ag-group">
-            <div className="ag-group-head">
-                <div>
-                    <span className="ag-group-no">กลุ่มที่ {gi + 1} <span className="adg-count">({groupProducts.length} สินค้า)</span></span>
-                    {/* เป้าจำนวนคน/คลิป อยู่ที่หัวกลุ่ม — เดิมอยู่ในแถบงบ ซึ่งบัญชีเอเจนซี่ไม่เห็นแล้ว */}
-                    {total > 0 && (
-                        <div className="ag-group-need">
-                            ต้องการ {total} คน
-                            {perClip > 1 && <span className="ag-clip-note"> × {perClip} คลิป = {totalClips} คลิป</span>}
-                        </div>
-                    )}
-                    {/* Concept แยกต่อสินค้า — เอเจนซี่บรีฟ KOL ตามสินค้าของแต่ละคนได้ (เฉพาะสินค้าที่ลิงก์นี้เห็น) */}
-                    {hasOwnConcepts(group, groupProducts, scopePlats)
-                        ? <div className="ag-concept-top">📝 Concept ตามสินค้า<ConceptLines group={group} products={groupProducts} platforms={scopePlats} className="ag" /></div>
-                        : group.concept && <div className="ag-concept-top">📝 Concept: <b>{group.concept}</b></div>}
-                    <div style={{ marginTop: 8 }}>
-                        <ProductChips products={groupProducts} />
-                    </div>
-                </div>
-                <div className="ag-group-prog">
-                    <div className="ag-group-prog-num">{groupSubs.length}<span>/{total}</span></div>
-                    <div className="ag-group-prog-lbl">คน · ส่งแล้ว / ต้องการ</div>
-                    {perClip > 1 && <div className="ag-group-prog-clip">{groupRows.length}/{totalClips} คลิป</div>}
-                </div>
-            </div>
-
-            {group.brief && <a className="brief-link ag-group-brief" href={group.brief} target="_blank" rel="noreferrer"><Icon name="eye" size={14} /> เปิดบรีฟกลุ่มนี้</a>}
-            {clipNames.length > 1 && <div className="ag-clip-names">🎬 ต้องส่ง {clipNames.join(' · ')}</div>}
+            {/* หัวกลุ่ม (ต้องการกี่คน · Concept · สินค้า · ส่งแล้ว/ต้องการ · บรีฟ · ชื่อคลิป) ใช้ตัวเดียวกับแท็บรายชื่อฝั่งทีม
+                แก้หน้าตาที่ GroupNeedHead ที่เดียว — Concept / สินค้า จำกัดเฉพาะที่ลิงก์นี้เห็น */}
+            <GroupNeedHead group={group} gi={gi} products={groupProducts} platforms={scopePlats}
+                need={total} perClip={perClip} needClips={totalClips}
+                sent={groupSubs.length} sentClips={groupRows.length} />
 
             {cells.map(c => {
                 const key = cellKey(c);

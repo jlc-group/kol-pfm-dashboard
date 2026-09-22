@@ -6,7 +6,7 @@
  */
 const fs = require('fs');
 const path = require('path');
-const { nextPostCheck, postCheckDecision, postCheckWaiting, POST_CHECK_OPEN, sameInstant: sameInstantPC } = require('./logic');
+const { nextPostCheck, postCheckDecision, postCheckWaiting, POST_CHECK_OPEN, sameInstant: sameInstantPC, postNoGencode } = require('./logic');
 
 const DATA_DIR = path.join(__dirname, '..', '..', 'data');
 const DATA_FILE = path.join(DATA_DIR, 'db.json');
@@ -362,7 +362,10 @@ const kols = {
                 const refDate = s.post_date || s.gen_date || (p ? p.start_date : null);
                 let month = null, year = null;
                 if (refDate) { const [y, m] = refDate.split('-').map(Number); month = MONTHS_EN[m - 1]; year = y; }
-                const days = Number(s.code_expire) || 0;
+                // กลุ่ม "-" (ไม่ใช้ Gencode) + แถวนี้ยังไม่มีค่า → days 0 ทำให้ day_left เป็น null — ตรงกับ pg/kols.js
+                const grp = (p && Array.isArray(p.ad_groups)) ? p.ad_groups.find(g => g && g.key === s.group_key) : null;
+                const noGencode = postNoGencode(s, grp);
+                const days = noGencode ? 0 : (Number(s.code_expire) || 0);
                 // วันที่เริ่ม Gen = วันยิงแอด (ad_end จากหน้า Ads) ถ้ามี, ถ้ายังไม่ยิงค่อยใช้ค่าที่กรอกเอง
                 const genStart = s.ad_end || s.gen_date || null;
                 // Day Left = จำนวนวัน Gencode ที่เหลือ = (วันที่ลงงาน + Days) − วันนี้ (นับจากวันที่ลงงาน)
@@ -402,7 +405,8 @@ const kols = {
                     cost: Number(s.budget) || 0,
                     ...perf,
                     post_date: s.post_date || null, gen_date: genStart, days, day_left,
-                    post_url: s.post_url || null, gencode: s.gencode || null, id_post: s.id_post || null
+                    post_url: s.post_url || null, gencode: s.gencode || null, id_post: s.id_post || null,
+                    no_gencode: noGencode
                 };
             })
             .sort((a, b) => (b.post_date || '').localeCompare(a.post_date || ''));
@@ -1591,6 +1595,8 @@ const ads = {
                     media_type: media.media_type,
                     group_format: media.content_format,
                     gencode: s.gencode || null,
+                    // กลุ่ม "-" (ไม่ใช้ Gencode) และแถวนี้ยังไม่มีค่า — ตรงกับ pg/ads.js
+                    no_gencode: postNoGencode(s, grp),
                     id_post: s.id_post || null,
                     post_url: s.post_url,
                     post_date: s.post_date || null,

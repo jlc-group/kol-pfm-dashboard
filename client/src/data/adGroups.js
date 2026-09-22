@@ -367,6 +367,14 @@ export function packConcepts(b) {
     return { ...rest, concept_split: true, product_concepts: pc };
 }
 
+// ---------- กลุ่มที่ไม่ใช้ Gencode ("-" ในฟอร์มแคมเปญ) ----------
+// เก็บเป็น g.no_gencode = true ที่ระดับกลุ่ม · g.code_expire ยังเก็บจำนวนวันไว้ (สลับกลับแล้วได้ค่าเดิม) และ code_expire ของแต่ละแถวไม่ถูกแตะ
+// ต้องเป็น true ตรงตัวเท่านั้น ห้ามเดาจาก code_expire 0 / ว่าง — มีโค้ดหลายจุดที่ `|| 60` จะกลบค่าพวกนั้นเงียบ ๆ
+// โพสต์ที่มี Gencode อยู่แล้ว (กรอกไว้ก่อนเปลี่ยนกลุ่มเป็น "-") ทำงานแบบเดิมทุกอย่าง
+// ต้องตรงกับ groupNoGencode / postNoGencode ฝั่ง server (server/src/store/logic.js) ทุกตัวอักษร
+export const groupNoGencode = g => !!g && g.no_gencode === true;
+export const postNoGencode = (s, g) => groupNoGencode(g) && !String((s && s.gencode) ?? '').trim();
+
 // ตอนบันทึก: Platform ที่ไม่ใช้ Campaign เก็บเป็นว่างเสมอ (กันค่าค้างจากข้อมูลเก่า)
 // Facebook / Instagram: เก็บค่า Campaign ซ้ำลง content_type ด้วย (หน้าอื่นอ่านจาก content_type)
 export function packCampaigns(b) {

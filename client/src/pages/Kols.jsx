@@ -21,7 +21,9 @@ const GOOD_CPE = 1.5;
 
 // วันที่ Gencode เหลือ — ทำสีเตือนให้เห็นว่าใครใกล้หมดแล้ว
 //   ต่ำกว่า 10 วัน = แดง | 10-20 วัน = เหลือง | 21 วันขึ้นไป = เขียว
-function DayLeft({ days }) {
+// none = กลุ่มตั้ง "-" (ไม่ใช้ Gencode) และแถวนี้ไม่มี Gencode — ขึ้น "ไม่ใช้" ให้แยกออกจาก "—" ที่แปลว่ายังไม่มีข้อมูล
+function DayLeft({ days, none = false }) {
+    if (none) return <span className="muted" title="กลุ่มนี้ไม่ใช้ Gencode">ไม่ใช้</span>;
     if (days == null) return <span className="muted">—</span>;
     if (days < 0) return <span className="dayleft over">หมดอายุแล้ว</span>;
     const level = days < 10 ? 'red' : days <= 20 ? 'amber' : 'green';
@@ -124,8 +126,10 @@ function LiveBadge({ row }) {
 }
 
 // ช่อง Gencode / ID Post — ข้อความยาวจนถูกตัดท้าย เลยมีปุ่มคัดลอกค่าเต็มให้
-function CopyCell({ value }) {
+// none = กลุ่มนี้ไม่ใช้ Gencode และแถวไม่มีค่า → "ไม่ใช้" · มีค่าอยู่ (กรอกไว้ก่อนเปลี่ยนกลุ่มเป็น "-") แสดงและคัดลอกได้ตามเดิม
+function CopyCell({ value, none = false }) {
     const [done, setDone] = useState(false);
+    if (none && !String(value ?? '').trim()) return <td className="ka-code"><span className="muted" title="กลุ่มนี้ไม่ใช้ Gencode">ไม่ใช้</span></td>;
     if (!value) return <td className="ka-code">—</td>;
     async function copy() {
         try {
@@ -385,11 +389,12 @@ export default function Kols() {
                                     <td className="num">{r.cpe ? '฿' + N(r.cpe) : '—'}</td>
                                     <td><StampBadge row={r} /></td>
                                     <td>{fmtD(r.post_date)}</td>
-                                    <td>{fmtD(r.gen_date)}</td>
-                                    <td>{r.days ? `${r.days} Days` : '—'}</td>
-                                    <td><DayLeft days={r.day_left} /></td>
+                                    {/* กลุ่มที่ไม่ใช้ Gencode (server ส่ง no_gencode มา) — ไม่มีวันเริ่ม / จำนวนวัน / วันที่เหลือให้นับ */}
+                                    <td>{r.no_gencode === true ? <span className="muted" title="กลุ่มนี้ไม่ใช้ Gencode">—</span> : fmtD(r.gen_date)}</td>
+                                    <td>{r.no_gencode === true ? <span className="muted" title="กลุ่มนี้ไม่ใช้ Gencode">-</span> : (r.days ? `${r.days} Days` : '—')}</td>
+                                    <td><DayLeft days={r.day_left} none={r.no_gencode === true} /></td>
                                     <td>{r.post_url ? <a href={r.post_url} target="_blank" rel="noreferrer" className="ka-view">View</a> : '#'}</td>
-                                    <CopyCell value={r.gencode} />
+                                    <CopyCell value={r.gencode} none={r.no_gencode === true} />
                                     <CopyCell value={r.id_post} />
                                 </tr>
                             ))}

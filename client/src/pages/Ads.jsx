@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import ColumnFilter from '../components/ColumnFilter.jsx';
 import { api } from '../api/client.js';
@@ -155,8 +155,12 @@ function EnteredAt({ at, by, has }) {
 }
 
 // โค้ด + ปุ่มคัดลอก (Gencode / ID Post) · empty = ข้อความตอนยังไม่มีค่า
-function CopyCode({ value, empty = '—' }) {
+// full = แสดงครบไม่ตัดเป็น ... (ID Post — ทีมต้องอ่านเลขเทียบกับในแอปได้) · Gencode ยาว 65 ตัวยังตัดไว้ ใช้ปุ่มคัดลอกแทน
+// none = กลุ่มนี้ตั้ง "-" (ไม่ใช้ Gencode) และแถวนี้ไม่มี Gencode (server ตัดสินให้ใน row.no_gencode) — บอกว่า "ไม่ใช้" ไม่ใช่ "ยังไม่กรอก"
+// มีค่าอยู่ = แสดงและคัดลอกได้ตามเดิม (Gencode ที่กรอกไว้ก่อนเปลี่ยนกลุ่มเป็น "-")
+function CopyCode({ value, empty = '—', none = false, full = false }) {
     const [copied, setCopied] = useState(false);
+    if (none && !String(value ?? '').trim()) return <span className="muted" title="กลุ่มนี้ไม่ใช้ Gencode">ไม่ใช้</span>;
     if (!value) return <span className="muted">{empty}</span>;
     const copy = () => {
         navigator.clipboard?.writeText(String(value))
@@ -165,7 +169,7 @@ function CopyCode({ value, empty = '—' }) {
     };
     return (
         <span className="ads-code-wrap">
-            <span className="ads-code" title={value}>{value}</span>
+            <span className={'ads-code' + (full ? ' full' : '')} title={value}>{value}</span>
             <button type="button" className={'ads-copy' + (copied ? ' done' : '')} onClick={copy} title={copied ? 'คัดลอกแล้ว' : 'คัดลอก'}>
                 {copied ? <Icon name="check" size={13} /> : <Icon name="copy" size={13} />}
             </button>
@@ -308,9 +312,9 @@ function AdRow({ row, onSaved, canCost }) {
                     : <span className="muted">—</span>}
             </div>
             {/* GENCODE — โค้ดยาว 65 ตัว แสดงไม่ครบแน่นอน จึงตัดด้วย ... แล้วให้กดปุ่มคัดลอกเอาไปใช้แทน */}
-            <div className="ads-cell"><CopyCode value={row.gencode} /></div>
+            <div className="ads-cell"><CopyCode value={row.gencode} none={row.no_gencode === true} /></div>
             {/* ID POST — ตัวเลขยาว ~19 หลัก มักโดนตัด ... จึงมีปุ่มคัดลอกแบบเดียวกับ Gencode */}
-            <div className="ads-cell"><CopyCode value={row.id_post} empty="ยังไม่มี" /></div>
+            <div className="ads-cell"><CopyCode value={row.id_post} empty="ยังไม่มี" full /></div>
             {/* วันลงงาน — ป้าย "แจ้งช้า" อยู่ช่องนี้เพราะเป็นเรื่องของวันลงงานโดยตรง (ลงจริงวันหนึ่ง แต่เพิ่งแจ้งอีกวันหนึ่ง) */}
             <div className="ads-cell ads-stack">
                 {row.post_date ? <span className="ads-postdate">{fmtDate(row.post_date)}</span> : <span className="muted">—</span>}
@@ -387,6 +391,12 @@ export default function Ads() {
     const [late, setLate] = useState('');   // '' | ontime | warn | bad
     const [data, setData] = useState(null);
     const [error, setError] = useState('');
+    // หัวตารางอยู่คนละกรอบกับแถว (เพื่อให้ล็อกไว้บนจอได้) — เลื่อนซ้ายขวากรอบไหน อีกกรอบตามไปตำแหน่งเดียวกัน
+    const headRef = useRef(null);
+    const bodyRef = useRef(null);
+    const syncX = (from, to) => {
+        if (from.current && to.current && to.current.scrollLeft !== from.current.scrollLeft) to.current.scrollLeft = from.current.scrollLeft;
+    };
 
     const load = useCallback(() => {
         const q = new URLSearchParams();
@@ -423,11 +433,10 @@ export default function Ads() {
         (skip === 'status' || !status || shownStatusOf(r) === status) &&
         (skip === 'late' || !late || lateBucket(r) === late);
 
-    // เรียง: ยังไม่ยิง อยู่บน, ยิงแล้ว ลงไปอยู่ล่าง (ของเดิมในกลุ่มเดียวกันคงลำดับตาม data)
-    // จงใจเรียงด้วย ad_status ที่คนกดจริง ไม่ใช่สถานะที่โชว์ — ไม่งั้นแถวที่ค่าแอดเพิ่งเดิน
-    // จะกระโดดลงไปท้ายตารางเองโดยที่ทีมไม่ได้ทำอะไร หาของที่เคยอยู่ตรงเดิมไม่เจอ
-    const rows = allRows.filter(r => matches(r))
-        .sort((a, b) => (a.ad_status === 'ยิงแล้ว' ? 1 : 0) - (b.ad_status === 'ยิงแล้ว' ? 1 : 0));
+    // ลำดับแถวตามที่ server ส่งมา (วันลงงานใหม่สุดก่อน แล้วตาม id) — ไม่เรียงตามสถานะแล้ว
+    // กดเปลี่ยนเป็น "ยิงแล้ว" แถวต้องอยู่ที่เดิม เปลี่ยนแค่ป้ายสถานะ (เดิมเด้งลงไปท้ายตาราง ทีมหาแถวที่เพิ่งกดไม่เจอ)
+    // อยากดูเฉพาะที่ยังไม่ยิง ใช้ปุ่มกรอง ▾ ที่หัวคอลัมน์สถานะแทน
+    const rows = allRows.filter(r => matches(r));
 
     const countIf = (skip, pred) => allRows.filter(r => matches(r, skip) && pred(r)).length;
     const platformOptions = [...new Set(allRows.map(r => r.platform).filter(Boolean))].sort();
@@ -549,7 +558,9 @@ export default function Ads() {
                         </p>
                     </div>
                 ) : (
-                    <div className="ads-tbl-scroll">
+                    <>
+                    {/* หัวคอลัมน์ล็อกไว้บนจอตอนเลื่อนลง — ต้องอยู่นอกกรอบเลื่อนซ้ายขวา (sticky ในกรอบ overflow จะติดกับกรอบ ไม่ใช่หน้าจอ) */}
+                    <div className="ads-tbl-headwrap" ref={headRef} onScroll={() => syncX(headRef, bodyRef)}>
                         <div className="ads-tbl">
                             <div className="ads-tbl-head">
                                 <span>KOL
@@ -574,9 +585,14 @@ export default function Ads() {
                                 <span title="ผลตอนนี้ คำนวณสดจากข้อมูลล่าสุด — ใช้ตัดสินว่าควรยิงต่อหรือหยุด">PFM</span>
                                 <span>หมายเหตุ</span>
                             </div>
+                        </div>
+                    </div>
+                    <div className="ads-tbl-scroll" ref={bodyRef} onScroll={() => syncX(bodyRef, headRef)}>
+                        <div className="ads-tbl">
                             {rows.map(r => <AdRow key={r.sub_id} row={r} onSaved={load} canCost={seesAllBrands(user)} />)}
                         </div>
                     </div>
+                    </>
                 )}
             </div>
         </div>

@@ -1196,9 +1196,10 @@ a { text-decoration: none; color: inherit; }
    แยก CONTENT เป็น CONTENT TYPE / FORMAT / STYLE และเพิ่ม CAMPAIGN แล้ว (18 คอลัมน์) จึงขยายเป็น 1990px ให้ Target ได้ความกว้างเท่าเดิม
    เพิ่มคอลัมน์ ค่าแอด / REACH (19 คอลัมน์) จึงขยายเป็น 2110px — Target ยังได้ราว 159px เท่าเดิม
    เอาคอลัมน์ STYLE ออก (18 คอลัมน์) จึงลดเหลือ 2010px — คอลัมน์อื่นกว้างเท่าเดิม
+   ID POST ต้องเห็นเลขครบ (TikTok 19 หลัก ไม่ตัดเป็น ...) จึงขยายคอลัมน์ 0.95fr → 1.3fr และกว้างรวมเป็น 2100px — Target ยังได้ ~163px
    ต่ำกว่านี้ Target จะโดนตัดเป็น ... / สูงกว่านี้ Target ไม่ได้กว้างขึ้นแล้ว มีแต่เลื่อนไกลขึ้นเปล่า ๆ
    หมายเหตุ: --app-zoom ตอนนี้เป็น 1 (เปลี่ยนจาก 1.2 ใน edb8dc7) ความกว้างบนจอจึงเท่ากับค่านี้ */
-.ads-tbl { min-width: 2010px; }
+.ads-tbl { min-width: 2100px; }
 /* ปุ่มกรองเล็กบนหัวคอลัมน์ (แบบตาราง Excel) */
 .colf { position: relative; display: inline-flex; vertical-align: middle; }
 .colf-btn {
@@ -1241,7 +1242,7 @@ a { text-decoration: none; color: inherit; }
     display: grid;
     /* KOL BRANDS PRODUCT CAMPAIGN TARGET CONTENT-TYPE FORMAT POST GENCODE ID-POST วันลงงาน วันยิงแอด สถานะ ค่าแอด/REACH ยิงช้า STAMPED LIVE หมายเหตุ */
     /* POST เป็นไอคอนอย่างเดียวจึงให้แคบสุด เพื่อเก็บพื้นที่ไว้ให้คอลัมน์ที่มีข้อความยาว */
-    grid-template-columns: 1fr 0.95fr 0.85fr 0.85fr 1.25fr 0.7fr 0.5fr 0.3fr 1fr 0.95fr 0.8fr 0.65fr 0.65fr 0.85fr 0.6fr 0.7fr 0.7fr 0.9fr;
+    grid-template-columns: 1fr 0.95fr 0.85fr 0.85fr 1.25fr 0.7fr 0.5fr 0.3fr 1fr 1.3fr 0.8fr 0.65fr 0.65fr 0.85fr 0.6fr 0.7fr 0.7fr 0.9fr;
     gap: 10px; align-items: center;
 }
 .ads-note input { width: 100%; }
@@ -1249,7 +1250,18 @@ a { text-decoration: none; color: inherit; }
 .ads-row .ads-spend input { padding: 6px 8px; font-size: 12px; }
 .ads-spend-pfm { font-size: 12px; font-weight: 700; white-space: nowrap; }
 .ads-spend-pfm em { font-style: normal; font-size: 9.5px; font-weight: 700; color: #6d28d9; background: #ede9fe; padding: 1px 5px; border-radius: 999px; margin-left: 2px; }
-.ads-tbl-head { font-size: 10.5px; font-weight: 700; color: var(--muted); letter-spacing: .4px; padding: 0 4px 10px; }
+/* ขอบซ้ายขวาของหัว = padding 12px + เส้นขอบ 1px ของแถว (.ads-row) — กว้างเนื้อในเท่ากัน คอลัมน์ fr จึงตรงกันทุกช่อง (เดิม 4px เยื้องสูงสุด ~9px) */
+.ads-tbl-head { font-size: 10.5px; font-weight: 700; color: var(--muted); letter-spacing: .4px; padding: 0 13px 10px; }
+/* หัวตารางยิงแอดล็อกไว้บนจอตอนเลื่อนลง — เป็นกรอบแยกจากแถว (Ads.jsx ซิงก์การเลื่อนซ้ายขวาให้ตรงกัน)
+   ซ่อนแถบเลื่อนของหัว ใช้แถบของตารางอันเดียว · จอแคบต้องต่อใต้แถบเมนูด้านบน (.mobile-topbar สูง 68px / จอ ≤600px สูง 62px) */
+.ads-tbl-headwrap {
+    position: sticky; top: 0; z-index: 5;
+    overflow-x: auto; scrollbar-width: none;
+    background: var(--card); padding-top: 8px; border-bottom: 1px solid var(--border); margin-bottom: 10px;
+}
+.ads-tbl-headwrap::-webkit-scrollbar { display: none; }
+@media (max-width: 900px) { .ads-tbl-headwrap { top: 68px; } }
+@media (max-width: 600px) { .ads-tbl-headwrap { top: 62px; } }
 .ads-row { background: #fafdfb; border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px; margin-bottom: 10px; }
 .late-chip { display: inline-block; padding: 3px 9px; border-radius: 999px; font-size: 11.5px; font-weight: 700; white-space: nowrap; }
 .late-chip.ontime { background: #e7f7ef; color: var(--mint-dark); }
@@ -1278,6 +1290,8 @@ a { text-decoration: none; color: inherit; }
 .ads-code { display: inline-block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: ui-monospace, "SFMono-Regular", Menlo, monospace; font-size: 11px; color: var(--text); background: #f1f5f3; padding: 4px 8px; border-radius: 7px; }
 .ads-code-wrap { display: inline-flex; align-items: center; gap: 5px; max-width: 100%; min-width: 0; }
 .ads-code-wrap .ads-code { min-width: 0; }
+/* ID Post: แสดงครบไม่ตัดเป็น ... — ยาวเกินคอลัมน์ (Platform อื่นที่ ID ยาวกว่า 19 หลัก) ขึ้นบรรทัดใหม่แทน */
+.ads-code.full { white-space: normal; overflow: visible; text-overflow: clip; overflow-wrap: anywhere; }
 .ads-copy { flex-shrink: 0; display: grid; place-items: center; width: 26px; height: 26px; border: 1px solid var(--border); background: #fff; color: var(--muted); border-radius: 7px; cursor: pointer; transition: all .12s; }
 .ads-copy:hover { border-color: var(--mint); color: var(--mint-dark); background: var(--bg-soft); }
 .ads-copy.done { border-color: var(--mint); color: #fff; background: var(--mint); }
@@ -2865,6 +2879,14 @@ a { text-decoration: none; color: inherit; }
 .list-typebox-left { border-style: dashed; background: #fafafa; }
 .list-tb-head { margin-bottom: 6px; }
 .list-typebox .sub-group { margin-top: 6px; }
+/* การ์ดกลุ่มในแท็บรายชื่อฝั่งทีม = การ์ดเดียวกับหน้าเอเจนซี่ (.agency-card.ag-group + หัว GroupNeedHead)
+   หน้าเอเจนซี่เว้นระยะการ์ดด้วย gap ของ .agency-wrap — หน้านี้ไม่มี จึงเว้นด้วย margin แทน */
+.kol-group-card.ag-group { margin: 14px 0 16px; }
+/* บรรทัด "คัดเลือกแล้ว" ใต้ตัวเลขส่งแล้ว/ต้องการ — มีเฉพาะฝั่งทีม */
+.ag-group-prog-conf { margin-top: 6px; padding-top: 5px; border-top: 1px dashed var(--border); font-size: 11.5px; font-weight: 800; color: #059669; }
+.ag-group-prog-conf-clip { margin-top: 2px; font-size: 11px; font-weight: 700; color: #4338ca; }
+/* ปุ่ม "+ เพิ่มรายชื่อ" ท้ายกล่อง — หน้าตาเดียวกับของเอเจนซี่ (.agency-add-row) แค่เว้นจากตารางด้านบน */
+.list-typebox .list-add-row { margin-top: 6px; }
 
 /* ============ 2026 RESPONSIVE SHELL & VISUAL RHYTHM ============ */
 html { min-width: 320px; scroll-behavior: smooth; }

@@ -9,7 +9,7 @@
  */
 const { query, insertRow, updateRow, asNum, asNumOrNull, asJson } = require('./_base');
 const { loadSnapshot } = require('./_snapshot');
-const { now, clone, duplicateError, scopeProjects, stampWaitReason, clipCostMetrics, perfVerdict } = require('../logic');
+const { now, clone, duplicateError, scopeProjects, stampWaitReason, clipCostMetrics, perfVerdict, postNoGencode } = require('../logic');
 
 // id ที่ส่งมาเป็นสตริงจาก URL — jsonStore ใช้ Number(id) เทียบตรง ๆ
 // ค่าที่แปลงไม่ได้ (NaN) จะหาไม่เจอเสมอ ต้องดักไว้ก่อนยิง SQL ไม่งั้น Postgres จะ error แทนที่จะคืน null
@@ -209,7 +209,11 @@ const kols = {
                 const refDate = s.post_date || s.gen_date || (p ? p.start_date : null);
                 let month = null, year = null;
                 if (refDate) { const [y, m] = refDate.split('-').map(Number); month = MONTHS_EN[m - 1]; year = y; }
-                const days = Number(s.code_expire) || 0;
+                // กลุ่ม "-" (ไม่ใช้ Gencode) + แถวนี้ยังไม่มีค่า → ไม่มีวันหมดอายุให้นับ: days 0 ทำให้ day_left เป็น null เอง
+                // (หน้าเว็บขึ้น "ไม่ใช้" แทน "หมดอายุ" และเรียงไว้ท้ายตามเดิม) · code_expire ในแถวไม่ถูกแตะ แถวที่มี Gencode นับตามเดิม
+                const grp = (p && Array.isArray(p.ad_groups)) ? p.ad_groups.find(g => g && g.key === s.group_key) : null;
+                const noGencode = postNoGencode(s, grp);
+                const days = noGencode ? 0 : (Number(s.code_expire) || 0);
                 // วันที่เริ่ม Gen = วันยิงแอด (ad_end จากหน้า Ads) ถ้ามี, ถ้ายังไม่ยิงค่อยใช้ค่าที่กรอกเอง
                 const genStart = s.ad_end || s.gen_date || null;
                 // Day Left = จำนวนวัน Gencode ที่เหลือ = (วันที่ลงงาน + Days) − วันนี้ (นับจากวันที่ลงงาน)
@@ -250,7 +254,8 @@ const kols = {
                     cost: Number(s.budget) || 0,
                     ...perf,
                     post_date: s.post_date || null, gen_date: genStart, days, day_left,
-                    post_url: s.post_url || null, gencode: s.gencode || null, id_post: s.id_post || null
+                    post_url: s.post_url || null, gencode: s.gencode || null, id_post: s.id_post || null,
+                    no_gencode: noGencode
                 };
             })
             .sort((a, b) => (b.post_date || '').localeCompare(a.post_date || ''));

@@ -81,7 +81,7 @@ function CheckMultiSelect({ options, selected, onToggle, disabled, disabledText,
 const emptyAlloc = () => ({ tier: '', kols: '' });
    // Platform ย้ายไปอยู่ระดับกลุ่มแล้ว (allocation เหลือแค่ Tier/จำนวน)
 const genKey = () => 'g' + Math.random().toString(36).slice(2, 9);
-const newGroup = (over = {}) => ({ key: genKey(), platform: '', concept: '', clips: [], target: [], content_type: '', media_type: '', content_format: '', products: [], allocations: [emptyAlloc()], blocks: [], brief: '', draft: '', budget: '', code_expire: 60, ...over });
+const newGroup = (over = {}) => ({ key: genKey(), platform: '', concept: '', clips: [], target: [], content_type: '', media_type: '', content_format: '', products: [], allocations: [emptyAlloc()], blocks: [], brief: '', draft: '', budget: '', code_expire: 60, no_gencode: false, ...over });
 // แปลงข้อมูลเดิม → allocations แบบใหม่ (เหลือ tier/kols) + คืน platform ของกลุ่ม
 function migAllocations(g) {
     if (Array.isArray(g.allocations) && g.allocations.length) return g.allocations.map(a => ({ tier: a.tier || '', kols: a.kols ?? '' }));
@@ -105,7 +105,7 @@ function initGroups(editing) {
         return editing.ad_groups.map(g => {
             const plat = migPlatform(g);
             const seededBudget = (g.budget != null && g.budget !== '') ? g.budget : ((groupsPerPlat[plat] === 1 && Number(pb[plat]) > 0) ? pb[plat] : '');
-            return newGroup({ key: g.key || genKey(), platform: plat, concept: g.concept || '', clips: [...(g.clips || [])], target: asTargetArray(g.target), content_type: g.content_type || '', media_type: g.media_type || '', content_format: g.content_format || '', brief: g.brief || '', products: [...(g.products || [])], allocations: migAllocations(g), blocks: toBlocks(g, plat).map(withProductTargets).map(withCampaignFromCtype), budget: seededBudget, code_expire: Number(g.code_expire) || 60 });
+            return newGroup({ key: g.key || genKey(), platform: plat, concept: g.concept || '', clips: [...(g.clips || [])], target: asTargetArray(g.target), content_type: g.content_type || '', media_type: g.media_type || '', content_format: g.content_format || '', brief: g.brief || '', products: [...(g.products || [])], allocations: migAllocations(g), blocks: toBlocks(g, plat).map(withProductTargets).map(withCampaignFromCtype), budget: seededBudget, code_expire: Number(g.code_expire) || 60, no_gencode: g.no_gencode === true });
         });
     }
     const prods = editing?.products || [];
@@ -322,6 +322,7 @@ export default function ProjectForm({ editing, onClose, onSaved }) {
                 // Campaign: Platform ที่ไม่ใช้ (ไม่ใช่ TikTok/Facebook/Instagram) เก็บเป็นว่าง · Facebook/Instagram เก็บซ้ำลง content_type (packCampaigns)
                 // งบ: แยกต่อสินค้า → budget = ผลรวม (packBudgets)
                 // Concept แยกต่อสินค้า: เก็บเฉพาะสินค้าที่ยังอยู่และมีข้อความ (packConcepts)
+                // ไม่ใช้ Gencode: ส่ง no_gencode เป็น boolean เสมอ — server (carryNoGencode) ใช้แยกฟอร์มรุ่นใหม่ออกจากแท็บเก่าที่ไม่ส่งคีย์นี้
                 const blocks = (g.blocks || []).filter(b => plats.includes(b.platform)).map(b => packCampaigns(packProductTargets(packBudgets(packConcepts(b)))));
                 // แบนโครง 3 ชั้นออกเป็น allocations — 1 แถว = Platform + Content Type + Tier
                 // หน้าอื่นที่ยังอ่านแบบเดิมจะยังทำงานได้ และมีข้อมูลพอให้แยกตาม Platform ได้ด้วย
@@ -329,7 +330,7 @@ export default function ProjectForm({ editing, onClose, onSaved }) {
                 // ค่าระดับกลุ่มแบบเดิม — เอาจากบล็อก/ชุดแรก เพื่อความเข้ากันได้ย้อนหลัง
                 const b0 = blocks[0] || null;
                 const s0 = (b0 && b0.sets && b0.sets[0]) || null;
-                return { key: g.key || genKey(), platform: plats[0] || null, platforms: plats, blocks, concept: g.concept || null, target: b0 ? asTargetArray(b0.target) : [], content_type: s0 ? (s0.content_type || null) : null, media_type: s0 ? (s0.media_type || null) : null, content_format: s0 ? (s0.content_format || null) : null, clips: (s0 && b0 ? (b0.clips || []) : (g.clips || [])).map(c => String(c || '').trim()).filter(Boolean), brief: (g.brief && g.brief.trim()) ? g.brief.trim() : null, products: blocksProducts(blocks), allocations, kol_count: allocations.reduce((s, a) => s + a.kols, 0), budget: blocksBudget(blocks), code_expire: Number(g.code_expire) || 60 };
+                return { key: g.key || genKey(), platform: plats[0] || null, platforms: plats, blocks, concept: g.concept || null, target: b0 ? asTargetArray(b0.target) : [], content_type: s0 ? (s0.content_type || null) : null, media_type: s0 ? (s0.media_type || null) : null, content_format: s0 ? (s0.content_format || null) : null, clips: (s0 && b0 ? (b0.clips || []) : (g.clips || [])).map(c => String(c || '').trim()).filter(Boolean), brief: (g.brief && g.brief.trim()) ? g.brief.trim() : null, products: blocksProducts(blocks), allocations, kol_count: allocations.reduce((s, a) => s + a.kols, 0), budget: blocksBudget(blocks), code_expire: Number(g.code_expire) || 60, no_gencode: !!g.no_gencode };
             });
             const flatProducts = groups.flatMap(g => g.products);
             const totalKol = groups.reduce((s, g) => s + g.kol_count, 0); // KOL เป้าหมายรวม = ผลรวมทุกกลุ่ม
@@ -485,11 +486,17 @@ export default function ProjectForm({ editing, onClose, onSaved }) {
                                     </div>
 
 
-                                    {/* จำนวนวัน Gencode (โค้ดใช้ได้กี่วัน) */}
+                                    {/* จำนวนวัน Gencode (โค้ดใช้ได้กี่วัน) — "-" = กลุ่มนี้ไม่ใช้ Gencode */}
+                                    {/* เลือก "-" แค่ตั้ง no_gencode ไม่แตะ code_expire เวลาสลับกลับจะได้จำนวนวันเดิม · เลือกจำนวนวัน = ปลด "-" แล้วใช้วันนั้น */}
                                     <label className="platform-budget platform-budget-row">
                                         <span>⏳ จำนวนวัน Gencode</span>
-                                        <select value={g.code_expire || 60} onChange={e => setGroupField(i, 'code_expire', Number(e.target.value))}>
+                                        <select value={g.no_gencode ? '-' : String(Number(g.code_expire) || 60)}
+                                            onChange={e => { const v = e.target.value; setAdGroups(gs => gs.map((x, idx) => idx !== i ? x
+                                                : v === '-' ? { ...x, no_gencode: true } : { ...x, no_gencode: false, code_expire: Number(v) })); }}>
+                                            <option value="-">- (ไม่ใช้ Gencode)</option>
                                             {CODE_EXPIRE_OPTS.map(d => <option key={d} value={d}>{d} Days</option>)}
+                                            {/* จำนวนวันที่ไม่อยู่ในตัวเลือก (ยิง API ตรง) ต้องมีตัวเลือกของตัวเอง ไม่งั้นช่องจะโชว์ "-" ตัวแรกทั้งที่กลุ่มยังใช้ Gencode */}
+                                            {!g.no_gencode && !CODE_EXPIRE_OPTS.includes(Number(g.code_expire) || 60) && <option value={String(Number(g.code_expire))}>{Number(g.code_expire)} Days</option>}
                                         </select>
                                     </label>
                                     {/* บรีฟเฉพาะกลุ่มนี้ */}

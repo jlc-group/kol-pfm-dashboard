@@ -705,6 +705,26 @@ function resolveGroupTarget(g, platform, product) {
     return TARGET_PLATFORMS.includes(platform) ? (g.target || null) : null;
 }
 
+// กลุ่ม "-" (ไม่ใช้ Gencode): เก็บเป็น no_gencode: true ใน ad_groups · code_expire ของกลุ่ม/แถวไม่ถูกแตะ
+// นับเฉพาะ true ตรงตัว — ห้ามอนุมานจาก code_expire 0 / '' / null เพราะมีโค้ด `|| 60` หลายจุดที่เปลี่ยน 0 กลับเป็น 60 เงียบ ๆ
+// โพสต์ที่มี Gencode อยู่แล้วทำงานเหมือนเดิม (ไม่ลบค่าเดิม) · ต้องตรงกับ groupNoGencode / postNoGencode ฝั่งหน้าเว็บทุกตัวอักษร
+const groupNoGencode = g => !!g && g.no_gencode === true;
+const postNoGencode = (s, g) => groupNoGencode(g) && !String((s && s.gencode) ?? '').trim();
+// แท็บที่เปิดค้างจากก่อน deploy ไม่รู้จักคีย์ no_gencode → ยกค่าเดิมในฐานมา ไม่ให้ "-" หายเงียบ (แบบเดียวกับ carryProductConcepts)
+// ฟอร์มรุ่นใหม่ส่ง boolean เสมอ → ใช้ตามที่ส่งมา (ส่ง false = ผู้ใช้ปลดเอง · สตริง 'true' ไม่นับ)
+function carryNoGencode(incoming, stored) {
+    if (!Array.isArray(incoming)) return incoming;
+    const olds = Array.isArray(stored) ? stored : [];
+    return incoming.map(g => {
+        if (!g || typeof g !== 'object') return g;
+        if (g.no_gencode === undefined) {
+            const old = g.key ? olds.find(o => o && o.key === g.key) : null;
+            return { ...g, no_gencode: !!(old && old.no_gencode === true) };
+        }
+        return { ...g, no_gencode: g.no_gencode === true };
+    });
+}
+
 // Concept แยกต่อสินค้า (ต่อ Platform): แท็บที่เปิดค้างจากก่อน deploy ส่งบล็อกมาโดยไม่มี concept_split (ฟอร์มรุ่นใหม่ส่ง true/false เสมอ)
 // ของในฐานแยกอยู่ + Concept หลักของกลุ่มเท่าเดิม → ยก Concept ต่อสินค้าเดิมมาต่อ (เฉพาะสินค้าที่ยังอยู่ในบล็อก)
 // ต้องตรงกับ packConcepts ฝั่งหน้าเว็บ
@@ -1016,6 +1036,7 @@ module.exports = {
     PERSON_FIELDS, personPatch,
     resolveInside, sameInstant, mergeHireItems, mergeBriefFiles, cleanFee, cleanHeadcount, safeId, safeSlug,
     linkGroupPlatforms, resolveGroupClips, resolveGroupTarget, productCodesIn, carryProductTargets, carryProductBudgets, carryProductConcepts,
+    groupNoGencode, postNoGencode, carryNoGencode,
     resolveGroupProducts, resolveGroupCtype, resolveGroupMedia, resolveGroupCampaign,
     engagementOf, maybeStamp, stampWaitReason,
     feeMissing, clipCostMetrics, costAxisRange, costAxisNorm, perfVerdict, feeCostAverages

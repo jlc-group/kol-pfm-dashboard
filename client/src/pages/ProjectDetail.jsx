@@ -7,16 +7,17 @@ import OtherProjectDetail from './OtherProjectDetail.jsx';
 import OnProcessTable from '../components/OnProcessTable.jsx';
 import ProductChips, { ProductSummary } from '../components/ProductChips.jsx';
 import ConceptLines from '../components/ConceptLines.jsx';
+import GroupNeedHead, { groupClipNeed } from '../components/GroupNeedHead.jsx';
 import ProductMultiSelect from '../components/ProductMultiSelect.jsx';
 import { unreadCount } from '../components/MessageBox.jsx';
 import ChatDock from '../components/ChatDock.jsx';
 import { productLabel, asTargetArray } from '../data/products.js';
 import {
     groupPlatforms, kolInScope, contentTypesOf, mediaFor, quotaOf,
-    toBlocks, blockKol, blocksKol, blocksBudget, num, needTarget, isSplitBudget, hasOwnConcepts, conceptText,
-    contentCells, cellKeyOf, cellKey, clipCountFor, targetFor
+    toBlocks, blockKol, blocksKol, blocksBudget, num, needTarget, isSplitBudget, hasOwnConcepts,
+    contentCells, cellKeyOf, cellKey, clipCountFor, targetFor, groupNoGencode, productsFor, allocsInScope
 } from '../data/adGroups.js';
-import { clipCount, collapseByPerson, countPeople } from '../data/clips.js';
+import { collapseByPerson, countPeople } from '../data/clips.js';
 import ProductFilter from '../components/ProductFilter.jsx';
 import { knownProductCodes, matchProducts, productFilterOptions } from '../data/productFilter.js';
 import StageCards from '../components/StageCards.jsx';
@@ -96,9 +97,16 @@ function AddKolModal({ projectId, existingIds, onClose, onAdded }) {
 const SUB_PLATFORMS = ['TikTok', 'Instagram', 'Facebook', 'Lemon8', 'YouTube', 'X'];
 
 // modal เพิ่ม KOL เข้าลิสต์เอง (ฝั่งทีม)
-function AddSubmissionModal({ projectId, products = [], groups = [], onClose, onAdded }) {
+// preset = { group_key, platform, content_type } — เปิดจากปุ่ม "+ เพิ่มรายชื่อ" ในกล่องของแท็บรายชื่อ
+// เลือกกลุ่ม / Platform / Content Type ของกล่องนั้นไว้ให้เลย (ยังเปลี่ยนเองได้) · ไม่มี preset = ทำงานแบบเดิมทุกอย่าง
+function AddSubmissionModal({ projectId, products = [], groups = [], preset = null, onClose, onAdded }) {
     // มีกลุ่มเดียวก็เลือกให้เลย ไม่ต้องกดซ้ำ
-    const [f, setF] = useState({ group_key: groups.length === 1 ? groups[0].key : '', account_name: '', platform: (groups.length === 1 && groupPlatforms(groups[0]).length === 1) ? groupPlatforms(groups[0])[0] : '', content_type: '', product: '', agency: '', budget: '', link_account: '' });
+    const [f, setF] = useState(() => {
+        const base = { group_key: groups.length === 1 ? groups[0].key : '', account_name: '', platform: (groups.length === 1 && groupPlatforms(groups[0]).length === 1) ? groupPlatforms(groups[0])[0] : '', content_type: '', product: '', agency: '', budget: '', link_account: '' };
+        // กลุ่มใน preset ต้องยังมีอยู่ในแคมเปญ — ไม่งั้นใช้ค่าเริ่มต้นแบบเดิม
+        if (!preset || !groups.some(x => x.key === preset.group_key)) return base;
+        return { ...base, group_key: preset.group_key, platform: preset.platform || base.platform, content_type: preset.content_type || '' };
+    });
     const g = groups.find(x => x.key === f.group_key) || null;
     const gPlats = g ? groupPlatforms(g) : [];
     // สินค้าให้เลือกเฉพาะของกลุ่มที่เลือก — ถ้ายังไม่เลือกกลุ่มค่อยใช้สินค้าทั้งแคมเปญ
@@ -362,6 +370,9 @@ export default function ProjectDetail() {
     const [error, setError] = useState('');
     const [showAdd, setShowAdd] = useState(false);
     const [showAddSub, setShowAddSub] = useState(false);
+    // กลุ่ม/Platform/Content Type ที่เลือกไว้ให้ในหน้าต่างเพิ่ม KOL (กดจากกล่องในแท็บรายชื่อ) — null = เปิดจากปุ่มด้านบน
+    const [addSubPreset, setAddSubPreset] = useState(null);
+    const openAddSub = (preset = null) => { setAddSubPreset(preset); setShowAddSub(true); };
     const [showEdit, setShowEdit] = useState(false);
     const [showDelConfirm, setShowDelConfirm] = useState(false);
     const [deleting, setDeleting] = useState(false);
@@ -423,6 +434,12 @@ export default function ProjectDetail() {
     const [feeModal, setFeeModal] = useState(null);
     const [badges, setBadges] = useState({ listNew: false, processNew: false });
     const [subsLoaded, setSubsLoaded] = useState(false);
+    // รายชื่อหมด (ลบคนสุดท้าย / เอเจนซี่ลบของตัวเอง) แถบตัวกรองจะหายไป แต่การ์ดกลุ่มยังขึ้นเสมอ
+    // ถ้าไม่ล้าง ตัวกรองที่มองไม่เห็นจะซ่อนกลุ่ม/นับเฉพาะ Platform ที่เคยกดไว้ และไม่มีปุ่มให้กดคืน
+    useEffect(() => {
+        if (submissions.length > 0) return;
+        setListPlat('all'); setListCtype('all'); setFeeOnly(false); setListProducts([]);
+    }, [submissions.length]);
 
     function load() {
         api(`/projects/${id}`)
@@ -796,12 +813,17 @@ export default function ProjectDetail() {
         );
     };
     // แบ่งรายชื่อในกลุ่มเป็นกล่องตาม Platform + Content Type แทนที่จะกองรวมกัน
+    // กล่องขึ้นครบทุกช่องของกลุ่มแม้ยังไม่มีใครส่งชื่อมา (เหมือนหน้าเอเจนซี่) — ทีมเห็นว่ายังขาดช่องไหน และกดเพิ่มเองจากกล่องได้เลย
     const cellBlocks = (g, rows) => {
         const plats = listPlat === 'all' ? [] : [listPlat];
+        // กรอง Platform ที่กลุ่มนี้ไม่ได้ลง = ไม่มีกล่อง (contentCells สร้างช่องให้ Platform ที่ส่งเข้าไปเสมอ ไม่เช็คว่ากลุ่มมีไหม)
         const cells = contentCells(g, plats)
+            .filter(c => listPlat === 'all' || groupPlatforms(g).includes(c.platform))
             .filter(c => listCtype === 'all' || c.contentType === listCtype);
         const known = new Set(cells.map(cellKey));
         const leftover = rows.filter(r => !known.has(cellKeyOf(g, r)));
+        // กลุ่มยังไม่ได้ตั้ง Platform เลย และไม่มีรายชื่อค้าง — ไม่มีกล่องให้โชว์
+        if (cells.length === 0 && leftover.length === 0) return <div className="proc-group-empty">{emptyText('ในกลุ่มนี้')}</div>;
         return <>
             {cells.map(c => {
                 const mine = rows.filter(r => cellKeyOf(g, r) === cellKey(c));
@@ -813,9 +835,15 @@ export default function ProjectDetail() {
                         {countPeople(all) > countPeople(mine) && mine.length > 0 && (
                             <div className="ag-hidden-note">ซ่อน {countPeople(all) - countPeople(mine)} คนตามตัวกรองที่เลือกอยู่</div>
                         )}
-                        {mine.length === 0
-                            ? <div className="proc-group-empty">{emptyText('ในช่องนี้')}</div>
-                            : statusBlocks(mine, g)}
+                        {/* ช่องที่ยังไม่มีใครเลย โชว์แค่หัวกล่อง + ปุ่มเพิ่ม (เหมือนเอเจนซี่) · มีคนแต่โดนตัวกรองซ่อนหมด ต้องบอกว่าหายเพราะตัวกรอง */}
+                        {mine.length > 0
+                            ? statusBlocks(mine, g)
+                            : all.length > 0 && <div className="proc-group-empty">{emptyText('ในช่องนี้')}</div>}
+                        {/* ปุ่มหน้าตาเดียวกับกล่องกรอกของเอเจนซี่ — เปิดหน้าต่างเพิ่ม KOL เดิม โดยเลือกกลุ่ม/Platform/Content Type ของกล่องนี้ไว้ให้ */}
+                        <button type="button" className="agency-add-row list-add-row"
+                            onClick={() => openAddSub({ group_key: g.key, platform: c.platform, content_type: c.contentType || '' })}>
+                            <Icon name="plus" size={15} /> เพิ่มรายชื่อ
+                        </button>
                     </div>
                 );
             })}
@@ -843,37 +871,46 @@ export default function ProjectDetail() {
         </>;
     };
     // โควตาคนของกลุ่ม ตามขอบเขตที่กำลังกรองดูอยู่
+    // ดูทั้งกลุ่ม = ผลรวมแถว Tier ใน allocations (แบบหน้าเอเจนซี่ / ผลรวมโควตาของกล่องย่อย)
+    // ไม่ใช้ blocksKol — นับแถว Tier ที่ยังไม่ได้เลือกชื่อ Tier ด้วย ตัวเลขหัวกลุ่มจะไม่ตรงกับกล่องย่อยและหน้าเอเจนซี่
     const groupQuota = g => (listPlat === 'all')
-        ? blocksKol(toBlocks(g))
+        ? allocsInScope(g, []).reduce((n, a) => n + (Number(a.kols) || 0), 0)
         : quotaOf(g, listPlat, listCtype === 'all' ? null : listCtype);
-    // แถบหัวกลุ่มสินค้า (ฝั่งทีม)
-    // Platform ที่สรุป/หารค่าตัวของกลุ่ม — ตามตัวกรอง Platform ที่เลือกอยู่
+    // หัวการ์ดกลุ่มสินค้า (ฝั่งทีม) — หน้าตา/ข้อมูลเดียวกับหัวกลุ่มหน้าเอเจนซี่ (GroupNeedHead) + ของที่มีเฉพาะทีม (คัดเลือกแล้ว, แถบค่าตัว)
+    // Platform ในขอบเขตที่กำลังดู — ทีมเห็นทุก Platform ของกลุ่ม แต่ตามตัวกรอง Platform ที่เลือกอยู่ (ใช้ทั้งหัวกลุ่มและสรุป/หารค่าตัว)
     const feePlatsOf = g => groupPlatforms(g).filter(p => listPlat === 'all' || p === listPlat);
-    const teamGroupBar = (g, gi, gsubs) => {
-        // ตัวเลขคัดเลือกนับตามตัวกรอง Platform/Content Type เท่านั้น — เปิดตัวกรอง "ยังไม่ใส่ค่าตัว" / สินค้า แล้วยอดต้องไม่หด
+    const teamGroupHead = (g, gi) => {
+        // ตัวเลขส่งแล้ว/คัดเลือกนับตามตัวกรอง Platform/Content Type เท่านั้น — เปิดตัวกรอง "ยังไม่ใส่ค่าตัว" / สินค้า แล้วยอดต้องไม่หด
         // (โควตาจำนวนคนตั้งต่อ Platform/Content Type ไม่ได้ตั้งต่อสินค้า)
-        const scoped = (feeOnly || listProducts.length) ? submissions.filter(s => s.group_key === g.key && matchScope(s)) : gsubs;
-        const conf = countPeople(scoped.filter(s => s.status === 'confirmed'));
-        // สรุปค่าตัวของกลุ่ม: งบ (กลุ่ม × Platform) เทียบกับค่าตัวที่ใส่แล้ว — ไม่นับคนที่ "ไม่เลือก"
+        const scoped = submissions.filter(s => s.group_key === g.key && matchScope(s));
+        const confRows = scoped.filter(s => s.status === 'confirmed');
+        const conf = countPeople(confRows);
         const plats = feePlatsOf(g);
+        // สินค้า = ของ Platform ในขอบเขต (กรอง TikTok อยู่ก็เห็นแค่สินค้าที่ลง TikTok) — กติกาเดียวกับหน้าเอเจนซี่
+        const products = plats.length ? [...new Set(plats.flatMap(p => productsFor(g, p)))] : (g.products || []);
+        // กรอง Platform/Content Type อยู่ ตัวหารต้องเป็นโควตาเฉพาะที่กรอง ไม่ใช่ยอดรวมทั้งกลุ่ม
+        // ดูทั้งกลุ่มแล้วไม่มีโควตารายช่อง (ข้อมูลเก่า) ถอยไปใช้จำนวน KOL ของกลุ่ม เหมือนหน้าเอเจนซี่
+        const need = groupQuota(g) || (listPlat === 'all' ? (Number(g.kol_count) || 0) : 0);
+        const { perClip, clips } = groupClipNeed(g, plats, listCtype === 'all' ? null : listCtype);
+        const needClips = clips || need;
+        // สรุปค่าตัวของกลุ่ม: งบ (กลุ่ม × Platform) เทียบกับค่าตัวที่ใส่แล้ว — ไม่นับคนที่ "ไม่เลือก"
         const feeBudget = plats.reduce((n, p) => n + feeBudgetFor(project, g, p), 0);
         const feeRows = plats.flatMap(p => feeEligible(submissions, g, p));
         const feeSet = feeRows.reduce((n, s) => n + feeOf(s), 0);
         const feeMissing = countPeople(feeRows.filter(s => feeOf(s) <= 0));
         return (
             <>
-                <div className="grp-bar grp-bar-stack">
-                    <div className="grp-bar-row">
-                        <span className="grp-no">กลุ่มที่ {gi + 1}</span>
-                        <div className="grp-chips"><ProductSummary value={g.products || []} max={4} /></div>
-                        {conceptText(g) && <span className="grp-concept" title={conceptText(g, true)}>📝 Concept: {conceptText(g)}</span>}
-                    </div>
-                    <span className="grp-count grp-count-under">
-                        {/* กรอง Platform/Content Type อยู่ ตัวหารต้องเป็นโควตาเฉพาะที่กรอง ไม่ใช่ยอดรวมทั้งกลุ่ม */}
-                        {conf}/{groupQuota(g) || countPeople(scoped)} คน คัดเลือก
-                        {clipCount(g) > 1 && <span className="grp-count-clip"> · {scoped.filter(s => s.status === 'confirmed').length}/{groupQuota(g) * clipCount(g)} คลิป</span>}
-                    </span>
-                </div>
+                <GroupNeedHead group={g} gi={gi} products={products} platforms={plats}
+                    need={need} perClip={perClip} needClips={needClips}
+                    sent={countPeople(scoped)} sentClips={scoped.length}
+                    progExtra={(
+                        // เฉพาะทีม: ส่งมากี่คนแล้วเลือกไปกี่คน (หน้าเอเจนซี่ไม่มีบรรทัดนี้)
+                        // แยกคลิปเป็นบรรทัดของตัวเอง คอลัมน์ขวาจะได้ไม่กว้างกว่าของเอเจนซี่มาก (จอแคบหัวกลุ่มไม่โดนบีบ)
+                        <div className="ag-group-prog-conf">
+                            <div>คัดเลือกแล้ว {conf}{need > 0 ? '/' + need : ''} คน</div>
+                            {perClip > 1 && <div className="ag-group-prog-conf-clip">{confRows.length}/{needClips} คลิปที่คัดเลือก</div>}
+                        </div>
+                    )} />
                 {(feeBudget > 0 || feeRows.length > 0) && (
                     <div className="ag-budget-bar fee-group-bar">
                         <span className="ag-budget-info">
@@ -1043,6 +1080,8 @@ export default function ProjectDetail() {
                                                 {hasOwnConcepts(g)
                                                     ? <span className="adg-concept">📝 Concept แยกตามสินค้า</span>
                                                     : g.concept && <span className="adg-concept">📝 Concept: {g.concept}</span>}
+                                                {/* ตั้ง "-" ในฟอร์มแคมเปญ — ทีมจะได้รู้ว่าช่อง Gencode ว่างในกลุ่มนี้ไม่ใช่ลืมกรอก */}
+                                                {groupNoGencode(g) && <span className="adg-concept" title="กลุ่มนี้ไม่ใช้ Gencode">ไม่ใช้ Gencode</span>}
                                                 {blocksKol(blocks) > 0 && <span className="adg-kol">⭐ รวม {blocksKol(blocks)} KOL</span>}
                                                 {blocksBudget(blocks) > 0 && <span className="adg-budget">💰 รวม ฿{blocksBudget(blocks).toLocaleString('th-TH')}</span>}
                                             </div>
@@ -1163,7 +1202,7 @@ export default function ProjectDetail() {
                     <button className="btn-ghost" onClick={() => setShowLinks(v => !v)}>
                         <Icon name="upload" size={16} /> ลิงก์ให้ Agency{agencyLinks.length > 0 && ` (${agencyLinks.length})`}
                     </button>
-                    <button className="btn-primary" onClick={() => setShowAddSub(true)}>
+                    <button className="btn-primary" onClick={() => openAddSub()}>
                         <Icon name="plus" size={17} /> เพิ่ม KOL
                     </button>
                 </div>
@@ -1394,19 +1433,18 @@ export default function ProjectDetail() {
                 </div>
             )}
             {subTab === 'list' && (
-                submissions.length === 0 ? (
-                    <div className="panel"><p className="empty" style={{ padding: '10px 0' }}>ยังไม่มีรายชื่อจาก Agency — กด "สร้างลิงก์ให้ Agency" แล้วส่งลิงก์ให้เอเจนซี่กรอก</p></div>
-                ) : (project.ad_groups?.length > 0 ? (
-                    /* แบ่งตามกลุ่มสินค้า */
+                project.ad_groups?.length > 0 ? (
+                    /* แบ่งตามกลุ่มสินค้า — การ์ดกลุ่มขึ้นเสมอแม้ยังไม่มีรายชื่อ (เหมือนหน้าเอเจนซี่) ทีมจะได้เห็นว่าแต่ละกลุ่มต้องการอะไร */
                     <>
                         {project.ad_groups.map((g, gi) => {
+                            // กรอง Platform ที่กลุ่มนี้ไม่ได้ลง และไม่มีรายชื่อค้างของ Platform นั้น = ไม่มีอะไรให้ดู ข้ามทั้งการ์ด
+                            if (listPlat !== 'all' && !groupPlatforms(g).includes(listPlat)
+                                && !submissions.some(s => s.group_key === g.key && matchScope(s))) return null;
                             const gsubs = submissions.filter(s => s.group_key === g.key && matchListFilter(s));
                             return (
-                                <div className="kol-group-card" key={g.key || gi}>
-                                    {teamGroupBar(g, gi, gsubs)}
-                                    {gsubs.length === 0
-                                        ? <div className="proc-group-empty">{emptyText('ในกลุ่มนี้')}</div>
-                                        : cellBlocks(g, gsubs)}
+                                <div className="kol-group-card agency-card ag-group" key={g.key || gi}>
+                                    {teamGroupHead(g, gi)}
+                                    {cellBlocks(g, gsubs)}
                                 </div>
                             );
                         })}
@@ -1422,12 +1460,15 @@ export default function ProjectDetail() {
                             );
                         })()}
                     </>
+                ) : submissions.length === 0 ? (
+                    /* แคมเปญเก่าที่ไม่มีกลุ่มสินค้า และยังไม่มีรายชื่อ */
+                    <div className="panel"><p className="empty" style={{ padding: '10px 0' }}>ยังไม่มีรายชื่อจาก Agency — กด "สร้างลิงก์ให้ Agency" แล้วส่งลิงก์ให้เอเจนซี่กรอก</p></div>
                 ) : (
                     /* ไม่มีกลุ่มสินค้า → รวมทั้งหมด */
                     ((feeOnly || listProducts.length > 0) && !submissions.some(matchListFilter))
                         ? <div className="proc-group-empty">{emptyText('')}</div>
                         : statusBlocks(submissions.filter(matchListFilter))
-                ))
+                )
             )}
 
             {subTab === 'process' && (
@@ -1456,6 +1497,7 @@ export default function ProjectDetail() {
                     projectId={id}
                     groups={project.ad_groups || []}
                     products={(project.products || []).map(p => (typeof p === 'string' ? p : p.name))}
+                    preset={addSubPreset}
                     onClose={() => setShowAddSub(false)}
                     onAdded={() => { setShowAddSub(false); loadSubs(); }}
                 />

@@ -5,7 +5,7 @@ import DatePicker from './DatePicker.jsx';
 import DraftModal from './DraftModal.jsx';
 import PerfModal from './PerfModal.jsx';
 import { asTargetArray } from '../data/products.js';
-import { mediaFor, contentTypesOf, quotaOf, targetFor, conceptText } from '../data/adGroups.js';
+import { mediaFor, contentTypesOf, quotaOf, targetFor, conceptText, groupNoGencode, postNoGencode } from '../data/adGroups.js';
 import { ProductSummary } from './ProductChips.jsx';
 import ProductFilter from './ProductFilter.jsx';
 import { knownProductCodes, matchProducts, productFilterOptions } from '../data/productFilter.js';
@@ -77,6 +77,10 @@ function ProcessRow({ sub, putSubmission, reload, showAds = false, group = null,
         ? Object.entries(sub.post_check_changes).filter(([f]) => POST_CHECK_LABEL[f]) : [];
     const unlocked = directEdit || editing; // directEdit (ฝั่งเอเจนซี่) = กรอกได้เลยไม่ต้องกดแก้ไข
     const noIdPost = NO_IDPOST.includes(sub.platform); // แพลตฟอร์มนี้ไม่ใช้ ID Post
+    // กลุ่มนี้ตั้ง "-" (ไม่ใช้ Gencode) และแถวนี้ไม่มี Gencode → ช่อง GENCODE / CODE EXPIRE IN ขึ้น "—" แบบเดียวกับ NO_IDPOST
+    // ตัดสินจาก sub.gencode ที่ server ส่งมา ไม่ใช่ค่าในช่องที่กำลังพิมพ์ — ช่องจะได้ไม่หายไปกลางคันตอนลบค่าออก
+    // แถวที่มี Gencode อยู่แล้วกรอก/แก้ได้ตามเดิม · ตอนบันทึกส่งค่าเดิมกลับไป (ช่องที่ซ่อนแก้ไม่ได้) จึงไม่โดน 409 และ post-check ไม่ขึ้นรายการแก้
+    const noGencode = postNoGencode(sub, group);
     // Content Type ผูกกับคน (1 Platform ในกลุ่มเดียวมีได้หลายอย่าง) — ของเก่าที่ยังไม่ระบุค่อยถอยไปใช้ของกลุ่ม
     const ctype = sub.content_type || (group ? (contentTypesOf(group, sub.platform)[0] || null) : null);
     const media = group ? mediaFor(group, sub.platform, ctype) : { media_type: null, content_format: null };
@@ -189,17 +193,17 @@ function ProcessRow({ sub, putSubmission, reload, showAds = false, group = null,
                     : <span className="proc-openpost off" title={postUrl.trim() ? 'ลิงก์ไม่ถูกต้อง — ต้องขึ้นต้นด้วย http:// หรือ https://' : 'ยังไม่มีลิงก์โพสต์'}><Icon name="eye" size={14} /></span>}
             </div>
             <div className="proc-cell"><DatePicker value={postDate} onChange={setPostDate} disabled={!unlocked} placeholder="เลือกวัน" /></div>
-            <div className="proc-cell" title={adLocked ? lockTip : undefined}>
-                <input value={gencode} onChange={e => setGencode(e.target.value)} placeholder="Gencode" disabled={!canEditPost} />
-            </div>
+            <div className="proc-cell" title={adLocked && !noGencode ? lockTip : undefined}>{noGencode
+                ? <span className="muted" title="กลุ่มนี้ไม่ใช้ Gencode">—</span>
+                : <input value={gencode} onChange={e => setGencode(e.target.value)} placeholder="Gencode" disabled={!canEditPost} />}</div>
             <div className="proc-cell" title={adLocked && !noIdPost ? lockTip : undefined}>{noIdPost
                 ? <span className="muted" title="แพลตฟอร์มนี้ไม่ใช้ ID Post">—</span>
                 : <input value={idPost} onChange={e => setIdPost(e.target.value)} placeholder="ID Post" disabled={!canEditPost} />}</div>
-            <div className="proc-cell">
-                <select value={codeExpire} onChange={e => setCodeExpire(e.target.value)} disabled={!unlocked}>
+            <div className="proc-cell">{noGencode
+                ? <span className="muted" title="กลุ่มนี้ไม่ใช้ Gencode">—</span>
+                : <select value={codeExpire} onChange={e => setCodeExpire(e.target.value)} disabled={!unlocked}>
                     {EXPIRE_OPTS.map(d => <option key={d} value={d}>{d}</option>)}
-                </select>
-            </div>
+                </select>}</div>
             <div className="proc-cell proc-act-cell">
                 {directEdit ? (
                     saved ? (
@@ -308,6 +312,8 @@ function GroupBar({ group, gi, count, scope }) {
             </div>
             {/* Concept แยกต่อสินค้า = "L3, L10 = ... · L4 = ..." · ไม่แยก = Concept ของกลุ่มเหมือนเดิม */}
             {concept && <span className="grp-concept" title={conceptText(group, true, scope && scope.products, scope && scope.platforms)}>📝 Concept: {concept}</span>}
+            {/* กลุ่มที่ตั้ง "-" ในฟอร์มแคมเปญ — บอกไว้ที่หัวกลุ่มว่าช่อง Gencode ว่างได้ ไม่ใช่ลืมกรอก */}
+            {groupNoGencode(group) && <span className="grp-concept" title="กลุ่มนี้ไม่ใช้ Gencode — แถวที่ไม่มี Gencode ไม่ต้องกรอก">ไม่ใช้ Gencode</span>}
             <span className="grp-count">{count} คน</span>
         </div>
     );

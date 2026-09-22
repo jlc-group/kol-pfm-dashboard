@@ -17,7 +17,7 @@ const {
     resolveGroupTarget, resolveGroupProducts, resolveGroupCtype, resolveGroupMedia, resolveGroupCampaign,
     engagementOf, clipCostMetrics, perfVerdict,
     maybeStamp, stampWaitReason, pfmManagedSpend, postCheckWaiting,
-    adRanBySpend, effectiveAdStatus
+    adRanBySpend, effectiveAdStatus, postNoGencode
 } = logic;
 
 // ===== สแตมป์ Performance ตอนค่าแอดถึงเกณฑ์ =====
@@ -167,6 +167,8 @@ const ads = {
                     media_type: media.media_type,
                     group_format: media.content_format,
                     gencode: s.gencode || null,
+                    // กลุ่ม "-" (ไม่ใช้ Gencode) และแถวนี้ยังไม่มีค่า → หน้าเว็บขึ้น "ไม่ใช้" แทนช่องว่าง (แยกจาก "ยังไม่กรอก")
+                    no_gencode: postNoGencode(s, grp),
                     id_post: s.id_post || null,
                     post_url: s.post_url,
                     post_date: s.post_date || null,

@@ -15,7 +15,8 @@ const { UPLOAD_DIR, uploadPath } = require('../config/uploads');
 const {
     mergeHireItems, mergeBriefFiles, hireRowFee, cleanFee, cleanHeadcount, safeId,
     HIRE_BOOKED, BOOK_PENDING, BOOK_FEE, HIRE_JOB_CLOSED, hireBookings, newHireRow, payableWithoutFee, hireScope,
-    PERSON_FIELDS, personPatch, releaseToRequest, bookingConfirm, bookingFeeDecision, bookingUnavailable, carryProductTargets, carryProductBudgets, carryProductConcepts
+    PERSON_FIELDS, personPatch, releaseToRequest, bookingConfirm, bookingFeeDecision, bookingUnavailable, carryProductTargets, carryProductBudgets, carryProductConcepts,
+    carryNoGencode
 } = require('../store/logic');
 const BOOKING_ACTIONS = ['confirm', 'unavailable', 'fee-approve', 'fee-reject'];
 if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR, { recursive: true });
@@ -305,10 +306,11 @@ router.put('/:id', async (req, res, next) => {
         // ไฟล์บรีฟ: ฟอร์มส่ง file เดิมกลับมาทุกครั้ง — ยึดของในฐาน (ส่ง null = เอาออกได้)
         if (patch.product_briefs !== undefined) patch.product_briefs = mergeBriefFiles(curProject && curProject.product_briefs, patch.product_briefs);
         if (patch.platform_briefs !== undefined) patch.platform_briefs = mergeBriefFiles(curProject && curProject.platform_briefs, patch.platform_briefs);
-        // ฟอร์มรุ่นเก่า (แท็บที่เปิดค้างจากก่อน deploy) ไม่ส่ง Target / งบ / Concept ต่อสินค้ามา — ยกของเดิมมาต่อ ไม่ให้หายเงียบ
+        // ฟอร์มรุ่นเก่า (แท็บที่เปิดค้างจากก่อน deploy) ไม่ส่ง Target / งบ / Concept ต่อสินค้า / กลุ่ม "-" ไม่ใช้ Gencode มา — ยกของเดิมมาต่อ ไม่ให้หายเงียบ
         if (Array.isArray(patch.ad_groups) && curProject) {
             const stored = curProject.ad_groups;
-            patch.ad_groups = carryProductConcepts(carryProductBudgets(carryProductTargets(patch.ad_groups, stored), stored), stored);
+            patch.ad_groups = carryNoGencode(
+                carryProductConcepts(carryProductBudgets(carryProductTargets(patch.ad_groups, stored), stored), stored), stored);
         }
         // รายการจ้างไม่เขียนทับทั้งก้อน: ต้องยืนยันว่าหน้าเว็บถือข้อมูลล่าสุดอยู่ แล้วรวมกับของในฐาน
         // (ชื่อที่คนจัดหาเสนอ / คนที่ถูกเลือกไปแล้ว / ไฟล์แนบ มาจากเส้นของมันเอง หน้าเว็บส่งทับไม่ได้)
