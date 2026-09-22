@@ -53,7 +53,6 @@ const START = {
 // Scope of Work ยาวได้ไม่เกินนี้ (server ตัดที่ความยาวเดียวกัน) — กันไว้ที่ช่องเลย จะได้ไม่พิมพ์ยาวแล้วหายตอนบันทึก
 const SCOPE_MAX = 2000;
 const SCOPE_PH = 'เช่น ถ่ายภาพนิ่ง 20 ลุค + วิดีโอสั้น 3 ตัว · ใช้งานออนไลน์ 6 เดือน';
-const OWNER_MSG = 'เลือกผู้ดูแลงาน';
 // "มีอะไรพิมพ์ค้างไว้ไหม" — เทียบกับค่าตอนเปิดฟอร์ม/ตอนบันทึกล่าสุด (แบรนด์/ผู้ดูแล/งานที่เลือก เป็นแค่การกดเลือก ไม่นับ)
 const dirtyKey = (f, jobName, file) => JSON.stringify([f, String(jobName || '').trim(), file ? `${file.name}:${file.size}` : '']);
 
@@ -79,6 +78,9 @@ function Field({ label, req, opt, hint, err, htmlFor, labelId, className = '', c
 
 export default function QuickHireForm({ mode = 'direct', job = null, onClose, onSaved, onOpenRequest }) {
     const casting = mode === 'casting';
+    // คนของทีมที่รับผิดชอบงาน (ช่อง creator เดียวกัน) — ผู้ใช้ขอชื่อช่องต่างกันตามฟอร์ม
+    // "ขอให้ช่วยหาคน" = เจ้าของงาน (คนที่สร้างงานนี้) · "มีคนแล้ว" = ผู้ติดต่อ · การ์ดงาน/หน้างาน/ฟอร์มเต็ม ยังเป็น T.owner (ผู้ดูแลงาน)
+    const ownerLabel = casting ? 'เจ้าของงาน' : 'ผู้ติดต่อ';
     const uid = useId();
     const id = s => `${uid}-${s}`;
     const { user } = useAuth();
@@ -190,7 +192,7 @@ export default function QuickHireForm({ mode = 'direct', job = null, onClose, on
                 if (!brand) e.brand = 'เลือกแบรนด์';
                 if (!jobName.trim()) e.jobName = 'ใส่ชื่องาน';
                 // งานใหม่ต้องมีคนที่ทีมถามเรื่องงานได้ (server ตีกลับถ้าไม่มี) — งานที่มีอยู่แล้วไม่ถามซ้ำ
-                if (!owner.trim()) e.owner = OWNER_MSG;
+                if (!owner.trim()) e.owner = 'เลือก' + ownerLabel;
             } else if (!pickedJob) {
                 e.job = 'เลือกงานก่อน';
             }
@@ -596,13 +598,13 @@ export default function QuickHireForm({ mode = 'direct', job = null, onClose, on
                                     <input id={id('jobname')} value={jobName} onChange={e => setJobName(e.target.value)}
                                         placeholder="เช่น ถ่าย Lookbook คอลเลกชันใหม่" maxLength={255} />
                                 </Field>
-                                <Field label={T.owner} req err={E.owner} htmlFor={id('owner')}
+                                <Field label={ownerLabel} req err={E.owner} htmlFor={id('owner')}
                                     hint={peopleErr
                                         ? `โหลดรายชื่อไม่สำเร็จ (${peopleErr}) — ปิดฟอร์มแล้วเปิดใหม่อีกครั้ง`
-                                        : 'คนที่ทีมถามเรื่องงานนี้ได้ · ระบบจำชื่อที่เลือกล่าสุดไว้ให้ครั้งหน้า'}>
+                                        : (casting ? 'คนที่สร้างงานนี้' : 'คนที่ทีมถามเรื่องงานนี้ได้') + ' · ระบบจำชื่อที่เลือกล่าสุดไว้ให้ครั้งหน้า'}>
                                     <select id={id('owner')} value={owner} onChange={e => chooseOwner(e.target.value)}
                                         aria-invalid={E.owner ? 'true' : undefined}>
-                                        <option value="">— เลือก{T.owner} —</option>
+                                        <option value="">— เลือก{ownerLabel} —</option>
                                         {ownerNames.map(n => <option key={n} value={n}>{n}</option>)}
                                         {owner && !ownerNames.includes(owner) && <option value={owner}>{owner}</option>}
                                     </select>

@@ -714,6 +714,9 @@ a { text-decoration: none; color: inherit; }
 @media (max-width: 900px) { .ka-search { min-width: 0; } }
 .ka-summary { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; margin-bottom: 20px; }
 @media (max-width: 800px) { .ka-summary { grid-template-columns: 1fr; } }
+/* หน้าคนที่เคยจ้าง (Talent) มีการ์ดสรุป 2 ใบ — แบ่งครึ่งเต็มแถว ไม่ปล่อยช่องที่ 3 ว่าง · จอแคบกลับเป็นคอลัมน์เดียวเหมือนเดิม */
+.ka-summary.ka-summary-2 { grid-template-columns: repeat(2, 1fr); }
+@media (max-width: 800px) { .ka-summary.ka-summary-2 { grid-template-columns: 1fr; } }
 .ka-sum-card { background: var(--card); border: 1px solid rgba(226,240,234,.9); border-radius: 16px; padding: 20px 24px; box-shadow: var(--shadow); display: flex; align-items: center; gap: 16px; }
 .ka-sum-ico { width: 52px; height: 52px; border-radius: 14px; background: var(--bg-soft); color: var(--mint-dark); display: grid; place-items: center; flex-shrink: 0; }
 .ka-sum-ico.blue { background: #e3edff; color: #2563eb; }
@@ -3893,7 +3896,7 @@ button { color: inherit; }
 .th-menu button strong { font-size: 13.5px; }
 .th-menu button span { font-size: 12px; color: var(--muted); }
 
-/* ---------- สลับย่อย คนที่เคยจ้าง | ถามราคา ---------- */
+/* ---------- สลับย่อยของ Talent Book: คอมการ์ดทั้งหมด | ขอเรทราคา ---------- */
 .th-seg { display: inline-flex; gap: 4px; padding: 4px; margin-bottom: 14px; border-radius: 12px; background: #fff; border: 1px solid var(--border); max-width: 100%; }
 .th-seg-btn { display: inline-flex; align-items: center; gap: 7px; padding: 8px 16px; border: none; border-radius: 9px; background: none; font: inherit;
     font-size: 13.5px; font-weight: 700; color: var(--muted); cursor: pointer; white-space: nowrap; }
@@ -4489,3 +4492,127 @@ button { color: inherit; }
 .modal .tc2-invalid:focus { border-color: #ef4444; box-shadow: 0 0 0 3px rgba(239, 68, 68, .18); }
 /* มือถือ: แถบบนติดหัวจอสูง ~68px — เลื่อนไปส่วน "คนในงานนี้" แล้วหัวข้อต้องไม่จมใต้แถบ */
 @media (max-width: 900px) { .tj-sec { scroll-margin-top: 84px; } }
+
+/* ===== Talent Book → คอมการ์ดทั้งหมด (tb-) — PeopleTab.jsx + CompCard.jsx ===== */
+/* การ์ดแบบคอมการ์ดตามแบบที่ผู้ใช้เลือก: สี่เหลี่ยมจัตุรัส 1:1 · รูปชิดซ้าย ~45% เต็มความสูง · ข้อมูลขวาแบบกระชับ (ข้อความยาวตัด … ชี้ดูเต็มได้)
+   จอกว้าง 3 ใบต่อแถว · ≤1180px 2 ใบ · ≤640px ใบเดียว
+   สี: เขียว = Booked (มีงานตกลงแล้ว) · เทา = Casting · สถานะย่อใช้สีชุดเดียวกับขั้นของใบขอให้หา (.stage-chip) */
+.tb-toolbar { row-gap: 10px; }
+.tb-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+@media (max-width: 1180px) { .tb-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 640px) { .tb-grid { grid-template-columns: minmax(0, 1fr); } }
+
+.tb-card {
+    display: flex; min-width: 0; overflow: hidden; background: var(--card); aspect-ratio: 1 / 1;
+    border: 1px solid rgba(226, 240, 234, .9); border-radius: 18px; box-shadow: var(--shadow);
+}
+.tb-card.is-booked { border-color: #a7f3d0; }
+/* ชื่อที่ทีมไม่ได้เลือก ยังอยู่ในสมุด (เผื่อใช้งานหน้า) แต่ลดความเด่นของรูปลงหน่อย */
+.tb-card.is-dropped .tb-photo { filter: grayscale(.4); opacity: .85; }
+
+/* รูป: เต็มความสูงการ์ด (จัตุรัส) แล้วครอปด้วย object-fit: cover */
+.tb-photo { position: relative; flex: 0 0 45%; max-width: 45%; background: var(--bg-soft); }
+.tb-photo > .tb-photo-btn, .tb-photo > .tb-photo-none { position: absolute; inset: 0; }
+.tb-photo-btn {
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px;
+    width: 100%; height: 100%; padding: 0; margin: 0; border: none; background: transparent; cursor: pointer;
+    font: inherit; font-size: 13px; font-weight: 700; color: var(--mint-dark); text-align: center; text-decoration: none;
+}
+.tb-photo-btn img { display: block; width: 100%; height: 100%; object-fit: cover; object-position: center top; }
+.tb-photo-btn:hover img { opacity: .94; }
+.tb-photo-btn:focus-visible { outline: 3px solid var(--mint); outline-offset: -3px; }
+.tb-photo-file { background: #f8fafc; color: #475569; }
+.tb-photo-file:hover { background: #eef2f7; }
+.tb-photo-file small, .tb-photo-none small { font-size: 11px; font-weight: 600; color: var(--muted); }
+.tb-photo-link:hover { filter: brightness(.97); }
+.tb-photo-chip {
+    display: inline-flex; align-items: center; gap: 5px; padding: 5px 12px; border-radius: 999px;
+    background: #fff; border: 1px solid var(--border); font-size: 12px; font-weight: 700; color: var(--mint-dark);
+}
+.tb-photo-none { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; }
+.tb-photo-wait { padding: 0 10px; font-size: 11px; font-weight: 600; color: var(--muted); line-height: 1.4; }
+.tb-initial { font-size: 44px; font-weight: 700; line-height: 1; }
+.tb-tone.c0 { background: var(--bg-soft); color: var(--mint-dark); }
+.tb-tone.c1 { background: #e0f2fe; color: #0369a1; }
+.tb-tone.c2 { background: #fef3c7; color: #b45309; }
+.tb-tone.c3 { background: #ede9fe; color: #6d28d9; }
+.tb-tone.c4 { background: #fce7f3; color: #be185d; }
+/* ป้าย "มีคลิป" ทับมุมล่างซ้ายของรูป — ปุ่มแยกจากรูป (กดรูป = ดูคอมการ์ด · กดป้าย = ดูคลิป) */
+.tb-clip {
+    position: absolute; left: 10px; bottom: 10px; display: inline-flex; align-items: center; gap: 5px;
+    padding: 5px 11px; border: none; border-radius: 999px; background: rgba(15, 40, 32, .78); color: #fff;
+    font: inherit; font-size: 11.5px; font-weight: 700; line-height: 1.3; cursor: pointer; text-decoration: none;
+}
+.tb-clip:hover { background: rgba(15, 40, 32, .92); }
+.tb-clip:focus-visible { outline: 3px solid var(--mint-light); outline-offset: 2px; }
+.tb-clip svg { fill: currentColor; }
+
+/* ข้อมูลฝั่งขวา: สถานะ → ชื่อ → ป้าย → ราคา → ช่องทางติดต่อ → ประวัติงาน (ท้ายการ์ด) */
+.tb-info { flex: 1 1 auto; min-width: 0; min-height: 0; overflow: hidden; display: flex; flex-direction: column; gap: 7px; padding: 12px 12px 10px; }
+.tb-status { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.tb-badge {
+    display: inline-flex; align-items: center; gap: 5px; padding: 2px 8px; border-radius: 999px;
+    font-size: 10.5px; font-weight: 700; letter-spacing: .3px;
+}
+.tb-badge::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+.tb-badge.booked { background: #d1fae5; color: #047857; }
+.tb-badge.casting { background: #f1f5f9; color: #475569; }
+.tb-sub { padding: 1px 7px; border-radius: 999px; border: 1px solid #e2e8f0; background: #fff; font-size: 10.5px; font-weight: 700; color: #475569; }
+.tb-sub.s-waiting { color: #92400e; background: #fef3c7; border-color: #fde68a; }
+.tb-sub.s-spare { border-style: dashed; }
+.tb-sub.s-dropped { color: #9f1239; background: #fff1f2; border-color: #fecdd3; }
+.tb-sub.s-talking { color: #1d4ed8; background: #dbeafe; border-color: #bfdbfe; }
+.tb-sub.s-booking { color: #6d28d9; background: #ede9fe; border-color: #ddd6fe; }
+
+.tb-name {
+    margin: 0; font-size: 20px; font-weight: 700; line-height: 1.2; letter-spacing: -.01em; color: var(--text); overflow-wrap: anywhere;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; flex-shrink: 0;
+}
+.tb-pills { display: flex; flex-direction: column; align-items: flex-start; gap: 3px; min-width: 0; }
+.tb-pill {
+    display: block; max-width: 100%; padding: 2px 8px; border-radius: 999px; background: var(--bg-soft); color: var(--text);
+    font-size: 10.5px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.tb-pill-k { color: var(--mint-dark); font-weight: 700; white-space: nowrap; }
+
+.tb-fees { list-style: none; display: flex; flex-direction: column; gap: 2px; padding: 6px 0; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); flex-shrink: 0; }
+.tb-fee { display: flex; align-items: baseline; gap: 6px; min-width: 0; }
+.tb-fee-v { flex-shrink: 0; font-size: 16px; font-weight: 700; line-height: 1.25; color: var(--text); font-variant-numeric: tabular-nums; }
+.tb-fee.hired .tb-fee-v { color: var(--mint-dark); }
+.tb-fee-k { min-width: 0; font-size: 10.5px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tb-fee-none { font-size: 11px; color: var(--muted); }
+
+.tb-rows { list-style: none; display: flex; flex-direction: column; gap: 3px; min-height: 0; overflow: hidden; font-size: 11.5px; color: var(--text); }
+.tb-rows li { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.tb-rows svg { flex-shrink: 0; color: var(--mint-dark); }
+.tb-row-v { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tb-row-k { color: var(--muted); font-weight: 600; white-space: nowrap; }
+.tb-acc { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: var(--mint-dark); font-weight: 700; }
+.tb-acc:hover { text-decoration: underline; }
+/* ข้อความสำหรับโปรแกรมอ่านจอ (ไอคอนบอกความหมายแทนป้ายบนจอ) */
+.tb-sr { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+
+.tb-foot { margin-top: auto; padding-top: 6px; border-top: 1px dashed var(--border); display: flex; flex-direction: column; gap: 4px; flex-shrink: 0; min-width: 0; }
+.tb-foot-line { font-size: 10.5px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tb-jobs { display: flex; flex-wrap: nowrap; gap: 4px; min-width: 0; overflow: hidden; }
+.tb-job {
+    display: inline-block; flex: 0 1 auto; min-width: 0; max-width: 100%; padding: 2px 8px; border: none; border-radius: 14px; background: var(--bg-soft);
+    color: var(--mint-dark); font: inherit; font-size: 10.5px; font-weight: 600; cursor: pointer;
+    overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
+}
+.tb-job:hover { background: #c7f0df; }
+.tb-job.more { flex-shrink: 0; background: #fff; border: 1px dashed var(--border); color: var(--muted); cursor: default; }
+.tb-job:focus-visible { outline: 2px solid var(--mint); outline-offset: 1px; }
+
+.tb-empty { text-align: center; padding: 40px 20px; color: var(--muted); }
+.tb-empty-title { margin-bottom: 6px; font-size: 15.5px; font-weight: 700; color: var(--text); }
+.tb-empty p { max-width: 460px; margin: 0 auto; font-size: 13px; line-height: 1.6; }
+.tb-empty .btn-ghost { margin-top: 10px; }
+.tb-more { display: flex; justify-content: center; margin-top: 18px; }
+
+/* มือถือ: ใบเดียวต่อแถว การ์ดจัตุรัสกว้างเกือบเต็มจอ — ใช้ขนาดตัวหนังสือชุดเดียวกับจอกว้างได้ ลดแค่ช่องไฟ/ตัวอักษรย่อ/ป้ายคลิป */
+@media (max-width: 640px) {
+    .tb-grid { gap: 14px; }
+    .tb-initial { font-size: 34px; }
+    .tb-clip { left: 6px; bottom: 6px; padding: 4px 9px; font-size: 11px; }
+}

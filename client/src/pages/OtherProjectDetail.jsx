@@ -487,7 +487,7 @@ export default function OtherProjectDetail({ project, reload, onDeleted }) {
                             <span>บอกสเปค จำนวน งบต่อคน ให้{T.finder}ส่งรายชื่อมาให้เลือก</span>
                         </button>
                     </div>
-                    <Link className="tj-link" to="/hires?tab=people">เลือกจากคนที่เคยจ้าง →</Link>
+                    <Link className="tj-link" to="/hires?tab=people">เลือกจาก Talent Book →</Link>
                 </div>
             ) : (
                 <>

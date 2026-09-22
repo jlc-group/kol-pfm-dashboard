@@ -12,7 +12,8 @@ import {
 import JobCard from './JobCard.jsx';
 
 // แท็บ "หน้าหลัก" ของ Talent — เปิดเมนูมาเจอหน้านี้เสมอ
-// บนสุดคือทางเริ่ม 3 ทาง ถัดมาคือ "รอคุณทำ" เรื่องละการ์ด (เรื่องง่ายกดจบในการ์ด เรื่องที่ต้องดูรายละเอียดเปิดลิ้นชักบนหน้าเดิม)
+// บนสุดคือทางเริ่ม 3 ทาง · ทีมแบรนด์ไม่มีการ์ด "รอคุณทำ" แล้ว (ผู้ใช้ขอเอาออก — เลขแดงยังอยู่ เรื่องค้างดูในแท็บ ใบขอให้หา → รอฉันทำ)
+// หน้าคนช่วยหา (FinderHome) ยังมีรายการ "รอคุณทำ" เรื่องละการ์ด เพราะเป็นงานหลักของเขา
 // ข้อมูลใบขอให้หามาจากหน้าแม่ชุดเดียว (tasks) — หน้านี้โหลดเองแค่ "งานที่กำลังทำ" 5 ใบ
 // คนช่วยหาที่ไม่มีแบรนด์ (finderOnly) ได้หน้า "งานหาคนของฉัน" แทน
 const USES_KEY = 'talent.startUses';
@@ -32,8 +33,6 @@ export default function HomeTab(props) {
 // ===================== ทีมแบรนด์ =====================
 function BrandHome({ tasks, loading, error, brands = [], rates, onOpen, onOpenRequest, onStart, onAskRate, onGoTab, jobsVersion }) {
     const rows = (tasks && tasks.rows) || [];
-    const cards = useMemo(() => todoCards(rows), [rows]);
-    const [flash, say] = useFlash();
     // ใบที่ทีมต้องทำแต่ไม่ได้นับเป็นตาเรา — คนในแบรนด์ช่วยกดแทนได้ (เลขแดงไม่นับ ตั้งใจให้นับแค่ของเรา)
     const helpRows = rows.filter(teamCanHelp);
     const otherRows = rows.filter(r => r.in_brand && !r.my_todo && !teamCanHelp(r)
@@ -45,25 +44,7 @@ function BrandHome({ tasks, loading, error, brands = [], rates, onOpen, onOpenRe
 
             {error && <div className="alert-error">{error}</div>}
 
-            {!tasks ? (
-                loading ? <div className="th-section th-loading">กำลังโหลด...</div> : null
-            ) : cards.length > 0 ? (
-                <TodoSection cards={cards} onOpen={onOpen} flash={flash} say={say} />
-            ) : (
-                <div className="th-section th-empty">
-                    <Flash flash={flash} />
-                    <div className="th-empty-title">ไม่มีอะไรรอคุณตอนนี้</div>
-                    <p>จะเริ่มจ้างคนใหม่ก็เลือกได้เลย</p>
-                    <div className="th-empty-actions">
-                        <button type="button" className="btn-primary" onClick={() => onStart('direct')}>
-                            <Icon name="plus" size={16} /> มีคนแล้ว บันทึกการจ้าง
-                        </button>
-                        <button type="button" className="btn-ghost th-casting-btn" onClick={() => onStart('casting')}>
-                            <Icon name="search" size={16} /> ขอให้ช่วยหาคน
-                        </button>
-                    </div>
-                </div>
-            )}
+            {!tasks && loading && <div className="th-section th-loading">กำลังโหลด...</div>}
 
             {tasks && helpRows.length > 0 && (
                 <Fold title="รอทีมแบรนด์ คุณช่วยได้" count={helpRows.length} tone="amber"
@@ -110,7 +91,7 @@ function StartCards({ onStart, onAskRate, onGoTab }) {
     const use = it => { bumpUses(); it.go(); };
     const again = (
         <button type="button" className="th-link th-again" onClick={() => onGoTab('people')}>
-            จ้างคนเดิมซ้ำ? ดูคนที่เคยจ้าง →
+            จ้างคนเดิมซ้ำ? ดูคอมการ์ดใน Talent Book →
         </button>
     );
     if (compact) {
@@ -360,7 +341,7 @@ function RowLine({ row, onOpen, nudge = false }) {
     );
 }
 
-// ===== สรุปถามราคา =====
+// ===== สรุปขอเรทราคา (แท็บ Talent Book / ขอเรทราคา) =====
 function RateSummary({ rates, onGoTab }) {
     if (!rates) return null;
     const now = Date.now();
@@ -375,7 +356,7 @@ function RateSummary({ rates, onGoTab }) {
     return (
         <section className="th-section th-rate-sum">
             <span className="th-rate-text">
-                ถามราคา: รอตอบ <b>{waiting}</b> · ได้ราคาแล้วใน 7 วัน <b>{recent}</b>
+                ขอเรทราคา: รอตอบ <b>{waiting}</b> · ได้ราคาแล้วใน 7 วัน <b>{recent}</b>
             </span>
             <button type="button" className="th-smallbtn" onClick={() => onGoTab('rates')}>ดู</button>
         </section>

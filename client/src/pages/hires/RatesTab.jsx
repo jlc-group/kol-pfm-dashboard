@@ -4,7 +4,7 @@ import Icon from '../../components/Icon.jsx';
 import RateCardForm from '../../components/RateCardForm.jsx';
 import RateAnswerModal from '../../components/RateAnswerModal.jsx';
 
-// "คนและราคา / ถามราคา" — คำขอราคา KOL / Presenter (ตาราง rate_requests ไม่ผูกกับงานจ้าง)
+// "Talent Book / ขอเรทราคา" — คำขอราคา KOL / Presenter (ตาราง rate_requests ไม่ผูกกับงานจ้าง)
 // เปิดคำขอได้จากปุ่มบนแท็บนี้ และการ์ด "ถามราคาก่อน" ในหน้าหลัก — ไม่อยู่ในฟอร์มงาน (เดิมทำให้เข้าใจผิดว่าเป็นส่วนหนึ่งของงาน)
 // onLoaded(list) = ส่งรายการล่าสุดกลับให้หน้าแม่ (เลขเหลืองบนแท็บ + สรุปในหน้าหลัก) · justSent = เพิ่งส่งคำถามจากหน้าหลัก
 const B = n => '฿' + (Number(n) || 0).toLocaleString('th-TH');

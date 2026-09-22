@@ -9,7 +9,8 @@ import RateCardForm from '../components/RateCardForm.jsx';
 import HomeTab from './hires/HomeTab.jsx';
 import JobsTab from './hires/JobsTab.jsx';
 import RequestsTab from './hires/RequestsTab.jsx';
-import PeopleRatesTab from './hires/PeopleRatesTab.jsx';
+import PeopleTab from './hires/PeopleTab.jsx';
+import RatesTab from './hires/RatesTab.jsx';
 import RequestDrawer from './hires/RequestDrawer.jsx';
 import { countsTip } from './hires/requestText.js';
 
@@ -17,17 +18,20 @@ import { countsTip } from './hires/requestText.js';
 //  • หน้าหลัก     = "รอคุณทำ" + ปุ่มเริ่ม 3 ทาง (เปิดเมนูมาเจอหน้านี้เสมอ ไม่เด้งแท็บตามข้อมูลแล้ว)
 //  • งานทั้งหมด   = รายการงาน (บ้านของ "งาน")
 //  • ใบขอให้หา    = ใบขอให้หาทุกใบข้ามงาน
-//  • คนและราคา    = คนที่เคยจ้าง | ถามราคา (สลับย่อย)
+//  • ขอเรทราคา    = แท็บของตัวเอง (?tab=rates) — ผู้ใช้ขอเอาตัวสลับย่อยใน Talent Book ออก · ลิงก์เก่าทั้งสองยังพามาถูกที่
+//  • Talent Book  = คอมการ์ดของทุกคนที่เคยเสนอ/จ้าง (?tab=people)
 // ข้อมูลใบขอให้หาโหลดที่นี่ที่เดียวแล้วส่งลงไป — เลขแดง หน้าหลัก ตาราง และลิ้นชักจะได้เห็นชุดเดียวกันเสมอ
 // ลิ้นชักของใบเปิดจาก ?open=<งาน>~<ใบ> ได้จากทุกแท็บ (ลิงก์ที่ส่ง LINE ไปแล้วยังเปิดได้)
 const TABS = [
     { key: 'home', label: 'หน้าหลัก' },
     { key: 'jobs', label: 'งานทั้งหมด' },
     { key: 'requests', label: T.request },
-    { key: 'people', label: 'คนและราคา' }
+    // ผู้ใช้ขอให้ "ขอเรทราคา" มาก่อน "Talent Book"
+    { key: 'rates', label: 'ขอเรทราคา' },
+    { key: 'people', label: 'Talent Book' }
 ];
-// ?tab= ของลิงก์เก่า → แท็บใหม่ (rates / people เป็นแท็บย่อยของ "คนและราคา")
-const tabOf = v => (v === 'jobs' || v === 'requests' ? v : v === 'people' || v === 'rates' ? 'people' : 'home');
+// ?tab= → แท็บ (ค่าที่ไม่รู้จัก = หน้าหลัก)
+const tabOf = v => (v === 'jobs' || v === 'requests' || v === 'people' || v === 'rates' ? v : 'home');
 const EMPTY_TASKS = { rows: [], counts: { total: 0 } };
 
 export default function OtherWork() {
@@ -40,7 +44,6 @@ export default function OtherWork() {
     const [params, setParams] = useSearchParams();
     const asked = params.get('tab');
     const tab = hasBrand ? tabOf(asked) : 'home';
-    const sub = asked === 'rates' ? 'rates' : 'people';
 
     // ===== ใบขอให้หา (ชุดเดียวทั้งหน้า) =====
     const [tasks, setTasks] = useState(null);
@@ -73,7 +76,7 @@ export default function OtherWork() {
     const counts = tasks ? tasks.counts || { total: 0 } : null;
     const rows = (tasks && tasks.rows) || [];
 
-    // ===== ถามราคา: เลขเหลือง + สรุปบนหน้าหลัก (เฉพาะคนที่มีแบรนด์ — คำขอราคากรองตามแบรนด์) =====
+    // ===== ขอเรทราคา: เลขเหลือง + สรุปบนหน้าหลัก (เฉพาะคนที่มีแบรนด์ — คำขอราคากรองตามแบรนด์) =====
     const [rates, setRates] = useState(null);
     useEffect(() => {
         if (!hasBrand) return undefined;
@@ -165,7 +168,7 @@ export default function OtherWork() {
         }
     }
     function onRateSaved() {
-        // ไปที่ "คนและราคา / ถามราคา" — แท็บย่อยโหลดรายการใหม่เองแล้วส่งกลับมาอัปเดตเลขเหลือง
+        // ไปที่แท็บ "ขอเรทราคา" — แท็บนั้นโหลดรายการใหม่เองแล้วส่งกลับมาอัปเดตเลขเหลือง
         setAsking(false);
         setParams({ tab: 'rates' });
         setRateSent(true);
@@ -216,8 +219,8 @@ export default function OtherWork() {
                             {t.key === 'home' && counts && counts.total > 0 && (
                                 <span className="agency-tab-count danger" title={homeTitle}>{counts.total}</span>
                             )}
-                            {t.key === 'people' && rateOpen > 0 && (
-                                <span className="agency-tab-count warn" title="ถามราคาที่ยังรอตอบ">{rateOpen}</span>
+                            {t.key === 'rates' && rateOpen > 0 && (
+                                <span className="agency-tab-count warn" title="ขอเรทราคาที่ยังรอตอบ">{rateOpen}</span>
                             )}
                         </button>
                     ))}
@@ -234,9 +237,10 @@ export default function OtherWork() {
             ) : tab === 'requests' ? (
                 <RequestsTab tasks={tasks} loading={tasksBusy && !tasks} error={tasksError} hasBrand={hasBrand}
                     onOpen={openRequest} onNewRequest={() => startForm('casting')} />
+            ) : tab === 'rates' ? (
+                <RatesTab onLoaded={list => setRates(list)} justSent={rateSent} />
             ) : (
-                <PeopleRatesTab sub={sub} onSub={s => pick(s)} rateOpen={rateOpen}
-                    onRatesLoaded={list => setRates(list)} rateSent={rateSent} />
+                <PeopleTab />
             )}
 
             {openRow && (
@@ -277,7 +281,7 @@ function HelpPanel({ onClose }) {
                 </div>
             </div>
             <p className="th-help-note">
-                บันทึกคนที่ยังไม่รู้ค่าตัวได้ (สถานะ "{T.talking}") — {NEED_FEE_MSG} · งานที่ต้องทำของคุณขึ้นที่ "หน้าหลัก" พร้อมเลขแดง
+                บันทึกคนที่ยังไม่รู้ค่าตัวได้ (สถานะ "{T.talking}") — {NEED_FEE_MSG} · งานที่ต้องทำของคุณดูได้ที่แท็บ "{T.request}" → รอฉันทำ (เลขแดงบอกว่ามีกี่เรื่อง)
             </p>
         </section>
     );

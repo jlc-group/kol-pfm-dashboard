@@ -1,20 +1,20 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
 import { api } from '../../api/client.js';
 import Icon from '../../components/Icon.jsx';
+import FilePreviewModal from '../../components/FilePreviewModal.jsx';
 import { useAuth } from '../../auth/AuthContext.jsx';
 import { visibleBrands } from '../../data/brands.js';
 import { T } from '../../data/talentLabels.js';
+import CompCard, { accountOf } from './CompCard.jsx';
 
-// "คนและราคา / คนที่เคยจ้าง" — รวมรายชื่อผู้รับงานจากงาน Talent ทุกงาน (อ่านอย่างเดียว ไว้ค้นประวัติคน/ค่าตัว)
+// แท็บ "Talent Book" — คอมการ์ดของทุกคนที่เคยเสนอหรือบันทึกให้แบรนด์ (อ่านอย่างเดียว ไว้เลือกคนเดิมซ้ำ ดูราคาเดิม)
+// ป้ายบนการ์ดบอกว่า Booked (มีงานที่ตกลงแล้ว) หรือ Casting (เคยเสนอ / ยังไม่ได้งาน) — ไม่มีปุ่มกรองสองกลุ่มนี้ (ผู้ใช้ขอเอาออก)
+// server รวมคนเดียวกัน (ชื่อ + ประเภทงาน) เป็นใบเดียวและกรองสิทธิ์แบรนด์แล้ว — หน้านี้กรองต่อในเครื่อง (ข้อมูลชุดเล็ก)
 // แยกจากหน้าอินฟลูเอนเซอร์ตั้งใจ — งานพวกนี้ไม่มียอดวิว/CPM ถ้าเอาไปปนกัน ค่าเฉลี่ยของหน้านั้นจะเพี้ยน
-// server รวมรายชื่อให้แล้ว (1 แถว = 1 คน) · ชื่อที่คนช่วยหาส่งมาแต่ทีมยังไม่ได้เลือกไม่อยู่ที่นี่
-const B = n => '฿' + (Number(n) || 0).toLocaleString('th-TH');
-const fmtD = d => {
-    if (!d) return '—';
-    const [y, m, dd] = String(d).split('-');
-    return `${Number(dd)}/${Number(m)}/${String(y).slice(2)}`;
-};
+// โชว์ทีละ 24 ใบ (12 แถวบนจอกว้าง) แล้วกดดูเพิ่ม — รูปทุกใบโหลดเป็น blob ในหน่วยความจำ ไม่ให้เปิดหน้ามาแล้วค้างทั้งร้อยใบ
+const PAGE = 24;
+const NONE = [];
+const low = v => String(v == null ? '' : v).toLowerCase();
 
 export default function PeopleTab() {
     const { user } = useAuth();
@@ -24,34 +24,51 @@ export default function PeopleTab() {
     const [search, setSearch] = useState('');
     const [kind, setKind] = useState('');
     const [brand, setBrand] = useState('');
+    const [limit, setLimit] = useState(PAGE);
+    const [preview, setPreview] = useState(null);   // { path, title, kind } ของไฟล์ที่กดดู
 
     useEffect(() => {
-        api('/hires').then(res => setData(res.data)).catch(err => setError(err.message));
+        let on = true;
+        api('/hires/book')
+            .then(res => { if (on) setData(res.data || {}); })
+            .catch(err => { if (on) setError(err.message || 'โหลดคอมการ์ดไม่สำเร็จ'); });
+        return () => { on = false; };
     }, []);
 
-    const rows = data?.rows || [];
-    const kinds = data?.kinds || [];
-    // กรองในหน้าเว็บ (ข้อมูลชุดเล็ก) — server กรองสิทธิ์แบรนด์ให้แล้วชั้นหนึ่ง
-    const shown = useMemo(() => {
-        const q = search.trim().toLowerCase();
-        return rows.filter(r =>
-            (!kind || r.kind === kind)
-            && (!brand || (r.brands || []).includes(brand))
-            && (!q || [r.name, r.kind, r.agency, r.contact, ...(r.campaigns || []).map(c => c.name), ...(r.brands || [])]
-                .some(v => String(v == null ? '' : v).toLowerCase().includes(q))));
-    }, [rows, search, kind, brand]);
+    const cards = Array.isArray(data && data.cards) ? data.cards : NONE;
+    const kinds = useMemo(() => (Array.isArray(data && data.kinds) && data.kinds.length
+        ? data.kinds
+        : [...new Set(cards.map(c => c.kind).filter(Boolean))].sort()), [data, cards]);
+    // ข้อความที่ค้นได้ของแต่ละใบ — ชื่อ / สังกัด / Account / เบอร์-LINE / ผู้ติดต่อ / เสนอโดย / ชื่องาน
+    const hay = useMemo(() => new Map(cards.map(c => [c, [
+        // ชื่อบัญชีแบบที่การ์ดโชว์ (เช่น "IG @baitoey") — ลิงก์ IG / Facebook / X ไม่มี @ ในตัว พิมพ์ตามที่เห็นบนการ์ดต้องเจอ
+        c.name, c.agency, c.link, (accountOf(c.link) || {}).label, c.contact,
+        ...(c.team_contacts || []), ...(c.proposed_by || []), ...(c.projects || []).map(p => p && p.name)
+    ].map(low).join('\n')])), [cards]);
 
-    const jobs = shown.reduce((n, r) => n + (Number(r.jobs) || 0), 0);
-    const totalFee = shown.reduce((n, r) => n + (Number(r.total_fee) || 0), 0);
-    const brandOptions = BRANDS.filter(b => rows.some(r => (r.brands || []).includes(b)));
+    const q = search.trim().toLowerCase();
+    // skip = ตัวกรองที่ไม่ต้องใช้ตอนนับ — ตัวเลขบนชิปแต่ละชุดนับตามตัวกรองอื่นที่เลือกอยู่ กดแล้วจะเห็นเท่าตัวเลขพอดี
+    const fits = (c, skip) =>
+        (!kind || c.kind === kind)
+        && (skip === 'brand' || !brand || (c.brands || []).includes(brand))
+        && (!q || hay.get(c).includes(q));
+    const shown = cards.filter(c => fits(c));
+    const brandCount = b => cards.filter(c => fits(c, 'brand') && (!b || (c.brands || []).includes(b))).length;
+    const brandOptions = BRANDS.filter(b => cards.some(c => (c.brands || []).includes(b)));
+
+    // เปลี่ยนตัวกรอง → กลับไปเริ่มหน้าแรก (ไม่งั้นผลใหม่เปิดมาเต็มจำนวนที่กดดูเพิ่มไว้ รูปโหลดพรวดเดียว)
+    useEffect(() => { setLimit(PAGE); }, [kind, brand, q]);
+    const filtered = !!(kind || brand || q);
+    const clearAll = () => { setKind(''); setBrand(''); setSearch(''); };
+    const rest = shown.length - limit;
 
     return (
         <div className="hub-tab">
-            <div className="hub-toolbar">
+            <div className="hub-toolbar tb-toolbar">
                 <div className="ka-search">
                     <Icon name="search" size={15} />
-                    <input value={search} onChange={e => setSearch(e.target.value)}
-                        placeholder="ค้นหาชื่อ / สังกัด / เบอร์/LINE / งาน..." />
+                    <input value={search} onChange={e => setSearch(e.target.value)} aria-label="ค้นหาคอมการ์ด"
+                        placeholder={`ค้นหาชื่อ / สังกัด / Account / ${T.contact} / ผู้ติดต่อ / เสนอโดย / งาน...`} />
                     {search && (
                         <button type="button" className="ka-search-x" onClick={() => setSearch('')} title="ล้างคำค้นหา">✕</button>
                     )}
@@ -62,87 +79,59 @@ export default function PeopleTab() {
                 </select>
             </div>
 
-            {error && <div className="alert-error">{error}</div>}
-
-            <div className="ka-summary">
-                <div className="ka-sum-card">
-                    <div className="ka-sum-ico"><Icon name="team" size={22} /></div>
-                    <div>
-                        <div className="ka-sum-k">ผู้รับงานทั้งหมด</div>
-                        <div className="ka-sum-v">{data ? shown.length : '—'}</div>
-                    </div>
-                </div>
-                <div className="ka-sum-card">
-                    <div className="ka-sum-ico blue"><Icon name="folder" size={22} /></div>
-                    <div>
-                        <div className="ka-sum-k">จำนวนครั้งที่จ้าง</div>
-                        <div className="ka-sum-v">{data ? jobs : '—'}</div>
-                    </div>
-                </div>
-                <div className="ka-sum-card">
-                    <div className="ka-sum-ico amber"><Icon name="coins" size={22} /></div>
-                    <div>
-                        <div className="ka-sum-k">ค่าตัวรวม</div>
-                        <div className="ka-sum-v">{data ? B(totalFee) : '—'}</div>
-                    </div>
-                </div>
-            </div>
-
             {brandOptions.length > 0 && (
                 <div className="brand-filter">
                     <span className="brand-filter-label">Brand:</span>
                     <button type="button" className={'brand-chip' + (brand === '' ? ' active' : '')} onClick={() => setBrand('')}>
-                        ทุกแบรนด์ ({rows.length})
+                        ทุกแบรนด์ ({brandCount('')})
                     </button>
                     {brandOptions.map(b => (
                         <button type="button" key={b} className={'brand-chip' + (brand === b ? ' active' : '')} onClick={() => setBrand(b)}>
-                            {b} ({rows.filter(r => (r.brands || []).includes(b)).length})
+                            {b} ({brandCount(b)})
                         </button>
                     ))}
                 </div>
             )}
 
-            <div className="panel no-pad">
-                <div className="ka-table-scroll">
-                    <table className="data-table hires-table">
-                        <thead>
-                            <tr>
-                                <th>ชื่อผู้รับงาน</th><th>ประเภทงาน</th><th>สังกัด</th><th>{T.contact}</th>
-                                <th className="num">จำนวนงาน</th><th className="num">ค่าตัวล่าสุด</th><th className="num">ค่าตัวเฉลี่ย</th>
-                                <th>งานล่าสุด</th><th>แบรนด์</th><th>งาน</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {!data ? (
-                                <tr><td colSpan="10" className="empty">กำลังโหลด...</td></tr>
-                            ) : shown.length === 0 ? (
-                                <tr><td colSpan="10" className="empty">
-                                    {rows.length === 0
-                                        ? `ยังไม่มีคนที่เคยจ้าง — คนที่บันทึกไว้ในงาน และคนที่ทีมเลือกจาก${T.request} จะขึ้นที่นี่`
-                                        : 'ไม่พบผู้รับงานตามเงื่อนไขที่เลือก'}
-                                </td></tr>
-                            ) : shown.map(r => (
-                                <tr key={r.key}>
-                                    <td><strong>{r.name}</strong></td>
-                                    <td>{r.kind ? <span className="proc-ctype-chip">{r.kind}</span> : <span className="muted">—</span>}</td>
-                                    <td className="muted">{r.agency || '—'}</td>
-                                    <td className="muted">{r.contact || '—'}</td>
-                                    <td className="num">{r.jobs}</td>
-                                    <td className="num">{r.last_fee > 0 ? B(r.last_fee) : <span className="muted">ยังไม่ใส่ค่าตัว</span>}</td>
-                                    <td className="num muted">{r.avg_fee > 0 ? B(r.avg_fee) : '—'}</td>
-                                    <td className="muted">{fmtD(r.last_date)}</td>
-                                    <td>{(r.brands || []).map(b => <span className="tag" key={b}>{b}</span>)}</td>
-                                    <td className="muted">
-                                        {(r.campaigns || []).map(c => (
-                                            <Link className="act-project" key={c.id} to={`/projects/${c.id}`}>{c.name}</Link>
-                                        ))}
-                                    </td>
-                                </tr>
-                            ))}
-                        </tbody>
-                    </table>
+            {error && <div className="alert-error">{error}</div>}
+
+            {!data ? (
+                !error && <div className="panel tb-empty">กำลังโหลด...</div>
+            ) : shown.length === 0 ? (
+                <div className="panel tb-empty">
+                    {cards.length === 0 ? (
+                        <>
+                            <div className="tb-empty-title">ยังไม่มีคอมการ์ด</div>
+                            <p>คนที่บันทึกไว้ในงาน และชื่อที่{T.finder}เสนอมาใน{T.request} จะขึ้นที่นี่เองพร้อมรูปและราคา</p>
+                        </>
+                    ) : (
+                        <>
+                            <div className="tb-empty-title">ไม่พบคอมการ์ดตามเงื่อนไขที่เลือก</div>
+                            {filtered && <button type="button" className="btn-ghost" onClick={clearAll}>ล้างตัวกรอง</button>}
+                        </>
+                    )}
                 </div>
-            </div>
+            ) : (
+                <>
+                    <div className="tb-grid">
+                        {shown.slice(0, limit).map((c, i) => (
+                            <CompCard key={c.key || `${c.name}|${i}`} card={c} onPreview={setPreview} />
+                        ))}
+                    </div>
+                    {rest > 0 && (
+                        <div className="tb-more">
+                            <button type="button" className="btn-ghost" onClick={() => setLimit(n => n + PAGE)}>
+                                แสดงเพิ่มอีก {Math.min(PAGE, rest)} คน <span className="muted">(เหลือ {rest})</span>
+                            </button>
+                        </div>
+                    )}
+                </>
+            )}
+
+            {preview && (
+                <FilePreviewModal path={preview.path} title={preview.title} kind={preview.kind || 'auto'}
+                    onClose={() => setPreview(null)} />
+            )}
         </div>
     );
 }

@@ -23,6 +23,15 @@ router.get('/', async (req, res, next) => {
     } catch (err) { next(err); }
 });
 
+// GET /api/hires/book — Talent Book: คอมการ์ดทุกคนที่เคยเสนอ/บันทึกไว้ให้แบรนด์ (Booked / Casting) เห็นเฉพาะแบรนด์ที่ตัวเองมีสิทธิ์
+// ชื่อที่เสนอในใบขอให้หาก็ตามสิทธิ์แบรนด์ — คนช่วยหาที่ถูกมอบใบข้ามแบรนด์ ไม่ได้เห็นรายชื่อย้อนหลังทั้งแบรนด์ไปด้วย
+// ไม่มีตัวกรองฝั่ง server: ส่งทั้งชุดไปให้หน้าเว็บกรอง/ค้นเอง (ตัวเลขบนชิป ทั้งหมด/Booked/Casting ต้องนับจากชุดเต็ม)
+router.get('/book', async (req, res, next) => {
+    try {
+        const data = await store.hires.book({ scopeBrands: allowedBrands(req.account || req.user) });
+        res.json({ status: 'success', data });
+    } catch (err) { next(err); }
+});
 
 // GET /api/hires/jobs — รายการงานจ้างอื่น ๆ รายงาน (เห็นเฉพาะแบรนด์ที่ตัวเองมีสิทธิ์)
 router.get('/jobs', async (req, res, next) => {

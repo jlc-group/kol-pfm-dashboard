@@ -126,11 +126,12 @@ test('hires list groups people across Other campaigns and respects brand scope',
     const all = await hires.list({});
     const by = name => all.rows.find(r => r.name === name && r.kind === 'นางแบบ');
     // มะลิ ถูกจ้าง 2 ครั้งแต่คนละประเภทงาน = คนละแถว (นางแบบ / Live สด)
+    // กุหลาบ ยังทาบทาม (กำลังคุย) = ยังไม่คอนเฟิร์ม → ไม่ขึ้นในรายชื่อคนที่เคยจ้าง
     assert.deepEqual(all.rows.map(r => `${r.name}·${r.kind}`).sort(),
-        ['กุหลาบ·นางแบบ', 'ต้นกล้า·นักแสดง', 'มะลิ·Live สด', 'มะลิ·นางแบบ'].sort());
-    assert.equal(all.summary.people, 4);
-    assert.equal(all.summary.jobs, 4);          // แถวที่ยังไม่ใส่ชื่อไม่ถูกนับ
-    assert.equal(all.summary.total_fee, 44000);
+        ['ต้นกล้า·นักแสดง', 'มะลิ·Live สด', 'มะลิ·นางแบบ'].sort());
+    assert.equal(all.summary.people, 3);
+    assert.equal(all.summary.jobs, 3);          // แถวที่ยังไม่ใส่ชื่อ / ยังไม่คอนเฟิร์ม ไม่ถูกนับ
+    assert.equal(all.summary.total_fee, 32000);
     assert.equal(all.summary.projects, 2);
     assert.deepEqual(by('มะลิ').campaigns, [{ id: 72, name: 'ถ่ายแบบ Sep' }]);
     assert.equal(by('มะลิ').last_fee, 15000);
@@ -142,16 +143,16 @@ test('hires list groups people across Other campaigns and respects brand scope',
     // สิทธิ์แบรนด์: เห็นเฉพาะ Jdent → ไม่เห็นคนของ Code Lab
     const scoped = await hires.list({ scopeBrands: ['Jdent'] });
     assert.ok(!scoped.rows.some(r => r.name === 'ต้นกล้า'));
-    assert.equal(scoped.summary.people, 3);
+    assert.equal(scoped.summary.people, 2);
 });
 
 test('casting requests are counted as people to find but never as a hired person', async () => {
     // ใบขอจัดหายังไม่มีชื่อคน → ต้องไม่โผล่ในหน้า "งานจ้างอื่น ๆ" และไม่ถูกนับเป็นครั้งที่จ้าง
     const all = await hires.list({});
     assert.deepEqual(all.rows.filter(r => r.kind === 'นักแสดง').map(r => r.name), ['ต้นกล้า']);
-    assert.equal(all.summary.people, 4);
-    assert.equal(all.summary.jobs, 4);
-    assert.equal(all.summary.total_fee, 44000);   // งบใบขอจัดหาไม่ปนเข้ามาในค่าตัวที่จ่ายจริง
+    assert.equal(all.summary.people, 3);
+    assert.equal(all.summary.jobs, 3);
+    assert.equal(all.summary.total_fee, 32000);   // งบใบขอจัดหาไม่ปนเข้ามาในค่าตัวที่จ่ายจริง
     // แต่ในภาพรวมของ Dashboard ต้องเห็นว่ามีคนรออีก 3 คน
     const d = await dashboard.overview({ scopeBrands: ['Jdent'] });
     assert.equal(d.other_hires, 7);
@@ -654,7 +655,7 @@ test('payment view splits an Other job budget into agreed, pending and not yet f
 test('hires list filters by kind, brand, search and date range', async () => {
     assert.deepEqual((await hires.list({ kind: 'Live สด' })).rows.map(r => r.name), ['มะลิ']);
     assert.deepEqual((await hires.list({ brand: 'Code Lab' })).rows.map(r => r.name), ['ต้นกล้า']);
-    assert.deepEqual((await hires.list({ search: 'model co' })).rows.map(r => r.name).sort(), ['กุหลาบ', 'มะลิ']);
+    assert.deepEqual((await hires.list({ search: 'model co' })).rows.map(r => r.name).sort(), ['มะลิ']);   // กุหลาบ ยังไม่คอนเฟิร์ม
     // ช่วงวัน: เอาเฉพาะงานวันที่ 20 ขึ้นไป — เหลือ Live สด ของมะลิ
     const late = await hires.list({ from: '2026-09-15' });
     assert.deepEqual(late.rows.map(r => `${r.name}·${r.kind}`), ['มะลิ·Live สด']);
@@ -679,14 +680,53 @@ test('people saved before the fee is agreed do not count as a ฿0 fee in the hi
     try {
         const rows = (await hires.list({})).rows;
         const mind = rows.find(r => r.name === 'มายด์');
-        assert.equal(mind.jobs, 2);                 // ยังนับว่าเคยจ้าง 2 งาน
+        // งานที่ยังคุยราคา (ทาบทาม ฿0) ยังไม่คอนเฟิร์ม → ไม่นับเป็นครั้งที่จ้าง และไม่ดึงค่าตัว/วันล่าสุด
+        assert.equal(mind.jobs, 1);
         assert.equal(mind.last_fee, 8000);          // ค่าตัวล่าสุดที่ใส่จริง ไม่ใช่ ฿0
-        assert.equal(mind.avg_fee, 8000);           // เฉลี่ยจากงานที่มีค่าตัวเท่านั้น
-        assert.equal(mind.last_date, '2026-10-01'); // วันล่าสุดยังเป็นงานล่าสุดจริง
-        const jay = rows.find(r => r.name === 'เจ');
-        assert.equal(jay.last_fee, 0);
-        assert.equal(jay.avg_fee, 0);
-        assert.equal(jay.fee_jobs, 0);
+        assert.equal(mind.avg_fee, 8000);
+        assert.equal(mind.last_date, '2026-09-01');
+        assert.equal(rows.find(r => r.name === 'เจ'), undefined);   // มีแต่งานที่ยังคุยอยู่ = ยังไม่ใช่คนที่เคยจ้าง
+    } finally {
+        FIXTURE.other_projects = saved;
+    }
+});
+
+test('hired-before list shows only confirmed people, plus who on the team handles them (ผู้ติดต่อ)', async () => {
+    const saved = FIXTURE.other_projects;
+    FIXTURE.other_projects = [
+        { id: 96, name: 'งาน ข', brand: 'Jdent', status: 'Active', campaign_type: 'other', creator: '  Miw ', owner: null, start_date: null, end_date: null,
+          hire_items: [
+            { key: 'b1', mode: 'direct', kind: 'นางแบบ', name: 'แอน', fee: 5000, status: 'ตกลงแล้ว', use_date: '2026-09-01' },
+            { key: 'b2', mode: 'direct', kind: 'นางแบบ', name: 'บี', fee: 5000, status: 'ถ่ายเสร็จ', use_date: '2026-09-02' },
+            { key: 'b3', mode: 'direct', kind: 'นางแบบ', name: 'ซี', fee: 5000, status: 'ส่งงานแล้ว', use_date: '2026-09-03' },
+            { key: 'b4', mode: 'direct', kind: 'นางแบบ', name: 'ดี', fee: 5000, status: 'ทาบทาม', use_date: '2026-09-04' },
+            // ทีมเลือกจากใบขอให้หาแล้ว แต่ยังรอคนช่วยหายืนยันคิว / ค่าตัวใหม่รอทีมตัดสิน = ยังไม่คอนเฟิร์ม
+            { key: 'b5', mode: 'direct', kind: 'นางแบบ', name: 'อี', fee: 5000, status: 'ตกลงแล้ว', from_request: 'r1', booking: { state: 'pending' }, use_date: '2026-09-05' },
+            { key: 'b6', mode: 'direct', kind: 'นางแบบ', name: 'เอฟ', fee: 5000, status: 'ตกลงแล้ว', from_request: 'r1', booking: { state: 'fee_review' }, use_date: '2026-09-06' },
+            // ยืนยันคิวแล้ว = คอนเฟิร์ม
+            { key: 'b7', mode: 'direct', kind: 'นางแบบ', name: 'จี', fee: 5000, status: 'ตกลงแล้ว', from_request: 'r1', booking: { state: 'confirmed' }, use_date: '2026-09-07' }
+          ] },
+        // งานเก่าเก็บชื่อคนดูแลไว้ที่ owner
+        { id: 97, name: 'งานเก่า', brand: 'Jdent', status: 'Completed', campaign_type: 'other', creator: null, owner: 'สมชาย', start_date: null, end_date: null,
+          hire_items: [{ key: 'c1', mode: 'direct', kind: 'นางแบบ', name: 'แอน', fee: 6000, status: 'ส่งงานแล้ว', use_date: '2026-08-01' }] },
+        { id: 98, name: 'งานไม่มีผู้ติดต่อ', brand: 'Jdent', status: 'Active', campaign_type: 'other', creator: '', owner: null, start_date: null, end_date: null,
+          hire_items: [{ key: 'd1', mode: 'direct', kind: 'พิธีกร', name: 'เอช', fee: 3000, status: 'ตกลงแล้ว', use_date: '2026-09-09' }] }
+    ];
+    try {
+        const all = await hires.list({});
+        assert.deepEqual(all.rows.map(r => r.name).sort(), ['จี', 'ซี', 'บี', 'แอน', 'เอช'].sort());
+        assert.equal(all.summary.people, 5);
+        assert.equal(all.summary.jobs, 6);
+        assert.equal(all.summary.total_fee, 29000);
+        const ann = all.rows.find(r => r.name === 'แอน');
+        assert.equal(ann.jobs, 2);
+        assert.deepEqual(ann.team_contacts, ['Miw', 'สมชาย']);          // ตัดช่องว่าง · ไม่ซ้ำ · งานเก่าใช้ owner
+        assert.deepEqual(all.rows.find(r => r.name === 'เอช').team_contacts, []);
+        assert.equal(all.rows.find(r => r.name === 'เอช').contact, null); // contact ยังเป็นเบอร์/LINE ของผู้รับงาน ไม่ปนกับผู้ติดต่อ
+        // ค้นด้วยชื่อผู้ติดต่อได้
+        assert.deepEqual((await hires.list({ search: 'สมชาย' })).rows.map(r => r.name), ['แอน']);
+        // ตัวเลือกประเภทงานมาจากคนที่คอนเฟิร์มแล้วเท่านั้น
+        assert.deepEqual(all.kinds, ['นางแบบ', 'พิธีกร']);
     } finally {
         FIXTURE.other_projects = saved;
     }
