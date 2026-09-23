@@ -1217,6 +1217,8 @@ a { text-decoration: none; color: inherit; }
    เดิมกล่องนี้ไม่มีสไตล์เลย หัวข้อกับปุ่มจึงซ้อนกันเป็นบรรทัด ๆ */
 .ads-tbl-bar { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin-bottom: 14px; }
 .ads-tbl-bar h3 { margin-bottom: 0; }
+.ads-jump-btn { border: 1px solid var(--mint); border-radius: 999px; padding: 5px 10px; background: #ecfdf5; color: var(--mint-dark); font-size: 12px; font-weight: 700; cursor: pointer; }
+.ads-jump-btn:focus-visible { outline: 2px solid var(--mint-dark); outline-offset: 2px; }
 /* ตัวเลือกย่อขนาดตาราง — ชิดขวาสุด ตั้งใจให้เล็กเท่าปุ่มล้างตัวกรอง เป็นแค่ตัวช่วยดู ไม่ใช่ตัวกรองข้อมูล
    ตัวย่อจริงเป็น CSS zoom ที่ .ads-tbl (ตั้งใน Ads.jsx) ไม่ได้ตั้งที่นี่ เพราะค่าเปลี่ยนตามที่ผู้ใช้เลือก */
 .ads-zoom { display: inline-flex; align-items: center; gap: 4px; margin-inline-start: auto; }
@@ -1292,6 +1294,7 @@ a { text-decoration: none; color: inherit; }
 @media (max-width: 900px) { .ads-tbl-headwrap { top: 68px; } }
 @media (max-width: 600px) { .ads-tbl-headwrap { top: 62px; } }
 .ads-row { background: #fafdfb; border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px; margin-bottom: 10px; }
+.ads-row:first-child { scroll-margin-top: 130px; }
 .late-chip { display: inline-block; padding: 3px 9px; border-radius: 999px; font-size: 11.5px; font-weight: 700; white-space: nowrap; }
 .late-chip.ontime { background: #e7f7ef; color: var(--mint-dark); }
 .late-chip.warn { background: #fff4e0; color: #b7791f; }

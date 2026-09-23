@@ -82,10 +82,36 @@ const app = require('../server/src/app');
         await page.locator('.modal').waitFor({ state: 'visible' });
         await page.getByRole('button', { name: 'ยกเลิก' }).click();
 
+        // Ads data and its rows must remain visible even when paid Reach is unavailable.
+        store.ads.list = async () => ({
+            summary: { total_posts: 1, done_count: 1, pending_count: 0,
+                total_spend: 1234.56, total_reach: 0, cpm: 0, by_brand: [] },
+            rows: [{ sub_id: 17, account_name: 'Fixture KOL', platform: 'TikTok',
+                brand: 'Beauterry', project_name: 'Fixture campaign',
+                post_url: 'https://example.invalid/post', ad_status: 'ยังไม่ยิง',
+                ad_status_shown: 'ยิงแล้ว', ad_spend: 1234.56, ad_reach: 0,
+                spend_from_pfm: true }]
+        });
+        await page.setViewportSize({ width: 1200, height: 711 });
+        await page.goto(base + '/ads');
+        await page.locator('.ads-row').first().waitFor();
+        assert.equal(await page.locator('.ads-row').count(), 1);
+        assert.match(await page.locator('.summary-grid').innerText(), /ค่าแอดสะสม ฿1,234\.56/);
+        assert.match(await page.locator('.summary-grid').innerText(), /PFM ยังไม่ส่ง Reach/);
+        assert.match(await page.locator('.summary-grid').innerText(), /PFM ยังไม่ส่ง Engagement/);
+        assert.doesNotMatch(await page.locator('.summary-grid').innerText(), /฿0/);
+        await page.getByRole('button', { name: '↓ ดูรายการ' }).click();
+        await page.waitForFunction(() => {
+            const row = document.querySelector('.ads-row');
+            return row && row.getBoundingClientRect().top >= 0
+                && row.getBoundingClientRect().top < window.innerHeight;
+        });
+        await page.setViewportSize({ width: 390, height: 844 });
+
         await page.goto(base + '/');
         await menuButton.click();
         await page.locator('#primary-sidebar').waitFor({ state: 'visible' });
-        await page.getByRole('button', { name: 'ออกจากระบบ' }).click();
+        await page.getByRole('button', { name: 'Log out' }).click();
         await page.waitForURL('**/login');
         assert.deepEqual(errors, []);
         console.log('Browser smoke passed: deep link, registration, login states, responsive drawer, logout, mobile width; no JS errors.');

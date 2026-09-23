@@ -426,7 +426,10 @@ export default function Ads() {
     // กรอบตารางจริงที่อยู่บนหน้าตอนนี้ — เก็บเป็น state ด้วย (ไม่ใช่แค่ ref) เพราะตารางโผล่ทีหลังตอนโหลดข้อมูลเสร็จ
     // และหายไปตอนกรองแล้วไม่เหลือแถว · effect "พอดีจอ" ต้องผูกตัวใหม่ทุกครั้ง ไม่งั้นค่าที่จำไว้จะไม่ทำงานเลยตอนเปิดหน้า
     const [tblBox, setTblBox] = useState(null);
-    const holdBody = el => { bodyRef.current = el; setTblBox(el); };
+    const holdBody = useCallback(el => {
+        bodyRef.current = el;
+        setTblBox(current => current === el ? current : el);
+    }, []);
     const pct = zoom === ZOOM_FIT ? fitPct : zoom;
     const zoomStyle = pct === 100 ? undefined : { zoom: pct / 100 };
     const pickZoom = v => { setZoom(v); saveZoom(v); };
@@ -495,6 +498,13 @@ export default function Ads() {
     // กดเปลี่ยนเป็น "ยิงแล้ว" แถวต้องอยู่ที่เดิม เปลี่ยนแค่ป้ายสถานะ (เดิมเด้งลงไปท้ายตาราง ทีมหาแถวที่เพิ่งกดไม่เจอ)
     // อยากดูเฉพาะที่ยังไม่ยิง ใช้ปุ่มกรอง ▾ ที่หัวคอลัมน์สถานะแทน
     const rows = allRows.filter(r => matches(r));
+    const reachRows = allRows.filter(r => Number(r.ad_reach) > 0);
+    const paidRows = allRows.filter(r => Number(r.ad_spend) > 0);
+    const measuredRows = paidRows.filter(r => Number(r.ad_reach) > 0);
+    const measuredReach = measuredRows.reduce((sum, r) => sum + Number(r.ad_reach), 0);
+    const measuredSpend = measuredRows.reduce((sum, r) => sum + Number(r.ad_spend), 0);
+    const costPerThousandReach = measuredReach > 0 ? Math.round(measuredSpend / (measuredReach / 1000)) : null;
+    const canSeeSpend = s?.total_spend != null;
 
     const countIf = (skip, pred) => allRows.filter(r => matches(r, skip) && pred(r)).length;
     const platformOptions = [...new Set(allRows.map(r => r.platform).filter(Boolean))].sort();
@@ -573,21 +583,26 @@ export default function Ads() {
                     <div className="summary-value">{s ? `${s.done_count}/${s.total_posts}` : '—'}</div>
                     <div className="ads-progress"><span style={{ width: `${donePct}%` }} /></div>
                     <div className="summary-sub">{s ? `เหลือยังไม่ยิง ${s.pending_count} โพสต์ · ${donePct}%` : '—'}</div>
+                    {canSeeSpend && <div className="summary-sub">ค่าแอดสะสม {fmtMoney(s.total_spend)}</div>}
                 </div>
                 <div className="summary-card">
-                    <div className="summary-label">Reach / วิว รวม (จากแอด)</div>
-                    <div className="summary-value">{s ? fmtNum(s.total_reach) : '—'}</div>
-                    <div className="summary-sub">ยอดที่ได้จากการยิงแอด</div>
+                    <div className="summary-label">Reach จากแอด</div>
+                    <div className="summary-value">{Number(s?.total_reach) > 0 ? fmtNum(s.total_reach) : '—'}</div>
+                    <div className="summary-sub">{!s ? '—' : reachRows.length
+                        ? `มีข้อมูล ${reachRows.length}/${s.total_posts} โพสต์`
+                        : 'PFM ยังไม่ส่ง Reach แบบไม่ซ้ำ · กรอกในตารางได้'}</div>
                 </div>
                 <div className="summary-card">
-                    <div className="summary-label">CPM แอด (ต้นทุน/1,000 วิว)</div>
-                    <div className="summary-value">{s ? fmtMoney(s.cpm) : '—'}</div>
-                    <div className="summary-sub">ยิ่งต่ำยิ่งคุ้ม</div>
+                    <div className="summary-label">ต้นทุนต่อ 1,000 Reach ที่มีข้อมูล</div>
+                    <div className="summary-value">{canSeeSpend && costPerThousandReach !== null ? fmtMoney(costPerThousandReach) : '—'}</div>
+                    <div className="summary-sub">{!s ? '—' : !canSeeSpend ? 'เฉพาะผู้มีสิทธิ์ดูต้นทุน'
+                        : measuredRows.length ? `คำนวณจาก ${measuredRows.length}/${paidRows.length} โพสต์ที่มีค่าแอด`
+                            : 'รอ Reach ของโพสต์ที่มีค่าแอด'}</div>
                 </div>
                 <div className="summary-card">
                     <div className="summary-label">CPE แอด (ต้นทุน/1 engagement)</div>
-                    <div className="summary-value">{s ? fmtMoney(s.cpe || 0) : '—'}</div>
-                    <div className="summary-sub">ยิ่งต่ำยิ่งคุ้ม</div>
+                    <div className="summary-value">{canSeeSpend && s?.cpe != null ? fmtMoney(s.cpe) : '—'}</div>
+                    <div className="summary-sub">{!s ? '—' : !canSeeSpend ? 'เฉพาะผู้มีสิทธิ์ดูต้นทุน' : 'PFM ยังไม่ส่ง Engagement เฉพาะแอด'}</div>
                 </div>
             </div>
 
@@ -595,8 +610,15 @@ export default function Ads() {
             <div className="panel ads-tbl-panel">
                 <div className="dash-section-head ads-tbl-bar">
                     <h3>ติดตามการยิงแอดรายโพสต์ <span className="dash-section-sub">
-                        {hasFilter ? `แสดง ${rows.length} จาก ${allRows.length} โพสต์` : 'กดปุ่ม ▾ ที่หัวคอลัมน์เพื่อกรอง · กรอกข้อมูลแล้วคลิกออกจากช่องเพื่อบันทึก'}
+                        {data ? `แสดง ${rows.length} จาก ${allRows.length} โพสต์ · ` : ''}
+                        กดปุ่ม ▾ ที่หัวคอลัมน์เพื่อกรอง
                     </span></h3>
+                    {rows.length > 0 && (
+                        <button type="button" className="ads-jump-btn"
+                            onClick={() => bodyRef.current?.querySelector('.ads-row')?.scrollIntoView({ block: 'start', inline: 'nearest', behavior: 'auto' })}>
+                            ↓ ดูรายการ
+                        </button>
+                    )}
                     {hasFilter && (
                         <button type="button" className="btn-clearfilter" onClick={() => { setPlatform(''); setStatus(''); setLate(''); }}>
                             ✕ ล้างตัวกรอง
