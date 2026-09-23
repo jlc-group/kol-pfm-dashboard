@@ -1269,7 +1269,7 @@ a { text-decoration: none; color: inherit; }
 .colf-dot.warn { background: #e0a72c; }
 .colf-dot.bad { background: var(--danger); }
 .colf-dot.none { background: #c3cdc8; }
-.ads-tbl-head, .ads-row {
+.ads-tbl-head, .kol-track-entry {
     display: grid;
     /* KOL BRANDS PRODUCT CAMPAIGN TARGET CONTENT-TYPE FORMAT POST GENCODE ID-POST วันลงงาน วันยิงแอด สถานะ ค่าแอด/REACH ยิงช้า STAMPED LIVE หมายเหตุ */
     /* POST เป็นไอคอนอย่างเดียวจึงให้แคบสุด เพื่อเก็บพื้นที่ไว้ให้คอลัมน์ที่มีข้อความยาว */
@@ -1278,10 +1278,10 @@ a { text-decoration: none; color: inherit; }
 }
 .ads-note input { width: 100%; }
 .ads-spend { display: grid; gap: 4px; }
-.ads-row .ads-spend input { padding: 6px 8px; font-size: 12px; }
+.kol-track-entry .ads-spend input { padding: 6px 8px; font-size: 12px; }
 .ads-spend-pfm { font-size: 12px; font-weight: 700; white-space: nowrap; }
 .ads-spend-pfm em { font-style: normal; font-size: 9.5px; font-weight: 700; color: #6d28d9; background: #ede9fe; padding: 1px 5px; border-radius: 999px; margin-left: 2px; }
-/* ขอบซ้ายขวาของหัว = padding 12px + เส้นขอบ 1px ของแถว (.ads-row) — กว้างเนื้อในเท่ากัน คอลัมน์ fr จึงตรงกันทุกช่อง (เดิม 4px เยื้องสูงสุด ~9px) */
+/* ขอบซ้ายขวาของหัว = padding 12px + เส้นขอบ 1px ของแถว (.kol-track-entry) — กว้างเนื้อในเท่ากัน คอลัมน์ fr จึงตรงกันทุกช่อง (เดิม 4px เยื้องสูงสุด ~9px) */
 .ads-tbl-head { font-size: 10.5px; font-weight: 700; color: var(--muted); letter-spacing: .4px; padding: 0 13px 10px; }
 /* หัวตารางยิงแอดล็อกไว้บนจอตอนเลื่อนลง — เป็นกรอบแยกจากแถว (Ads.jsx ซิงก์การเลื่อนซ้ายขวาให้ตรงกัน)
    ซ่อนแถบเลื่อนของหัว ใช้แถบของตารางอันเดียว · จอแคบต้องต่อใต้แถบเมนูด้านบน (.mobile-topbar สูง 68px / จอ ≤600px สูง 62px) */
@@ -1293,17 +1293,17 @@ a { text-decoration: none; color: inherit; }
 .ads-tbl-headwrap::-webkit-scrollbar { display: none; }
 @media (max-width: 900px) { .ads-tbl-headwrap { top: 68px; } }
 @media (max-width: 600px) { .ads-tbl-headwrap { top: 62px; } }
-.ads-row { background: #fafdfb; border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px; margin-bottom: 10px; }
-.ads-row:first-child { scroll-margin-top: 130px; }
+.kol-track-entry { background: #fafdfb; border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px; margin-bottom: 10px; }
+.kol-track-entry:first-child { scroll-margin-top: 130px; }
 .late-chip { display: inline-block; padding: 3px 9px; border-radius: 999px; font-size: 11.5px; font-weight: 700; white-space: nowrap; }
 .late-chip.ontime { background: #e7f7ef; color: var(--mint-dark); }
 .late-chip.warn { background: #fff4e0; color: #b7791f; }
 .late-chip.bad { background: #fdecef; color: var(--danger); }
-.ads-row input {
+.kol-track-entry input {
     width: 100%; padding: 9px 10px; border: 1px solid var(--border); border-radius: 9px; background: #fff;
     font-size: 12.5px; color: var(--text);
 }
-.ads-row input:focus { outline: none; border-color: var(--mint); box-shadow: 0 0 0 3px rgba(16,185,129,.12); }
+.kol-track-entry input:focus { outline: none; border-color: var(--mint); box-shadow: 0 0 0 3px rgba(16,185,129,.12); }
 .ads-name { display: flex; align-items: center; gap: 9px; min-width: 0; }
 .ads-name-meta { display: flex; flex-direction: column; min-width: 0; }
 .ads-acc { font-weight: 700; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

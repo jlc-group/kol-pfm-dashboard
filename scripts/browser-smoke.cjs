@@ -84,25 +84,29 @@ const app = require('../server/src/app');
 
         // Ads data and its rows must remain visible even when paid Reach is unavailable.
         store.ads.list = async () => ({
-            summary: { total_posts: 1, done_count: 1, pending_count: 0,
+            summary: { total_posts: 93, done_count: 1, pending_count: 92,
                 total_spend: 1234.56, total_reach: 0, cpm: 0, by_brand: [] },
-            rows: [{ sub_id: 17, account_name: 'Fixture KOL', platform: 'TikTok',
+            rows: Array.from({ length: 93 }, (_, i) => ({ sub_id: 17 + i, account_name: `Fixture KOL ${i + 1}`, platform: 'TikTok',
                 brand: 'Beauterry', project_name: 'Fixture campaign',
                 post_url: 'https://example.invalid/post', ad_status: 'ยังไม่ยิง',
                 ad_status_shown: 'ยิงแล้ว', ad_spend: 1234.56, ad_reach: 0,
-                spend_from_pfm: true }]
+                spend_from_pfm: true }))
         });
         await page.setViewportSize({ width: 1200, height: 711 });
+        // Common ad blockers hide elements named ads-row. The data row must
+        // remain visible even when that browser-side cosmetic rule is present.
         await page.goto(base + '/ads');
-        await page.locator('.ads-row').first().waitFor();
-        assert.equal(await page.locator('.ads-row').count(), 1);
+        await page.locator('.kol-track-entry').first().waitFor({ state: 'visible' });
+        await page.addStyleTag({ content: '.ads-row { display: none !important; }' });
+        assert.equal(await page.locator('.kol-track-entry').count(), 93);
+        assert.ok(await page.locator('.kol-track-entry').first().evaluate(el => el.getBoundingClientRect().height > 0));
         assert.match(await page.locator('.summary-grid').innerText(), /ค่าแอดสะสม ฿1,234\.56/);
         assert.match(await page.locator('.summary-grid').innerText(), /PFM ยังไม่ส่ง Reach/);
         assert.match(await page.locator('.summary-grid').innerText(), /PFM ยังไม่ส่ง Engagement/);
         assert.doesNotMatch(await page.locator('.summary-grid').innerText(), /฿0/);
         await page.getByRole('button', { name: '↓ ดูรายการ' }).click();
         await page.waitForFunction(() => {
-            const row = document.querySelector('.ads-row');
+            const row = document.querySelector('.kol-track-entry');
             return row && row.getBoundingClientRect().top >= 0
                 && row.getBoundingClientRect().top < window.innerHeight;
         });

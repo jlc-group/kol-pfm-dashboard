@@ -270,7 +270,7 @@ function AdRow({ row, onSaved, canCost }) {
         : null;
 
     return (
-        <div className="ads-row">
+        <div className="kol-track-entry">
             <div className="ads-name">
                 <div className="ads-name-meta">
                     <span className="ads-acc">{row.account_name}</span>
@@ -615,7 +615,7 @@ export default function Ads() {
                     </span></h3>
                     {rows.length > 0 && (
                         <button type="button" className="ads-jump-btn"
-                            onClick={() => bodyRef.current?.querySelector('.ads-row')?.scrollIntoView({ block: 'start', inline: 'nearest', behavior: 'auto' })}>
+                            onClick={() => bodyRef.current?.querySelector('.kol-track-entry')?.scrollIntoView({ block: 'start', inline: 'nearest', behavior: 'auto' })}>
                             ↓ ดูรายการ
                         </button>
                     )}
