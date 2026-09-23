@@ -101,6 +101,16 @@ async function ensurePaymentRow(projectId, client) {
 // ช่องไฟล์ที่อนุญาตให้เขียน — กันชื่อคอลัมน์แปลกปลอมหลุดเข้า SQL
 const FILE_COLS = ['quotation', 'invoice'];
 
+// รหัสสินค้าของกลุ่มหนึ่ง — สินค้าตั้งรายบล็อก (Platform) ข้อมูลเก่าที่ยังไม่มีบล็อกค่อยถอยไปใช้ของกลุ่ม
+// (กติกาเดียวกับ productsFor / blocksProducts ฝั่งหน้าเว็บ)
+function groupProductCodes(g) {
+    const out = [];
+    const add = v => { const s = String(v == null ? '' : v).trim(); if (s && !out.includes(s)) out.push(s); };
+    (Array.isArray(g && g.blocks) ? g.blocks : []).forEach(b => (Array.isArray(b && b.products) ? b.products : []).forEach(add));
+    if (!out.length) (Array.isArray(g && g.products) ? g.products : []).forEach(add);
+    return out;
+}
+
 const payments = {
     // รวมทุก Project + ข้อมูลการจ่าย (admin เห็นทุกทีม)
     async listWithProjects() {
@@ -136,8 +146,11 @@ const payments = {
                     // กลุ่มในแคมเปญ + งบของกลุ่ม + เจ้าที่รับผิดชอบ (ไว้ตั้งแผนจ่ายแยกกลุ่ม)
                     ad_groups: (p.ad_groups || []).map(g => ({
                         key: g.key, concept: g.concept || null, budget: Number(g.budget) || 0,
-                        agencies: projectAgencies(p, g.key, snap.users)
+                        agencies: projectAgencies(p, g.key, snap.users),
+                        products: groupProductCodes(g)
                     })),
+                    // สินค้าทั้งแคมเปญ (รวมทุกกลุ่ม ไม่ซ้ำ) — หน้าทำจ่ายโชว์บนการ์ด · งานจ้างอื่น ๆ ไม่มีสินค้า
+                    products: other ? [] : [...new Set((p.ad_groups || []).flatMap(groupProductCodes))],
                     installments: its.map(i => decorateInstallment(i, snap.projects, snap.pay_batches)),
                     planned_amount: planAmt,
                     paid_amount: paidAmt,

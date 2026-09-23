@@ -26,6 +26,13 @@ const ADMIN_NAV = [
     { to: '/users', label: 'Users', icon: 'users' }
 ];
 
+// พับเมนูซ้ายให้เหลือแถบไอคอน — หน้าเนื้อหา (เช่นตารางหน้า Ads) จะได้กว้างขึ้น
+// จำค่าไว้ให้เปิดมาเหมือนเดิม · ที่เก็บข้อมูลอาจถูกปิด (โหมดส่วนตัว) ต้องกัน error เหมือน talent.startUses
+const RAIL_KEY = 'ui.navRail';
+const readRail = () => {
+    try { return window.localStorage.getItem(RAIL_KEY) === '1'; } catch { return false; }
+};
+
 export default function Layout() {
     const { user, logout, isAdmin } = useAuth();
     // หน้างานจ้างอื่น ๆ ใช้ URL /projects/:id ร่วมกับแคมเปญ KOL — หน้านั้นบอกมาเองว่าเป็นของเมนูไหน
@@ -45,6 +52,15 @@ export default function Layout() {
     const location = useLocation();
     const [showPw, setShowPw] = useState(false);
     const [navOpen, setNavOpen] = useState(false);
+    // โหมดแถบไอคอน — มีผลเฉพาะจอกว้าง (CSS คุมไว้ใน @media min-width 901px) จอแคบยังเป็นลิ้นชักเหมือนเดิม
+    const [rail, setRail] = useState(readRail);
+    function toggleRail() {
+        setRail(v => {
+            const next = !v;
+            try { window.localStorage.setItem(RAIL_KEY, next ? '1' : '0'); } catch { /* ที่เก็บข้อมูลถูกปิด — ไม่เป็นไร */ }
+            return next;
+        });
+    }
     // จำนวนคนที่สมัครแล้วรออนุมัติ — ไม่มีอีเมลแจ้ง admin ต้องเห็นจากตัวเลขบนเมนู
     const [pendingCount, setPendingCount] = useState(0);
     useEffect(() => {
@@ -101,6 +117,9 @@ export default function Layout() {
         navigate('/login');
     }
 
+    // เลขแดงของเมนู — ตอนพับต้องเอาไปต่อท้ายชื่อใน aria-label ด้วย (เห็นด้วยตา แต่โปรแกรมอ่านหน้าจอไม่เห็นถ้าไม่ใส่)
+    const navCount = to => (to === '/users' ? pendingCount : to === '/hires' ? taskCount : 0);
+
     function renderItem(item) {
         return (
             <NavLink
@@ -108,6 +127,10 @@ export default function Layout() {
                 to={item.to}
                 end={item.end}
                 onClick={() => setNavOpen(false)}
+                // พับอยู่จะเห็นแค่ไอคอน — ต้องบอกชื่อเมนูให้ทั้งเมาส์ (title) และโปรแกรมอ่านหน้าจอ (aria-label)
+                // พับอยู่ = เห็นแค่ไอคอน ชื่อเมนูจึงต้องอยู่ใน aria-label · เลขแดงต้องไปกับชื่อด้วย ไม่งั้นคนใช้โปรแกรมอ่านหน้าจอไม่รู้ว่ามีของค้าง
+                title={rail ? item.label : undefined}
+                aria-label={rail ? item.label + (navCount(item.to) ? ` (${navCount(item.to)})` : '') : undefined}
                 className={({ isActive }) => {
                     const on = item.to === '/projects' ? (isActive && navSection !== 'hires')
                         : item.to === '/hires' ? (isActive || navSection === 'hires')
@@ -116,7 +139,7 @@ export default function Layout() {
                 }}
             >
                 <Icon name={item.icon} size={19} />
-                {item.label}
+                <span className="nav-label">{item.label}</span>
                 {item.to === '/users' && pendingCount > 0 && (
                     <span className="nav-badge" title={`มี ${pendingCount} คนรออนุมัติ`}>{pendingCount}</span>
                 )}
@@ -128,7 +151,7 @@ export default function Layout() {
     }
 
     return (
-        <div className="layout">
+        <div className={'layout' + (rail ? ' nav-rail' : '')}>
             <a className="skip-link" href="#main-content">ข้ามไปยังเนื้อหา</a>
             <header className="mobile-topbar">
                 <button
@@ -160,6 +183,18 @@ export default function Layout() {
                 <div className="brand">
                     <span className="brand-mark">K</span>
                     <span className="brand-text">KOL Dashboard</span>
+                    {/* ปุ่มพับ/กางเมนู — โผล่เฉพาะจอกว้าง (จอแคบซ่อนด้วย CSS เพราะใช้ลิ้นชักแทน) */}
+                    <button
+                        type="button"
+                        className="sidebar-rail-btn"
+                        aria-label={rail ? 'กางเมนูหลัก' : 'พับเมนูหลักให้เหลือไอคอน'}
+                        title={rail ? 'กางเมนู' : 'พับเมนู'}
+                        aria-expanded={!rail}
+                        aria-controls="primary-sidebar"
+                        onClick={toggleRail}
+                    >
+                        <Icon name="chevron" size={18} />
+                    </button>
                     <button type="button" className="sidebar-close" aria-label="ปิดเมนูหลัก" onClick={() => setNavOpen(false)}>×</button>
                 </div>
                 <nav className="nav" aria-label="เมนูการทำงาน">
@@ -173,7 +208,10 @@ export default function Layout() {
                 </nav>
                 <div className="sidebar-footer">
                     <div className="user-box">
-                        <div className="user-avatar">{(user?.full_name || user?.username || '?')[0]}</div>
+                        {/* พับอยู่เหลือแค่วงกลมย่อ — ชี้เมาส์ค้างถึงจะเห็นชื่อ */}
+                        <div className="user-avatar" title={rail ? (user?.full_name || user?.username || '') : undefined}>
+                            {(user?.full_name || user?.username || '?')[0]}
+                        </div>
                         <div className="user-meta">
                             <div className="user-name">{user?.full_name || user?.username}</div>
                             <div className="user-role">
@@ -184,11 +222,22 @@ export default function Layout() {
                             </div>
                         </div>
                     </div>
-                    <button className="btn-changepw" onClick={() => setShowPw(true)}>
-                        <Icon name="edit" size={15} /> Change password
+                    {/* พับอยู่เหลือไอคอน — ข้อความอยู่ใน title/aria-label แทน (ปุ่ม Log out มีเทสต์ smoke จับชื่ออยู่) */}
+                    <button
+                        className="btn-changepw"
+                        onClick={() => setShowPw(true)}
+                        title={rail ? 'Change password' : undefined}
+                        aria-label={rail ? 'Change password' : undefined}
+                    >
+                        <Icon name="edit" size={15} /> <span className="btn-label">Change password</span>
                     </button>
-                    <button className="btn-logout" onClick={handleLogout}>
-                        <Icon name="logout" size={17} /> Log out
+                    <button
+                        className="btn-logout"
+                        onClick={handleLogout}
+                        title={rail ? 'Log out' : undefined}
+                        aria-label={rail ? 'Log out' : undefined}
+                    >
+                        <Icon name="logout" size={17} /> <span className="btn-label">Log out</span>
                     </button>
                 </div>
             </aside>

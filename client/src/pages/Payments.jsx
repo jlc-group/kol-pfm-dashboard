@@ -6,6 +6,7 @@ import Avatar from '../components/Avatar.jsx';
 import PayCyclePicker from '../components/PayCyclePicker.jsx';
 import { fmtDate } from '../utils/date.js';
 import { BRANDS } from '../data/brands.js';
+import { ProductSummary } from '../components/ProductChips.jsx';
 
 const baht = n => '฿' + Number(n || 0).toLocaleString('th-TH');
 
@@ -480,6 +481,11 @@ function CampaignCard({ row, onOpen }) {
                 <h3 className="pcard-name">{row.project_name}</h3>
                 <div className="pcard-sub">
                     <span>🏢 {row.agencies && row.agencies.length ? row.agencies.join(', ') : <span className="muted">ยังไม่มีเอเจนซี่</span>}</span>
+                    {/* สินค้าในแคมเปญ — ดูได้ตั้งแต่การ์ด ไม่ต้องเปิดเข้าไปดูทีละใบ (งานจ้างอื่น ๆ ไม่มีสินค้า จึงไม่ขึ้นบรรทัดนี้) */}
+                    {/* กดปุ่ม "+N" ดูสินค้าทั้งหมดได้ โดยไม่เผลอเปิดหน้าต่างตั้งงวด (ทั้งการ์ดกดแล้วเปิดอยู่) */}
+                    {row.products && row.products.length > 0 && (
+                        <span className="pcard-prods" onClick={e => e.stopPropagation()}>📦 <ProductSummary value={row.products} max={4} /></span>
+                    )}
                 </div>
                 {planned > 0 && (
                     <div className="pay-progress">

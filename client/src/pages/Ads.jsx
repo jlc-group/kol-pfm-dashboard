@@ -380,6 +380,28 @@ function AdRow({ row, onSaved, canCost }) {
     );
 }
 
+// ขนาดตาราง — ย่อลงเพื่อให้เห็นคอลัมน์ครบโดยไม่ต้องเลื่อนซ้ายขวา (ตารางกว้าง 2100px, 18 คอลัมน์)
+// ย่อด้วย CSS zoom ที่ .ads-tbl เท่านั้น และต้องเป็นค่าเดียวกันทั้งกรอบหัวและกรอบแถว ไม่งั้นหัวกับคอลัมน์จะไม่ตรงกัน
+// (ห้าม zoom ตัวกรอบ .ads-tbl-headwrap เอง เพราะ sticky จะไม่ล็อกหัวไว้บนจอ)
+const ZOOM_KEY = 'ads.tableZoom';
+const ZOOM_STEPS = [100, 90, 80, 70];
+// "พอดีจอ" = คิดขนาดย่อจากพื้นที่จริงของกรอบตาราง ให้เห็นครบทุกคอลัมน์โดยไม่ต้องเลื่อนซ้ายขวา
+// (จอ 1720px พับเมนูแล้ว 80% ยังขาดอีกราว 50px — ตัวนี้คิดให้เองทุกจอ และคิดใหม่เมื่อย่อ/ขยายหน้าต่างหรือพับเมนู)
+const ZOOM_FIT = 'fit';
+const FIT_MIN = 50;   // ย่อได้ต่ำสุดเท่านี้ ต่ำกว่านี้ตัวหนังสือเล็กจนอ่านไม่ออก
+// ที่เก็บข้อมูลอาจใช้ไม่ได้ (โหมดส่วนตัว / ถูกบล็อก) — อ่านไม่ได้ก็แค่กลับไปเป็น 100% ห้ามให้หน้าพัง
+const readZoom = () => {
+    try {
+        const raw = window.localStorage.getItem(ZOOM_KEY);
+        if (raw === ZOOM_FIT) return ZOOM_FIT;
+        const v = Number(raw);
+        return ZOOM_STEPS.includes(v) ? v : 100;
+    } catch { return 100; }
+};
+const saveZoom = v => {
+    try { window.localStorage.setItem(ZOOM_KEY, String(v)); } catch { /* ที่เก็บข้อมูลถูกปิด — ไม่เป็นไร */ }
+};
+
 export default function Ads() {
     const { user } = useAuth();
     const BRANDS = visibleBrands(user);   // เห็นเฉพาะแบรนด์ที่ตัวเองดูแล
@@ -397,6 +419,42 @@ export default function Ads() {
     const syncX = (from, to) => {
         if (from.current && to.current && to.current.scrollLeft !== from.current.scrollLeft) to.current.scrollLeft = from.current.scrollLeft;
     };
+    // ขนาดตารางที่ผู้ใช้เลือกไว้ (จำข้ามการเข้าใช้) — 100% = ไม่ใส่ zoom เลย ทุกอย่างเหมือนเดิมเป๊ะ
+    const [zoom, setZoom] = useState(readZoom);
+    // ขนาดที่ใช้จริง: เลือก "พอดีจอ" แล้วคิดจากความกว้างของกรอบตาราง (bodyRef) เทียบกับความกว้างเต็มของตาราง
+    const [fitPct, setFitPct] = useState(100);
+    // กรอบตารางจริงที่อยู่บนหน้าตอนนี้ — เก็บเป็น state ด้วย (ไม่ใช่แค่ ref) เพราะตารางโผล่ทีหลังตอนโหลดข้อมูลเสร็จ
+    // และหายไปตอนกรองแล้วไม่เหลือแถว · effect "พอดีจอ" ต้องผูกตัวใหม่ทุกครั้ง ไม่งั้นค่าที่จำไว้จะไม่ทำงานเลยตอนเปิดหน้า
+    const [tblBox, setTblBox] = useState(null);
+    const holdBody = el => { bodyRef.current = el; setTblBox(el); };
+    const pct = zoom === ZOOM_FIT ? fitPct : zoom;
+    const zoomStyle = pct === 100 ? undefined : { zoom: pct / 100 };
+    const pickZoom = v => { setZoom(v); saveZoom(v); };
+    // เมนูกรอง ▾ ที่เปิดค้างอยู่คิดตำแหน่งจาก zoom ตอนเปิด — เปลี่ยนขนาดแล้วต้องบอกให้มันวางใหม่ (ColumnFilter ฟัง resize)
+    useEffect(() => { window.dispatchEvent(new Event('resize')); }, [pct]);
+    // ย่อ/ขยายแล้วความกว้างของตารางเปลี่ยน เบราว์เซอร์อาจหนีบ scrollLeft ของสองกรอบไม่เท่ากัน
+    // ดึงหัวมาตรงกับแถวอีกรอบหลังเปลี่ยนขนาด จะได้ไม่เหลื่อมกัน
+    useEffect(() => { syncX(bodyRef, headRef); }, [pct]);   // eslint-disable-line react-hooks/exhaustive-deps
+    // คิดขนาด "พอดีจอ" ใหม่ทุกครั้งที่กรอบตารางเปลี่ยนความกว้าง (ย่อ/ขยายหน้าต่าง · พับ/กางเมนูซ้าย)
+    useEffect(() => {
+        if (zoom !== ZOOM_FIT) return undefined;
+        const el = tblBox;
+        if (!el) return undefined;
+        const calc = () => {
+            // ความกว้างที่ตารางต้องใช้จริง = min-width ของ .ads-tbl (2100px) — ค่านี้คงที่ไม่ว่าย่อเท่าไร
+            // (วัดความกว้างที่แสดงอยู่ไม่ได้ เพราะตารางยืดเต็มกรอบเสมอ ค่าที่วัดได้จะเท่ากรอบตลอด)
+            const shown = el.querySelector('.ads-tbl');
+            const full = shown ? parseFloat(getComputedStyle(shown).minWidth) : 0;
+            if (!full || !el.clientWidth) return;
+            const next = Math.max(FIT_MIN, Math.min(100, Math.floor((el.clientWidth / full) * 100)));
+            setFitPct(v => (v === next ? v : next));
+        };
+        calc();
+        const ro = typeof ResizeObserver === 'function' ? new ResizeObserver(calc) : null;
+        if (ro) ro.observe(el);
+        window.addEventListener('resize', calc);
+        return () => { if (ro) ro.disconnect(); window.removeEventListener('resize', calc); };
+    }, [zoom, tblBox]);   // eslint-disable-line react-hooks/exhaustive-deps
 
     const load = useCallback(() => {
         const q = new URLSearchParams();
@@ -447,7 +505,7 @@ export default function Ads() {
     const maxBrandSpend = s && s.by_brand ? Math.max(1, ...s.by_brand.map(b => b.spend)) : 1;
 
     return (
-        <div>
+        <div className="ads-page">
             <header className="page-head">
                 <div>
                     <h1>ADS</h1>
@@ -533,9 +591,9 @@ export default function Ads() {
                 </div>
             </div>
 
-            {/* ตารางติดตามการยิงแอดรายโพสต์ */}
-            <div className="panel">
-                <div className="dash-section-head">
+            {/* ตารางติดตามการยิงแอดรายโพสต์ — การ์ดนี้กินเต็มความกว้างหน้า (.ads-tbl-panel) ให้เห็นคอลัมน์ได้มากที่สุด */}
+            <div className="panel ads-tbl-panel">
+                <div className="dash-section-head ads-tbl-bar">
                     <h3>ติดตามการยิงแอดรายโพสต์ <span className="dash-section-sub">
                         {hasFilter ? `แสดง ${rows.length} จาก ${allRows.length} โพสต์` : 'กดปุ่ม ▾ ที่หัวคอลัมน์เพื่อกรอง · กรอกข้อมูลแล้วคลิกออกจากช่องเพื่อบันทึก'}
                     </span></h3>
@@ -544,6 +602,22 @@ export default function Ads() {
                             ✕ ล้างตัวกรอง
                         </button>
                     )}
+                    {/* ย่อขนาดตาราง — ตารางกว้างกว่าจอ ย่อแล้วเห็นคอลัมน์ครบโดยไม่ต้องเลื่อนซ้ายขวา (จำค่าไว้ให้) */}
+                    <div className="ads-zoom" role="group" aria-label="ขนาดตาราง">
+                        <span className="ads-zoom-lbl" aria-hidden="true">ขนาดตาราง</span>
+                        {ZOOM_STEPS.map(v => (
+                            <button key={v} type="button" className={'ads-zoom-btn' + (zoom === v ? ' on' : '')}
+                                onClick={() => pickZoom(v)} aria-pressed={zoom === v}
+                                title={v === 100 ? 'ขนาดเต็ม' : `ย่อตารางเหลือ ${v}% — ตัวหนังสือเล็กลงแต่เห็นคอลัมน์ได้มากขึ้น`}>
+                                {v}%
+                            </button>
+                        ))}
+                        <button type="button" className={'ads-zoom-btn' + (zoom === ZOOM_FIT ? ' on' : '')}
+                            onClick={() => pickZoom(ZOOM_FIT)} aria-pressed={zoom === ZOOM_FIT}
+                            title="ย่อให้พอดีจอ — เห็นครบทุกคอลัมน์โดยไม่ต้องเลื่อนซ้ายขวา (คิดขนาดให้เองตามความกว้างหน้าจอ)">
+                            พอดีจอ{zoom === ZOOM_FIT ? ` (${fitPct}%)` : ''}
+                        </button>
+                    </div>
                 </div>
                 {!data ? (
                     <p className="empty" style={{ padding: '20px 0' }}>กำลังโหลด...</p>
@@ -561,7 +635,8 @@ export default function Ads() {
                     <>
                     {/* หัวคอลัมน์ล็อกไว้บนจอตอนเลื่อนลง — ต้องอยู่นอกกรอบเลื่อนซ้ายขวา (sticky ในกรอบ overflow จะติดกับกรอบ ไม่ใช่หน้าจอ) */}
                     <div className="ads-tbl-headwrap" ref={headRef} onScroll={() => syncX(headRef, bodyRef)}>
-                        <div className="ads-tbl">
+                        {/* zoom ต้องเท่ากับกรอบแถวข้างล่างเสมอ (ค่าเดียวกันจาก zoomStyle) ไม่งั้นหัวกับคอลัมน์จะเหลื่อมกัน */}
+                        <div className="ads-tbl" style={zoomStyle}>
                             <div className="ads-tbl-head">
                                 <span>KOL
                                     <ColumnFilter label="Platform" value={platform} onPick={setPlatform}
@@ -587,8 +662,8 @@ export default function Ads() {
                             </div>
                         </div>
                     </div>
-                    <div className="ads-tbl-scroll" ref={bodyRef} onScroll={() => syncX(bodyRef, headRef)}>
-                        <div className="ads-tbl">
+                    <div className="ads-tbl-scroll" ref={holdBody} onScroll={() => syncX(bodyRef, headRef)}>
+                        <div className="ads-tbl" style={zoomStyle}>
                             {rows.map(r => <AdRow key={r.sub_id} row={r} onSaved={load} canCost={seesAllBrands(user)} />)}
                         </div>
                     </div>

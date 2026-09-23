@@ -8,14 +8,18 @@ export default function ColumnFilter({ label, value, options, onPick }) {
     const btnRef = useRef(null);
 
     // วางเมนูให้ตรงใต้ปุ่มเสมอ (คำนวณสด ไม่ใช้ค่าที่จำไว้)
-    // สำคัญ: body ตั้ง zoom ไว้ (ดู --app-zoom) — getBoundingClientRect คืนพิกัดจริงบนจอ
-    // แต่ค่า top/left ที่เราตั้งจะถูกคูณด้วย zoom อีกรอบ จึงต้องหารกลับก่อน
+    // สำคัญ: เมนูเป็น fixed แต่อยู่ในซับทรีที่อาจโดน zoom — body ตั้งไว้ตัวหนึ่ง (ดู --app-zoom)
+    // และหน้า Ads ยังย่อตาราง (.ads-tbl) ซ้อนอีกชั้นได้ · getBoundingClientRect คืนพิกัดจริงบนจอ
+    // แต่ค่า top/left ที่เราตั้งจะถูกคูณด้วย zoom สะสมอีกรอบ จึงต้องหารกลับก่อน
     // ไม่งั้นเมนูจะไปโผล่ไกลกว่าที่ควร และหลุดจอไปเลยถ้าคอลัมน์อยู่ทางขวา
+    // วัด zoom สะสมจากตัวปุ่มเอง: กว้างจริงบนจอ ÷ กว้างตามผัง (offsetWidth ไม่รวม zoom ของแม่)
+    // ไม่มี zoom ซ้อน ค่าจะได้ 1 เท่าเดิม — หน้าอื่นที่ใช้ตัวกรองนี้จึงไม่เปลี่ยนพฤติกรรม
     const place = useCallback(() => {
         const el = btnRef.current;
         if (!el) return;
         const r = el.getBoundingClientRect();
-        const z = parseFloat(getComputedStyle(document.body).zoom) || 1;
+        const raw = (r.width && el.offsetWidth) ? r.width / el.offsetWidth : 1;
+        const z = (raw > 0.1 && raw < 10) ? raw : 1;   // วัดไม่ได้ (ปุ่มถูกซ่อนอยู่ / ค่าเพี้ยน) ให้ถือว่าไม่มี zoom
         const vw = window.innerWidth || document.documentElement.clientWidth || 1280;
         const left = Math.max(8, Math.min(r.left, vw - 210));
         setPos({ top: (r.bottom + 6) / z, left: left / z });

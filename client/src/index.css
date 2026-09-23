@@ -104,7 +104,9 @@ a { text-decoration: none; color: inherit; }
     width: 38px; height: 38px; border-radius: 11px; background: var(--grad); color: #fff;
     display: grid; place-items: center; font-weight: 800; font-size: 19.5px;
 }
-.brand-text { font-weight: 800; font-size: 16.5px; }
+/* ปุ่มพับเมนูอยู่ท้ายแถวโลโก้ — ตัวโลโก้ห้ามถูกบีบ ส่วนชื่อยาวเกินให้ตัด … แทนที่จะดันจนตก 2 บรรทัด */
+.brand-mark { flex-shrink: 0; }
+.brand-text { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-weight: 800; font-size: 16.5px; }
 
 .nav-group-label {
     font-size: 10.5px; text-transform: uppercase; letter-spacing: .6px;
@@ -1192,6 +1194,14 @@ a { text-decoration: none; color: inherit; }
 .proc-ibtn.done { color: var(--mint-dark); background: #d1fae5; border-color: transparent; cursor: default; }
 .proc-ibtn:disabled { opacity: .6; cursor: default; }
 
+/* หน้า Ads: การ์ดตารางกินเต็มความกว้างหน้า (ผู้ใช้ขอเห็นคอลัมน์เยอะขึ้น) — หน้าอื่นบีบเนื้อหาไว้กลางจอไม่เกิน 1480px
+   ปลดเฉพาะการ์ดตาราง ส่วนหัวข้อ/ตัวกรอง/การ์ดสรุป ยังอยู่กรอบเดิม · หักขอบหน้า (.content padding) ออกด้วย margin ติดลบ */
+.content > .ads-page { width: 100%; max-width: none; }
+.ads-page > :not(.ads-tbl-panel) { width: min(100%, 1480px); margin-inline: auto; }
+.ads-page > .ads-tbl-panel { margin-inline: calc(clamp(28px, 3vw, 48px) * -1); padding-inline: 12px; border-radius: 0; }
+@media (max-width: 900px) { .ads-page > .ads-tbl-panel { margin-inline: -24px; } }
+@media (max-width: 600px) { .ads-page > .ads-tbl-panel { margin-inline: -16px; } }
+
 /* ตารางยิงแอด (แถวแนวนอน) */
 .ads-tbl-scroll { overflow-x: auto; }
 /* ให้คอลัมน์กว้างพอจะอ่าน Target/Product ได้ครบ แล้วเลื่อนซ้ายขวาเอา (ตัวห่อ .ads-tbl-scroll เลื่อนให้)
@@ -1203,6 +1213,22 @@ a { text-decoration: none; color: inherit; }
    ต่ำกว่านี้ Target จะโดนตัดเป็น ... / สูงกว่านี้ Target ไม่ได้กว้างขึ้นแล้ว มีแต่เลื่อนไกลขึ้นเปล่า ๆ
    หมายเหตุ: --app-zoom ตอนนี้เป็น 1 (เปลี่ยนจาก 1.2 ใน edb8dc7) ความกว้างบนจอจึงเท่ากับค่านี้ */
 .ads-tbl { min-width: 2100px; }
+/* หัวการ์ดตาราง: ชื่อ + ปุ่มล้างตัวกรอง + ตัวเลือกขนาดตาราง อยู่บรรทัดเดียวกัน (จอแคบตกบรรทัดได้)
+   เดิมกล่องนี้ไม่มีสไตล์เลย หัวข้อกับปุ่มจึงซ้อนกันเป็นบรรทัด ๆ */
+.ads-tbl-bar { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin-bottom: 14px; }
+.ads-tbl-bar h3 { margin-bottom: 0; }
+/* ตัวเลือกย่อขนาดตาราง — ชิดขวาสุด ตั้งใจให้เล็กเท่าปุ่มล้างตัวกรอง เป็นแค่ตัวช่วยดู ไม่ใช่ตัวกรองข้อมูล
+   ตัวย่อจริงเป็น CSS zoom ที่ .ads-tbl (ตั้งใน Ads.jsx) ไม่ได้ตั้งที่นี่ เพราะค่าเปลี่ยนตามที่ผู้ใช้เลือก */
+.ads-zoom { display: inline-flex; align-items: center; gap: 4px; margin-inline-start: auto; }
+.ads-zoom-lbl { font-size: 10.5px; font-weight: 700; color: var(--muted); letter-spacing: .3px; }
+.ads-zoom-btn {
+    padding: 2px 8px; border: 1px solid var(--border); border-radius: 999px;
+    background: #fff; color: var(--muted); font-size: 10.5px; font-weight: 700;
+    line-height: 1.5; cursor: pointer; white-space: nowrap; font-variant-numeric: tabular-nums;
+}
+.ads-zoom-btn:hover { border-color: var(--mint); color: var(--mint-dark); }
+.ads-zoom-btn:focus-visible { outline: 2px solid var(--mint); outline-offset: 1px; }
+.ads-zoom-btn.on { background: var(--mint); border-color: var(--mint); color: #fff; }
 /* ปุ่มกรองเล็กบนหัวคอลัมน์ (แบบตาราง Excel) */
 .colf { position: relative; display: inline-flex; vertical-align: middle; }
 .colf-btn {
@@ -1514,6 +1540,9 @@ a { text-decoration: none; color: inherit; }
 .pcard-brand { font-size: 11.5px; font-weight: 700; color: var(--mint-dark); text-transform: uppercase; letter-spacing: .4px; }
 .pcard-name { font-size: 17.5px; line-height: 1.35; margin: 4px 0 12px; }
 .pcard-sub { display: flex; flex-direction: column; gap: 5px; font-size: 12px; color: var(--muted); margin-bottom: 16px; }
+/* บรรทัดสินค้าบนการ์ดทำจ่าย — รหัสสินค้าอ่านง่ายกว่าตัวจาง ๆ · ยาวเกินการ์ดให้ตัดบรรทัด ไม่ดันการ์ดกว้าง */
+.pcard-prods { display: flex; align-items: baseline; gap: 5px; min-width: 0; color: var(--text); }
+.pcard-prods .prod-codes { min-width: 0; overflow-wrap: anywhere; }
 .pcard-owner { font-weight: 600; }
 
 .pcard-foot { margin-top: auto; padding-top: 14px; border-top: 1px solid var(--border); display: flex; justify-content: space-between; align-items: flex-end; }
@@ -2909,22 +2938,57 @@ button { color: inherit; }
 }
 .skip-link:focus { transform: translateY(0); }
 
-.mobile-topbar, .sidebar-backdrop, .sidebar-close { display: none; }
-.layout { min-width: 0; align-items: flex-start; }
+.mobile-topbar, .sidebar-backdrop, .sidebar-close, .sidebar-rail-btn { display: none; }
+/* ความกว้างแถบเมนูอยู่ในตัวแปรตัวเดียว — .sidebar กับ .content ใช้ร่วมกัน พับแล้วจึงไม่หลุดคนละค่า */
+.layout { min-width: 0; align-items: flex-start; --nav-w: 248px; }
 .sidebar {
-    width: 248px; padding: 24px 16px 18px; z-index: 100;
+    width: var(--nav-w, 248px); padding: 24px 16px 18px; z-index: 100;
     background: rgba(255,255,255,.96); backdrop-filter: blur(14px);
     overflow-y: auto; scrollbar-width: thin;
 }
-.brand { padding: 2px 8px 24px; }
+/* แถวโลโก้มีปุ่มพับต่อท้าย — ลดขอบ/ช่องไฟลงหน่อย ชื่อ "KOL Dashboard" จะได้เต็มไม่โดนตัด */
+.brand { gap: 8px; padding: 2px 4px 24px; }
 .brand-mark { width: 40px; height: 40px; border-radius: 13px; box-shadow: 0 8px 18px rgba(16,185,129,.2); }
 .nav { gap: 5px; }
 .nav-item { min-height: 46px; padding: 10px 13px; border-radius: 12px; }
 .nav-item.active { box-shadow: 0 8px 20px rgba(16,185,129,.2); }
 .sidebar-footer { margin-top: 22px; }
 
+/* ===== พับเมนูซ้ายให้เหลือแถบไอคอน (ผู้ใช้ขอให้ตารางหน้า Ads เห็นคอลัมน์มากขึ้น) =====
+   พับแล้วแถบเหลือ 64px จากเดิม 248px — เนื้อหากว้างขึ้น 184px (จอ 1720px: 1472px → 1656px)
+   จอ ≤900px ใช้เมนูลิ้นชักเดิม กฎพับทั้งหมดจึงล้อมด้วย @media (min-width: 901px) ไม่ให้ไปโดนลิ้นชัก */
+@media (min-width: 901px) {
+    .sidebar-rail-btn {
+        display: grid; place-items: center; width: 28px; height: 28px; min-width: 28px;
+        margin-inline-start: auto; padding: 0; border: 1px solid var(--border); border-radius: 10px;
+        background: #fff; color: var(--muted); cursor: pointer;
+    }
+    .sidebar-rail-btn:hover { border-color: var(--mint); color: var(--mint); }
+    .sidebar-rail-btn svg { transition: transform .18s ease; }
+    /* กางอยู่ = ลูกศรชี้ซ้าย (กดแล้วพับ) · พับอยู่ = ชี้ขวา (กดแล้วกาง) */
+    .layout:not(.nav-rail) .sidebar-rail-btn svg { transform: rotate(180deg); }
+
+    .nav-rail { --nav-w: 64px; }
+    .nav-rail .sidebar { padding-inline: 8px; overflow-x: hidden; }
+    .nav-rail .brand { flex-direction: column; gap: 10px; padding: 2px 0 18px; }
+    .nav-rail .brand-text { display: none; }
+    .nav-rail .sidebar-rail-btn { margin-inline-start: 0; }
+    .nav-rail .nav-item { position: relative; justify-content: center; gap: 0; padding: 10px 0; }
+    .nav-rail .nav-label { display: none; }
+    /* เลขแดงต้องยังเห็นตอนพับ — ไม่มีที่ต่อท้ายชื่อแล้ว ย้ายไปเกาะมุมขวาบนของไอคอน */
+    .nav-rail .nav-badge {
+        position: absolute; top: 2px; right: 2px; margin: 0;
+        min-width: 18px; padding: 0 4px; font-size: 10px; line-height: 18px;
+    }
+    .nav-rail .nav-group-label { padding: 12px 0 6px; text-align: center; font-size: 9px; letter-spacing: .3px; }
+    .nav-rail .user-box { justify-content: center; margin-bottom: 10px; }
+    .nav-rail .user-meta { display: none; }
+    .nav-rail .btn-changepw, .nav-rail .btn-logout { padding-inline: 0; }
+    .nav-rail .btn-label { display: none; }
+}
+
 .content {
-    width: calc(100% - 248px); padding: clamp(28px, 3vw, 48px);
+    width: calc(100% - var(--nav-w, 248px)); padding: clamp(28px, 3vw, 48px);
 }
 .content > * { width: min(100%, 1480px); margin-inline: auto; }
 .page-head { margin-bottom: 24px; padding-left: 18px; }
