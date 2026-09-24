@@ -20,6 +20,7 @@ import {
 import { collapseByPerson, countPeople } from '../data/clips.js';
 import ProductFilter from '../components/ProductFilter.jsx';
 import { knownProductCodes, matchProducts, productFilterOptions } from '../data/productFilter.js';
+import { NO_GROUP, groupKeySet, matchGroup, normalizeGroupSel, groupFilterOptions } from '../data/groupFilter.js';
 import StageCards from '../components/StageCards.jsx';
 import FeeInput from '../components/FeeInput.jsx';
 import DivideFeesModal, { feeOf, personKeyOf, feeBudgetFor, feeEligible, locksOnFee } from '../components/DivideFeesModal.jsx';
@@ -430,6 +431,8 @@ export default function ProjectDetail() {
     const [feeOnly, setFeeOnly] = useState(false);
     // กรองรายชื่อตามสินค้า — เลือกได้หลายตัว ([] = ทุกสินค้า) ใช้ร่วมกับตัวกรองอื่นได้
     const [listProducts, setListProducts] = useState([]);
+    // กรองรายชื่อตามกลุ่มสินค้า — เลือกได้ทีละกลุ่ม ('__none' = คนที่ไม่อยู่กลุ่มไหน) แบบเดียวกับแถบกลุ่มในแท็บ On Process
+    const [listGroup, setListGroup] = useState('all');
     // หน้าต่างหาร/ล้างค่าตัวของกลุ่ม { key, gi, mode: 'divide' | 'clear' }
     const [feeModal, setFeeModal] = useState(null);
     const [badges, setBadges] = useState({ listNew: false, processNew: false });
@@ -438,7 +441,7 @@ export default function ProjectDetail() {
     // ถ้าไม่ล้าง ตัวกรองที่มองไม่เห็นจะซ่อนกลุ่ม/นับเฉพาะ Platform ที่เคยกดไว้ และไม่มีปุ่มให้กดคืน
     useEffect(() => {
         if (submissions.length > 0) return;
-        setListPlat('all'); setListCtype('all'); setFeeOnly(false); setListProducts([]);
+        setListPlat('all'); setListCtype('all'); setFeeOnly(false); setListProducts([]); setListGroup('all');
     }, [submissions.length]);
 
     function load() {
@@ -684,7 +687,16 @@ export default function ProjectDetail() {
     const knownCodes = knownProductCodes(project.ad_groups || [], submissions);
     const productKeys = listProducts.length
         ? new Set(submissions.filter(s => matchProducts(s, listProducts, knownCodes)).map(personKeyOf)) : null;
-    const matchListFilter = s => matchScope(s) && (!feeOnly || feeMissingKeys.has(personKeyOf(s)))
+    // ตัวกรองกลุ่ม — คุมเฉพาะการ์ดข้างล่าง ไม่แตะตัวเลขบนชิปแพลตฟอร์ม/Content Type/สินค้า
+    // (ยอดพวกนั้นเป็นของทั้งแคมเปญ เหมือนแท็บ On Process คนใช้จึงยังเทียบได้ว่ากำลังซ่อนอะไรอยู่)
+    // ห้ามย้ายไปใส่ใน matchScope เพราะ matchScope เป็นตัวหารของโควตาหัวการ์ดและป้าย "ซ่อน N คนตามตัวกรอง"
+    const groupKeys = groupKeySet(project.ad_groups);
+    const groupOpts = groupFilterOptions(project.ad_groups, submissions, countPeople);
+    // ชิปไหนไม่มีให้กดแล้ว (หรือแถบไม่ขึ้นเลย) ต้องถอยเป็น "ทั้งหมด" ตอน render ทันที
+    // ห้ามมีตัวกรองทำงานอยู่เงียบ ๆ โดยไม่มีชิปไหนติด
+    const curGroup = normalizeGroupSel(listGroup, groupOpts);
+    const matchListFilter = s => matchScope(s) && matchGroup(s, curGroup, groupKeys)
+        && (!feeOnly || feeMissingKeys.has(personKeyOf(s)))
         && (!productKeys || productKeys.has(personKeyOf(s)));
     // ข้อความตอนไม่มีรายชื่อ — บอกให้ชัดว่าหายเพราะตัวกรอง
     const emptyText = where => (feeOnly ? `ไม่มีคนที่ยังไม่ใส่ค่าตัว${where}`
@@ -1387,6 +1399,25 @@ export default function ProjectDetail() {
                 </button>
             </div>
 
+            {/* แถบปุ่มกรองกลุ่มสินค้า — โชว์เมื่อแบ่งเกิน 1 กลุ่ม (นับ "ไม่ระบุกลุ่ม" เป็นหนึ่งกลุ่มด้วย)
+                วางบนสุดเหมือนแท็บ On Process เพราะกลุ่มเป็นการแบ่งระดับใหญ่กว่าแพลตฟอร์ม
+                ยังไม่มีรายชื่อก็โชว์ เพราะการ์ดกลุ่มขึ้นเสมอ ทีมจะได้เลือกดูความต้องการของกลุ่มเดียวได้ */}
+            {subTab === 'list' && groupOpts.length > 1 && (
+                <div className="proc-platfilter">
+                    <span className="proc-platfilter-lbl">กลุ่ม:</span>
+                    <button type="button" className={'proc-plat-chip' + (curGroup === 'all' ? ' on' : '')}
+                        onClick={() => setListGroup('all')}>ทั้งหมด ({countPeople(submissions)})</button>
+                    {groupOpts.map(o => (
+                        <button type="button" key={o.key}
+                            className={'proc-plat-chip' + (curGroup === o.key ? ' on' : '')}
+                            title={o.key === NO_GROUP ? 'KOL ที่ยังไม่ได้ถูกจัดเข้ากลุ่มไหน'
+                                : [o.products.join(', '), o.concept].filter(Boolean).join(' · ')}
+                            onClick={() => setListGroup(o.key)}>
+                            {o.key === NO_GROUP ? 'ไม่ระบุกลุ่ม' : `กลุ่มที่ ${o.no}${o.concept ? ' · ' + o.concept : ''}`} ({o.count})
+                        </button>
+                    ))}
+                </div>
+            )}
             {subTab === 'list' && listPlatforms.length > 1 && submissions.length > 0 && (
                 <div className="proc-platfilter">
                     <span className="proc-platfilter-lbl">แพลตฟอร์ม:</span>
@@ -1437,8 +1468,11 @@ export default function ProjectDetail() {
                     /* แบ่งตามกลุ่มสินค้า — การ์ดกลุ่มขึ้นเสมอแม้ยังไม่มีรายชื่อ (เหมือนหน้าเอเจนซี่) ทีมจะได้เห็นว่าแต่ละกลุ่มต้องการอะไร */
                     <>
                         {project.ad_groups.map((g, gi) => {
+                            // เลือกดูทีละกลุ่ม — การ์ดกลุ่มอื่นซ่อนหมด (เลือก "ไม่ระบุกลุ่ม" ก็ซ่อนการ์ดกลุ่มจริงทั้งหมด)
+                            if (curGroup !== 'all' && g.key !== curGroup) return null;
                             // กรอง Platform ที่กลุ่มนี้ไม่ได้ลง และไม่มีรายชื่อค้างของ Platform นั้น = ไม่มีอะไรให้ดู ข้ามทั้งการ์ด
-                            if (listPlat !== 'all' && !groupPlatforms(g).includes(listPlat)
+                            // แต่กลุ่มที่เลือกอยู่ต้องโชว์การ์ดเสมอ ไม่งั้นหน้าว่างทั้งหน้าโดยไม่บอกอะไรเลย
+                            if (curGroup === 'all' && listPlat !== 'all' && !groupPlatforms(g).includes(listPlat)
                                 && !submissions.some(s => s.group_key === g.key && matchScope(s))) return null;
                             const gsubs = submissions.filter(s => s.group_key === g.key && matchListFilter(s));
                             return (
@@ -1451,11 +1485,13 @@ export default function ProjectDetail() {
                         {(() => {
                             const gkeys = new Set(project.ad_groups.map(g => g.key));
                             const ung = submissions.filter(s => (!s.group_key || !gkeys.has(s.group_key)) && matchListFilter(s));
-                            if (ung.length === 0) return null;
+                            // เลือก "ไม่ระบุกลุ่ม" อยู่ = การ์ดกลุ่มจริงถูกซ่อนหมดแล้ว การ์ดนี้จึงต้องขึ้นเสมอ
+                            // ไม่งั้นกรองต่อจนไม่เหลือใคร หน้าจะว่างสนิทโดยไม่มีอะไรบอกว่าว่างเพราะตัวกรอง
+                            if (ung.length === 0 && curGroup !== NO_GROUP) return null;
                             return (
                                 <div className="kol-group-card">
-                                    <div className="grp-bar"><span className="grp-no muted-bar">ไม่ระบุกลุ่ม</span><span className="grp-count">{ung.length} คน</span></div>
-                                    {statusBlocks(ung)}
+                                    <div className="grp-bar"><span className="grp-no muted-bar">ไม่ระบุกลุ่ม</span><span className="grp-count">{countPeople(ung)} คน</span></div>
+                                    {ung.length > 0 ? statusBlocks(ung) : <div className="proc-group-empty">{emptyText('ในกลุ่มนี้')}</div>}
                                 </div>
                             );
                         })()}
