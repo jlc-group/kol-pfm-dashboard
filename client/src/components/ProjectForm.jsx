@@ -11,7 +11,7 @@ import {
     groupPlatforms, splitCsv, needTarget, contentTypesFor, campaignTypesFor,
     emptyTier, emptySet, emptyBlock, blocksKol, toBlocks, flattenBlocks,
     num, blocksBudget, platformBudgets, blocksProducts, withProductTargets, packProductTargets,
-    needCampaign, campaignIsCtype, withCampaignFromCtype, packCampaigns, isSplitBudget, productBudgetSum, packBudgets,
+    needCampaign, campaignIsCtype, withCampaignFromCtype, packCampaigns, setTypeOk, isSplitBudget, productBudgetSum, packBudgets,
     isSplitConcept, isBlockSplitConcept, packConcepts
 } from '../data/adGroups.js';
 
@@ -288,12 +288,13 @@ export default function ProjectForm({ editing, onClose, onSaved }) {
                     targetsForProduct(code).length > 0 && asTargetArray((b.product_targets || {})[code]).length === 0)) return false;
                 if (!(b.sets || []).length) return false;
                 // Facebook / Instagram เลือกที่ช่อง Campaign แทน Content Type — ต้องเลือกทุกชุดเหมือนเดิม
-                return b.sets.every(s => (campaignIsCtype(b.platform) ? s.campaign : s.content_type)
+                // ยกเว้นกลุ่มที่ไม่ใช้ Gencode (ไม่ได้ยิงแอด) ที่สองช่องนี้ถูกปิดไว้ — ดู setTypeOk
+                return b.sets.every(s => setTypeOk(g, b.platform, s)
                     && (s.tiers || []).length > 0
                     && s.tiers.every(t => t.tier && (Number(t.kols) || 0) > 0));
             });
         });
-        if (!groupsOk) m.push('กลุ่มสินค้า (Platform/สินค้า/Target ของทุกสินค้าใน TikTok/Content Type (Facebook/Instagram: Campaign) + ทุกแถว Tier กับจำนวน KOL ให้ครบ)');
+        if (!groupsOk) m.push('กลุ่มสินค้า (Platform/สินค้า/Target ของทุกสินค้าใน TikTok/Content Type (Facebook/Instagram: Campaign — กลุ่มที่ไม่ใช้ Gencode ไม่ต้องใส่) + ทุกแถว Tier กับจำนวน KOL ให้ครบ)');
         if (!form.owner) m.push('Project Owner');
         // งบกรอกที่ชั้น Platform — ต้องมีทุกบล็อก
         // แยกงบต่อสินค้า = ทุกสินค้าในบล็อกต้องใส่งบ · ก้อนเดียว = งบของ Platform ต้องมากกว่า 0
@@ -684,8 +685,16 @@ export default function ProjectForm({ editing, onClose, onSaved }) {
                                                 <div className="ctype-set" key={si}>
                                                     <div className="ctype-set-row">
                                                         {/* Campaign ใช้เฉพาะ TikTok / Facebook / Instagram — Platform อื่นปิดช่องไว้ ไม่ต้องเลือก
-                                                            Facebook / Instagram: Campaign (Awareness / Engagement / Reels) ใช้แทน Content Type — ช่อง Content Type ปิดไว้ */}
-                                                        {needCampaign(b.platform) ? (
+                                                            Facebook / Instagram: Campaign (Awareness / Engagement / Reels) ใช้แทน Content Type — ช่อง Content Type ปิดไว้
+                                                            กลุ่มที่ตั้ง "-" (ไม่ใช้ Gencode) ไม่ได้ยิงแอด จึงปิดทั้งสองช่อง แต่ยังโชว์ค่าที่เคยกรอกไว้
+                                                            (สลับกลับมาใช้ Gencode ได้ค่าเดิมคืน แบบเดียวกับช่องจำนวนวัน Gencode) */}
+                                                        {g.no_gencode ? (
+                                                            <select className="target-add" value={s.campaign || ''} disabled
+                                                                title="กลุ่มนี้ตั้งไว้ว่าไม่ใช้ Gencode (ไม่ได้ยิงแอด) จึงไม่ต้องใส่ Campaign">
+                                                                <option value="">— ไม่ต้องใส่ (ไม่ยิงแอด) —</option>
+                                                                {s.campaign && <option value={s.campaign}>{s.campaign}</option>}
+                                                            </select>
+                                                        ) : needCampaign(b.platform) ? (
                                                             <select className="target-add" value={s.campaign || ''}
                                                                 onChange={e => setSetField(i, bi, si, 'campaign', e.target.value)}>
                                                                 <option value="">— Campaign —</option>
@@ -696,7 +705,13 @@ export default function ProjectForm({ editing, onClose, onSaved }) {
                                                                 <option value="">— ไม่ใช้ Campaign —</option>
                                                             </select>
                                                         )}
-                                                        {campaignIsCtype(b.platform) ? (
+                                                        {g.no_gencode ? (
+                                                            <select className="target-add" value={s.content_type || ''} disabled
+                                                                title="กลุ่มนี้ตั้งไว้ว่าไม่ใช้ Gencode (ไม่ได้ยิงแอด) จึงไม่ต้องใส่ Content Type">
+                                                                <option value="">— ไม่ต้องใส่ (ไม่ยิงแอด) —</option>
+                                                                {s.content_type && <option value={s.content_type}>{s.content_type}</option>}
+                                                            </select>
+                                                        ) : campaignIsCtype(b.platform) ? (
                                                             <select className="target-add" value="" disabled title={`${b.platform} เลือกที่ช่อง Campaign แทน`}>
                                                                 <option value="">— ไม่ใช้ Content Type —</option>
                                                             </select>
@@ -743,7 +758,7 @@ export default function ProjectForm({ editing, onClose, onSaved }) {
                                                 </div>
                                             ))}
                                             <button type="button" className="alloc-add" onClick={() => addSet(i, bi)}>
-                                                <Icon name="plus" size={14} /> {campaignIsCtype(b.platform) ? 'เพิ่ม Campaign' : 'เพิ่ม Content Type'}
+                                                <Icon name="plus" size={14} /> {g.no_gencode ? 'เพิ่มชุด' : campaignIsCtype(b.platform) ? 'เพิ่ม Campaign' : 'เพิ่ม Content Type'}
                                             </button>
                                             {/* คลิปต่อคนของ Platform นี้ — ไม่ตั้ง = 1 คน 1 คลิป */}
                                             <div className="clips-box">

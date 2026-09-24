@@ -373,6 +373,12 @@ export function packConcepts(b) {
 // โพสต์ที่มี Gencode อยู่แล้ว (กรอกไว้ก่อนเปลี่ยนกลุ่มเป็น "-") ทำงานแบบเดิมทุกอย่าง
 // ต้องตรงกับ groupNoGencode / postNoGencode ฝั่ง server (server/src/store/logic.js) ทุกตัวอักษร
 export const groupNoGencode = g => !!g && g.no_gencode === true;
+// ชุด Content Type ชุดหนึ่งเลือกช่องที่บังคับครบหรือยัง (ใช้ในตัวตรวจฟอร์มแคมเปญ)
+// Facebook / Instagram เลือกที่ช่อง Campaign แทน Content Type · Platform อื่นเลือกที่ Content Type
+// กลุ่มที่ตั้ง "ไม่ใช้ Gencode" = ไม่ได้ยิงแอด สองช่องนี้ถูกปิดไว้ในฟอร์ม จึงต้องไม่บังคับ
+// (ถ้าบังคับต่อจะกลายเป็นบันทึกไม่ได้ทั้งที่ไม่มีช่องให้กรอก)
+export const setTypeOk = (g, platform, s) => groupNoGencode(g)
+    || !!(campaignIsCtype(platform) ? (s && s.campaign) : (s && s.content_type));
 export const postNoGencode = (s, g) => groupNoGencode(g) && !String((s && s.gencode) ?? '').trim();
 
 // ตอนบันทึก: Platform ที่ไม่ใช้ Campaign เก็บเป็นว่างเสมอ (กันค่าค้างจากข้อมูลเก่า)

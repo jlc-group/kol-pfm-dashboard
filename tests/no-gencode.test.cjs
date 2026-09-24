@@ -287,3 +287,45 @@ test('PUT /api/projects/:id: an old form keeps a stored "-"; a new form sending 
     assert.equal(res.status, 200);
     assert.equal(Object.prototype.hasOwnProperty.call(updates.at(-1), 'ad_groups'), false);
 });
+
+// กลุ่มที่ไม่ใช้ Gencode ไม่ได้ยิงแอด → ฟอร์มปิดช่อง Campaign / Content Type
+// ตัวตรวจฟอร์มจึงต้องไม่บังคับสองช่องนี้ ไม่งั้นสร้างแคมเปญใหม่ไม่ได้เลย (ไม่มีช่องให้กรอก)
+test('setTypeOk: กลุ่มที่ไม่ใช้ Gencode ไม่บังคับ Campaign / Content Type', () => {
+    const on = { no_gencode: true };
+    const off = { no_gencode: false };
+    const empty = { campaign: '', content_type: '' };
+
+    // ปกติ: TikTok และ Platform อื่นบังคับ Content Type
+    assert.equal(web.setTypeOk(off, 'TikTok', empty), false);
+    assert.equal(web.setTypeOk(off, 'TikTok', { content_type: 'Review' }), true);
+    assert.equal(web.setTypeOk(off, 'Lemon8', empty), false);
+    // TikTok ไม่เคยบังคับ Campaign (ของเดิมเป็นแบบนี้อยู่แล้ว)
+    assert.equal(web.setTypeOk(off, 'TikTok', { content_type: 'Review', campaign: '' }), true);
+    // Facebook / Instagram บังคับที่ช่อง Campaign แทน
+    assert.equal(web.setTypeOk(off, 'Facebook', { content_type: 'Review' }), false);
+    assert.equal(web.setTypeOk(off, 'Facebook', { campaign: 'Awareness' }), true);
+    assert.equal(web.setTypeOk(off, 'Instagram', { campaign: 'Reels' }), true);
+
+    // ไม่ใช้ Gencode: ผ่านหมดทุก Platform แม้ไม่กรอกอะไรเลย
+    ['TikTok', 'Facebook', 'Instagram', 'Lemon8', 'X', ''].forEach(p => {
+        assert.equal(web.setTypeOk(on, p, empty), true, 'ไม่ใช้ Gencode + ' + p);
+        assert.equal(web.setTypeOk(on, p, {}), true, 'ไม่ใช้ Gencode (ชุดว่าง) + ' + p);
+    });
+
+    // ค่าที่เคยกรอกไว้ยังอยู่ — ปิดช่องไม่ได้แปลว่าล้างค่า
+    assert.equal(web.setTypeOk(on, 'TikTok', { content_type: 'Review' }), true);
+
+    // ชุดที่ไม่มีข้อมูลเลย / กลุ่มไม่ถูกต้อง ต้องไม่ระเบิด
+    assert.equal(web.setTypeOk(null, 'TikTok', null), false);
+    assert.equal(web.setTypeOk(undefined, 'Facebook', undefined), false);
+    // เดาจาก code_expire ไม่ได้ ต้องเป็น no_gencode: true ตรงตัวเท่านั้น (กติกาเดียวกับ groupNoGencode)
+    assert.equal(web.setTypeOk({ code_expire: 0 }, 'TikTok', empty), false);
+    assert.equal(web.setTypeOk({ no_gencode: 'true' }, 'TikTok', empty), false);
+});
+
+// ตัวตรวจในฟอร์มต้องเรียก setTypeOk จริง ไม่ใช่ก๊อปเงื่อนไขไปเขียนเองจนหลุดกัน
+test('ProjectForm ใช้ setTypeOk ในตัวตรวจฟอร์ม', () => {
+    const form = fs.readFileSync(path.join(__dirname, '../client/src/components/ProjectForm.jsx'), 'utf8');
+    assert.ok(form.includes('setTypeOk(g, b.platform, s)'), 'validate() ต้องเรียก setTypeOk');
+    assert.ok(!form.includes('campaignIsCtype(b.platform) ? s.campaign : s.content_type'), 'ต้องไม่เหลือเงื่อนไขเก่าที่ก๊อปไว้');
+});
