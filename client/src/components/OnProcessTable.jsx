@@ -27,7 +27,7 @@ const postCheckShown = s => s.post_check === 'pending' || s.post_check === 'retu
 const postCheckTeamTodo = s => s.post_check === 'pending' || s.post_check === 'changed';
 
 // onPostCheck(subId, action, note) = ฝั่งทีมเท่านั้น (ยืนยัน / ส่งกลับให้แก้) · ฝั่งเอเจนซี่ไม่ส่งมา = เห็นแค่สถานะ
-function ProcessRow({ sub, putSubmission, reload, showAds = false, group = null, scope = '', directEdit = false, seq = 1, onPostCheck }) {
+function ProcessRow({ sub, putSubmission, reload, showAds = false, group = null, scope = '', directEdit = false, seq = 1, onPostCheck, canRemark = false, canDecide = true }) {
     const [draftNew, setDraftNew] = useState(false);
     useEffect(() => { setDraftNew(draftIsNew(scope, sub)); }, [scope, sub.id, sub.draft_updated_at]);
     const openDraft = () => { markDraftSeen(scope, sub); setDraftNew(false); setShowDraft(true); };
@@ -271,6 +271,8 @@ function ProcessRow({ sub, putSubmission, reload, showAds = false, group = null,
 
             {showDraft && (
                 <DraftModal
+                    canRemark={canRemark}
+                    canDecide={canDecide}
                     sub={sub}
                     onClose={() => setShowDraft(false)}
                     onSave={async (payload) => { const res = await putSubmission(sub.id, payload); if (res?.data) markDraftSeen(scope, res.data); setDraftNew(false); reload(); }}
@@ -326,7 +328,8 @@ function GroupBar({ group, gi, count, scope }) {
 // conceptScope(group) → { products, platforms } = ขอบเขตที่ผู้ดูเห็น (หน้าเอเจนซี่ส่งมา · หน้าทีมไม่ส่ง = เห็นทั้งกลุ่ม)
 // onPostCheck(subId, action, note, seenAt) = ฝั่งทีมยืนยัน/ส่งกลับข้อมูลโพสต์ (ฝั่งเอเจนซี่ไม่ส่ง = เห็นแค่สถานะ)
 // initialCheckOnly = เปิดมาพร้อมตัวกรอง "รอตรวจ" (ลิงก์จากหน้า Ads)
-export default function OnProcessTable({ subs = [], groups = [], showAds = false, scope = '', putSubmission, reload, directEdit = false, stage = 'all', onClearStage, conceptScope, onPostCheck, initialCheckOnly = false }) {
+// canRemark / canDecide ตัดสินจาก role ของบัญชี ไม่ใช่จากหน้าที่เปิด — ทีมที่เปิดลิงก์เอเจนซี่ยังตรวจดราฟได้ตามปกติ
+export default function OnProcessTable({ subs = [], groups = [], showAds = false, scope = '', putSubmission, reload, directEdit = false, stage = 'all', onClearStage, conceptScope, onPostCheck, initialCheckOnly = false, canRemark = false, canDecide = true }) {
     const [platFilter, setPlatFilter] = useState('all');   // ตัวกรองตามแพลตฟอร์ม
     const [ctypeFilter, setCtypeFilter] = useState('all'); // ตัวกรองย่อยตาม Content Type
     const [clipFilter, setClipFilter] = useState('all');   // ตัวกรองตามคลิป (กลุ่มที่ 1 คนส่งหลายคลิป)
@@ -367,7 +370,7 @@ export default function OnProcessTable({ subs = [], groups = [], showAds = false
     groups.forEach(g => { groupMap[g.key] = g; });
     const tblCls = 'proc-tbl' + (showAds ? ' with-ads' : '');
     const rowsFor = list => list.map((s, i) => (
-        <ProcessRow key={s.id} sub={s} seq={i + 1} putSubmission={putSubmission} reload={reload} showAds={showAds} scope={scope} group={groupMap[s.group_key] || null} directEdit={directEdit} onPostCheck={onPostCheck} />
+        <ProcessRow key={s.id} sub={s} seq={i + 1} putSubmission={putSubmission} reload={reload} showAds={showAds} scope={scope} group={groupMap[s.group_key] || null} directEdit={directEdit} onPostCheck={onPostCheck} canRemark={canRemark} canDecide={canDecide} />
     ));
 
     // บอกให้ชัดว่าตารางถูกกรองอยู่ ไม่งั้นงงว่าทำไมรายชื่อหายไป

@@ -265,6 +265,14 @@ ALTER TABLE submissions ADD COLUMN IF NOT EXISTS post_check_by      VARCHAR(255)
 ALTER TABLE submissions ADD COLUMN IF NOT EXISTS post_check_at      TIMESTAMPTZ;
 ALTER TABLE submissions ADD COLUMN IF NOT EXISTS post_check_changes JSONB;
 
+-- Remark ต่อดราฟ — เอเจนซี่เขียนบอกทีมว่าดราฟรอบนั้นมีอะไรเพิ่มเติม (คนละช่องกับ feedback ที่ทีมเขียนบอกจุดแก้)
+-- ทีมอ่านได้อย่างเดียว เส้น PUT ของทีมไม่รับช่องนี้ · คู่กับ draft_link / feedback ที่มีอยู่แล้ว รอบละ 1 ช่อง
+ALTER TABLE submissions ADD COLUMN IF NOT EXISTS draft_remark  TEXT;
+ALTER TABLE submissions ADD COLUMN IF NOT EXISTS draft_remark2 TEXT;
+ALTER TABLE submissions ADD COLUMN IF NOT EXISTS draft_remark3 TEXT;
+ALTER TABLE submissions ADD COLUMN IF NOT EXISTS draft_remark4 TEXT;
+ALTER TABLE submissions ADD COLUMN IF NOT EXISTS draft_remark5 TEXT;
+
 -- ---------- payments (สถานะเอกสาร/การจ่ายต่อแคมเปญ+เอเจนซี่) ----------
 CREATE TABLE IF NOT EXISTS payments (
     id             SERIAL PRIMARY KEY,

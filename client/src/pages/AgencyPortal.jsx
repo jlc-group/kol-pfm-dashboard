@@ -885,6 +885,8 @@ export default function AgencyPortal() {
                             conceptScope={g => agencyScopeOf(g, scopePlatforms)}
                             scope={token}
                             directEdit
+                            canRemark={user.role === 'agency'}
+                            canDecide={user.role !== 'agency'}
                             putSubmission={(subId, payload) => api(`/agency/${token}/submissions/${subId}`, { method: 'PUT', body: payload })}
                             reload={load}
                         />

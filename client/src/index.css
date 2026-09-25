@@ -1130,7 +1130,19 @@ a { text-decoration: none; color: inherit; }
 /* แถวปุ่มตรวจดราฟ ใต้ช่องลิงก์ */
 .draft-decide { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: -2px 0 12px; padding: 9px 11px; background: var(--bg-soft); border: 1px solid var(--border); border-radius: 11px; }
 .draft-decide-lbl { font-size: 12px; font-weight: 700; color: var(--muted); }
+/* ผลตรวจที่ฝั่งเอเจนซี่เห็น — อ่านอย่างเดียว ไม่ใช่ปุ่ม จึงไม่มีเงาและกดไม่ได้ */
+.draft-status-read { display: inline-block; padding: 7px 14px; border-radius: 999px; font-size: 12.5px; font-weight: 800; }
+.draft-status-read.approve { background: #e7f7ef; color: var(--mint-dark); }
+.draft-status-read.revise { background: #fdecef; color: var(--danger); }
 .draft-fb-req { color: #d97706; font-weight: 700; }
+/* Remark ต่อดราฟ (เอเจนซี่เขียน ทีมอ่าน) — อยู่ต่อจากช่องลิงก์ เป็นของชุดเดียวกันที่เอเจนซี่กรอกตอนส่งดราฟ
+   ส่วนที่คั่นด้วยเส้นประคือผลตรวจของทีมที่อยู่ถัดลงไป */
+.draft-remark { margin-top: -2px; }
+/* ทีมลบดราฟที่มี Remark ของเอเจนซี่ไม่ได้ — ป้ายบอกเหตุผลแทนปุ่ม (ชี้ดูคำอธิบาย) */
+.draft-block-lock { font-size: 11px; font-weight: 600; color: var(--muted); text-transform: none; letter-spacing: 0; cursor: help; }
+.draft-remark + .draft-decide { border-top: 1px dashed var(--border); padding-top: 12px; }
+.draft-remark-who { font-weight: 400; color: var(--muted); }
+.draft-remark-read { padding: 9px 11px; border: 1px solid var(--border); border-radius: 9px; background: #f7faf9; font-size: 13px; color: var(--text); white-space: pre-wrap; overflow-wrap: anywhere; }
 /* Performance modal + ปุ่ม */
 .perf-fetch-btn { display: inline-flex; align-items: center; gap: 7px; width: 100%; justify-content: center; padding: 10px; margin: 4px 0 12px; border: 1px dashed var(--mint); border-radius: 11px; background: var(--bg-soft); color: var(--mint-dark); font-weight: 700; font-size: 13px; cursor: pointer; }
 .perf-fetch-btn:hover { background: #dcefe5; }

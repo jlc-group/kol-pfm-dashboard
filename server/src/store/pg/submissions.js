@@ -28,6 +28,7 @@ const UPDATABLE = [
     'concept', 'gen_date', 'group_key', 'tier', 'clip_name', 'status',
     'draft_link', 'draft_link2', 'draft_link3', 'draft_link4', 'draft_link5',
     'gencode', 'feedback', 'feedback2', 'feedback3', 'feedback4', 'feedback5',
+    'draft_remark', 'draft_remark2', 'draft_remark3', 'draft_remark4', 'draft_remark5',
     'approved', 'draft_status', 'post_url', 'post_date', 'id_post', 'code_expire',
     'ad_status', 'ad_spend', 'ad_reach', 'ad_start', 'ad_end', 'ad_note',
     'team_note', 'agency_note', 'content_type',
@@ -78,6 +79,8 @@ function newRow({ project_id, account_name, followers, platform, product, budget
         status: 'submitted',                  // submitted | confirmed | rejected
         draft_link: null, draft_link2: null, draft_link3: null, draft_link4: null, draft_link5: null,
         gencode: null, feedback: null, feedback2: null, feedback3: null, feedback4: null, feedback5: null,
+        // Remark ของแต่ละดราฟ — เอเจนซี่เขียน ทีมอ่านอย่างเดียว
+        draft_remark: null, draft_remark2: null, draft_remark3: null, draft_remark4: null, draft_remark5: null,
         approved: false, draft_status: null,
         post_url: null, post_date: null, id_post: null, code_expire: Number(code_expire) || 60,
         ad_status: 'ยังไม่ยิง', ad_spend: 0, ad_reach: 0, ad_start: null, ad_end: null, ad_note: null,
@@ -178,8 +181,9 @@ async function updateOne(client, subId, projectId, fields, byName, opts = {}) {
     // budget ไม่อยู่ใน LIST_F — ทีมตั้งค่าตัวจากหน้า Dashboard ทีละหลายสิบแถว (หารเฉลี่ย/ล้างค่าตัว)
     // ถ้าขยับ list_updated_at ด้วย ป้าย "มีอัปเดตใหม่" ฝั่งเอเจนซี่จะเด้งทั้งแคมเปญทั้งที่รายชื่อไม่ได้เปลี่ยน
     const LIST_F = ['account_name', 'followers', 'platform', 'product', 'agency', 'link_account', 'tier', 'content_type', 'group_key', 'status'];
-    const WORK_F = ['draft_link', 'draft_link2', 'draft_link3', 'draft_link4', 'draft_link5', 'draft_status', 'feedback', 'feedback2', 'feedback3', 'feedback4', 'feedback5', 'gencode', 'post_url', 'post_date', 'id_post', 'code_expire', 'approved', 'concept', 'gen_date'];
-    const DRAFT_F = ['draft_link', 'draft_link2', 'draft_link3', 'draft_link4', 'draft_link5', 'draft_status', 'feedback', 'feedback2', 'feedback3', 'feedback4', 'feedback5'];
+    const DRAFT_REMARK_F = ['draft_remark', 'draft_remark2', 'draft_remark3', 'draft_remark4', 'draft_remark5'];
+    const WORK_F = ['draft_link', 'draft_link2', 'draft_link3', 'draft_link4', 'draft_link5', 'draft_status', 'feedback', 'feedback2', 'feedback3', 'feedback4', 'feedback5', ...DRAFT_REMARK_F, 'gencode', 'post_url', 'post_date', 'id_post', 'code_expire', 'approved', 'concept', 'gen_date'];
+    const DRAFT_F = ['draft_link', 'draft_link2', 'draft_link3', 'draft_link4', 'draft_link5', 'draft_status', 'feedback', 'feedback2', 'feedback3', 'feedback4', 'feedback5', ...DRAFT_REMARK_F];
     const keys = Object.keys(fields).filter(k => fields[k] !== undefined); // นับเฉพาะ field ที่ส่งมาจริง
     if (keys.some(k => LIST_F.includes(k))) { s.list_updated_at = now(); patch.list_updated_at = s.list_updated_at; }
     if (keys.some(k => WORK_F.includes(k))) { s.work_updated_at = now(); patch.work_updated_at = s.work_updated_at; }

@@ -263,10 +263,20 @@ router.post('/:token', async (req, res, next) => {
 
 // ช่องที่ PUT ด้านล่างรับบันทึก — ใช้แยกคำขอ "มีแต่ค่าตัว" ออกจากคำขอที่มีช่องอื่นมาด้วย
 // เพิ่มช่องใหม่ให้เส้นนั้นเมื่อไหร่ ต้องเพิ่มที่นี่ด้วย ไม่งั้นคำขอที่มีช่องใหม่ + budget จะโดนตอบ 409
+// หมายเหตุต่อดราฟ: ตัดช่องว่างหัวท้าย · ว่างล้วน = null · ไม่ได้ส่งมา = undefined (store จะไม่แตะคอลัมน์นั้น)
+function remarkFields(src) {
+    const out = {};
+    for (const [k, v] of Object.entries(src)) {
+        out[k] = v === undefined ? undefined : ((v && String(v).trim()) ? String(v).trim().slice(0, 2000) : null);
+    }
+    return out;
+}
+
 const AGENCY_PUT_FIELDS = [
     'account_name', 'followers', 'platform', 'product', 'agency', 'link_account', 'agency_note', 'content_type', 'tier',
     'draft_link', 'draft_link2', 'draft_link3', 'draft_link4', 'draft_link5',
     'gencode', 'feedback', 'feedback2', 'feedback3', 'feedback4', 'feedback5',
+    'draft_remark', 'draft_remark2', 'draft_remark3', 'draft_remark4', 'draft_remark5',
     'approved', 'draft_status', 'post_url', 'post_date', 'id_post', 'code_expire',
     'views', 'likes', 'comments', 'saves', 'shares', 'reposts'
 ];
@@ -297,6 +307,7 @@ router.put('/:token/submissions/:subId', async (req, res, next) => {
             content_type, tier,   // ระบุย้อนหลังได้ สำหรับรายชื่อที่ส่งมาก่อนมีการแยกช่อง
             draft_link, draft_link2, draft_link3, draft_link4, draft_link5,
             gencode, feedback, feedback2, feedback3, feedback4, feedback5,
+            draft_remark, draft_remark2, draft_remark3, draft_remark4, draft_remark5,   // หมายเหตุต่อดราฟ (เอเจนซี่เขียน)
             approved, draft_status, post_url, post_date, id_post, code_expire,
             views, likes, comments, saves, shares, reposts   // ผลงานคอนเทนต์ จากโมดัล Perf
         } = req.body;
@@ -311,6 +322,13 @@ router.put('/:token/submissions/:subId', async (req, res, next) => {
         const writer = isPersonEdit ? store.submissions.updatePerson : store.submissions.update;
         // ใครแก้: บัญชีเอเจนซี่ = ข้อมูลโพสต์ต้องรอทีมตรวจก่อนขึ้นหน้า Ads · ทีมที่เปิดลิงก์เดียวกัน = นับว่าตรวจแล้ว
         const actor = (req.account || req.user || {}).role === 'agency' ? 'agency' : 'team';
+        // ผลตรวจดราฟ (Revise / Approve) เป็นของทีม — บัญชีเอเจนซี่อนุมัติงานตัวเองไม่ได้
+        // ยอมให้ "ล้างผลตรวจ" (null / false) ได้อย่างเดียว เพราะส่งดราฟรอบใหม่ต้องล้างผลรอบก่อนออก
+        // ค่าอื่นเมินทิ้งเงียบ ๆ ไม่ตอบ error เพราะแท็บเก่าที่เปิดค้างก่อน deploy ยังส่งสถานะเดิมกลับมาด้วย
+        // ถ้าตอบ error จะกลายเป็นบันทึกลิงก์ดราฟไม่ได้เลย · คำตอบคืนแถวจริงกลับไป หน้าเว็บจึงเห็นค่าที่แท้จริง
+        const decide = actor === 'agency'
+            ? { draft_status: draft_status === null ? null : undefined, approved: approved === false ? false : undefined }
+            : { draft_status, approved };
         let byName = link.name ? `${link.name} (เอเจนซี่)` : 'เอเจนซี่';   // ฝั่งนี้ไม่มีบัญชีผู้ใช้ ใช้ชื่อจากลิงก์แทน
         if (actor === 'team') {
             const me = await store.users.findById(req.user.id);
@@ -324,7 +342,10 @@ router.put('/:token/submissions/:subId', async (req, res, next) => {
             agency_note: agency_note !== undefined ? ((agency_note && String(agency_note).trim()) ? String(agency_note).trim() : null) : undefined,
             draft_link, draft_link2, draft_link3, draft_link4, draft_link5,
             gencode, feedback, feedback2, feedback3, feedback4, feedback5,
-            approved, draft_status, post_url, post_date, id_post, code_expire,
+            // ตัดช่องว่างหัวท้าย · ว่าง = เก็บเป็น null (กติกาเดียวกับ agency_note) · ไม่ส่งมา = ไม่แตะของเดิม
+            ...remarkFields({ draft_remark, draft_remark2, draft_remark3, draft_remark4, draft_remark5 }),
+            ...decide,
+            post_url, post_date, id_post, code_expire,
             views: views !== undefined ? (Number(views) || 0) : undefined, likes: likes !== undefined ? (Number(likes) || 0) : undefined, comments: comments !== undefined ? (Number(comments) || 0) : undefined, saves: saves !== undefined ? (Number(saves) || 0) : undefined, shares: shares !== undefined ? (Number(shares) || 0) : undefined,
             reposts: reposts !== undefined ? (Number(reposts) || 0) : undefined
         }, byName, { actor });
