@@ -1,4 +1,5 @@
 const { query } = require('./_base');
+const { resolveGroupProducts, resolveGroupTarget } = require('../logic');
 
 const AD_STATUS = 'ยังไม่ยิง';
 
@@ -30,6 +31,9 @@ async function listCandidates({ brand, limit = 100, updatedSince = null } = {}) 
                     s.post_check,
                     s.post_url,
                     s.post_date,
+                    s.product,
+                    s.group_key,
+                    p.ad_groups,
                     COALESCE(s.updated_at, s.submitted_at) AS updated_at
                FROM submissions s
                JOIN projects p ON p.id = s.project_id
@@ -43,7 +47,11 @@ async function listCandidates({ brand, limit = 100, updatedSince = null } = {}) 
         values
     );
 
-    return result.rows.map(row => ({
+    return result.rows.map(row => {
+        // Same Product/Target the /ads page shows for this clip.
+        const grp = Array.isArray(row.ad_groups) ? row.ad_groups.find(g => g && g.key === row.group_key) : null;
+        const target = resolveGroupTarget(grp, row.platform, row.product);
+        return {
         submission_id: row.submission_id,
         id_post: String(row.id_post),
         gencode: row.gencode || null,
@@ -54,8 +62,11 @@ async function listCandidates({ brand, limit = 100, updatedSince = null } = {}) 
         post_check: row.post_check || null,
         post_url: row.post_url || null,
         post_date: row.post_date || null,
+        product: row.product || (resolveGroupProducts(grp, row.platform).join(', ') || null),
+        target: Array.isArray(target) ? target : (target ? [target] : []),
         updated_at: row.updated_at || null
-    }));
+        };
+    });
 }
 
 module.exports = { contentExport: { listCandidates } };
