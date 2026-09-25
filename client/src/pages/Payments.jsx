@@ -6,6 +6,7 @@ import Avatar from '../components/Avatar.jsx';
 import PayCyclePicker from '../components/PayCyclePicker.jsx';
 import { fmtDate } from '../utils/date.js';
 import { BRANDS } from '../data/brands.js';
+import { conceptOneLine } from '../data/adGroups.js';
 import { ProductSummary } from '../components/ProductChips.jsx';
 
 const baht = n => '฿' + Number(n || 0).toLocaleString('th-TH');
@@ -213,8 +214,8 @@ function PendingTab({ items, picked, setPicked, onMakeBatch, onTakeAll }) {
                                                     {i.brand && <span className="inst-brand">{i.brand}</span>}
                                                     {i.project_name}
                                                     {i.group_no && (
-                                                        <span className="inst-grp" title={i.group_concept || ''}>
-                                                            กลุ่ม {i.group_no}{i.group_concept ? ' · ' + i.group_concept : ''}
+                                                        <span className="inst-grp" title={conceptOneLine(i.group_concept)}>
+                                                            กลุ่ม {i.group_no}{i.group_concept ? ' · ' + conceptOneLine(i.group_concept) : ''}
                                                         </span>
                                                     )}
                                                 </span>
@@ -654,7 +655,7 @@ function PlanModal({ row, onClose, onSaved, onReload }) {
                                 <option value={ALL}>{hasPlan('') ? '✓ ' : ''}ทั้งแคมเปญ · งบ {baht(Number(row.budget) || 0)}</option>
                                 {groups.map((g, i) => (
                                     <option key={g.key} value={g.key}>
-                                        {hasPlan(g.key) ? '✓ ' : ''}กลุ่มที่ {i + 1}{g.concept ? " · " + g.concept : ""} · งบ {baht(g.budget)}
+                                        {hasPlan(g.key) ? '✓ ' : ''}กลุ่มที่ {i + 1}{g.concept ? " · " + conceptOneLine(g.concept) : ""} · งบ {baht(g.budget)}
                                     </option>
                                 ))}
                             </select>

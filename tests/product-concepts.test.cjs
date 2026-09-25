@@ -108,3 +108,58 @@ test('carry-over steps aside when the main concept changed or the new form sent 
     assert.equal(carryProductConcepts(null, stored()), null);
     assert.deepEqual(carryProductConcepts(stale(), null), stale());
 });
+
+// ===== 1 สินค้าใส่ได้หลาย Concept: เก็บเป็นข้อความเดียวคั่นด้วยขึ้นบรรทัดใหม่ =====
+const NL = String.fromCharCode(10);
+const CR = String.fromCharCode(13);
+
+test('conceptParts: แยกด้วยขึ้นบรรทัดใหม่หรือ | ตัดช่องว่างและบรรทัดว่างทิ้ง', () => {
+    assert.deepEqual(web.conceptParts('กันแดดไม่วอก'), ['กันแดดไม่วอก']);
+    assert.deepEqual(web.conceptParts('A' + NL + 'B'), ['A', 'B']);
+    assert.deepEqual(web.conceptParts('A' + CR + NL + 'B'), ['A', 'B']);
+    assert.deepEqual(web.conceptParts('A|B'), ['A', 'B']);
+    assert.deepEqual(web.conceptParts('  A  ' + NL + NL + '  B  ' + NL + ' '), ['A', 'B']);
+    // ข้อความ Concept ไทยใช้ , และ / จริง ห้ามเอาไปแยก
+    assert.deepEqual(web.conceptParts('กันแดด, กันน้ำ / สูตรใหม่'), ['กันแดด, กันน้ำ / สูตรใหม่']);
+    // ค่าที่ไม่ใช่ข้อความต้องไม่ระเบิด
+    [null, undefined, '', '   ', NL + NL].forEach(v => assert.deepEqual(web.conceptParts(v), [], JSON.stringify(v)));
+});
+
+test('conceptOneLine: ที่ที่มีพื้นที่บรรทัดเดียวต่อกันด้วย " / "', () => {
+    assert.equal(web.conceptOneLine('A' + NL + 'B'), 'A / B');
+    assert.equal(web.conceptOneLine('เดี่ยว'), 'เดี่ยว');
+    assert.equal(web.conceptOneLine(null), '');
+});
+
+test('ข้อมูลเก่าที่มี Concept เดียวอ่านได้เหมือนเดิม ไม่ต้องแปลงข้อมูล', () => {
+    const g = group();
+    // L3 อยู่ทั้ง TikTok (มี Concept ของตัวเอง) และ Instagram (ใช้ Concept หลัก) จึงมีชื่อ Platform กำกับ
+    assert.equal(web.conceptText(g), 'L3 · TikTok = กันแดดไม่วอก · สินค้าอื่น = กันแดดสู้แดดจัด');
+    assert.equal(web.conceptOneLine(g.concept), 'กันแดดสู้แดดจัด');
+});
+
+test('หลาย Concept: หัวกลุ่มบรรทัดเดียวยุบเป็น " / " แต่ conceptRows ยังเก็บข้อความเต็ม', () => {
+    const many = 'กันแดดไม่วอก' + NL + 'กันแดดสู้แดดจัด';
+    const g = group({}, { product_concepts: { L3: many } });
+    assert.equal(web.conceptText(g), 'L3 · TikTok = กันแดดไม่วอก / กันแดดสู้แดดจัด · สินค้าอื่น = กันแดดสู้แดดจัด');
+    const row = web.conceptRows(g).find(r => !r.main);
+    assert.equal(row.concept, many, 'ฝั่งที่โชว์หลายบรรทัดต้องได้ข้อความเต็ม');
+    assert.deepEqual(web.conceptParts(row.concept), ['กันแดดไม่วอก', 'กันแดดสู้แดดจัด']);
+});
+
+test('สินค้าที่ใช้ชุด Concept เหมือนกันยังยุบเป็นแถวเดียว', () => {
+    const many = 'A' + NL + 'B';
+    const g = group({}, { products: ['L3', 'L4'], product_concepts: { L3: many, L4: many } });
+    const own = web.conceptRows(g).filter(r => !r.main);
+    assert.equal(own.length, 1);
+    assert.deepEqual(own[0].items.map(it => it.code), ['L3', 'L4']);
+});
+
+test('ตอนบันทึก: ตัดบรรทัดว่างและช่องว่างหัวท้ายของทุกบรรทัด', () => {
+    const b = {
+        platform: 'TikTok', products: ['L3', 'L4'], concept_split: true,
+        product_concepts: { L3: '  A  ' + NL + NL + '  B ' + NL, L4: ' ' + NL + ' ' }
+    };
+    const out = web.packConcepts(b);
+    assert.deepEqual(out.product_concepts, { L3: 'A' + NL + 'B' }, 'L4 ที่เหลือแต่บรรทัดว่างต้องไม่ถูกเก็บ');
+});

@@ -1,7 +1,7 @@
 import Icon from './Icon.jsx';
 import ProductChips from './ProductChips.jsx';
 import ConceptLines from './ConceptLines.jsx';
-import { clipCountFor, clipsFor, quotaOf, hasOwnConcepts, groupNoGencode } from '../data/adGroups.js';
+import { clipCountFor, clipsFor, quotaOf, hasOwnConcepts, groupNoGencode, conceptOneLine } from '../data/adGroups.js';
 import { clipCount } from '../data/clips.js';
 
 // จำนวนคลิปของกลุ่มในขอบเขต Platform ที่ผู้ดูเห็น — ใช้ทั้งหน้าเอเจนซี่ (GroupSection) และแท็บรายชื่อฝั่งทีม (ProjectDetail)
@@ -42,7 +42,7 @@ export default function GroupNeedHead({ group, gi, products = [], platforms = []
                     {/* Concept แยกต่อสินค้า — บรีฟ KOL ตามสินค้าของแต่ละคนได้ (เฉพาะสินค้าในขอบเขตที่เห็น) */}
                     {hasOwnConcepts(group, products, platforms)
                         ? <div className="ag-concept-top">📝 Concept ตามสินค้า<ConceptLines group={group} products={products} platforms={platforms} className="ag" /></div>
-                        : group.concept && <div className="ag-concept-top">📝 Concept: <b>{group.concept}</b></div>}
+                        : group.concept && <div className="ag-concept-top">📝 Concept: <b>{conceptOneLine(group.concept)}</b></div>}
                     {/* ทีมตั้ง "-" ในฟอร์มแคมเปญ — บอกตั้งแต่หัวกลุ่มว่าไม่ต้องหา Gencode มากรอก */}
                     {groupNoGencode(group) && <div className="ag-concept-top">กลุ่มนี้ไม่ต้องใช้ Gencode</div>}
                     <div style={{ marginTop: 8 }}>

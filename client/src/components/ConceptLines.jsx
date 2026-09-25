@@ -1,4 +1,4 @@
-import { conceptRows, isSplitConcept } from '../data/adGroups.js';
+import { conceptRows, isSplitConcept, conceptParts } from '../data/adGroups.js';
 import { productLabel } from '../data/products.js';
 
 // Concept ของกลุ่มที่แยกต่อสินค้า — 1 แถว = สินค้าที่ใช้ Concept เดียวกัน (สินค้าที่ไม่ได้ใส่ใช้ Concept หลักของกลุ่ม)
@@ -22,10 +22,22 @@ export default function ConceptLines({ group, products, platforms, className = '
                             ? <span className="concept-code rest" title={r.items.map(it => it.label).join(', ')}>สินค้าอื่น ๆ ({r.items.length})</span>
                             : r.items.map(it => <span className="concept-code" key={it.label} title={productLabel(it.code)}>{it.label}</span>)}
                     </span>
-                    <span className="concept-text">
-                        {r.concept}
-                        {r.main && <small className="concept-main"> (Concept หลัก)</small>}
-                    </span>
+                    {/* 1 สินค้ามีได้หลาย Concept — แยกบรรทัดให้อ่านง่าย มีเลขนำเมื่อมีตั้งแต่ 2 อัน
+                        คอนเซปต์เดียว (ข้อมูลเดิมทั้งหมด) ต้องออกมาหน้าตาเดิมเป๊ะ จึงไม่ขึ้นบรรทัดและป้ายต่อท้ายเหมือนเดิม */}
+                    {(() => {
+                        const parts = conceptParts(r.concept);
+                        const list = parts.length ? parts : [r.concept];
+                        return (
+                            <span className={'concept-text' + (list.length > 1 ? ' multi' : '')}>
+                                {list.map((t, ci) => (
+                                    <span className="concept-one" key={ci}>
+                                        {list.length > 1 && <em className="concept-no">{ci + 1}</em>}{t}
+                                        {r.main && ci === list.length - 1 && <small className="concept-main"> (Concept หลัก)</small>}
+                                    </span>
+                                ))}
+                            </span>
+                        );
+                    })()}
                 </div>
             ))}
         </div>

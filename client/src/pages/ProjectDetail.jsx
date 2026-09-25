@@ -15,7 +15,7 @@ import { productLabel, asTargetArray } from '../data/products.js';
 import {
     groupPlatforms, kolInScope, contentTypesOf, mediaFor, quotaOf,
     toBlocks, blockKol, blocksKol, blocksBudget, num, needTarget, isSplitBudget, hasOwnConcepts,
-    contentCells, cellKeyOf, cellKey, clipCountFor, targetFor, groupNoGencode, productsFor, allocsInScope
+    contentCells, cellKeyOf, cellKey, clipCountFor, targetFor, groupNoGencode, productsFor, allocsInScope, conceptOneLine
 } from '../data/adGroups.js';
 import { collapseByPerson, countPeople } from '../data/clips.js';
 import ProductFilter from '../components/ProductFilter.jsx';
@@ -1092,7 +1092,7 @@ export default function ProjectDetail() {
                                                 <span className="adg-badge">กลุ่มที่ {i + 1}</span>
                                                 {hasOwnConcepts(g)
                                                     ? <span className="adg-concept">📝 Concept แยกตามสินค้า</span>
-                                                    : g.concept && <span className="adg-concept">📝 Concept: {g.concept}</span>}
+                                                    : g.concept && <span className="adg-concept">📝 Concept: {conceptOneLine(g.concept)}</span>}
                                                 {/* ตั้ง "-" ในฟอร์มแคมเปญ — ทีมจะได้รู้ว่าช่อง Gencode ว่างในกลุ่มนี้ไม่ใช่ลืมกรอก */}
                                                 {groupNoGencode(g) && <span className="adg-concept" title="กลุ่มนี้ไม่ใช้ Gencode">ไม่ใช้ Gencode</span>}
                                                 {blocksKol(blocks) > 0 && <span className="adg-kol">⭐ รวม {blocksKol(blocks)} KOL</span>}
@@ -1310,7 +1310,7 @@ export default function ProjectDetail() {
                                         <label key={g.key} className={"alp-group-pick" + (newLinkGroups.includes(g.key) ? " on" : "")}>
                                             <input type="checkbox" checked={newLinkGroups.includes(g.key)} onChange={() => toggleNewGroup(g.key)} />
                                             <span className="alp-group-no">กลุ่มที่ {gi + 1}</span>
-                                            {g.concept && <span className="alp-group-concept">{g.concept}</span>}
+                                            {g.concept && <span className="alp-group-concept">{conceptOneLine(g.concept)}</span>}
                                             <span className="alp-group-meta">
                                                 {groupPlatforms(g).join(" · ") || "ไม่ระบุ Platform"}
                                                 {g.kol_count > 0 ? " · " + g.kol_count + " KOL" : ""}
@@ -1412,9 +1412,9 @@ export default function ProjectDetail() {
                         <button type="button" key={o.key}
                             className={'proc-plat-chip' + (curGroup === o.key ? ' on' : '')}
                             title={o.key === NO_GROUP ? 'KOL ที่ยังไม่ได้ถูกจัดเข้ากลุ่มไหน'
-                                : [o.products.join(', '), o.concept].filter(Boolean).join(' · ')}
+                                : [o.products.join(', '), conceptOneLine(o.concept)].filter(Boolean).join(' · ')}
                             onClick={() => setListGroup(o.key)}>
-                            {o.key === NO_GROUP ? 'ไม่ระบุกลุ่ม' : `กลุ่มที่ ${o.no}${o.concept ? ' · ' + o.concept : ''}`} ({o.count})
+                            {o.key === NO_GROUP ? 'ไม่ระบุกลุ่ม' : `กลุ่มที่ ${o.no}${o.concept ? ' · ' + conceptOneLine(o.concept) : ''}`} ({o.count})
                         </button>
                     ))}
                 </div>

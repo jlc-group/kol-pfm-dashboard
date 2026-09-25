@@ -5,7 +5,7 @@ import DatePicker from './DatePicker.jsx';
 import DraftModal from './DraftModal.jsx';
 import PerfModal from './PerfModal.jsx';
 import { asTargetArray } from '../data/products.js';
-import { mediaFor, contentTypesOf, quotaOf, targetFor, conceptText, groupNoGencode, postNoGencode } from '../data/adGroups.js';
+import { mediaFor, contentTypesOf, quotaOf, targetFor, conceptText, conceptOneLine, groupNoGencode, postNoGencode } from '../data/adGroups.js';
 import { ProductSummary } from './ProductChips.jsx';
 import ProductFilter from './ProductFilter.jsx';
 import { knownProductCodes, matchProducts, productFilterOptions } from '../data/productFilter.js';
@@ -389,9 +389,9 @@ export default function OnProcessTable({ subs = [], groups = [], showAds = false
             {groupsInUse.map(g => (
                 <button type="button" key={g.key}
                     className={'proc-plat-chip' + (groupFilter === g.key ? ' on' : '')}
-                    title={[(g.products || []).join(', '), g.concept].filter(Boolean).join(' · ')}
+                    title={[(g.products || []).join(', '), conceptOneLine(g.concept)].filter(Boolean).join(' · ')}
                     onClick={() => setGroupFilter(g.key)}>
-                    กลุ่มที่ {groups.indexOf(g) + 1}{g.concept ? ' · ' + g.concept : ''} ({confirmed.filter(s => s.group_key === g.key).length})
+                    กลุ่มที่ {groups.indexOf(g) + 1}{g.concept ? ' · ' + conceptOneLine(g.concept) : ''} ({confirmed.filter(s => s.group_key === g.key).length})
                 </button>
             ))}
             {ungroupedCount > 0 && (

@@ -12,7 +12,7 @@ import {
     emptyTier, emptySet, emptyBlock, blocksKol, toBlocks, flattenBlocks,
     num, blocksBudget, platformBudgets, blocksProducts, withProductTargets, packProductTargets,
     needCampaign, campaignIsCtype, withCampaignFromCtype, packCampaigns, setTypeOk, isSplitBudget, productBudgetSum, packBudgets,
-    isSplitConcept, isBlockSplitConcept, packConcepts
+    isSplitConcept, isBlockSplitConcept, packConcepts, conceptParts
 } from '../data/adGroups.js';
 
 // รายชื่อทีมงานที่รับเป็น Owner ของแคมเปญ — แก้/เพิ่มชื่อตรงนี้ได้เลย
@@ -37,6 +37,26 @@ const groupTotalKol = g => ((g.blocks && g.blocks.length)
 // เลือกแบบ checkbox ติ๊กได้หลายตัวพร้อมกัน (ใช้ทั้งสินค้าและกลุ่ม Target)
 // options = [{ value, label }]
 // buttonText = ข้อความบนปุ่มแทนแบบปกติ (เช่นโชว์ชื่อที่เลือกไว้) · buttonTitle = tooltip ของปุ่ม
+// ช่องข้อความที่ยืดสูงตามจำนวนบรรทัดเอง — ใช้กับ Concept ที่ใส่ได้หลายอัน (กด Enter ขึ้นบรรทัดใหม่)
+// ไม่มีแถบเลื่อนในช่อง เห็นทุกบรรทัดพร้อมกัน · ยืดใหม่ทุกครั้งที่ค่าเปลี่ยน (รวมตอนโหลดค่าเดิมมาแก้)
+// ช่องที่ยังว่างต้องปล่อยให้สูงเท่า 1 บรรทัดตามปกติ — scrollHeight นับความสูงของข้อความบอกใบ้ที่ตกบรรทัดด้วย
+// ถ้าตั้งความสูงตามนั้น ช่องว่างจะสูงเกินแล้วหดวูบตอนพิมพ์ตัวแรก
+function AutoTextarea({ value, ...rest }) {
+    const ref = useRef(null);
+    // scrollHeight ไม่รวมเส้นขอบ แต่ช่องนี้คิดความสูงแบบรวมขอบ (border-box) ถ้าไม่บวกคืนช่องจะเตี้ยลง 2px ตอนพิมพ์ตัวแรก
+    const fit = el => {
+        if (!el) return;
+        el.style.height = 'auto';
+        if (!el.value) { el.style.height = ''; return; }
+        const cs = window.getComputedStyle(el);
+        const edge = cs.boxSizing === 'border-box'
+            ? (parseFloat(cs.borderTopWidth) || 0) + (parseFloat(cs.borderBottomWidth) || 0) : 0;
+        el.style.height = (el.scrollHeight + edge) + 'px';
+    };
+    useEffect(() => { fit(ref.current); }, [value]);
+    return <textarea {...rest} ref={ref} rows={1} value={value} onInput={e => fit(e.target)} />;
+}
+
 function CheckMultiSelect({ options, selected, onToggle, disabled, disabledText, placeholder, emptyText, allLabel = 'ทั้งหมด', buttonText, buttonTitle }) {
     const [open, setOpen] = useState(false);
     if (disabled) return <div className="product-picker pms-disabled">{disabledText}</div>;
@@ -331,7 +351,7 @@ export default function ProjectForm({ editing, onClose, onSaved }) {
                 // ค่าระดับกลุ่มแบบเดิม — เอาจากบล็อก/ชุดแรก เพื่อความเข้ากันได้ย้อนหลัง
                 const b0 = blocks[0] || null;
                 const s0 = (b0 && b0.sets && b0.sets[0]) || null;
-                return { key: g.key || genKey(), platform: plats[0] || null, platforms: plats, blocks, concept: g.concept || null, target: b0 ? asTargetArray(b0.target) : [], content_type: s0 ? (s0.content_type || null) : null, media_type: s0 ? (s0.media_type || null) : null, content_format: s0 ? (s0.content_format || null) : null, clips: (s0 && b0 ? (b0.clips || []) : (g.clips || [])).map(c => String(c || '').trim()).filter(Boolean), brief: (g.brief && g.brief.trim()) ? g.brief.trim() : null, products: blocksProducts(blocks), allocations, kol_count: allocations.reduce((s, a) => s + a.kols, 0), budget: blocksBudget(blocks), code_expire: Number(g.code_expire) || 60, no_gencode: !!g.no_gencode };
+                return { key: g.key || genKey(), platform: plats[0] || null, platforms: plats, blocks, concept: conceptParts(g.concept).join('\n') || null, target: b0 ? asTargetArray(b0.target) : [], content_type: s0 ? (s0.content_type || null) : null, media_type: s0 ? (s0.media_type || null) : null, content_format: s0 ? (s0.content_format || null) : null, clips: (s0 && b0 ? (b0.clips || []) : (g.clips || [])).map(c => String(c || '').trim()).filter(Boolean), brief: (g.brief && g.brief.trim()) ? g.brief.trim() : null, products: blocksProducts(blocks), allocations, kol_count: allocations.reduce((s, a) => s + a.kols, 0), budget: blocksBudget(blocks), code_expire: Number(g.code_expire) || 60, no_gencode: !!g.no_gencode };
             });
             const flatProducts = groups.flatMap(g => g.products);
             const totalKol = groups.reduce((s, g) => s + g.kol_count, 0); // KOL เป้าหมายรวม = ผลรวมทุกกลุ่ม
@@ -480,8 +500,9 @@ export default function ProjectForm({ editing, onClose, onSaved }) {
                                                 onChange={v => setGroupPlatforms(i, v)}
                                                 placeholder="— เลือก Platform —" itemName="Platform" />
                                         </div>
-                                        <input className="adgroup-concept" value={g.concept}
-                                            placeholder={isSplitConcept(g) ? 'Concept หลักของกลุ่ม...' : 'Concept ของกลุ่ม...'}
+                                        {/* ใส่ได้หลาย Concept — กด Enter ขึ้นบรรทัดใหม่ ช่องยืดสูงให้เอง */}
+                                        <AutoTextarea className="adgroup-concept" value={g.concept}
+                                            placeholder={(isSplitConcept(g) ? 'Concept หลักของกลุ่ม...' : 'Concept ของกลุ่ม...') + ' (Enter = เพิ่มอีกคอนเซปต์)'}
                                             onChange={e => setGroupField(i, 'concept', e.target.value)} />
                                         <button type="button" className="adgroup-rm" title="ลบกลุ่ม" onClick={() => removeGroup(i)}>×</button>
                                     </div>
@@ -525,14 +546,21 @@ export default function ProjectForm({ editing, onClose, onSaved }) {
                                         // Concept แยกต่อสินค้า — ช่องในแถวสินค้า (ว่าง = ใช้ Concept หลักของกลุ่ม)
                                         const cSplit = isBlockSplitConcept(b);
                                         const cOf = code => String((b.product_concepts || {})[code] || '');
-                                        const conceptField = (code, inline) => (
-                                            <div className={'pcon' + (inline ? ' inline' : '')}>
-                                                <span className="pcon-ico" aria-hidden="true">📝</span>
-                                                <input className={'pcon-in' + (cOf(code).trim() ? ' filled' : '')} value={cOf(code)}
-                                                    placeholder="ว่าง = ใช้ Concept หลักของกลุ่ม" aria-label={`Concept ของ ${code}`}
-                                                    onChange={e => setProductConcept(i, bi, code, e.target.value)} />
-                                            </div>
-                                        );
+                                        // 1 สินค้าใส่ได้หลาย Concept — กด Enter ขึ้นบรรทัดใหม่ในช่องเดิม (ไม่ต้องกดปุ่มเพิ่ม)
+                                        // ป้ายนับจำนวนขึ้นเมื่อมีตั้งแต่ 2 อัน เพื่อให้เห็นว่าระบบนับให้แล้วกี่คอนเซปต์
+                                        const conceptField = (code, inline) => {
+                                            const n = conceptParts(cOf(code)).length;
+                                            return (
+                                                <div className={'pcon' + (inline ? ' inline' : '')}>
+                                                    <span className="pcon-ico" aria-hidden="true">📝</span>
+                                                    <AutoTextarea className={'pcon-in' + (cOf(code).trim() ? ' filled' : '')} value={cOf(code)}
+                                                        placeholder="ว่าง = ใช้ Concept หลักของกลุ่ม · Enter = เพิ่มอีกคอนเซปต์"
+                                                        aria-label={`Concept ของ ${code}`}
+                                                        onChange={e => setProductConcept(i, bi, code, e.target.value)} />
+                                                    {n > 1 && <span className="pcon-n">{n} คอนเซปต์</span>}
+                                                </div>
+                                            );
+                                        };
                                         const rowLabel = [withTarget && 'Target', split && 'งบ', cSplit && 'Concept'].filter(Boolean).join(' + ') + ' ของแต่ละสินค้า';
                                         const moneyInput = code => (
                                             // div ไม่ใช่ label — .field label ของฟอร์มบังคับเป็น block ตัวอักษรใหญ่ ทำให้ ฿ ตกบรรทัด

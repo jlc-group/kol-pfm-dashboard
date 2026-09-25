@@ -297,6 +297,13 @@ export function packBudgets(b) {
 const ctext = v => String(v == null ? '' : v).trim();
 export const isBlockSplitConcept = b => !!b && b.concept_split === true;
 
+// 1 สินค้าใส่ได้หลาย Concept — เก็บเป็นข้อความเดียวเหมือนเดิม คั่นด้วยขึ้นบรรทัดใหม่
+// ข้อมูลเก่าที่มี Concept เดียวไม่มี \n จึงได้อาเรย์ 1 ตัว อ่านได้เหมือนเดิมทุกจุดโดยไม่ต้องแปลงข้อมูล
+// รับ | เป็นตัวคั่นด้วย (พิมพ์รวดเดียวไม่ต้องกด Enter) — ไม่ใช้ , หรือ / เพราะข้อความ Concept ไทยใช้จริง
+export const conceptParts = v => ctext(v).split(/\r?\n|\|/).map(s => s.trim()).filter(Boolean);
+// ที่ที่มีพื้นที่บรรทัดเดียว (ชิปกรอง หัวตาราง ตัวเลือกใน dropdown) — ต่อกันด้วย " / "
+export const conceptOneLine = v => conceptParts(v).join(' / ');
+
 // กลุ่มนี้มี Platform ไหนแยก Concept บ้าง (platforms = นับเฉพาะ Platform ที่ผู้ดูเห็น)
 export const isSplitConcept = (g, platforms) => !!g && Array.isArray(g.blocks)
     && g.blocks.some(b => isBlockSplitConcept(b) && (!platforms || !platforms.length || platforms.includes(b.platform)));
@@ -338,18 +345,18 @@ export const hasOwnConcepts = (g, only, platforms) => conceptRows(g, only, platf
 // แยกแล้ว: บอกเฉพาะสินค้าที่มี Concept ของตัวเอง (เกิน 3 ตัวย่อเป็น +N) ที่เหลือรวมเป็น "สินค้าอื่น = Concept หลัก"
 // full = ไม่ย่อ ใส่ทุกรหัส (ใช้เป็น tooltip) · only / platforms = จำกัดเฉพาะสินค้า / Platform ที่ผู้ดูเห็น (หน้าเอเจนซี่)
 export function conceptText(g, full = false, only, platforms) {
-    if (!isSplitConcept(g, platforms)) return ctext(g && g.concept);
+    if (!isSplitConcept(g, platforms)) return conceptOneLine(g && g.concept);
     const rows = conceptRows(g, only, platforms);
     const own = rows.filter(r => !r.main);
     const rest = rows.find(r => r.main);
-    if (!own.length) return rest ? rest.concept : '';
+    if (!own.length) return rest ? conceptOneLine(rest.concept) : '';
     const list = items => {
         const l = items.map(it => it.label);
         return full || l.length <= 3 ? l.join(', ') : l.slice(0, 3).join(', ') + ' +' + (l.length - 3);
     };
     return [
-        ...own.map(r => list(r.items) + ' = ' + r.concept),
-        ...(rest ? [(full ? list(rest.items) : 'สินค้าอื่น') + ' = ' + rest.concept + (full ? ' (Concept หลัก)' : '')] : [])
+        ...own.map(r => list(r.items) + ' = ' + conceptOneLine(r.concept)),
+        ...(rest ? [(full ? list(rest.items) : 'สินค้าอื่น') + ' = ' + conceptOneLine(rest.concept) + (full ? ' (Concept หลัก)' : '')] : [])
     ].join(' · ');
 }
 
@@ -361,7 +368,7 @@ export function packConcepts(b) {
     if (!isBlockSplitConcept(b)) return { ...rest, concept_split: false };
     const pc = {};
     (rest.products || []).forEach(c => {
-        const v = ctext(isMap(product_concepts) ? product_concepts[c] : '');
+        const v = conceptParts(isMap(product_concepts) ? product_concepts[c] : '').join('\n');
         if (v) pc[c] = v;
     });
     return { ...rest, concept_split: true, product_concepts: pc };
