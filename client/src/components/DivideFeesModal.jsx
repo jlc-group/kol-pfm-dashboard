@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api } from '../api/client.js';
 import { budgetFor, quotaOf, clipCountFor, groupPlatforms, blocksBudget, toBlocks } from '../data/adGroups.js';
+import { AD_STAMP_AT, stampAtFor } from '../data/stamp.js';
 
 // ===== หาร / ล้าง ค่าตัว KOL ของ 1 กลุ่ม (ฝั่งทีม) =====
 // ขอบเขตหาร = 1 กลุ่ม × 1 Platform เพราะงบตั้งไว้ที่ชั้น Platform ของกลุ่ม
@@ -28,10 +29,9 @@ export function feeBudgetFor(project, g, platform) {
 }
 
 // คลิปที่ค่าแอดถึงเกณฑ์และมียอดวิวแล้ว แต่ยังไม่ล็อกผล — ใส่ค่าตัว > 0 เมื่อไร ผลคุ้ม/ไม่คุ้มจะล็อกทันทีและแก้ย้อนหลังไม่ได้
-// ต้องตรงกับ AD_STAMP_AT และเงื่อนไขของ maybeStamp ใน server/src/store/logic.js
-export const AD_STAMP_AT = 10000;
-export const locksOnFee = (s, next) => !!s && !s.perf_stamp && next > 0
-    && (Number(s.ad_spend) || 0) >= AD_STAMP_AT && (Number(s.views) || 0) > 0;
+// เงื่อนไขต้องตรงกับ maybeStamp ใน server/src/store/logic.js · at = เกณฑ์ของแบรนด์ (ตัวเรียกหาจาก stampAtFor)
+export const locksOnFee = (s, next, at = AD_STAMP_AT) => !!s && !s.perf_stamp && next > 0
+    && (Number(s.ad_spend) || 0) >= (Number(at) || AD_STAMP_AT) && (Number(s.views) || 0) > 0;
 
 // แถว (คลิป) ที่หาร/ล้างได้ = กลุ่มนี้ + Platform นี้ ที่ไม่ได้ถูก "ไม่เลือก"
 export function feeEligible(subs, g, platform) {
@@ -185,7 +185,8 @@ export default function DivideFeesModal({ projectId, project, group, groupNo, pl
         if (!items.length || saving || tooMany) return;
         if (needConfirm && !confirmed) return;
         // คลิปที่บันทึกแล้วจะล็อกผลคุ้ม/ไม่คุ้มทันที — ถามยืนยันก่อน เพราะแก้ย้อนหลังไม่ได้
-        const locking = items.filter(it => locksOnFee(submissions.find(x => x.id === it.sub_id), it.budget)).length;
+        const at = stampAtFor(project && project.brand);
+        const locking = items.filter(it => locksOnFee(submissions.find(x => x.id === it.sub_id), it.budget, at)).length;
         if (locking > 0 && !window.confirm(`ค่าแอดของ ${locking} คลิปถึงเกณฑ์แล้ว — บันทึกค่าตัวแล้วผลคุ้ม/ไม่คุ้มของคลิปเหล่านี้จะล็อกทันทีและแก้ย้อนหลังไม่ได้\nยืนยันบันทึก?`)) return;
         setSaving(true); setError('');
         try {

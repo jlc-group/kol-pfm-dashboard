@@ -21,6 +21,7 @@ import { collapseByPerson, countPeople } from '../data/clips.js';
 import ProductFilter from '../components/ProductFilter.jsx';
 import { knownProductCodes, matchProducts, productFilterOptions } from '../data/productFilter.js';
 import { NO_GROUP, groupKeySet, matchGroup, normalizeGroupSel, groupFilterOptions } from '../data/groupFilter.js';
+import { stampAtFor } from '../data/stamp.js';
 import StageCards from '../components/StageCards.jsx';
 import FeeInput from '../components/FeeInput.jsx';
 import DivideFeesModal, { feeOf, personKeyOf, feeBudgetFor, feeEligible, locksOnFee } from '../components/DivideFeesModal.jsx';
@@ -613,7 +614,7 @@ export default function ProjectDetail() {
         const items = clips.filter(c => feeOf(c) !== value).map(c => ({ sub_id: c.id, budget: value, from: feeOf(c) }));
         if (!items.length) return;
         // คลิปที่ค่าแอดถึงเกณฑ์แล้วแต่ยังไม่ล็อกผล — บันทึกแล้วผลคุ้ม/ไม่คุ้มจะล็อกทันทีและแก้ย้อนหลังไม่ได้ จึงถามยืนยันก่อน
-        const locking = clips.filter(c => items.some(i => i.sub_id === c.id) && locksOnFee(c, value)).length;
+        const locking = clips.filter(c => items.some(i => i.sub_id === c.id) && locksOnFee(c, value, stampAtFor(project.brand))).length;
         if (locking > 0 && !window.confirm(`บันทึกค่าตัว ฿${value.toLocaleString('th-TH')} ต่อคลิปใช่ไหม?\nค่าแอดของ ${locking} คลิปถึงเกณฑ์แล้ว — บันทึกแล้วผลคุ้ม/ไม่คุ้มจะล็อกทันทีและแก้ย้อนหลังไม่ได้`)) {
             const cancelled = new Error('ยกเลิก');
             cancelled.cancelled = true;

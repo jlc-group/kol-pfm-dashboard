@@ -23,6 +23,11 @@ const SOCIAL_CAMPAIGNS = ['Awareness', 'Engagement', 'Reels'];
 // ค่าแอดขั้นต่ำที่ถือว่า "ยิงจริงจังแล้ว" — ถึงเกณฑ์นี้ระบบจึงล็อกผลตัดสินคุ้ม/ไม่คุ้ม
 // (ต่ำกว่านี้ตัวเลขยังแกว่ง ตัดสินไปก็ไม่มีความหมาย)
 const AD_STAMP_AT = 10000;
+// บางแบรนด์ยิงแอดต่อโพสต์น้อยกว่าที่อื่นมาก รอถึง 10,000 แทบไม่มีโพสต์ไหนได้สแตมป์เลย จึงตั้งเกณฑ์แยกได้
+// คีย์ต้องตรงกับ projects.brand ทุกตัวอักษร · ฝั่งหน้าเว็บมีสำเนาที่ client/src/data/stamp.js ต้องแก้คู่กันเสมอ
+// (tests/stamp-threshold.test.cjs เทียบข้อความสองฝั่งให้ พิมพ์ไม่ตรงกันเมื่อไหร่เทสต์แดงทันที)
+const AD_STAMP_BY_BRAND = { Beauterry: 3000 };
+const stampAtFor = brand => AD_STAMP_BY_BRAND[String(brand == null ? '' : brand).trim()] || AD_STAMP_AT;
 
 const now = () => new Date().toISOString();
 const clone = (v) => (v === undefined ? undefined : structuredClone(v));
@@ -865,10 +870,11 @@ function engagementOf(s) {
 }
 
 // คืนค่า stamp ถ้าเพิ่งสแตมป์รอบนี้ / null ถ้ายังไม่ถึงเงื่อนไข
-function maybeStamp(s) {
+// at = เกณฑ์ค่าแอดของแบรนด์นั้น (ตัวเรียกหาจาก stampAtFor) — ไม่ส่งมาก็ใช้ค่ากลาง
+function maybeStamp(s, at = AD_STAMP_AT) {
     if (!s || s.perf_stamp) return null;                       // สแตมป์แล้วห้ามแตะซ้ำ
     const spend = Number(s.ad_spend) || 0;
-    if (spend < AD_STAMP_AT) return null;
+    if (spend < (Number(at) || AD_STAMP_AT)) return null;
     const views = Number(s.views) || 0;
     // ถึงเกณฑ์แล้วแต่ยังไม่มีผลงาน -> รอไว้ก่อน ไม่งั้นจะล็อกค่าว่างค้างถาวร
     if (views <= 0) return null;
@@ -895,9 +901,9 @@ function maybeStamp(s) {
 // 'views' = ยังไม่มียอดวิว · 'fee' = ยังไม่ได้ใส่ค่าตัว
 // null = ไม่ได้รออะไร (สแตมป์แล้ว / ค่าแอดยังไม่ถึงเกณฑ์ / ครบแล้วรอสแตมป์รอบถัดไป)
 // ลำดับการเช็คต้องตรงกับ maybeStamp: ยอดวิวก่อน แล้วค่อยค่าตัว
-function stampWaitReason(s) {
+function stampWaitReason(s, at = AD_STAMP_AT) {
     if (!s || s.perf_stamp) return null;
-    if ((Number(s.ad_spend) || 0) < AD_STAMP_AT) return null;
+    if ((Number(s.ad_spend) || 0) < (Number(at) || AD_STAMP_AT)) return null;
     if ((Number(s.views) || 0) <= 0) return 'views';
     if ((Number(s.budget) || 0) <= 0) return 'fee';
     return null;
@@ -1025,7 +1031,8 @@ function postCheckDecision(action, note, byName, at) {
 }
 
 module.exports = {
-    GOOD_CPM, GOOD_CPE, TARGET_PLATFORMS, CAMPAIGN_PLATFORMS, CAMPAIGN_AS_CTYPE, SOCIAL_CAMPAIGNS, AD_STAMP_AT, now, clone,
+    GOOD_CPM, GOOD_CPE, TARGET_PLATFORMS, CAMPAIGN_PLATFORMS, CAMPAIGN_AS_CTYPE, SOCIAL_CAMPAIGNS,
+    AD_STAMP_AT, AD_STAMP_BY_BRAND, stampAtFor, now, clone,
     POST_CHECK_FIELDS, POST_CHECK_OPEN, postCheckWaiting, nextPostCheck, postCheckDecision,
     duplicateError, inScope, scopeProjects, hireRemaining, hireRowFee,
     HIRE_JOB_CLOSED, hireWaiting, hireNeedMore, hireStage,

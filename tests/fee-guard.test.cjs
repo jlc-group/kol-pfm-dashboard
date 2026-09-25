@@ -74,6 +74,11 @@ const fakeClient = {
         if (text === 'SELECT * FROM submissions WHERE id = $1') {
             return result(rows.has(params[0]) ? [rows.get(params[0])] : []);
         }
+        // เกณฑ์สแตมป์แยกตามแบรนด์ — updateOne หาแบรนด์ของแคมเปญก่อน แล้วค่อยตัดสินใจสแตมป์
+        // ฟิกซ์เจอร์นี้ใช้แบรนด์ที่ยังใช้เกณฑ์กลาง 10,000 เคสเดิมจึงยังวัดสิ่งเดียวกันเป๊ะ
+        if (text === 'SELECT brand FROM projects WHERE id = $1') {
+            return result([{ brand: 'Dermiq' }]);
+        }
         if (text === 'SELECT * FROM submissions WHERE person_key = $1 AND project_id = $2 ORDER BY id') {
             return result([...rows.values()].filter(r => r.person_key === params[0] && r.project_id === params[1]).sort(byId));
         }

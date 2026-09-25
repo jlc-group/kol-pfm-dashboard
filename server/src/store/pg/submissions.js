@@ -9,7 +9,11 @@
  * 1 แถว = 1 คลิป ของ 1 คน — คนเดียวกันผูกกันด้วย person_key
  */
 const { query, withTransaction, insertRow, updateRow, asNum, asBool, asText, asJson } = require('./_base');
-const { now, maybeStamp, nextPostCheck, postCheckDecision, POST_CHECK_OPEN, sameInstant } = require('../logic');
+const { now, maybeStamp, stampAtFor, AD_STAMP_AT, AD_STAMP_BY_BRAND, nextPostCheck, postCheckDecision, POST_CHECK_OPEN, sameInstant } = require('../logic');
+
+// เกณฑ์ต่ำสุดของทุกแบรนด์ — ค่าแอดยังไม่ถึงเท่านี้ก็ไม่มีทางสแตมป์ ไม่ต้องเสียเวลาไปหาแบรนด์
+// (การแก้ข้อมูลส่วนใหญ่เป็นแถวที่ยังไม่ได้ยิงแอดเลย)
+const MIN_STAMP_AT = Math.min(AD_STAMP_AT, ...Object.values(AD_STAMP_BY_BRAND));
 
 // id ที่แปลงเป็นตัวเลขไม่ได้ = ไม่มีวันเจอแถว (jsonStore เทียบ x.id === NaN ได้ false เสมอ)
 // ต้องดักไว้ก่อนยิง SQL ไม่งั้น PostgreSQL จะโยน error แทนที่จะคืน null เหมือนเดิม
@@ -97,6 +101,16 @@ function newRow({ project_id, account_name, followers, platform, product, budget
  * ทางอื่นทั้งหมด (update / updatePerson → หน้าเอเจนซี่ / หน้าแคมเปญ / หน้าแอด) ส่ง budget มาก็ไม่เขียน
  * กันค่าตัวถูกทับจากหน้าเว็บรุ่นเก่าที่ยังเปิดค้าง หรือ route ที่ลืมตัดช่องนี้ทิ้ง
  */
+// เกณฑ์สแตมป์ของแคมเปญนี้ (บางแบรนด์ตั้งต่ำกว่าค่ากลาง)
+// ตัวเรียกที่วนเขียนหลายแถว (setFees / updatePerson) หาไว้ครั้งเดียวแล้วส่งมาทาง opts.stampAt — จะได้ไม่ยิง query ซ้ำทุกแถว
+async function stampAtOf(client, projectId, opts) {
+    if (opts && opts.stampAt != null) return opts.stampAt;
+    const pid = numOr(projectId);
+    if (pid === null) return AD_STAMP_AT;
+    const r = await client.query('SELECT brand FROM projects WHERE id = $1', [pid]);
+    return stampAtFor(r.rows[0] && r.rows[0].brand);
+}
+
 async function updateOne(client, subId, projectId, fields, byName, opts = {}) {
     // คัดลอกก่อนตัดคีย์ ไม่แก้อ็อบเจกต์ของผู้เรียก (updatePerson ส่งอ็อบเจกต์เดียวกันวนเขียนทุกคลิป)
     fields = { ...fields };
@@ -176,7 +190,9 @@ async function updateOne(client, subId, projectId, fields, byName, opts = {}) {
     }
     // เช็คทุกครั้งที่ข้อมูลขยับ — ค่าแอดถึงเกณฑ์แล้วและมีผลงานให้ตัดสิน ก็สแตมป์ทันที
     // (กรอกผลงานทีหลังก็สแตมป์ตอนนั้น ไม่ต้องรอให้ค่าแอดขยับอีกรอบ)
-    const stamped = maybeStamp(s);
+    const stamped = (!s.perf_stamp && (Number(s.ad_spend) || 0) >= MIN_STAMP_AT)
+        ? maybeStamp(s, await stampAtOf(client, s.project_id, opts))
+        : null;
     if (stamped) patch.perf_stamp = asJson(stamped);
     // ข้อมูลโพสต์เปลี่ยน: เอเจนซี่แก้ = รอทีมตรวจก่อนขึ้นหน้า Ads · ทีมแก้เอง = นับว่าตรวจแล้ว (opts.actor บอกว่าใครแก้)
     const check = nextPostCheck(prevRow, s, opts && opts.actor, byName, now());
@@ -262,9 +278,11 @@ const submissions = {
                     'SELECT * FROM submissions WHERE person_key = $1 AND project_id = $2 ORDER BY id',
                     [target.person_key, pid])).rows
                 : [target];
+            // หาเกณฑ์สแตมป์ครั้งเดียวแล้วส่งต่อ — ทุกคลิปของคนนี้อยู่แคมเปญเดียวกัน เกณฑ์จึงเท่ากัน
+            const stampAt = await stampAtOf(client, pid, {});
             let head = null;
             for (const sib of sibs) {
-                const r = await updateOne(client, sib.id, projectId, fields, byName, { actor: opts.actor });
+                const r = await updateOne(client, sib.id, projectId, fields, byName, { actor: opts.actor, stampAt });
                 if (sib.id === target.id) head = r;
             }
             return head;
@@ -342,6 +360,8 @@ const submissions = {
                 }
             });
 
+            // หาเกณฑ์สแตมป์ครั้งเดียวต่อคำขอ — ทุกแถวในชุดนี้อยู่แคมเปญเดียวกัน
+            const stampAt = await stampAtOf(client, pid, {});
             const after = new Map();      // id -> แถวหลังบันทึก
             const diff = new Map();       // id -> รายการที่เปลี่ยนจริง
             const order = ids.map((_, i) => i).sort((a, b) => ids[a] - ids[b]);   // เขียนตามลำดับเดียวกับที่ล็อก
@@ -350,7 +370,7 @@ const submissions = {
                 // ค่าเท่าเดิมไม่ต้องเขียน — ไม่งั้นประวัติจะมีรายการ "เปลี่ยน" ที่ไม่ได้เปลี่ยนอะไร
                 if (cents(cur.budget) === cents(fees[i])) { after.set(cur.id, cur); continue; }
                 // ทางเดียวที่เขียนค่าตัวได้ (allowFee) — ดูคำอธิบายที่ updateOne
-                const row = await updateOne(client, cur.id, pid, { budget: fees[i] }, byName, { allowFee: true });
+                const row = await updateOne(client, cur.id, pid, { budget: fees[i] }, byName, { allowFee: true, stampAt });
                 after.set(cur.id, row);
                 diff.set(cur.id, {
                     id: cur.id, account_name: cur.account_name, clip_no: cur.clip_no,

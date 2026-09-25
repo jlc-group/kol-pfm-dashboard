@@ -3,6 +3,7 @@ import { api } from '../api/client.js';
 import Icon from '../components/Icon.jsx';
 import ProductChips from '../components/ProductChips.jsx';
 import ProductMultiSelect from '../components/ProductMultiSelect.jsx';
+import { stampAtOf, stampAtText } from '../data/stamp.js';
 
 const splitCodes = v => (v ? String(v).split(',').map(s => s.trim()).filter(Boolean) : []);
 
@@ -84,7 +85,7 @@ function StampBadge({ row }) {
         if (row.fee_missing) return <PerfBadge row={row} />;
         // ยังไม่ถึงเกณฑ์ = ยังไม่มีค่าที่ล็อก โชว์ผลปัจจุบันไปก่อน พร้อมบอกว่ายังไม่ล็อก
         return (
-            <span className="perf-live" title="ยังไม่ถึงเกณฑ์ — ค่านี้ยังขยับได้เรื่อย ๆ จะล็อกเมื่อค่ายิงแอดสะสมถึง 10,000 บาท">
+            <span className="perf-live" title={`ยังไม่ถึงเกณฑ์ — ค่านี้ยังขยับได้เรื่อย ๆ จะล็อกเมื่อค่ายิงแอดสะสมถึง ${stampAtText(stampAtOf(row))} บาท`}>
                 <LiveBadge row={row} />
                 <span className="perf-tmp">not stamped</span>
             </span>

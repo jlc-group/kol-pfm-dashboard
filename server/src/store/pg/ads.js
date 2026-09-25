@@ -16,7 +16,7 @@ const {
     now, clone, scopeProjects,
     resolveGroupTarget, resolveGroupProducts, resolveGroupCtype, resolveGroupMedia, resolveGroupCampaign,
     engagementOf, clipCostMetrics, perfVerdict,
-    maybeStamp, stampWaitReason, pfmManagedSpend, postCheckWaiting,
+    maybeStamp, stampWaitReason, stampAtFor, pfmManagedSpend, postCheckWaiting,
     adRanBySpend, effectiveAdStatus, postNoGencode
 } = logic;
 
@@ -48,7 +48,10 @@ const adsSync = {
             stamped: 0, not_found: [], skipped: 0 };
         if (!rows || !rows.length) return out;
 
-        const snap = await loadSnapshot(['submissions']);
+        // ต้องมี projects ด้วย เพราะเกณฑ์สแตมป์แยกตามแบรนด์ และแบรนด์อยู่ที่ projects.brand
+        const snap = await loadSnapshot(['projects', 'submissions']);
+        const brandOf = {};
+        snap.projects.forEach(p => { brandOf[p.id] = p.brand; });
         // เก็บ "คอลัมน์ที่ถูกแตะ" ต่อ submission เพื่อไม่เขียนทับฟิลด์ที่ไม่เกี่ยวข้อง
         const touched = new Map();   // subId -> { sub, cols:Set }
         const mark = (s, col) => {
@@ -99,7 +102,7 @@ const adsSync = {
             mark(s, 'ad_synced_at');
             mark(s, 'updated_at');
             out.updated++;
-            if (maybeStamp(s)) { out.stamped++; mark(s, 'perf_stamp'); }
+            if (maybeStamp(s, stampAtFor(brandOf[s.project_id]))) { out.stamped++; mark(s, 'perf_stamp'); }
         }
 
         // persist() ของเดิม = เขียนไฟล์ทั้งก้อน · ที่นี่ = UPDATE จริงใน transaction เดียว
@@ -149,7 +152,8 @@ const ads = {
                 const spend = Number(s.ad_spend) || 0;
                 const reach = Number(s.ad_reach) || 0;
                 // ค่าแอดถึงเกณฑ์แล้วแต่ยังสแตมป์ไม่ได้เพราะรออะไร: 'views' ยอดวิว / 'fee' ค่าตัว (ไม่ได้รอ = null)
-                const waitReason = stampWaitReason(s);
+                const stampAt = stampAtFor(p && p.brand);
+                const waitReason = stampWaitReason(s, stampAt);
                 // กลุ่มโฆษณาที่ KOL คนนี้สังกัด (ผูก Target/Content Type จาก Project อัตโนมัติ)
                 const grp = (p && Array.isArray(p.ad_groups)) ? p.ad_groups.find(g => g.key === s.group_key) : null;
                 // Content Type ผูกกับคน (1 Platform ในกลุ่มเดียวมีได้หลายอย่าง) แถวเก่าค่อยถอยไปใช้ของกลุ่ม
@@ -181,6 +185,8 @@ const ads = {
                     project_id: s.project_id,
                     project_name: p ? p.name : null,
                     brand: p ? (p.brand || 'อื่นๆ') : 'อื่นๆ',
+                    // เกณฑ์ค่าแอดที่จะสแตมป์ของแบรนด์นี้ — หน้าเว็บใช้ถามยืนยันและบอกตัวเลขในคำอธิบาย
+                    stamp_at: stampAt,
                     team_id: p ? p.team_id : null,
                     team_name: team ? team.name : null,
                     ad_status: s.ad_status || 'ยังไม่ยิง',

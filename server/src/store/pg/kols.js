@@ -9,7 +9,7 @@
  */
 const { query, insertRow, updateRow, asNum, asNumOrNull, asJson } = require('./_base');
 const { loadSnapshot } = require('./_snapshot');
-const { now, clone, duplicateError, scopeProjects, stampWaitReason, clipCostMetrics, perfVerdict, postNoGencode } = require('../logic');
+const { now, clone, duplicateError, scopeProjects, stampWaitReason, stampAtFor, clipCostMetrics, perfVerdict, postNoGencode } = require('../logic');
 
 // id ที่ส่งมาเป็นสตริงจาก URL — jsonStore ใช้ Number(id) เทียบตรง ๆ
 // ค่าที่แปลงไม่ได้ (NaN) จะหาไม่เจอเสมอ ต้องดักไว้ก่อนยิง SQL ไม่งั้น Postgres จะ error แทนที่จะคืน null
@@ -232,7 +232,8 @@ const kols = {
                 const { fee_missing, cost: totalCost, cpm, cpe } = clipCostMetrics({ fee: s.budget, adSpend: s.ad_spend, views, engagement });
                 const er = views > 0 ? Number(((engagement / views) * 100).toFixed(2)) : 0;
                 const spendNow = Number(s.ad_spend) || 0;
-                const waitReason = stampWaitReason(s);
+                const stampAt = stampAtFor(p && p.brand);
+                const waitReason = stampWaitReason(s, stampAt);
                 const perf = {
                     views, likes, comments, saves, shares, reposts, engagement, er,
                     ad_spend: spendNow, total_cost: totalCost, cpm, cpe, fee_missing,
@@ -243,7 +244,9 @@ const kols = {
                     // ค่าแอดถึงเกณฑ์แล้วแต่ยังสแตมป์ไม่ได้ — รอสแตมป์อยู่
                     // stamp_wait_reason บอกว่ารออะไร: 'views' ยอดวิว / 'fee' ค่าตัว (ไม่ได้รอ = null)
                     stamp_waiting: waitReason !== null,
-                    stamp_wait_reason: waitReason
+                    stamp_wait_reason: waitReason,
+                    // เกณฑ์ค่าแอดที่จะสแตมป์ของแบรนด์นี้ (หน้าเว็บเอาไปบอกตัวเลขในคำอธิบาย)
+                    stamp_at: stampAt
                 };
                 return {
                     sub_id: s.id, project_id: s.project_id, project_name: p ? p.name : null,

@@ -9,6 +9,7 @@ import { fmtDate } from '../utils/date.js';
 import { visibleBrands, seesAllBrands } from '../data/brands.js';
 import { useAuth } from '../auth/AuthContext.jsx';
 import { campaignIsCtype } from '../data/adGroups.js';
+import { stampAtOf, stampAtText } from '../data/stamp.js';
 
 
 const STATUSES = ['ยังไม่ยิง', 'ยิงแล้ว'];
@@ -42,7 +43,7 @@ function PerfNums({ cpm, cpe, pass, tip, lock }) {
     );
 }
 
-// ผลที่ระบบล็อกไว้ตอนค่าแอดสะสมถึง 10,000 — แก้ไม่ได้ ล้างไม่ได้
+// ผลที่ระบบล็อกไว้ตอนค่าแอดสะสมถึงเกณฑ์ของแบรนด์นั้น — แก้ไม่ได้ ล้างไม่ได้
 function StampCell({ row }) {
     const st = row.perf_stamp;
     if (!st) {
@@ -53,7 +54,7 @@ function StampCell({ row }) {
             }
             return <span className="perf-pill wait" title="ค่ายิงแอดถึงเกณฑ์แล้ว แต่ยังไม่มียอดวิวเข้ามา — ปกติสองอย่างนี้ควรมาพร้อมกันจากการซิงก์ ถ้าเห็นป้ายนี้ควรเช็คท่อซิงก์ · ระบบจะสแตมป์ให้เองทันทีที่ข้อมูลผลงานเข้ามา">Awaiting data</span>;
         }
-        return <span className="perf-pill none" title="จะสแตมป์อัตโนมัติเมื่อค่ายิงแอดสะสมถึง 10,000 บาท">Not stamped</span>;
+        return <span className="perf-pill none" title={`จะสแตมป์อัตโนมัติเมื่อค่ายิงแอดสะสมถึง ${stampAtText(stampAtOf(row))} บาท`}>Not stamped</span>;
     }
     const tip = [
         '🔒 ล็อกไว้ตั้งแต่ ' + fmtDate(String(st.at).slice(0, 10)) + ' — แก้ไม่ได้',
@@ -221,9 +222,11 @@ function AdRow({ row, onSaved, canCost }) {
         if (!spendDirty) return;
         const v = money(spend);
         if (sameMoney(v, spendFrom)) { setSpendDirty(false); return; }
-        // ถึง 10,000 เมื่อไหร่ ระบบสแตมป์ผล PFM ถาวร (ถ้ามียอดวิวและค่าตัวแล้ว / หรือทันทีที่ครบภายหลัง) — พิมพ์ผิดแก้คืนไม่ได้ จึงถามก่อนทุกครั้ง
-        if (v >= 10000 && !row.perf_stamp && !window.confirm(
-            `ค่าแอดสะสม ฿${v.toLocaleString('th-TH')} ถึงเกณฑ์ 10,000 — ${row.stamp_waiting
+        // ถึงเกณฑ์ของแบรนด์เมื่อไหร่ ระบบสแตมป์ผล PFM ถาวร (ถ้ามียอดวิวและค่าตัวแล้ว / หรือทันทีที่ครบภายหลัง)
+        // พิมพ์ผิดแก้คืนไม่ได้ จึงถามก่อนทุกครั้ง · เกณฑ์ต้องอ่านจากแถว ไม่ใช่เลขตายตัว ไม่งั้นแบรนด์ที่เกณฑ์ต่ำจะโดนล็อกเงียบ ๆ
+        const at = stampAtOf(row);
+        if (v >= at && !row.perf_stamp && !window.confirm(
+            `ค่าแอดสะสม ฿${v.toLocaleString('th-TH')} ถึงเกณฑ์ ${stampAtText(at)} — ${row.stamp_waiting
                 ? 'คลิปนี้รอค่าตัว/ยอดวิวอยู่ พอข้อมูลครบระบบจะล็อกผล PFM ด้วยยอดนี้ทันทีและแก้ไม่ได้'
                 : 'ถ้าคลิปนี้มียอดวิวและค่าตัวครบ ระบบจะล็อกผล PFM ด้วยยอดนี้ไว้ถาวร แก้ไม่ได้'} ยืนยันยอดนี้ไหม?`)) {
             setSpend(spendText(spendFrom)); setSpendDirty(false);
@@ -678,7 +681,7 @@ export default function Ads() {
                                         options={[{ value: '', label: 'ทั้งหมด', count: countIf('late', () => true) },
                                         ...LATE_OPTS.map(([v, l]) => ({ value: v, label: l, dot: v, count: countIf('late', r => lateBucket(r) === v) }))]} />
                                 </span>
-                                <span title="ผลที่ระบบล็อกไว้ตอนค่ายิงแอดสะสมถึง 10,000 บาท — แก้ไม่ได้">STAMPED PFM 🔒</span>
+                                <span title="ผลที่ระบบล็อกไว้ตอนค่ายิงแอดสะสมถึงเกณฑ์ของแบรนด์นั้น — แก้ไม่ได้ (ชี้ที่ป้ายในแถวเพื่อดูตัวเลขของแบรนด์)">STAMPED PFM 🔒</span>
                                 <span title="ผลตอนนี้ คำนวณสดจากข้อมูลล่าสุด — ใช้ตัดสินว่าควรยิงต่อหรือหยุด">PFM</span>
                                 <span>หมายเหตุ</span>
                             </div>
