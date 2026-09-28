@@ -17,6 +17,13 @@ test('Beauterry rows are limited to fields accepted by the dashboard', () => {
     assert.equal(sanitizeRow({ id_post: 'not-numeric', views: 1 }), null);
 });
 
+test('first_ad_date passes through only as a YYYY-MM-DD date', () => {
+    assert.equal(sanitizeRow({ id_post: '1', first_ad_date: '2026-09-25' }).first_ad_date, '2026-09-25');
+    assert.equal(sanitizeRow({ id_post: '1', first_ad_date: '25/09/2026' }).first_ad_date, undefined);
+    assert.equal(sanitizeRow({ id_post: '1', first_ad_date: '2026-13-45' }).first_ad_date, undefined);
+    assert.equal(sanitizeRow({ id_post: '1' }).first_ad_date, undefined);
+});
+
 test('source timestamps prevent old organic metrics from overwriting newer values', () => {
     assert.equal(shouldApplyOrganicMetrics('2026-09-15T00:00:00Z', null), true);
     assert.equal(shouldApplyOrganicMetrics('2026-09-15T00:00:00Z', '2026-09-14T00:00:00Z'), true);
