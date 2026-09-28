@@ -7,7 +7,7 @@ const DEFAULT_INITIAL_DELAY_MS = 30 * 1000;
 const MAX_BATCH_SIZE = 2000;
 const ALLOWED_FIELDS = [
     'id_post', 'views', 'likes', 'comments', 'saves', 'shares', 'reposts',
-    'ad_spend', 'source_updated_at', 'paid_updated_at'
+    'ad_spend', 'source_updated_at', 'paid_updated_at', 'first_ad_date'
 ];
 
 let running = false;
@@ -42,6 +42,12 @@ function sanitizeRow(row) {
         if (field === 'id_post') continue;
         if (field.endsWith('_at')) {
             if (row[field] && Number.isFinite(Date.parse(row[field]))) clean[field] = row[field];
+            continue;
+        }
+        // first_ad_date = วันแรกที่คลิปมีค่าแอดจริง (YYYY-MM-DD) ใช้ลง "วันยิงแอด"
+        if (field.endsWith('_date')) {
+            const v = String(row[field] || '');
+            if (/^\d{4}-\d{2}-\d{2}$/.test(v) && Number.isFinite(Date.parse(v))) clean[field] = v;
             continue;
         }
         const value = metricNumber(row[field]);

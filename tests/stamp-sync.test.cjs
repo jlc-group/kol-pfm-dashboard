@@ -103,3 +103,19 @@ test('หน้า Influencers ส่งเกณฑ์ของแบรนด�
     assert.equal(byId(rows, 1).stamp_at, 3000);
     assert.equal(byId(rows, 3).stamp_at, 10000);
 });
+
+test('ซิงก์ PFM ลงวันยิงแอดจาก first_ad_date เฉพาะแถวที่ยังว่าง ไม่ทับวันที่ที่มีอยู่', async () => {
+    const fixture = structuredClone(FIXTURE.submissions);
+    FIXTURE.submissions.find(s => s.id === 2).ad_end = '2026-09-27';
+    written = [];
+    await adsSync.apply([
+        { id_post: '900001', first_ad_date: '2026-09-25' },
+        { id_post: '900002', first_ad_date: '2026-09-25' },
+        { id_post: '900003' }
+    ]);
+    FIXTURE.submissions = fixture;
+    const patchOf = id => (written.find(w => w.id === id) || {}).patch || {};
+    assert.equal(patchOf(1).ad_end, '2026-09-25');
+    assert.equal('ad_end' in patchOf(2), false, 'แถวที่มีวันยิงแอดแล้วต้องไม่ถูกทับ');
+    assert.equal('ad_end' in patchOf(3), false, 'ไม่มี first_ad_date ก็ไม่แตะ');
+});

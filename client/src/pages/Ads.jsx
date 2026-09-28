@@ -244,14 +244,16 @@ function AdRow({ row, onSaved, canCost }) {
     }
 
     // สลับสถานะ — เมื่อกด "ยิงแล้ว" ให้ลงวันยิงแอด (ad_end) เป็นวันนี้อัตโนมัติ, ยกเลิกให้ล้างวันที่
+    // ถ้ามีวันยิงแอดอยู่แล้ว (PFM ลงวันแรกที่มีค่าแอดให้) ใช้วันนั้นต่อ ไม่ทับด้วยวันที่กดยืนยัน
     function toggleStatus() {
         const next = adStatus === 'ยิงแล้ว' ? 'ยังไม่ยิง' : 'ยิงแล้ว';
         setAdStatus(next);
         if (next === 'ยิงแล้ว') {
             const d = new Date(); // วันที่ปัจจุบันตามเครื่องผู้ใช้ (local)
             const today = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-            setEnd(today);
-            put({ ad_status: next, ad_end: today });
+            const date = end || today;
+            setEnd(date);
+            put({ ad_status: next, ad_end: date });
         } else {
             setEnd('');
             put({ ad_status: next, ad_end: null });
@@ -265,8 +267,8 @@ function AdRow({ row, onSaved, canCost }) {
     const doneFromSpend = ranBySpend && adStatus !== 'ยิงแล้ว';
 
     // ยิงแอดช้าไปกี่วันหลังวันลงคลิป (นับจาก Post Date → วันยิงแอด)
-    // แถวที่รู้จากค่าแอดไม่มีวันยิงแอดให้นับ จึงไม่เข้าเกณฑ์นี้ (ต้องกดยืนยันก่อนถึงได้วันที่)
-    const lateDays = (adStatus === 'ยิงแล้ว' && row.post_date && end) ? daysBetween(row.post_date, end) : null;
+    // แถวที่รู้จากค่าแอดก็นับได้ถ้า PFM ลงวันยิงแอดมาให้แล้ว
+    const lateDays = (shownStatus === 'ยิงแล้ว' && row.post_date && end) ? daysBetween(row.post_date, end) : null;
     // แจ้งเข้าระบบช้าไปกี่วันหลัง KOL ลงงานจริง — แยกให้เห็นว่ายิงแอดช้าเพราะเราช้าหรือเพราะเพิ่งได้รับแจ้ง
     const reportLag = (row.post_date && row.post_date_at)
         ? daysBetween(row.post_date, String(row.post_date_at).slice(0, 10))
@@ -328,10 +330,10 @@ function AdRow({ row, onSaved, canCost }) {
                     </span>
                 )}
             </div>
-            {/* วันยิงแอด — ระบบลงวันที่ให้เองตอนกดสถานะเป็น "ยิงแล้ว" */}
+            {/* วันยิงแอด — PFM ลงวันแรกที่มีค่าแอดให้เอง หรือระบบลงวันที่ตอนกดสถานะเป็น "ยิงแล้ว" */}
             <div className="ads-cell">
                 {end
-                    ? <span className="ads-postdate" title="วันที่ยิงแอด (ระบบลงให้ตอนกดสถานะเป็นยิงแล้ว)">{fmtDate(end)}</span>
+                    ? <span className="ads-postdate" title="วันที่ยิงแอด (วันแรกที่มีค่าแอดจาก PFM หรือวันที่กดสถานะเป็นยิงแล้ว)">{fmtDate(end)}</span>
                     : doneFromSpend
                         /* ค่าแอดบอกว่ายิงแล้ว แต่ไม่รู้วันไหน — เขียน "ยังไม่ยิง" ตรงนี้จะขัดกับสถานะข้าง ๆ */
                         ? <span className="muted" title="ยิงไปแล้ว (รู้จากค่าแอด) แต่ยังไม่มีวันยิงแอด — กดปุ่มสถานะเพื่อลงวันที่">—</span>
@@ -342,7 +344,9 @@ function AdRow({ row, onSaved, canCost }) {
                     className={'ads-status ' + (shownStatus === 'ยิงแล้ว' ? 'done' : 'pending') + (doneFromSpend ? ' from-spend' : '')}
                     onClick={toggleStatus} disabled={saving}
                     title={doneFromSpend
-                        ? 'รู้ว่ายิงแล้วจากค่าแอดที่ PFM ซิงก์เข้ามา แต่ยังไม่มีใครกดยืนยัน — กดเพื่อยืนยันและลงวันยิงแอดเป็นวันนี้'
+                        ? (end
+                            ? 'รู้ว่ายิงแล้วจากค่าแอดที่ PFM ซิงก์เข้ามา แต่ยังไม่มีใครกดยืนยัน — กดเพื่อยืนยัน (ใช้วันยิงแอดเดิม)'
+                            : 'รู้ว่ายิงแล้วจากค่าแอดที่ PFM ซิงก์เข้ามา แต่ยังไม่มีใครกดยืนยัน — กดเพื่อยืนยันและลงวันยิงแอดเป็นวันนี้')
                         : (shownStatus === 'ยิงแล้ว' ? 'กดเพื่อกลับเป็นยังไม่ยิง' : 'กดเมื่อยิงแอดคลิปนี้แล้ว')}>
                     {shownStatus === 'ยิงแล้ว' ? '✓ ยิงแล้ว' : 'ยังไม่ยิง'}
                     {doneFromSpend && <em>จากค่าแอด</em>}
