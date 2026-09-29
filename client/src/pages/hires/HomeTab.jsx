@@ -6,120 +6,18 @@ import {
     T, CAND_LABEL, baht, feeDiff, timeAgo, daysLate, requestLink
 } from '../../data/talentLabels.js';
 import {
-    bookingsOf, bookingStateOf, candsOf, shownNote, isUnavailNote, teamCanHelp,
+    bookingsOf, bookingStateOf, candsOf, shownNote, isUnavailNote,
     waitingSentence, todoCards, todoTitle, todoMeta, requesterText
 } from './requestText.js';
-import JobCard from './JobCard.jsx';
 
-// แท็บ "หน้าหลัก" ของ Talent — เปิดเมนูมาเจอหน้านี้เสมอ
-// บนสุดคือทางเริ่ม 3 ทาง · ทีมแบรนด์ไม่มีการ์ด "รอคุณทำ" แล้ว (ผู้ใช้ขอเอาออก — เลขแดงยังอยู่ เรื่องค้างดูในแท็บ ใบขอให้หา → รอฉันทำ)
-// หน้าคนช่วยหา (FinderHome) ยังมีรายการ "รอคุณทำ" เรื่องละการ์ด เพราะเป็นงานหลักของเขา
-// ข้อมูลใบขอให้หามาจากหน้าแม่ชุดเดียว (tasks) — หน้านี้โหลดเองแค่ "งานที่กำลังทำ" 5 ใบ
-// คนช่วยหาที่ไม่มีแบรนด์ (finderOnly) ได้หน้า "งานหาคนของฉัน" แทน
-const USES_KEY = 'talent.startUses';
-const readUses = () => {
-    try { return Number(window.localStorage.getItem(USES_KEY)) || 0; } catch { return 0; }
-};
-const bumpUses = () => {
-    try { window.localStorage.setItem(USES_KEY, String(readUses() + 1)); } catch { /* ที่เก็บข้อมูลถูกปิด — ไม่เป็นไร */ }
-};
-const DAY = 86400000;
+// หน้า "งานหาคนของฉัน" ของคนช่วยหาที่ไม่มีแบรนด์ (ไม่มีแถบแท็บ เห็นหน้านี้หน้าเดียว)
+// ทีมแบรนด์ไม่มีแท็บ "หน้าหลัก" แล้ว (ผู้ใช้ขอเอาออก 29 ก.ย.) — เปิดเมนู Talent มาเจอ "งานทั้งหมด"
+//   เลขแดงย้ายไปแท็บ "ใบขอให้หา" · ขอเรทราคาดูที่แท็บของมัน · งานที่กำลังทำดูที่แท็บงานทั้งหมด
+// ยังมีรายการ "รอคุณทำ" เรื่องละการ์ด เพราะเป็นงานหลักของคนช่วยหา · ข้อมูลใบขอให้หามาจากหน้าแม่ชุดเดียว (tasks)
 const changed = () => window.dispatchEvent(new CustomEvent('kol:hire-tasks-changed'));
 
 export default function HomeTab(props) {
-    return props.finderOnly ? <FinderHome {...props} /> : <BrandHome {...props} />;
-}
-
-// ===================== ทีมแบรนด์ =====================
-function BrandHome({ tasks, loading, error, brands = [], rates, onOpen, onOpenRequest, onStart, onAskRate, onGoTab, jobsVersion }) {
-    const rows = (tasks && tasks.rows) || [];
-    // ใบที่ทีมต้องทำแต่ไม่ได้นับเป็นตาเรา — คนในแบรนด์ช่วยกดแทนได้ (เลขแดงไม่นับ ตั้งใจให้นับแค่ของเรา)
-    const helpRows = rows.filter(teamCanHelp);
-    const otherRows = rows.filter(r => r.in_brand && !r.my_todo && !teamCanHelp(r)
-        && r.waiting_on === 'finder' && r.stage !== 'full' && r.stage !== 'closed');
-
-    return (
-        <div className="th-home">
-            <StartCards onStart={onStart} onAskRate={onAskRate} onGoTab={onGoTab} />
-
-            {error && <div className="alert-error">{error}</div>}
-
-            {!tasks && loading && <div className="th-section th-loading">กำลังโหลด...</div>}
-
-            {tasks && helpRows.length > 0 && (
-                <Fold title="รอทีมแบรนด์ คุณช่วยได้" count={helpRows.length} tone="amber"
-                    // เห็นแบรนด์เดียว = ใบพวกนี้คืองานของทีมตัวเองแน่ ๆ กางไว้เลย · หลายแบรนด์พับไว้ไม่ให้รก
-                    defaultOpen={brands.length === 1}
-                    hint="ใบของทีมในแบรนด์ที่คุณดูแล — ไม่ได้นับเป็นเลขแดงของคุณ แต่คุณกดแทนทีมได้">
-                    <ul className="th-lines">
-                        {helpRows.map(r => (
-                            <RowLine key={`${r.project_id}~${r.key}`} row={r} onOpen={onOpen} />
-                        ))}
-                    </ul>
-                </Fold>
-            )}
-
-            {tasks && otherRows.length > 0 && (
-                <Fold title="รอคนอื่นอยู่" count={otherRows.length} defaultOpen={false}
-                    hint={`รอ${T.finder}ส่งชื่อหรือยืนยันคิว — ตอนนี้ไม่ต้องทำอะไร กดคัดลอกลิงก์ไปทวงใน LINE ได้`}>
-                    <ul className="th-lines">
-                        {otherRows.map(r => (
-                            <RowLine key={`${r.project_id}~${r.key}`} row={r} onOpen={onOpen} nudge />
-                        ))}
-                    </ul>
-                </Fold>
-            )}
-
-            <RateSummary rates={rates} onGoTab={onGoTab} />
-
-            <OpenJobs version={jobsVersion} onGoTab={onGoTab} onStart={onStart}
-                // หน้าแม่ส่งตัวเปิดใบแบบ (งาน, ใบ) มาให้ — ถ้าไม่มีก็ใช้ onOpen เดิมที่รับแถวใบ
-                onOpenRequest={onOpenRequest || ((pid, key) => onOpen({ project_id: pid, key }))} />
-        </div>
-    );
-}
-
-// ทางเริ่ม 3 ทาง — ใช้ครบ 3 ครั้งแล้วย่อเหลือแถบปุ่มเล็ก (คนที่ใช้คล่องแล้วไม่ต้องเห็นคำอธิบายยาวทุกวัน)
-function StartCards({ onStart, onAskRate, onGoTab }) {
-    // อ่านครั้งเดียวตอนเปิดหน้า — หน้าตาไม่เปลี่ยนกลางคันตอนเพิ่งกด
-    const [compact] = useState(() => readUses() >= 3);
-    const items = [
-        { key: 'direct', icon: 'users', title: 'มีคนแล้ว บันทึกการจ้าง', desc: 'รู้ชื่อคนแล้ว ใส่ค่าตัว วัน สถานที่', go: () => onStart('direct') },
-        { key: 'casting', icon: 'search', title: 'ยังไม่มีคน ขอให้ช่วยหา', desc: `บอกสเปค จำนวน งบต่อคน แล้ว${T.finder}จะส่งรายชื่อมาให้เลือก`, go: () => onStart('casting') },
-        { key: 'rate', icon: 'coins', title: 'ถามราคาก่อน', desc: 'อยากรู้เรทก่อนตัดสินใจจ้าง', go: () => onAskRate() }
-    ];
-    const use = it => { bumpUses(); it.go(); };
-    const again = (
-        <button type="button" className="th-link th-again" onClick={() => onGoTab('people')}>
-            จ้างคนเดิมซ้ำ? ดูคอมการ์ดใน Talent Book →
-        </button>
-    );
-    if (compact) {
-        return (
-            <div className="th-start-compact">
-                {items.map(it => (
-                    <button type="button" key={it.key} className={'th-start-mini th-k-' + it.key} onClick={() => use(it)}>
-                        <Icon name={it.icon} size={15} /> {it.title}
-                    </button>
-                ))}
-                {again}
-            </div>
-        );
-    }
-    return (
-        <div className="th-start">
-            <div className="th-start-grid">
-                {items.map(it => (
-                    <button type="button" key={it.key} className={'th-start-card th-k-' + it.key} onClick={() => use(it)}>
-                        <span className="th-start-ico"><Icon name={it.icon} size={20} /></span>
-                        <span className="th-start-title">{it.title}</span>
-                        <span className="th-start-desc">{it.desc}</span>
-                    </button>
-                ))}
-            </div>
-            {again}
-        </div>
-    );
+    return <FinderHome {...props} />;
 }
 
 // ===== "รอคุณทำ" =====
@@ -338,63 +236,6 @@ function RowLine({ row, onOpen, nudge = false }) {
                 <button type="button" className="th-smallbtn" onClick={e => { e.stopPropagation(); open(); }}>เปิดใบ</button>
             </div>
         </li>
-    );
-}
-
-// ===== สรุปขอเรทราคา (แท็บ Talent Book / ขอเรทราคา) =====
-function RateSummary({ rates, onGoTab }) {
-    if (!rates) return null;
-    const now = Date.now();
-    const waiting = rates.filter(r => (r.status || 'open') === 'open').length;
-    // "ได้ราคาแล้ว" = มีคนตอบ (answered_at ประทับตอนตอบราคา/หมายเหตุ) ภายใน 7 วันที่ผ่านมา
-    const recent = rates.filter(r => {
-        if ((r.status || 'open') === 'open' || !r.answered_at) return false;
-        const t = new Date(r.answered_at).getTime();
-        return Number.isFinite(t) && now - t <= 7 * DAY;
-    }).length;
-    if (!waiting && !recent) return null;
-    return (
-        <section className="th-section th-rate-sum">
-            <span className="th-rate-text">
-                ขอเรทราคา: รอตอบ <b>{waiting}</b> · ได้ราคาแล้วใน 7 วัน <b>{recent}</b>
-            </span>
-            <button type="button" className="th-smallbtn" onClick={() => onGoTab('rates')}>ดู</button>
-        </section>
-    );
-}
-
-// ===== งานที่กำลังทำ (5 ใบแรกตามลำดับของ server: งานที่มีเรื่องค้างขึ้นก่อน) =====
-// การ์ดแบบย่อ (compact) ของแท็บงานทั้งหมด: แถบได้คนแล้ว + เรื่องถัดไปพร้อมปุ่ม — ไม่มีเมนู ⋯ และบรรทัดเงิน
-function OpenJobs({ version, onGoTab, onStart, onOpenRequest }) {
-    const [jobs, setJobs] = useState(null);
-    const [err, setErr] = useState('');
-    useEffect(() => {
-        let on = true;
-        api('/hires/jobs')
-            .then(res => { if (on) { setJobs(((res.data && res.data.rows) || []).filter(r => !r.closed)); setErr(''); } })
-            .catch(e => { if (on) setErr(e.message); });
-        return () => { on = false; };
-    }, [version]);
-    const shown = (jobs || []).slice(0, 5);
-    return (
-        <section className="th-section th-jobs-sec">
-            <div className="th-sec-row">
-                <h2 className="th-sec-title">งานที่กำลังทำ {jobs && <span className="th-count">{jobs.length}</span>}</h2>
-                <button type="button" className="th-link" onClick={() => onGoTab('jobs')}>ดูงานทั้งหมด →</button>
-            </div>
-            {err && <div className="th-err">{err}</div>}
-            {!jobs ? (
-                !err && <p className="th-hint">กำลังโหลด...</p>
-            ) : shown.length === 0 ? (
-                <p className="th-hint">ยังไม่มีงานที่กำลังทำ</p>
-            ) : (
-                <div className="tl-grid compact">
-                    {shown.map(j => (
-                        <JobCard key={j.id} job={j} compact onOpenRequest={onOpenRequest} onStart={onStart} />
-                    ))}
-                </div>
-            )}
-        </section>
     );
 }
 

@@ -3,7 +3,7 @@ import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { api } from '../api/client.js';
 import { useAuth } from '../auth/AuthContext.jsx';
 import { visibleBrands } from '../data/brands.js';
-import { T, NEED_FEE_MSG, parseOpen } from '../data/talentLabels.js';
+import { T, parseOpen } from '../data/talentLabels.js';
 import QuickHireForm from '../components/QuickHireForm.jsx';
 import RateCardForm from '../components/RateCardForm.jsx';
 import HomeTab from './hires/HomeTab.jsx';
@@ -15,23 +15,23 @@ import RequestDrawer from './hires/RequestDrawer.jsx';
 import { countsTip } from './hires/requestText.js';
 
 // เมนู Talent — จ้างนางแบบ / นักแสดง / พิธีกร / Live สด (งาน campaign_type 'other')
-//  • หน้าหลัก     = "รอคุณทำ" + ปุ่มเริ่ม 3 ทาง (เปิดเมนูมาเจอหน้านี้เสมอ ไม่เด้งแท็บตามข้อมูลแล้ว)
+//  • (ไม่มีแท็บ "หน้าหลัก" แล้ว — ผู้ใช้ขอเอาออก 29 ก.ย.) เปิดเมนูมาเจอ "งานทั้งหมด"
 //  • งานทั้งหมด   = รายการงาน (บ้านของ "งาน")
-//  • ใบขอให้หา    = ใบขอให้หาทุกใบข้ามงาน
+//  • ใบขอให้หา    = ใบขอให้หาทุกใบข้ามงาน · เลขแดง "ถึงตาคุณ" อยู่บนแท็บนี้ (ตัวกรอง "รอฉันทำ" ในแท็บ)
 //  • ขอเรทราคา    = แท็บของตัวเอง (?tab=rates) — ผู้ใช้ขอเอาตัวสลับย่อยใน Talent Book ออก · ลิงก์เก่าทั้งสองยังพามาถูกที่
 //  • Talent Book  = คอมการ์ดของทุกคนที่เคยเสนอ/จ้าง (?tab=people)
-// ข้อมูลใบขอให้หาโหลดที่นี่ที่เดียวแล้วส่งลงไป — เลขแดง หน้าหลัก ตาราง และลิ้นชักจะได้เห็นชุดเดียวกันเสมอ
+// คนช่วยหาที่ไม่มีแบรนด์ไม่มีแถบแท็บ — ได้หน้า "งานหาคนของฉัน" (HomeTab) หน้าเดียว
+// ข้อมูลใบขอให้หาโหลดที่นี่ที่เดียวแล้วส่งลงไป — เลขแดง ตาราง และลิ้นชักจะได้เห็นชุดเดียวกันเสมอ
 // ลิ้นชักของใบเปิดจาก ?open=<งาน>~<ใบ> ได้จากทุกแท็บ (ลิงก์ที่ส่ง LINE ไปแล้วยังเปิดได้)
 const TABS = [
-    { key: 'home', label: 'หน้าหลัก' },
     { key: 'jobs', label: 'งานทั้งหมด' },
     { key: 'requests', label: T.request },
     // ผู้ใช้ขอให้ "ขอเรทราคา" มาก่อน "Talent Book"
     { key: 'rates', label: 'ขอเรทราคา' },
     { key: 'people', label: 'Talent Book' }
 ];
-// ?tab= → แท็บ (ค่าที่ไม่รู้จัก = หน้าหลัก)
-const tabOf = v => (v === 'jobs' || v === 'requests' || v === 'people' || v === 'rates' ? v : 'home');
+// ?tab= → แท็บ (ค่าที่ไม่รู้จัก รวมถึงลิงก์เก่า ?tab=home = งานทั้งหมด)
+const tabOf = v => (v === 'requests' || v === 'people' || v === 'rates' ? v : 'jobs');
 const EMPTY_TASKS = { rows: [], counts: { total: 0 } };
 
 export default function OtherWork() {
@@ -43,6 +43,7 @@ export default function OtherWork() {
     const hasBrand = brands.length > 0;
     const [params, setParams] = useSearchParams();
     const asked = params.get('tab');
+    // 'home' = หน้า "งานหาคนของฉัน" ของคนช่วยหาที่ไม่มีแบรนด์เท่านั้น (ไม่มีแท็บให้กด)
     const tab = hasBrand ? tabOf(asked) : 'home';
 
     // ===== ใบขอให้หา (ชุดเดียวทั้งหน้า) =====
@@ -76,7 +77,7 @@ export default function OtherWork() {
     const counts = tasks ? tasks.counts || { total: 0 } : null;
     const rows = (tasks && tasks.rows) || [];
 
-    // ===== ขอเรทราคา: เลขเหลือง + สรุปบนหน้าหลัก (เฉพาะคนที่มีแบรนด์ — คำขอราคากรองตามแบรนด์) =====
+    // ===== ขอเรทราคา: เลขเหลืองบนแท็บ (เฉพาะคนที่มีแบรนด์ — คำขอราคากรองตามแบรนด์) =====
     const [rates, setRates] = useState(null);
     useEffect(() => {
         if (!hasBrand) return undefined;
@@ -102,7 +103,6 @@ export default function OtherWork() {
         setRateSent(false);
         setParams({ tab: key });
     }
-    const goTab = key => pick(key);
 
     // ===== ลิ้นชักของใบ =====
     const openParam = params.get('open');
@@ -155,7 +155,7 @@ export default function OtherWork() {
     const [form, setForm] = useState(null);     // { mode, job }
     const [asking, setAsking] = useState(false);
     const startForm = (mode, job = null) => setForm({ mode, job });
-    // การ์ดงาน (แท็บงานทั้งหมด / หน้าหลัก) ส่งงานมาด้วย → ฟอร์มสั้นล็อกงานนั้นไว้ ข้ามข้อ "งานไหน"
+    // การ์ดงาน (แท็บงานทั้งหมด) ส่งงานมาด้วย → ฟอร์มสั้นล็อกงานนั้นไว้ ข้ามข้อ "งานไหน"
     const startFromCard = (mode, job) => startForm(mode, job || null);
     // การ์ดงานรู้แค่ (งาน, ใบ) — เปิดลิ้นชักตัวเดียวกับที่อื่น (?open=<งาน>~<ใบ>)
     const openRequestAt = (projectId, key) => openRequest({ project_id: projectId, key });
@@ -174,20 +174,7 @@ export default function OtherWork() {
         setRateSent(true);
     }
 
-    const helpKey = 'talent.helpSeen';
-    const [help, setHelp] = useState(false);
-    useEffect(() => {
-        // เปิดคำอธิบายให้เองครั้งแรกครั้งเดียว (คนช่วยหามีคำอธิบายของตัวเองในหน้าอยู่แล้ว)
-        if (!hasBrand) return;
-        let seen = true;
-        try { seen = !!window.localStorage.getItem(helpKey); } catch { /* เบราว์เซอร์ปิดที่เก็บข้อมูล */ }
-        if (!seen) {
-            setHelp(true);
-            try { window.localStorage.setItem(helpKey, '1'); } catch { /* ไม่เป็นไร */ }
-        }
-    }, [hasBrand]);
-
-    const homeTitle = counts && counts.total > 0 ? `${T.request}ที่ถึงตาคุณ ${counts.total} ใบ (${countsTip(counts)})` : '';
+    const todoTitle = counts && counts.total > 0 ? `${T.request}ที่ถึงตาคุณ ${counts.total} ใบ (${countsTip(counts)})` : '';
 
     return (
         <div className="th-hub">
@@ -196,12 +183,7 @@ export default function OtherWork() {
                     <h1>Talent</h1>
                     <p className="page-sub">จ้างนางแบบ นักแสดง พิธีกร Live สด: บันทึกคนที่ดีลไว้แล้ว หรือขอให้เพื่อนในทีมช่วยหาคน</p>
                 </div>
-                <button type="button" className="th-help-btn" aria-expanded={help} onClick={() => setHelp(h => !h)}>
-                    ? ใช้งานยังไง
-                </button>
             </header>
-
-            {help && <HelpPanel onClose={() => setHelp(false)} />}
 
             {notice && (
                 <div className="alert-error th-notice" role="alert">
@@ -216,8 +198,9 @@ export default function OtherWork() {
                         <button key={t.key} type="button" role="tab" aria-selected={tab === t.key}
                             className={tab === t.key ? 'active' : ''} onClick={() => pick(t.key)}>
                             {t.label}
-                            {t.key === 'home' && counts && counts.total > 0 && (
-                                <span className="agency-tab-count danger" title={homeTitle}>{counts.total}</span>
+                            {/* เลขแดงเดิมอยู่บนแท็บหน้าหลัก — ย้ายมาที่ใบขอให้หา (ดูเรื่องค้างที่ตัวกรอง "รอฉันทำ") */}
+                            {t.key === 'requests' && counts && counts.total > 0 && (
+                                <span className="agency-tab-count danger" title={todoTitle}>{counts.total}</span>
                             )}
                             {t.key === 'rates' && rateOpen > 0 && (
                                 <span className="agency-tab-count warn" title="ขอเรทราคาที่ยังรอตอบ">{rateOpen}</span>
@@ -228,10 +211,7 @@ export default function OtherWork() {
             )}
 
             {tab === 'home' ? (
-                <HomeTab tasks={tasks} loading={tasksBusy && !tasks} error={tasksError}
-                    finderOnly={!hasBrand} user={user} brands={brands} rates={rates}
-                    onOpen={openRequest} onOpenRequest={openRequestAt} onStart={startFromCard} onAskRate={() => setAsking(true)}
-                    onGoTab={goTab} jobsVersion={jobsVersion} />
+                <HomeTab tasks={tasks} loading={tasksBusy && !tasks} error={tasksError} user={user} onOpen={openRequest} />
             ) : tab === 'jobs' ? (
                 <JobsTab onStart={startFromCard} onOpenRequest={openRequestAt} version={jobsVersion} />
             ) : tab === 'requests' ? (
@@ -257,32 +237,5 @@ export default function OtherWork() {
                     onClose={() => setAsking(false)} onSaved={onRateSaved} />
             )}
         </div>
-    );
-}
-
-// คำอธิบาย 2 เส้นทาง — ภาษาธรรมดา ให้คนที่เพิ่งเข้ามาเห็นภาพรวมก่อนกด
-function HelpPanel({ onClose }) {
-    const direct = ['บันทึกคน', T.agreed, 'ถ่าย', 'ส่งงาน', 'รอบทำจ่าย'];
-    const casting = [`${T.finder}ส่งชื่อ`, 'คุณเลือก', T.confirmQueue, T.agreed];
-    return (
-        <section className="th-help" aria-label="วิธีใช้งานหน้า Talent">
-            <div className="th-help-head">
-                <strong>ใช้งานยังไง</strong>
-                <button type="button" className="th-help-x" aria-label="ปิดคำอธิบาย" onClick={onClose}>×</button>
-            </div>
-            <div className="th-help-paths">
-                <div className="th-help-path">
-                    <div className="th-help-name">มีคนแล้ว</div>
-                    <ol className="th-flow">{direct.map(s => <li key={s}>{s}</li>)}</ol>
-                </div>
-                <div className="th-help-path casting">
-                    <div className="th-help-name">ยังไม่มีคน ให้ช่วยหา</div>
-                    <ol className="th-flow">{casting.map(s => <li key={s}>{s}</li>)}</ol>
-                </div>
-            </div>
-            <p className="th-help-note">
-                บันทึกคนที่ยังไม่รู้ค่าตัวได้ (สถานะ "{T.talking}") — {NEED_FEE_MSG} · งานที่ต้องทำของคุณดูได้ที่แท็บ "{T.request}" → รอฉันทำ (เลขแดงบอกว่ามีกี่เรื่อง)
-            </p>
-        </section>
     );
 }
