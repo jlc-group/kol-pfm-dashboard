@@ -7,7 +7,7 @@ const DEFAULT_INITIAL_DELAY_MS = 30 * 1000;
 const MAX_BATCH_SIZE = 2000;
 const ALLOWED_FIELDS = [
     'id_post', 'views', 'likes', 'comments', 'saves', 'shares', 'reposts',
-    'ad_spend', 'source_updated_at', 'paid_updated_at', 'first_ad_date'
+    'ad_spend', 'source_updated_at', 'paid_updated_at', 'first_ad_date', 'ad_launched'
 ];
 
 let running = false;
@@ -44,7 +44,12 @@ function sanitizeRow(row) {
             if (row[field] && Number.isFinite(Date.parse(row[field]))) clean[field] = row[field];
             continue;
         }
-        // first_ad_date = วันแรกที่คลิปมีค่าแอดจริง (YYYY-MM-DD) ใช้ลง "วันยิงแอด"
+        // ad_launched = Beauterry มี ad เกาะคลิปนี้แล้ว (ยังไม่ต้องมีค่าแอด) — รับเฉพาะ true
+        if (field === 'ad_launched') {
+            if (row[field] === true) clean[field] = true;
+            continue;
+        }
+        // first_ad_date = วันที่ยิงแอดครั้งแรก (YYYY-MM-DD) ใช้ลง "วันยิงแอด"
         if (field.endsWith('_date')) {
             const v = String(row[field] || '');
             if (/^\d{4}-\d{2}-\d{2}$/.test(v) && Number.isFinite(Date.parse(v))) clean[field] = v;

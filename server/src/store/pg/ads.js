@@ -77,6 +77,9 @@ const adsSync = {
             // วันยิงแอด (ad_end) — PFM บอกวันแรกที่มีค่าแอดจริงมาให้ ลงให้เฉพาะแถวที่ยังว่าง
             // ไม่ทับวันที่ที่มีอยู่แล้ว (คนอาจตั้งใจแก้เอง)
             if (r.first_ad_date && !s.ad_end) { s.ad_end = r.first_ad_date; mark(s, 'ad_end'); }
+            // Beauterry มี ad เกาะคลิปแล้ว = ยิงแล้ว ไม่ต้องรอค่าแอด (ad ที่เพิ่งยิงยังไม่มี spend)
+            // ตั้งทางเดียว ไม่ย้อนกลับเป็น "ยังไม่ยิง" ให้คนกดเองถ้าจะยกเลิก
+            if (r.ad_launched === true && s.ad_status !== 'ยิงแล้ว') { s.ad_status = 'ยิงแล้ว'; mark(s, 'ad_status'); }
             const hasOrganicMetrics = METRIC_KEYS.some(k => r[k] !== undefined);
             // แหล่งข้อมูลเดิมที่ยังไม่ส่ง source timestamp ต้องทำงานเหมือนเดิม
             // ส่วน PFM adapter ต้องผ่าน freshness guard ก่อนเขียน organic metrics

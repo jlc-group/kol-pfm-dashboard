@@ -119,3 +119,20 @@ test('ซิงก์ PFM ลงวันยิงแอดจาก first_ad_da
     assert.equal('ad_end' in patchOf(2), false, 'แถวที่มีวันยิงแอดแล้วต้องไม่ถูกทับ');
     assert.equal('ad_end' in patchOf(3), false, 'ไม่มี first_ad_date ก็ไม่แตะ');
 });
+
+test('ซิงก์ PFM ตั้งสถานะยิงแล้วเมื่อ Beauterry มี ad เกาะคลิป แม้ยังไม่มีค่าแอด', async () => {
+    const fixture = structuredClone(FIXTURE.submissions);
+    FIXTURE.submissions.find(s => s.id === 2).ad_status = 'ยิงแล้ว';
+    written = [];
+    await adsSync.apply([
+        { id_post: '900001', ad_launched: true, first_ad_date: '2026-09-29' },
+        { id_post: '900002', ad_launched: true },
+        { id_post: '900003' }
+    ]);
+    FIXTURE.submissions = fixture;
+    const patchOf = id => (written.find(w => w.id === id) || {}).patch || {};
+    assert.equal(patchOf(1).ad_status, 'ยิงแล้ว');
+    assert.equal(patchOf(1).ad_end, '2026-09-29');
+    assert.equal('ad_status' in patchOf(2), false, 'ยิงแล้วอยู่แล้ว ไม่ต้องเขียนซ้ำ');
+    assert.equal('ad_status' in patchOf(3), false, 'ไม่มี ad_launched ก็ไม่แตะสถานะ');
+});

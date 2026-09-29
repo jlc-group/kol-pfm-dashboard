@@ -78,3 +78,9 @@ test('runSync requests known IDs and applies normalized rows', async () => {
     assert.equal(result.updated, 1);
     assert.equal(calls[0][0].views, 42);
 });
+
+test('ad_launched passes through only as true', () => {
+    assert.equal(sanitizeRow({ id_post: '1', ad_launched: true }).ad_launched, true);
+    assert.equal(sanitizeRow({ id_post: '1', ad_launched: 'true' }).ad_launched, undefined);
+    assert.equal(sanitizeRow({ id_post: '1', ad_launched: false }).ad_launched, undefined);
+});
