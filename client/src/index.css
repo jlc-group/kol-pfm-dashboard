@@ -1323,6 +1323,10 @@ a { text-decoration: none; color: inherit; }
 .ads-name-meta { display: flex; flex-direction: column; min-width: 0; }
 .ads-acc { font-weight: 700; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ads-plat { font-size: 11px; color: var(--muted); }
+/* รหัสสินค้าที่ KOL รีวิวจริง ใต้ชื่อ KOL — ชิปเดียวกับ .prodchip แต่ย่อให้เล็กพอดีช่อง */
+.ads-clip-prods { margin-top: 4px; }
+.ads-clip-prods .prodchip-wrap { gap: 4px; }
+.ads-clip-prods .prodchip, .ads-clip-prods .prodchip-more { padding: 1px 7px; font-size: 10.5px; border-radius: 6px; }
 .ads-cell { min-width: 0; }
 /* บรรทัดเล็กใต้ช่อง บอกวันที่นำข้อมูลเข้าระบบ
    ตั้งใจให้จางและเล็กกว่าค่าหลักชัดเจน จะได้ไม่แย่งสายตาไปจากตัวข้อมูลเอง */

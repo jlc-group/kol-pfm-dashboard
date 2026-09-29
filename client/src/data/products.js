@@ -60,6 +60,80 @@ export const PRODUCT_CATALOG = [
     { code: 'BTA4-07', name: 'บิวเทอร์รี่ คุชชั่น (WARM HONEY)', brand: 'Beauterry' }
 ];
 
+// ===== สินค้าที่มีหลายสี / หลายเบอร์ =====
+// ระบบยิงแอดของ Beauterry ยิงทีเดียวครอบทุกสีของสินค้านั้น — คลิปที่รีวิว BTA4-01 ช่อง PRODUCTS หน้า Ads
+// และฟีดที่ระบบยิงแอดดึงไป ต้องเป็น BTA4-00 ถึง BTA4-07 ครบ 8 สี (รหัสที่ KOL รีวิวจริงไปอยู่ใต้ชื่อ KOL)
+// กลุ่มคิดจากรหัสในคลังด้านบนเอง: Beauterry ตัดเลขท้ายขีด (BTA4-01 → BTA4) · Jula's Herb ตัดตัวอักษรท้าย (L8A → L8)
+// กลุ่มที่มีตัวเดียว (เช่น T6A) ไม่นับ · แบรนด์อื่นไม่กาง
+// เพิ่มสีใหม่ในคลังแล้วต้องเพิ่มที่ server/src/store/productFamilies.js ด้วย (tests/product-families.test.cjs เทียบให้ ไม่ตรงเทสต์แดง)
+const FAMILY_RULES = {
+    Beauterry: code => (code.match(/^(.+)-\d+$/) || [])[1] || null,
+    "Jula's Herb": code => (code.match(/^([A-Z]+\d+)[A-Z]$/) || [])[1] || null
+};
+export const PRODUCT_FAMILIES = (() => {
+    const byKey = new Map();
+    for (const p of PRODUCT_CATALOG) {
+        const rule = FAMILY_RULES[p.brand];
+        const key = rule ? rule(p.code) : null;
+        if (!key) continue;
+        if (!byKey.has(key)) byKey.set(key, []);
+        byKey.get(key).push(p.code);
+    }
+    return [...byKey.values()].filter(codes => codes.length > 1);
+})();
+const FAMILY_OF = new Map(PRODUCT_FAMILIES.flatMap(codes => codes.map(c => [c, codes])));
+
+// แยกช่องสินค้า ("BTA1-03,BTA1-04" หรือ array) เป็นรายการ — คั่นด้วย , หรือ ， (จุลภาคเต็มความกว้าง แบบเดียวกับ productCodesIn)
+// ตัดช่องว่าง ทิ้งช่องว่างเปล่า
+export function splitProductList(value) {
+    const list = Array.isArray(value) ? value : String(value ?? '').split(/[,，]/);
+    return list.map(s => String(s ?? '').trim()).filter(Boolean);
+}
+
+// หน้าตารหัสสินค้า (BTA4-01, L8A, L10, JNP1, C1 ...) — ใช้แยกรายการที่พิมพ์รหัสหลายตัวคั่นด้วยช่องว่าง/ขึ้นบรรทัด
+const CODE_SHAPE = /^[A-Z]{1,4}\d+[A-Z]?(?:-\d+)?$/;
+
+// รายการย่อย: รายการที่เป็นรหัสล้วนหลายตัว ("BTA4-01 BTA2-01") แยกเป็นทีละรหัส ไม่งั้นตัวหลังหาย
+// รายการที่เป็นรหัส + ชื่อ ("BTA2-01 บิวเทอร์รี่ ...") หรือข้อความที่พิมพ์เอง ("Dermiq Serum Vit C") เก็บทั้งก้อน
+export function productParts(value) {
+    return splitProductList(value).flatMap(entry => {
+        const tokens = entry.split(/\s+/);
+        return tokens.length > 1 && tokens.every(t => CODE_SHAPE.test(t.toUpperCase())) ? tokens : [entry];
+    });
+}
+
+// รหัสของรายการ = คำแรก (บางแถวเก็บเป็น "BTA2-01 บิวเทอร์รี่ ...") · ไม่สนตัวพิมพ์
+export function productCodeOf(entry) {
+    return String(entry ?? '').trim().split(/\s+/)[0].toUpperCase();
+}
+
+// กางทุกสีของสินค้าที่มีหลายสี · สินค้าอื่นคืนค่าเดิม · ไม่ซ้ำ เรียงตามที่เจอก่อน
+// ต้องให้ผลเหมือน expandProductFamilies ฝั่ง server ทุกตัวอักษร (ฟีดส่งค่านี้ให้ระบบยิงแอด)
+export function expandProductFamilies(value) {
+    const out = [];
+    const seen = new Set();
+    const add = v => { if (!seen.has(v)) { seen.add(v); out.push(v); } };
+    for (const part of productParts(value)) {
+        const fam = FAMILY_OF.get(productCodeOf(part));
+        if (fam) fam.forEach(add); else add(part);
+    }
+    return out;
+}
+
+// ป้ายใต้ชื่อ KOL หน้า Ads = สินค้าที่ KOL รีวิวในคลิปนี้ (ไม่กางสี)
+// รายการที่ขึ้นต้นด้วยรหัสในคลัง → โชว์แค่รหัส (ชื่อเต็มอยู่ใน tooltip) · ข้อความที่พิมพ์เอง (แบรนด์ที่ไม่มีคลัง) → โชว์ทั้งข้อความตามที่พิมพ์
+const CATALOG_CODES = new Set(PRODUCT_CATALOG.map(p => p.code));
+export function clipProductLabels(value) {
+    const out = [];
+    const seen = new Set();
+    for (const part of productParts(value)) {
+        const code = productCodeOf(part);
+        const label = CATALOG_CODES.has(code) ? code : part;
+        if (!seen.has(label)) { seen.add(label); out.push(label); }
+    }
+    return out;
+}
+
 // แสดงเป็น "รหัส - ชื่อ" (ถ้าไม่พบในคลัง คืนค่าเดิม)
 export function productLabel(code) {
     const p = PRODUCT_CATALOG.find(x => x.code === code);

@@ -3,8 +3,8 @@ import { Link } from 'react-router-dom';
 import ColumnFilter from '../components/ColumnFilter.jsx';
 import { api } from '../api/client.js';
 import Icon from '../components/Icon.jsx';
-import { productLabel, asTargetArray } from '../data/products.js';
-import { ProductSummary } from '../components/ProductChips.jsx';
+import { productLabel, asTargetArray, expandProductFamilies, clipProductLabels } from '../data/products.js';
+import ProductChips, { ProductSummary } from '../components/ProductChips.jsx';
 import { fmtDate } from '../utils/date.js';
 import { visibleBrands, seesAllBrands } from '../data/brands.js';
 import { useAuth } from '../auth/AuthContext.jsx';
@@ -275,12 +275,21 @@ function AdRow({ row, onSaved, canCost }) {
         ? daysBetween(row.post_date, String(row.post_date_at).slice(0, 10))
         : null;
 
+    // รหัสที่ KOL คนนี้รีวิวจริง (เดิมอยู่ช่อง PRODUCTS) — ช่อง PRODUCTS เปลี่ยนเป็นทุกสีที่ระบบยิงแอดยิงครอบ
+    // รหัสในคลังโชว์แค่รหัส · ชื่อที่พิมพ์เอง (แบรนด์ที่ไม่มีคลังสินค้า) โชว์ทั้งข้อความ ไม่ตัดเหลือคำแรก
+    const clipCodes = clipProductLabels(row.product);
+
     return (
         <div className="kol-track-entry">
             <div className="ads-name">
                 <div className="ads-name-meta">
                     <span className="ads-acc">{row.account_name}</span>
                     <span className="ads-plat">{row.platform || '—'}</span>
+                    {clipCodes.length > 0 && (
+                        <div className="ads-clip-prods" title="รหัสสินค้าที่ KOL รีวิวในคลิปนี้">
+                            <ProductChips products={clipCodes} collapseAt={2} />
+                        </div>
+                    )}
                 </div>
             </div>
             <div className="ads-cell ads-camp">
@@ -288,7 +297,8 @@ function AdRow({ row, onSaved, canCost }) {
                 {row.brand && <span className="tag">{row.brand}</span>}
             </div>
             <div className="ads-cell ads-stack">
-                <ProductSummary value={row.product} max={2} />
+                {/* ทุกสีของสินค้าที่คลิปรีวิว (ระบบยิงแอดดึงค่าเดียวกันนี้ไปจากฟีด) — โชว์ 3 รหัสแรก ที่เหลือกด +N · ชี้ดูชื่อสีครบ */}
+                <ProductSummary value={expandProductFamilies(row.product)} max={3} />
             </div>
             {/* CAMPAIGN (อยู่หน้า TARGET) — ตั้งไว้ที่ชุด Content Type ของกลุ่ม · แคมเปญที่บันทึกก่อนมีช่องนี้จะเป็น — */}
             <div className="ads-cell ads-stack">

@@ -1,5 +1,6 @@
 const { query } = require('./_base');
 const { resolveGroupProducts, resolveGroupTarget } = require('../logic');
+const { expandProductFamilies } = require('../productFamilies');
 
 const AD_STATUS = 'ยังไม่ยิง';
 
@@ -50,7 +51,11 @@ async function listCandidates({ brand, limit = 100, updatedSince = null } = {}) 
     return result.rows.map(row => {
         // Same Product/Target the /ads page shows for this clip.
         const grp = Array.isArray(row.ad_groups) ? row.ad_groups.find(g => g && g.key === row.group_key) : null;
+        // Target ยังเลือกจากรหัสที่ KOL รีวิวจริง (Target ตั้งต่อสินค้าได้) — กางทุกสีแค่ช่อง product
         const target = resolveGroupTarget(grp, row.platform, row.product);
+        // product = ทุกสีของสินค้าที่คลิปรีวิว (ระบบยิงแอดยิงครอบทุกสี) เหมือนช่อง PRODUCTS หน้า Ads
+        // เช่น คลิปรีวิว BTA4-01 → "BTA4-00, BTA4-01, ..., BTA4-07" · สินค้าที่ไม่มีหลายสีส่งตามเดิม
+        const products = expandProductFamilies(row.product || resolveGroupProducts(grp, row.platform));
         return {
         submission_id: row.submission_id,
         id_post: String(row.id_post),
@@ -62,7 +67,7 @@ async function listCandidates({ brand, limit = 100, updatedSince = null } = {}) 
         post_check: row.post_check || null,
         post_url: row.post_url || null,
         post_date: row.post_date || null,
-        product: row.product || (resolveGroupProducts(grp, row.platform).join(', ') || null),
+        product: products.length ? products.join(', ') : null,
         target: Array.isArray(target) ? target : (target ? [target] : []),
         updated_at: row.updated_at || null
         };
