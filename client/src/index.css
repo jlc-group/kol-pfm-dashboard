@@ -3556,7 +3556,8 @@ button { color: inherit; }
     .hub-toolbar .ka-search { max-width: none; }
 }
 
-/* ===== ลิ้นชักขวา (SideDrawer) — หน้า Talent: ใบขอให้หา / ฟอร์มสั้น ===== */
+/* ===== SideDrawer — หน้า Talent: ใบขอให้หา / แก้คน / แก้ข้อมูลงาน / ฟอร์มสั้น =====
+   ทุกอันเปิดเป็นกล่องกลางจอแล้ว (.side-drawer.center ด้านล่าง) · กฎของ .side-drawer เปล่าคือแบบลิ้นชักขวาเดิม เผื่อ center={false} */
 /* ห้ามค้าง transform บนตัวลิ้นชัก: ของข้างในที่เป็น position:fixed (ป๊อปอัป / ปฏิทิน) จะถูกขังในกรอบ — แอนิเมชันจึงไม่มี fill-mode */
 .side-drawer { position: fixed; inset: 0; z-index: 120; background: rgba(15, 40, 32, .42); display: flex; justify-content: flex-end; }
 .side-drawer-panel { width: min(100%, var(--drawer-w, 640px)); height: 100%; background: var(--bg); display: flex; flex-direction: column;
@@ -3584,6 +3585,16 @@ button { color: inherit; }
     .side-drawer-body { padding: 14px 16px 24px; }
     .side-drawer-foot { padding: 10px 16px; }
     .side-drawer .hire-grid, .side-drawer .req-facts { grid-template-columns: minmax(0, 1fr); }
+}
+/* แบบกล่องกลางจอ (SideDrawer center — ค่าเริ่มต้น) · สูงตามเนื้อหา ยาวเกินจอให้เลื่อนในกล่อง หัว/ปุ่มท้ายอยู่กับที่
+   แอนิเมชันไม่มี fill-mode เหมือนลิ้นชัก (ห้ามค้าง transform — ป๊อปอัป/ปฏิทินข้างในเป็น position:fixed) */
+.side-drawer.center { justify-content: center; align-items: center; padding: 24px 16px; }
+.side-drawer.center .side-drawer-panel { height: auto; max-height: 100%; border-radius: 18px; overflow: hidden;
+    box-shadow: 0 24px 60px rgba(15, 40, 32, .28); animation-name: drawerPop; }
+@keyframes drawerPop { from { transform: translateY(14px) scale(.98); opacity: 0; } to { transform: none; opacity: 1; } }
+@media (max-width: 600px) {
+    .side-drawer.center { padding: 0; }
+    .side-drawer.center .side-drawer-panel { height: 100%; border-radius: 0; }
 }
 
 /* ===== การ์ดใบขอให้หา / หน้างาน Talent (tc-) — รอบ 1 หน้า Talent ===== */

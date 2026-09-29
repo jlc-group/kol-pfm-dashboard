@@ -1,13 +1,15 @@
 import { useEffect, useId, useRef } from 'react';
 import { createPortal } from 'react-dom';
 
-// ลิ้นชักขวา — เปิดทับหน้าเดิม ปิดแล้วกลับที่เดิม (ใช้กับใบขอให้หา และฟอร์มสั้นของหน้า Talent)
+// กล่องเปิดทับหน้าเดิม ปิดแล้วกลับที่เดิม (ใบขอให้หา / แก้คน / แก้ข้อมูลงาน / ฟอร์มสั้นของหน้า Talent)
+// เดิมเป็นลิ้นชักริมขวา — ผู้ใช้ขอให้ขึ้นกลางจอทั้งหมด (29 ก.ย.) ชื่อคอมโพเนนต์/คลาสยังเป็น side-drawer เพื่อไม่ต้องไล่แก้ทุกที่
 // • วาดที่ document.body (portal) — กรอบของหน้าที่มี transform/overflow จะไม่ตัดลิ้นชัก
 // • ตัวลิ้นชักห้ามค้าง transform/filter หลังเปิดเสร็จ: ของข้างใน (ป๊อปอัปแก้ใบ / ยืนยันลบ / ปฏิทิน) ใช้ position:fixed
 //   ถ้ามี transform ค้างอยู่ ของพวกนั้นจะถูกขังอยู่ในกรอบลิ้นชักแทนที่จะเต็มจอ — แอนิเมชันจึงไม่ใช้ fill-mode
 // • Esc ปิดได้ ยกเว้นตอนมีป๊อปอัปหรือปฏิทินซ้อนอยู่ข้างใน (ให้ตัวนั้นปิดก่อน) หรือกำลังบันทึก
 // • มือถือ (≤600px) เต็มจอ
-export default function SideDrawer({ title, subtitle, onClose, children, footer, width = 640, busy = false, className = '' }) {
+// • center (ค่าเริ่มต้น) = กล่องกลางจอ · center={false} = ลิ้นชักริมขวาแบบเดิม (ตอนนี้ไม่มีที่ไหนใช้แล้ว)
+export default function SideDrawer({ title, subtitle, onClose, children, footer, width = 640, busy = false, className = '', center = true }) {
     const panel = useRef(null);
     const titleId = useId();
     const closeRef = useRef(onClose);
@@ -21,7 +23,7 @@ export default function SideDrawer({ title, subtitle, onClose, children, footer,
             const el = panel.current;
             // มีของซ้อนอยู่ข้างใน → ให้ของนั้นจัดการ Esc เอง
             if (el && el.querySelector('.modal-backdrop, .dp-pop')) return;
-            // ลิ้นชักที่เปิดทีหลัง (อยู่บนสุด) เท่านั้นที่ปิด
+            // กล่องที่เปิดทีหลัง (อยู่บนสุด) เท่านั้นที่ปิด
             const all = document.querySelectorAll('.side-drawer');
             if (all.length && all[all.length - 1] !== el?.parentElement) return;
             closeRef.current && closeRef.current();
@@ -50,7 +52,7 @@ export default function SideDrawer({ title, subtitle, onClose, children, footer,
     // กดพื้นหลังเพื่อปิด — เช็คทั้งตอนกดและตอนปล่อย กันลากเลือกข้อความจากในลิ้นชักแล้วไปปล่อยข้างนอกแล้วลิ้นชักปิด
     const downOnBackdrop = useRef(false);
     const node = (
-        <div className={'side-drawer ' + className}
+        <div className={'side-drawer' + (center ? ' center' : '') + (className ? ' ' + className : '')}
             onMouseDown={e => { downOnBackdrop.current = e.target === e.currentTarget; }}
             onClick={e => { if (e.target === e.currentTarget && downOnBackdrop.current && !busy) onClose && onClose(); }}>
             <div className="side-drawer-panel" ref={panel} role="dialog" aria-modal="true" aria-labelledby={titleId}
