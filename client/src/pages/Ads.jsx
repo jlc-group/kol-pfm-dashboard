@@ -10,6 +10,7 @@ import { visibleBrands, seesAllBrands } from '../data/brands.js';
 import { useAuth } from '../auth/AuthContext.jsx';
 import { campaignIsCtype } from '../data/adGroups.js';
 import { stampAtOf, stampAtText } from '../data/stamp.js';
+import { matchAdsSearch } from '../data/adsSearch.js';
 
 
 const STATUSES = ['ยังไม่ยิง', 'ยิงแล้ว'];
@@ -418,6 +419,8 @@ export default function Ads() {
     const [status, setStatus] = useState('');
     const [platform, setPlatform] = useState('');
     const [late, setLate] = useState('');   // '' | ontime | warn | bad
+    // ค้นหาชื่อ KOL / แคมเปญ / สินค้า / Gencode / ID Post — กรองฝั่งหน้าเว็บเหมือนตัวกรองอื่น (ดู data/adsSearch.js)
+    const [search, setSearch] = useState('');
     const [data, setData] = useState(null);
     const [error, setError] = useState('');
     // หัวตารางอยู่คนละกรอบกับแถว (เพื่อให้ล็อกไว้บนจอได้) — เลื่อนซ้ายขวากรอบไหน อีกกรอบตามไปตำแหน่งเดียวกัน
@@ -496,10 +499,12 @@ export default function Ads() {
     // ใช้สถานะที่โชว์ (ad_status_shown) เพื่อให้เลขบนปุ่มตรงกับที่ตาเห็นในตาราง
     // แถวเก่าก่อนมีฟิลด์นี้ค่อยถอยไปใช้ ad_status
     const shownStatusOf = r => r.ad_status_shown || r.ad_status;
+    // คำค้นหาไม่มี skip — เลขบนปุ่มกรองนับเฉพาะแถวที่ตรงกับคำค้นหาด้วย จะได้ตรงกับที่เหลือในตารางจริง
     const matches = (r, skip) =>
         (skip === 'platform' || !platform || r.platform === platform) &&
         (skip === 'status' || !status || shownStatusOf(r) === status) &&
-        (skip === 'late' || !late || lateBucket(r) === late);
+        (skip === 'late' || !late || lateBucket(r) === late) &&
+        matchAdsSearch(r, search);
 
     // ลำดับแถวตามที่ server ส่งมา (วันลงงานใหม่สุดก่อน แล้วตาม id) — ไม่เรียงตามสถานะแล้ว
     // กดเปลี่ยนเป็น "ยิงแล้ว" แถวต้องอยู่ที่เดิม เปลี่ยนแค่ป้ายสถานะ (เดิมเด้งลงไปท้ายตาราง ทีมหาแถวที่เพิ่งกดไม่เจอ)
@@ -515,7 +520,8 @@ export default function Ads() {
 
     const countIf = (skip, pred) => allRows.filter(r => matches(r, skip) && pred(r)).length;
     const platformOptions = [...new Set(allRows.map(r => r.platform).filter(Boolean))].sort();
-    const hasFilter = !!(platform || status || late);
+    const hasFilter = !!(platform || status || late || search.trim());
+    const clearFilters = () => { setPlatform(''); setStatus(''); setLate(''); setSearch(''); };
     // ค่า insight เพิ่มเติม (คำนวณจากข้อมูลที่มี)
     const topBrand = s && s.by_brand && s.by_brand.length ? s.by_brand[0] : null;
     const donePct = s && s.total_posts ? Math.round((s.done_count / s.total_posts) * 100) : 0;
@@ -620,6 +626,15 @@ export default function Ads() {
                         {data ? `แสดง ${rows.length} จาก ${allRows.length} โพสต์ · ` : ''}
                         กดปุ่ม ▾ ที่หัวคอลัมน์เพื่อกรอง
                     </span></h3>
+                    {/* ค้นหา — หน้าตาเดียวกับช่องค้นหาหน้า KOL Analytics (.ka-search) */}
+                    <div className="ka-search ads-search">
+                        <Icon name="search" size={15} />
+                        <input value={search} onChange={e => setSearch(e.target.value)} aria-label="ค้นหาโพสต์"
+                            placeholder="ค้นหาชื่อ KOL / แคมเปญ / สินค้า / Gencode / ID Post..." />
+                        {search && (
+                            <button type="button" className="ka-search-x" onClick={() => setSearch('')} title="ล้างคำค้นหา">✕</button>
+                        )}
+                    </div>
                     {rows.length > 0 && (
                         <button type="button" className="ads-jump-btn"
                             onClick={() => bodyRef.current?.querySelector('.kol-track-entry')?.scrollIntoView({ block: 'start', inline: 'nearest', behavior: 'auto' })}>
@@ -627,7 +642,7 @@ export default function Ads() {
                         </button>
                     )}
                     {hasFilter && (
-                        <button type="button" className="btn-clearfilter" onClick={() => { setPlatform(''); setStatus(''); setLate(''); }}>
+                        <button type="button" className="btn-clearfilter" onClick={clearFilters}>
                             ✕ ล้างตัวกรอง
                         </button>
                     )}
@@ -653,7 +668,8 @@ export default function Ads() {
                 ) : rows.length === 0 ? (
                     <div className="empty-illus">
                         <div className="empty-illus-icon"><Icon name="target" size={30} /></div>
-                        <div className="empty-illus-title">{hasFilter ? 'ไม่มีโพสต์ตรงกับตัวกรอง' : 'ยังไม่มีโพสต์ที่ยิงแอด'}</div>
+                        <div className="empty-illus-title">{!hasFilter ? 'ยังไม่มีโพสต์ที่ยิงแอด'
+                            : search.trim() ? `ไม่เจอโพสต์ที่ตรงกับ "${search.trim()}"` : 'ไม่มีโพสต์ตรงกับตัวกรอง'}</div>
                         <p className="empty-illus-sub">
                             {hasFilter
                                 ? 'ลองกด "ล้างตัวกรอง" หรือเลือกเงื่อนไขอื่นดู'
