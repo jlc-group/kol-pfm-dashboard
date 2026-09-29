@@ -5,10 +5,10 @@ import DatePicker from './DatePicker.jsx';
 import SideDrawer from './SideDrawer.jsx';
 import { useAuth } from '../auth/AuthContext.jsx';
 import { visibleBrands } from '../data/brands.js';
-import { T, feeMissing, needsFee, NEED_FEE_MSG, baht, requestLink, todayTH, addDays } from '../data/talentLabels.js';
 import { HIRE_JOB_CLOSED } from './OtherProjectForm.jsx';
 import KindPicker from './KindPicker.jsx';
 import { kindError, kindValue } from '../data/hireKinds.js';
+import { T, feeMissing, needsFee, NEED_FEE_MSG, baht, requestLink } from '../data/talentLabels.js';
 import { fmtDate } from '../utils/date.js';
 
 // ฟอร์มสั้นของหน้า Talent — แทนการเปิดฟอร์มเต็มแล้วเลือก "รูปแบบการจ้าง" ใน dropdown
@@ -178,12 +178,6 @@ export default function QuickHireForm({ mode = 'direct', job = null, onClose, on
     // งานที่ปิดแล้วขอให้ช่วยหาเพิ่มไม่ได้ (server ตีกลับ 409) — บอกตั้งแต่เปิดฟอร์ม ไม่ต้องรอกดส่งแล้วค่อยรู้
     const blockSend = casting && lockedClosed;
     const hc = clampHead(f.headcount);
-    const today = todayTH();
-    const quickDeadlines = [
-        { label: 'พรุ่งนี้', v: addDays(today, 1) },
-        { label: '3 วัน', v: addDays(today, 3) },
-        { label: '1 สัปดาห์', v: addDays(today, 7) }
-    ];
     const extraCount = [f.contact, f.agency, f.qty, f.note].filter(v => String(v).trim()).length + (file ? 1 : 0);
     const dirty = dirtyKey(f, jobName, file) !== cleanKey.current;
 
@@ -761,13 +755,6 @@ export default function QuickHireForm({ mode = 'direct', job = null, onClose, on
                                 <Field label="ส่งรายชื่อภายใน"
                                     hint={f.deadline && f.use_date && f.deadline > f.use_date ? 'กำหนดส่งรายชื่อเลยวันใช้งานไปแล้ว — ตรวจวันอีกที' : ''}>
                                     <DatePicker value={f.deadline} onChange={v => up('deadline', v)} />
-                                    <div className="qf-chips qf-chips-sm">
-                                        {quickDeadlines.map(q => (
-                                            <button type="button" key={q.label} aria-pressed={f.deadline === q.v}
-                                                className={'qf-chip sm' + (f.deadline === q.v ? ' on' : '')}
-                                                onClick={() => up('deadline', q.v)}>{q.label}</button>
-                                        ))}
-                                    </div>
                                 </Field>
                             </div>
                             <Field label="ให้ใครช่วยหา" htmlFor={id('finder')}

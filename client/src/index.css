@@ -4621,6 +4621,24 @@ button { color: inherit; }
 .tb-badge::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
 .tb-badge.booked { background: #d1fae5; color: #047857; }
 .tb-badge.casting { background: #f1f5f9; color: #475569; }
+/* Talent Book: คนที่ทีมเพิ่มเอง (29 ก.ย.) — ป้าย Saved · ปุ่มแก้ไข · เรทที่ใส่เอง · ปุ่ม + ในแถบเครื่องมือ · ฟอร์ม (tf-) */
+.tb-badge.saved { background: #ede9fe; color: #6d28d9; }
+.tb-edit { margin-left: auto; padding: 2px 9px; border: 1px solid var(--border); border-radius: 8px; background: #fff;
+    color: var(--mint-dark); font: inherit; font-size: 11.5px; font-weight: 700; cursor: pointer; }
+.tb-edit:hover { border-color: var(--mint); }
+.tb-fee.rate .tb-fee-v { color: #6d28d9; }
+.tb-toolbar .tb-add { flex: none; display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.tf-rate { display: grid; grid-template-columns: minmax(0, 1fr) 150px; gap: 8px; }
+.tf-file { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.tf-file-name { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; padding: 6px 10px; border-radius: 9px;
+    background: var(--bg-soft); font-size: 13px; overflow-wrap: anywhere; }
+.tf-file-x { border: none; background: transparent; color: var(--muted); font-size: 16px; line-height: 1; cursor: pointer; padding: 0 2px; }
+.tf-file-x:hover { color: var(--danger); }
+.tf-pick { cursor: pointer; }
+.tf-file-hint { font-size: 11.5px; color: var(--muted); }
+.qf .tf-link { margin-top: 8px; }
+.side-drawer-foot .tf-delete { margin-right: auto; color: var(--danger); border-color: #fecaca; }
+@media (max-width: 600px) { .tf-rate { grid-template-columns: minmax(0, 1fr) 120px; } }
 .tb-sub { padding: 1px 7px; border-radius: 999px; border: 1px solid #e2e8f0; background: #fff; font-size: 10.5px; font-weight: 700; color: #475569; }
 .tb-sub.s-waiting { color: #92400e; background: #fef3c7; border-color: #fde68a; }
 .tb-sub.s-spare { border-style: dashed; }
