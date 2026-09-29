@@ -2,7 +2,12 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { pool } = require('../config/db');
 const schema = fs.readFileSync(path.join(__dirname, '../models/schema.sql'), 'utf8');
-const tables = [...schema.matchAll(/CREATE TABLE IF NOT EXISTS\s+(\w+)/g)].map(match => match[1]);
+// ตารางของฟีเจอร์เสริมที่ขาดได้โดยเว็บยังทำงาน — ไม่นับในด่านความพร้อม
+// talents (Talent Book เพิ่มคนเอง 29 ก.ย. 2026): ถ้าโค้ดขึ้นก่อนรัน setup-db ทั้งเว็บต้องไม่ล่ม
+// (แท็บ Talent Book ยังเปิดได้ — _snapshot กัน 42P01 · เส้นเพิ่มคนจะ error จนกว่าจะสร้างตาราง)
+const OPTIONAL_TABLES = new Set(['talents']);
+const tables = [...schema.matchAll(/CREATE TABLE IF NOT EXISTS\s+(\w+)/g)].map(match => match[1])
+    .filter(name => !OPTIONAL_TABLES.has(name));
 
 async function checkDatabase() {
     // A connection alone is insufficient: a fresh empty DB must fail readiness.

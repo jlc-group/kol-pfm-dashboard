@@ -178,7 +178,7 @@ test('book: one card per name + kind, Booked vs Casting, never casting rows / na
     assert.equal(group('เจ|พิธีกร'), 'casting');
     assert.equal(group('ดาว|นางแบบ'), 'casting');
     assert.equal(group('กุหลาบ|นางแบบ'), 'casting');
-    assert.deepEqual(all.counts, { all: 11, booked: 2, casting: 9 });
+    assert.deepEqual(all.counts, { all: 11, booked: 2, casting: 9, saved: 0 });
     assert.deepEqual(all.kinds, ['นักแสดง', 'นางแบบ', 'พิธีกร'].sort());
     assert.deepEqual(all.brands, ['Code Lab', 'Jdent']);
 });
@@ -205,7 +205,7 @@ test('book: Casting sub-state comes from the newest entry; Booked has none', asy
         const out = await hires.book({});
         assert.equal(card(out, 'แพท|นางแบบ').sub, 'talking');
         assert.equal(card(out, 'พลอย|นางแบบ').sub, 'talking', 'ไม่มีสถานะ = กำลังคุย');
-        assert.deepEqual(out.counts, { all: 2, booked: 0, casting: 2 });
+        assert.deepEqual(out.counts, { all: 2, booked: 0, casting: 2, saved: 0 });
     });
 });
 
@@ -219,7 +219,7 @@ test('book: a picked candidate and the person row it became are one card (even a
         clip: { type: 'file', path: '/projects/72/hires/r1/candidates/c3/video' },
         fees: [{ fee: 6500, kind: 'proposed', project_id: 72, project_name: 'ถ่ายแบบ Sep', brand: 'Jdent', date: '2026-09-18' }],
         team_contacts: ['Miw'], proposed_by: ['ฝน'],
-        jobs: 1, projects: [{ id: 72, name: 'ถ่ายแบบ Sep' }], brands: ['Jdent'], last_date: '2026-09-18'
+        jobs: 1, projects: [{ id: 72, name: 'ถ่ายแบบ Sep' }], brands: ['Jdent'], last_date: '2026-09-18', talent: null
     });
 
     await withProjects([{
@@ -266,11 +266,11 @@ test('book: brand scope hides other brands\' people and proposed names', async (
     assert.ok(!jdent.cards.some(c => c.key === 'ลับ|นางแบบ'), 'ชื่อที่เสนอในใบของแบรนด์อื่นก็ไม่เห็น');
     assert.ok(!jdent.cards.some(c => c.brands.includes('Code Lab')));
     assert.deepEqual(jdent.brands, ['Jdent']);
-    assert.deepEqual(jdent.counts, { all: 9, booked: 1, casting: 8 });
+    assert.deepEqual(jdent.counts, { all: 9, booked: 1, casting: 8, saved: 0 });
     const codeLab = await hires.book({ scopeBrands: ['Code Lab'] });
     assert.deepEqual(codeLab.cards.map(c => c.key), ['ต้นกล้า|นักแสดง', 'ลับ|นางแบบ']);
     const none = await hires.book({ scopeBrands: [] });
-    assert.deepEqual(none, { counts: { all: 0, booked: 0, casting: 0 }, kinds: [], brands: [], cards: [] });
+    assert.deepEqual(none, { counts: { all: 0, booked: 0, casting: 0, saved: 0 }, kinds: [], brands: [], cards: [] });
 });
 
 test('book: newest non-empty details, team contacts, proposed-by, jobs and brands', async () => {
@@ -352,7 +352,7 @@ test('book: only the listed fields leave the server (no notes, no user ids)', as
         assert.ok(!json.includes(secret), secret);
     }
     const KEYS = ['key', 'name', 'kind', 'group', 'sub', 'agency', 'contact', 'link', 'photo', 'clip', 'fees',
-        'team_contacts', 'proposed_by', 'jobs', 'projects', 'brands', 'last_date'].sort();
+        'team_contacts', 'proposed_by', 'jobs', 'projects', 'brands', 'last_date', 'talent'].sort();
     all.cards.forEach(c => assert.deepEqual(Object.keys(c).sort(), KEYS, c.key));
 });
 
@@ -372,7 +372,7 @@ test('GET /api/hires/book returns counts / kinds / brands / cards within the cal
     let body = await res.json();
     assert.equal(body.status, 'success');
     assert.deepEqual(Object.keys(body.data).sort(), ['brands', 'cards', 'counts', 'kinds']);
-    assert.deepEqual(body.data.counts, { all: 11, booked: 2, casting: 9 });
+    assert.deepEqual(body.data.counts, { all: 11, booked: 2, casting: 9, saved: 0 });
     assert.deepEqual(body.data, await hires.book({}));
 
     // member เห็นเฉพาะแบรนด์ที่ได้รับ — รวมชื่อที่เสนอในใบ
@@ -388,7 +388,7 @@ test('GET /api/hires/book returns counts / kinds / brands / cards within the cal
     account = { ...account, brands: [] };
     body = await (await send('/api/hires/book', { id: 8, role: 'member', team_id: 1 })).json();
     assert.deepEqual(body.data.cards, []);
-    assert.deepEqual(body.data.counts, { all: 0, booked: 0, casting: 0 });
+    assert.deepEqual(body.data.counts, { all: 0, booked: 0, casting: 0, saved: 0 });
 
     // เส้นเดิม GET /api/hires ยังเป็นรายชื่อคนที่คอนเฟิร์มแล้วเหมือนเดิม
     account = { id: 7, username: 'admin', role: 'admin', team_id: 1, is_active: true, status: 'active' };

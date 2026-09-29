@@ -96,7 +96,7 @@ async function loadSnapshot(only) {
     const snap = {
         teams: [], users: [], kols: [], projects: [], project_kols: [],
         submissions: [], payments: [], installments: [], pay_batches: [],
-        rate_requests: [], activity_logs: [], other_projects: [], user_names: []
+        rate_requests: [], activity_logs: [], other_projects: [], user_names: [], talents: []
     };
     const simple = {
         teams: 'SELECT * FROM teams ORDER BY id',
@@ -112,12 +112,17 @@ async function loadSnapshot(only) {
         other_projects: "SELECT id, name, brand, status, owner, creator, start_date, end_date, campaign_type, hire_items, created_at, updated_at FROM projects WHERE campaign_type = 'other' ORDER BY id",
         // แค่ชื่อที่ใช้โชว์ (ไม่มีรหัสผ่าน/สิทธิ์) — หน้า Talent ใช้บอกว่า "ใครขอ" ไม่ต้องลาก users ทั้งแถวที่มี password_hash ออกมา
         user_names: 'SELECT id, username, full_name, nickname FROM users ORDER BY id',
-        activity_logs: 'SELECT * FROM activity_logs ORDER BY id'
+        activity_logs: 'SELECT * FROM activity_logs ORDER BY id',
+        // คนที่เพิ่มเข้า Talent Book เอง (hires.book)
+        talents: 'SELECT * FROM talents ORDER BY id'
     };
     const jobs = [];
     if (want('projects')) jobs.push(loadProjects().then(r => { snap.projects = r; }));
     for (const [k, q] of Object.entries(simple)) {
-        if (want(k)) jobs.push(query(q).then(r => { snap[k] = r.rows; }));
+        if (!want(k)) continue;
+        const job = query(q).then(r => { snap[k] = r.rows; });
+        // ตาราง talents มาทีหลัง — โค้ดขึ้น production ก่อนรัน setup-db ต้องไม่ทำให้แท็บ Talent Book พังทั้งแท็บ (42P01 = ยังไม่มีตาราง)
+        jobs.push(k === 'talents' ? job.catch(e => { if (e && e.code === '42P01') snap.talents = []; else throw e; }) : job);
     }
     await Promise.all(jobs);
     return snap;

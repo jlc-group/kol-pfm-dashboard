@@ -6,6 +6,7 @@ import { T, BOOKING_LABEL, CAND_LABEL, baht } from '../../data/talentLabels.js';
 
 // คอมการ์ดของคนหนึ่งคนใน Talent Book — รูปแนวตั้งซ้าย ข้อมูลขวา (ตามแบบที่ผู้ใช้เลือก)
 // ข้อมูลมาจาก GET /api/hires/book ที่ server รวมคนเดียวกัน (ชื่อ + ประเภทงาน) เป็นใบเดียวแล้ว — ไฟล์นี้แสดงผลอย่างเดียว ไม่แก้ข้อมูล
+// การ์ดที่มีคนที่ทีมเพิ่มเอง (card.talent): ป้าย Saved ถ้ายังไม่เคยอยู่ในงาน · เรทที่ใส่เอง · ปุ่มแก้ไข (คนที่เพิ่ม / admin — onEdit)
 
 // สถานะย่อของ Casting — ใช้คำชุดเดียวกับใบขอให้หา คนที่เคยเห็นในใบจะอ่านออกทันที
 const SUB_LABEL = {
@@ -30,8 +31,9 @@ function httpUrl(v) {
         return u.protocol === 'http:' || u.protocol === 'https:' ? u.href : '';
     } catch { return ''; }
 }
-// path ไฟล์ต้องเป็นเส้นไฟล์ของงานจ้างเท่านั้น (fileBlobUrl แนบ token ให้ — ไม่ยอมให้ข้อมูลพาไปเส้นอื่น)
-const okPath = p => typeof p === 'string' && /^\/projects\/[^/?#]+\/hires\/[^?#]+$/.test(p) && !p.includes('..');
+// path ไฟล์ต้องเป็นเส้นไฟล์ของงานจ้าง หรือไฟล์ของคนที่เพิ่มเข้า Talent Book เอง เท่านั้น (fileBlobUrl แนบ token ให้ — ไม่ยอมให้ข้อมูลพาไปเส้นอื่น)
+const okPath = p => typeof p === 'string' && !p.includes('..')
+    && (/^\/projects\/[^/?#]+\/hires\/[^?#]+$/.test(p) || /^\/hires\/talents\/\d+\/(image|clip)(\?v=\d+)?$/.test(p));
 
 // ตัวอักษรย่อบนรูปว่าง — กติกาเดียวกับรูปย่อในหน้างาน (PersonDrawer): ข้ามสระนำหน้าของไทย ชื่ออังกฤษสองคำใช้สองตัว
 const THAI_LEAD = /[เแโใไ]/;
@@ -197,11 +199,15 @@ function Photo({ card, onPreview }) {
 }
 
 // onPreview({ path, title, kind }) — หน้าแม่เปิดตัวดูไฟล์ในหน้า (FilePreviewModal) ตัวเดียวทั้งแกลเลอรี
-export default function CompCard({ card, onPreview }) {
+export default function CompCard({ card, onPreview, onEdit }) {
     const booked = card.group === 'booked';
+    const savedOnly = card.group === 'saved';
+    const talent = card.talent || null;
+    const rate = talent && Number(talent.rate) > 0 ? Number(talent.rate) : 0;
     const sub = !booked ? SUB_LABEL[card.sub] || '' : '';
     // server ส่งมาใหม่สุดก่อน ไม่เกิน 3 บรรทัด และตัด ฿0 ออกแล้ว — กรองซ้ำกันข้อมูลหลุดรูปแบบ
-    const fees = (Array.isArray(card.fees) ? card.fees : []).filter(f => f && Number(f.fee) > 0).slice(0, FEES_SHOWN);
+    // มีเรทที่ใส่เอง = บรรทัดแรก แล้วตามด้วยราคาจากงาน (รวมไม่เกิน FEES_SHOWN บรรทัด)
+    const fees = (Array.isArray(card.fees) ? card.fees : []).filter(f => f && Number(f.fee) > 0).slice(0, FEES_SHOWN - (rate ? 1 : 0));
     const acc = accountOf(card.link);
     const contact = str(card.contact);
     const team = (card.team_contacts || []).map(str).filter(Boolean);
@@ -214,12 +220,19 @@ export default function CompCard({ card, onPreview }) {
     const moreJobs = projects.slice(JOBS_SHOWN);
 
     return (
-        <article className={'tb-card ' + (booked ? 'is-booked' : 'is-casting') + (card.sub === 'dropped' ? ' is-dropped' : '')}>
+        <article className={'tb-card ' + (booked ? 'is-booked' : savedOnly ? 'is-saved' : 'is-casting') + (card.sub === 'dropped' ? ' is-dropped' : '')}>
             <Photo card={card} onPreview={onPreview} />
             <div className="tb-info">
                 <div className="tb-status">
-                    <span className={'tb-badge ' + (booked ? 'booked' : 'casting')}>{booked ? 'Booked' : 'Casting'}</span>
+                    {/* Saved = ทีมเพิ่มเข้า Talent Book เอง ยังไม่เคยอยู่ในงาน */}
+                    <span className={'tb-badge ' + (booked ? 'booked' : savedOnly ? 'saved' : 'casting')}
+                        title={savedOnly ? 'เพิ่มเข้า Talent Book เอง — ยังไม่เคยเสนอเข้างาน' : undefined}>
+                        {booked ? 'Booked' : savedOnly ? 'Saved' : 'Casting'}
+                    </span>
                     {sub && <span className={'tb-sub s-' + card.sub}>{sub}</span>}
+                    {talent && talent.editable && onEdit && (
+                        <button type="button" className="tb-edit" onClick={() => onEdit(talent.id)} title="แก้ข้อมูลที่เพิ่มไว้ใน Talent Book">✎ แก้ไข</button>
+                    )}
                 </div>
 
                 <h3 className="tb-name" title={card.name}>{card.name}</h3>
@@ -231,8 +244,14 @@ export default function CompCard({ card, onPreview }) {
                     </div>
                 )}
 
-                {fees.length > 0 ? (
+                {fees.length > 0 || rate > 0 ? (
                     <ul className="tb-fees">
+                        {rate > 0 && (
+                            <li className="tb-fee rate">
+                                <b className="tb-fee-v">{baht(rate)}</b>
+                                <span className="tb-fee-k">เรท{talent.rate_unit ? ' ' + talent.rate_unit : ''}</span>
+                            </li>
+                        )}
                         {fees.map((f, i) => (
                             <li key={i} className={'tb-fee ' + (f.kind === 'hired' ? 'hired' : 'proposed')}>
                                 <b className="tb-fee-v">{baht(f.fee)}</b>
@@ -281,7 +300,9 @@ export default function CompCard({ card, onPreview }) {
 
                 <div className="tb-foot">
                     <div className="tb-foot-line">
-                        {[`เคยเสนอให้ ${jobs} งาน`, brands.join(', '), last ? `ล่าสุด ${last}` : ''].filter(Boolean).join(' · ')}
+                        {/* ยังไม่เคยอยู่ในงาน = บอกว่าใครเพิ่มไว้ แทน "เคยเสนอให้ 0 งาน" */}
+                        {[jobs > 0 ? `เคยเสนอให้ ${jobs} งาน` : `เพิ่มเข้า Talent Book${talent && talent.added_by ? ' โดย ' + talent.added_by : ''}`,
+                            brands.join(', '), last ? `ล่าสุด ${last}` : ''].filter(Boolean).join(' · ')}
                     </div>
                     {projects.length > 0 && (
                         <div className="tb-jobs">

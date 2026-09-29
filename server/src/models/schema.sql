@@ -401,3 +401,30 @@ BEGIN
              FOR EACH ROW EXECUTE FUNCTION set_updated_at()', t);
     END LOOP;
 END $$;
+
+-- ===== Talent Book: คนที่ทีมเพิ่มเข้าเอง (ไม่ต้องมีงาน) — ผู้ใช้สั่ง 29 ก.ย. 2026 =====
+-- การ์ดในแท็บ Talent Book รวมคนพวกนี้กับคนที่มาจากงาน (ชื่อ + ประเภทงานเดียวกัน = การ์ดเดียว) ที่ store.hires.book()
+-- ทุกคนในทีมเห็น (ไม่ผูกแบรนด์) · แก้/ลบได้เฉพาะคนที่เพิ่ม (created_by_id) และ admin
+-- image / clip = ไฟล์ใน UPLOAD_DIR { filename, original, size, uploaded_at } แบบเดียวกับไฟล์ของงาน
+-- CREATE TABLE IF NOT EXISTS — รันซ้ำได้ ไม่กระทบตารางอื่นและข้อมูลเดิม
+CREATE TABLE IF NOT EXISTS talents (
+    id             SERIAL PRIMARY KEY,
+    name           VARCHAR(200) NOT NULL,
+    kind           VARCHAR(100) NOT NULL,
+    link           TEXT,
+    contact        VARCHAR(200),
+    agency         VARCHAR(200),
+    rate           NUMERIC(18,2),
+    rate_unit      VARCHAR(40),
+    image          JSONB,
+    image_link     TEXT,
+    clip           JSONB,
+    clip_link      TEXT,
+    note           TEXT,
+    created_by_id  INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    created_by     VARCHAR(255),
+    created_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at     TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+-- คนเดียวกัน (ชื่อ + ประเภทงาน ไม่สนตัวพิมพ์/ช่องว่างหัวท้าย) มีได้แถวเดียว — กันกดเพิ่มพร้อมกันสองคน (เส้น API แปลง 23505 เป็น 409)
+CREATE UNIQUE INDEX IF NOT EXISTS talents_person_key ON talents ((lower(btrim(name))), (lower(btrim(kind))));

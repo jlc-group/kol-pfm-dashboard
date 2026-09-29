@@ -6,6 +6,7 @@ import { useAuth } from '../../auth/AuthContext.jsx';
 import { visibleBrands } from '../../data/brands.js';
 import { T } from '../../data/talentLabels.js';
 import CompCard, { accountOf } from './CompCard.jsx';
+import TalentForm from './TalentForm.jsx';
 
 // แท็บ "Talent Book" — คอมการ์ดของทุกคนที่เคยเสนอหรือบันทึกให้แบรนด์ (อ่านอย่างเดียว ไว้เลือกคนเดิมซ้ำ ดูราคาเดิม)
 // ป้ายบนการ์ดบอกว่า Booked (มีงานที่ตกลงแล้ว) หรือ Casting (เคยเสนอ / ยังไม่ได้งาน) — ไม่มีปุ่มกรองสองกลุ่มนี้ (ผู้ใช้ขอเอาออก)
@@ -26,14 +27,16 @@ export default function PeopleTab() {
     const [brand, setBrand] = useState('');
     const [limit, setLimit] = useState(PAGE);
     const [preview, setPreview] = useState(null);   // { path, title, kind } ของไฟล์ที่กดดู
-
+    // ฟอร์มเพิ่ม/แก้คนใน Talent Book เอง: null = ปิด · { id: null } = เพิ่มใหม่ · { id } = แก้การ์ดที่เพิ่มเอง
+    const [form, setForm] = useState(null);
+    const [ver, setVer] = useState(0);   // บันทึก/ลบแล้วโหลดการ์ดใหม่
     useEffect(() => {
         let on = true;
         api('/hires/book')
-            .then(res => { if (on) setData(res.data || {}); })
+            .then(res => { if (on) { setData(res.data || {}); setError(''); } })
             .catch(err => { if (on) setError(err.message || 'โหลดคอมการ์ดไม่สำเร็จ'); });
         return () => { on = false; };
-    }, []);
+    }, [ver]);
 
     const cards = Array.isArray(data && data.cards) ? data.cards : NONE;
     const kinds = useMemo(() => (Array.isArray(data && data.kinds) && data.kinds.length
@@ -43,7 +46,9 @@ export default function PeopleTab() {
     const hay = useMemo(() => new Map(cards.map(c => [c, [
         // ชื่อบัญชีแบบที่การ์ดโชว์ (เช่น "IG @baitoey") — ลิงก์ IG / Facebook / X ไม่มี @ ในตัว พิมพ์ตามที่เห็นบนการ์ดต้องเจอ
         c.name, c.agency, c.link, (accountOf(c.link) || {}).label, c.contact,
-        ...(c.team_contacts || []), ...(c.proposed_by || []), ...(c.projects || []).map(p => p && p.name)
+        ...(c.team_contacts || []), ...(c.proposed_by || []), ...(c.projects || []).map(p => p && p.name),
+        // คนที่เพิ่มเอง: หมายเหตุ + คนที่เพิ่ม
+        c.talent && c.talent.note, c.talent && c.talent.added_by
     ].map(low).join('\n')])), [cards]);
 
     const q = search.trim().toLowerCase();
@@ -58,6 +63,8 @@ export default function PeopleTab() {
 
     // เปลี่ยนตัวกรอง → กลับไปเริ่มหน้าแรก (ไม่งั้นผลใหม่เปิดมาเต็มจำนวนที่กดดูเพิ่มไว้ รูปโหลดพรวดเดียว)
     useEffect(() => { setLimit(PAGE); }, [kind, brand, q]);
+    // โหลดใหม่หลังแก้/ลบ แล้วประเภทที่กรองอยู่ไม่มีการ์ดแล้ว — ล้างตัวกรอง (ไม่งั้นดรอปดาวน์ไม่มีตัวเลือกนั้น แต่ยังกรองอยู่)
+    useEffect(() => { if (kind && data && !kinds.includes(kind)) setKind(''); }, [kinds]);   // eslint-disable-line react-hooks/exhaustive-deps
     const filtered = !!(kind || brand || q);
     const clearAll = () => { setKind(''); setBrand(''); setSearch(''); };
     const rest = shown.length - limit;
@@ -65,6 +72,10 @@ export default function PeopleTab() {
     return (
         <div className="hub-tab">
             <div className="hub-toolbar tb-toolbar">
+                {/* เพิ่มคนเข้า Talent Book เองได้เลย ไม่ต้องมีงาน (ทุกคนในทีมเห็น) */}
+                <button type="button" className="btn-primary tb-add" onClick={() => setForm({ id: null })}>
+                    <Icon name="plus" size={16} /> Talent Book
+                </button>
                 <div className="ka-search">
                     <Icon name="search" size={15} />
                     <input value={search} onChange={e => setSearch(e.target.value)} aria-label="ค้นหาคอมการ์ด"
@@ -102,7 +113,7 @@ export default function PeopleTab() {
                     {cards.length === 0 ? (
                         <>
                             <div className="tb-empty-title">ยังไม่มีคอมการ์ด</div>
-                            <p>คนที่บันทึกไว้ในงาน และชื่อที่{T.finder}เสนอมาใน{T.request} จะขึ้นที่นี่เองพร้อมรูปและราคา</p>
+                            <p>กด "+ Talent Book" เพื่อเพิ่มคนเองได้เลย — คนที่บันทึกไว้ในงาน และชื่อที่{T.finder}เสนอมาใน{T.request} ก็จะขึ้นที่นี่เองพร้อมรูปและราคา</p>
                         </>
                     ) : (
                         <>
@@ -115,7 +126,7 @@ export default function PeopleTab() {
                 <>
                     <div className="tb-grid">
                         {shown.slice(0, limit).map((c, i) => (
-                            <CompCard key={c.key || `${c.name}|${i}`} card={c} onPreview={setPreview} />
+                            <CompCard key={c.key || `${c.name}|${i}`} card={c} onPreview={setPreview} onEdit={tid => setForm({ id: tid })} />
                         ))}
                     </div>
                     {rest > 0 && (
@@ -131,6 +142,18 @@ export default function PeopleTab() {
             {preview && (
                 <FilePreviewModal path={preview.path} title={preview.title} kind={preview.kind || 'auto'}
                     onClose={() => setPreview(null)} />
+            )}
+
+            {form && (
+                <TalentForm talentId={form.id}
+                    // changed = บันทึกข้อมูลไปแล้ว (แม้ไฟล์ยังอัปไม่ขึ้น) — โหลดการ์ดใหม่ ไม่งั้นการ์ดใหม่ไม่ขึ้นจนรีเฟรชหน้า
+                    onClose={changed => { setForm(null); if (changed) setVer(v => v + 1); }}
+                    onSaved={(row, info) => {
+                        setForm(null);
+                        // เพิ่มคนใหม่ (ไม่ผูกแบรนด์) ตอนกรองแบรนด์/ประเภท/คำค้นอยู่ → ล้างตัวกรอง ไม่งั้นการ์ดใหม่ถูกซ่อน ดูเหมือนไม่ได้บันทึก
+                        if (info && info.created) clearAll();
+                        setVer(v => v + 1);
+                    }} />
             )}
         </div>
     );

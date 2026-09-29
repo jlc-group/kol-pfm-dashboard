@@ -142,8 +142,9 @@ const hires = {
     //    waiting รอเลือก · spare สำรองไว้ (ใบได้คนครบ/งานปิดแล้ว) · dropped ไม่ได้เลือก · talking กำลังคุย · booking รอยืนยันคิว
     // ชื่อที่เสนอตามสิทธิ์แบรนด์เหมือนแถวคน (คนช่วยหาที่ไม่มีสิทธิ์แบรนด์ไม่เห็นรายชื่อย้อนหลังของแบรนด์นั้น)
     // ส่งออกเฉพาะช่องที่การ์ดโชว์ — ไม่มีหมายเหตุ / เหตุผลที่ไม่เอา / id ผู้ใช้ · ตัวกรอง/ค้นหาทำฝั่งหน้าเว็บจากข้อมูลชุดนี้
-    async book({ scopeBrands = null } = {}) {
-        const snap = await loadSnapshot(['other_projects']);
+    // userId / isAdmin = ใครกำลังดู — ใช้ตัดสินว่าการ์ดที่เพิ่มเองแก้ได้ไหม (talent.editable) ไม่ส่ง id ผู้ใช้ออกไป
+    async book({ scopeBrands = null, userId = null, isAdmin = false } = {}) {
+        const snap = await loadSnapshot(['other_projects', 'talents']);
         const projs = scopeProjects(snap.other_projects.slice(), scopeBrands).filter(isOther);
 
         // แบนเป็น "รายการ" ทีละครั้งที่คนนั้นโผล่ในงาน (แถวคนในงาน / ชื่อที่ถูกเสนอ) แล้วค่อยยุบเป็นการ์ดรายคน
@@ -212,6 +213,37 @@ const hires = {
             });
         });
 
+        // คนที่ทีมเพิ่มเข้า Talent Book เอง (ตาราง talents) — ทุกคนในทีมเห็น ไม่ผูกแบรนด์ (ผู้ใช้เลือก 29 ก.ย.)
+        // ชื่อ + ประเภทงานตรงกับคนที่มาจากงาน = การ์ดเดียวกัน · ไม่มีงาน = ไม่นับเป็นงาน / ราคา (เรทที่ใส่เองอยู่ใน talent.rate)
+        (Array.isArray(snap.talents) ? snap.talents : []).forEach(t => {
+            if (!t || !str(t.name)) return;
+            const files = `/hires/talents/${seg(t.id)}/`;
+            const fk = fileKind(t.image);
+            // ?v= = เวลาอัปไฟล์ — เปลี่ยนไฟล์แล้ว path ต่าง การ์ดจึงโหลดรูปใหม่ (หน้าเว็บจำรูปตาม path) · server ไม่อ่านค่านี้
+            const ver = f => { const ms = Date.parse(f && f.uploaded_at); return Number.isFinite(ms) ? `?v=${ms}` : ''; };
+            entries.push({
+                project_id: null, project_name: null, brand: null, team_contact: null,
+                direct: true, absorbed: false,
+                key: personKey(t), name: str(t.name), kind: str(t.kind) || null,
+                agency: str(t.agency) || null, contact: str(t.contact) || null, link: str(t.link) || null,
+                date: thDayOf(t.updated_at) || thDayOf(t.created_at), ts: str(t.updated_at),
+                fee: 0, confirmed: false, sub: null,
+                file: fk ? { type: fk, path: `${files}image${ver(t.image)}` } : null,
+                image_link: webUrl(t.image_link),
+                clip_file: t.clip && typeof t.clip === 'object' && str(t.clip.filename || t.clip.original) ? `${files}clip${ver(t.clip)}` : null,
+                clip_link: webUrl(t.clip_link),
+                by: null,
+                talent: {
+                    id: t.id,
+                    rate: t.rate == null || t.rate === '' ? null : Number(t.rate),
+                    rate_unit: str(t.rate_unit) || null,
+                    note: str(t.note) || null,
+                    added_by: str(t.created_by) || null,
+                    editable: !!isAdmin || (userId != null && t.created_by_id != null && String(t.created_by_id) === String(userId))
+                }
+            });
+        });
+
         entries.sort(newestFirst);
         const byPerson = new Map();
         entries.forEach(e => {
@@ -222,24 +254,33 @@ const hires = {
         const uniq = vals => [...new Set(vals.filter(Boolean))];
         const cards = [...byPerson.values()].map(list => {
             // list เรียงใหม่สุดก่อนแล้ว — "ค่าล่าสุดที่ไม่ว่าง" = ตัวแรกที่เจอ
+            // ยกเว้นข้อมูลโปรไฟล์ (รูป/คลิป/สังกัด/ติดต่อ/Account): การ์ดที่ทีมเพิ่มเองไว้ใช้ของที่เพิ่มเองก่อน
+            // — วันของรายการในงานเป็นวันใช้งาน (อาจอยู่ในอนาคต) ถ้าเรียงตามวันอย่างเดียว คนที่เพิ่มแก้ข้อมูลแล้วการ์ดไม่เปลี่ยน
+            const mine = list.find(e => e.talent) || null;
             const first = pick => { for (const e of list) { const v = pick(e); if (v) return v; } return null; };
+            const firstMine = pick => (mine && pick(mine)) || first(pick);
             // ชื่อที่เสนอที่ถูกยุบเข้าแถวคนแล้วไม่นับซ้ำเป็นสถานะ/ค่าตัว (แถวคนเป็นเรื่องจริงของเขาต่อจากนั้น)
             const own = list.filter(e => !e.absorbed);
             const head = own[0] || list[0];
             const booked = own.some(e => e.confirmed);
-            const fileOf = type => first(e => (e.file && e.file.type === type ? { type, path: e.file.path } : null));
-            const imageLink = first(e => e.image_link);
-            const clipFile = first(e => e.clip_file);
-            const clipLink = first(e => e.clip_link);
+            // การ์ดที่มีแต่คนที่เพิ่มเอง (ยังไม่เคยอยู่ในงาน) = saved · สถานะย่อเอาจากรายการในงาน ไม่ใช่แถวที่เพิ่มเอง
+            const saved = mine;
+            const onlySaved = list.every(e => e.talent);
+            const subFrom = own.find(e => !e.talent) || head;
+            const fileOf = type => firstMine(e => (e.file && e.file.type === type ? { type, path: e.file.path } : null));
+            const imageLink = firstMine(e => e.image_link);
+            const clipFile = firstMine(e => e.clip_file);
+            const clipLink = firstMine(e => e.clip_link);
             const projects = [];
             list.forEach(e => {
+                if (e.project_id == null) return;   // คนที่เพิ่มเองไม่ได้มาจากงาน
                 if (!projects.some(x => String(x.id) === String(e.project_id))) projects.push({ id: e.project_id, name: e.project_name });
             });
             return {
                 key: head.key, name: head.name, kind: head.kind,
-                group: booked ? 'booked' : 'casting',
-                sub: booked ? null : head.sub,
-                agency: first(e => e.agency), contact: first(e => e.contact), link: first(e => e.link),
+                group: booked ? 'booked' : onlySaved ? 'saved' : 'casting',
+                sub: booked || onlySaved ? null : subFrom.sub,
+                agency: firstMine(e => e.agency), contact: firstMine(e => e.contact), link: firstMine(e => e.link),
                 // รูปจริงก่อน (โชว์เป็นรูปย่อได้) → PDF → ลิงก์รูปภายนอก (หน้าเว็บไม่ดึงรูปจากเว็บคนอื่นมาโชว์ แค่เป็นปุ่มเปิด)
                 photo: fileOf('image') || fileOf('pdf') || (imageLink ? { type: 'link', url: imageLink } : null),
                 clip: clipFile ? { type: 'file', path: clipFile } : clipLink ? { type: 'link', url: clipLink } : null,
@@ -253,14 +294,17 @@ const hires = {
                 jobs: projects.length,
                 projects,
                 brands: uniq(list.map(e => e.brand)),
-                last_date: first(e => e.date)
+                last_date: first(e => e.date),
+                // คนที่เพิ่มเข้า Talent Book เอง: เรท / หมายเหตุ / ผู้เพิ่ม / แก้ได้ไหม (ไม่มี = มาจากงานอย่างเดียว)
+                talent: saved ? saved.talent : null
             };
         });
         cards.sort((a, b) => (b.last_date || '').localeCompare(a.last_date || '') || a.name.localeCompare(b.name, 'th'));
 
         const booked = cards.filter(c => c.group === 'booked').length;
+        const savedOnly = cards.filter(c => c.group === 'saved').length;
         return clone({
-            counts: { all: cards.length, booked, casting: cards.length - booked },
+            counts: { all: cards.length, booked, casting: cards.length - booked - savedOnly, saved: savedOnly },
             kinds: uniq(cards.map(c => c.kind)).sort(),
             // ชิปแบรนด์ = เฉพาะแบรนด์ที่มีการ์ด (งานถูกกรองตามสิทธิ์มาแล้ว แบรนด์ที่ไม่มีสิทธิ์จึงไม่หลุดมา)
             brands: uniq(cards.flatMap(c => c.brands)).sort(),
