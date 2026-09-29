@@ -590,7 +590,19 @@ export default function ProjectForm({ editing, onClose, onSaved }) {
                                                     </label>
                                                 )}
                                             </div>
-                                            {/* ปกติ = งบรวมก้อนเดียว (ช่องงบที่หัวบล็อก) · กดปุ่มนี้ = แยกงบต่อสินค้า (ใส่งบในแถวของแต่ละสินค้า) กดอีกครั้งเพื่อกลับ */}
+                                            {/* สินค้าของ Platform นี้ */}
+                                            <CheckMultiSelect
+                                                disabled={!form.brand}
+                                                disabledText="— เลือกแบรนด์ก่อน —"
+                                                placeholder="+ เลือกสินค้า"
+                                                emptyText="ไม่มีสินค้าในแบรนด์นี้"
+                                                allLabel="ทุกสินค้า"
+                                                options={productsByBrand(form.brand).map(p => ({ value: p.code, label: `${p.code} - ${p.name}` }))}
+                                                selected={b.products || []}
+                                                onToggle={code => toggleBlockProduct(i, bi, code)}
+                                            />
+                                            {/* อยู่ใต้ช่องเลือกสินค้า (เลือกสินค้าก่อน แล้วค่อยเลือกว่าจะแยกงบ/Concept ไหม)
+                                                ปกติ = งบรวมก้อนเดียว (ช่องงบที่หัวบล็อก) · กดปุ่มนี้ = แยกงบต่อสินค้า (ใส่งบในแถวของแต่ละสินค้า) กดอีกครั้งเพื่อกลับ */}
                                             <div className="bmode">
                                                 <button type="button" className={split ? 'on' : ''} aria-pressed={split}
                                                     title={split ? 'กดอีกครั้งเพื่อกลับไปใช้งบรวมก้อนเดียว' : 'ใส่งบแยกของแต่ละสินค้า แล้วระบบรวมให้อัตโนมัติ'}
@@ -604,17 +616,6 @@ export default function ProjectForm({ editing, onClose, onSaved }) {
                                                     {cSplit ? '☑' : '☐'} 📝 แยก Concept ต่อสินค้า
                                                 </button>
                                             </div>
-                                            {/* สินค้าของ Platform นี้ */}
-                                            <CheckMultiSelect
-                                                disabled={!form.brand}
-                                                disabledText="— เลือกแบรนด์ก่อน —"
-                                                placeholder="+ เลือกสินค้า"
-                                                emptyText="ไม่มีสินค้าในแบรนด์นี้"
-                                                allLabel="ทุกสินค้า"
-                                                options={productsByBrand(form.brand).map(p => ({ value: p.code, label: `${p.code} - ${p.name}` }))}
-                                                selected={b.products || []}
-                                                onToggle={code => toggleBlockProduct(i, bi, code)}
-                                            />
                                             {/* Platform ที่ใช้ Target (ตอนนี้ TikTok): 1 แถว = 1 สินค้า + Target ของสินค้านั้น
                                                 Platform อื่นไม่มี Target — แสดงแค่รายการสินค้า */}
                                             {(b.products || []).length > 0 && !withTarget && (split || cSplit) && (
