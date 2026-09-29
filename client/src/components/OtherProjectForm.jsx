@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
+import KindPicker from './KindPicker.jsx';
+import { kindError, kindValue } from '../data/hireKinds.js';
 import { api, uploadFile } from '../api/client.js';
 import Icon from './Icon.jsx';
 import DatePicker from './DatePicker.jsx';
@@ -17,7 +19,8 @@ export { STAGE_LABEL, BOOKING_LABEL, CAND_LABEL };
 // ตั้งใจแยกจาก ProjectForm เพราะงานพวกนี้ไม่มี Platform / Content Type / Tier / Gencode / ค่าแอด
 // สิ่งที่ต้องรู้จริง ๆ คือ "จ้างใคร ทำอะไร วันไหน เท่าไร" เท่านั้น
 
-export const HIRE_KINDS = ['นางแบบ', 'นายแบบ', 'นักแสดง', 'Live สด', 'พิธีกร', 'ช่างภาพ', 'ช่างวิดีโอ', 'เสียงพากย์', 'Event', 'อื่น ๆ'];
+// รายการประเภทงานย้ายไป data/hireKinds.js (ใช้ร่วมทุกฟอร์มผ่าน KindPicker) — export ต่อไว้ให้ที่ import จากไฟล์นี้
+export { HIRE_KINDS } from '../data/hireKinds.js';
 // สถานะของแต่ละคน ไม่ใช่ของทั้งแคมเปญ — คนหนึ่งถ่ายเสร็จแล้วอีกคนเพิ่งเริ่มคุยเป็นเรื่องปกติ
 // ค่าในฐานยังเป็นคำเดิม (ทาบทาม = ป้าย "กำลังคุย") — ป้ายที่โชว์ใช้ hireStatusLabel จาก talentLabels.js
 export const HIRE_STATUS = ['ทาบทาม', 'ตกลงแล้ว', 'ถ่ายเสร็จ', 'ส่งงานแล้ว'];
@@ -205,9 +208,13 @@ export default function OtherProjectForm({ editing, onClose, onSaved, onConflict
     // แถวที่ครบพอจะนับเป็นรายการจ้างจริง — ต้องเลือกรูปแบบก่อน
     // มีคนแล้ว: ประเภทงาน + ชื่อ (ค่าตัวเว้นได้ — แถวใหม่เป็น "กำลังคุย" ใส่ค่าตัวทีหลังได้)
     // ขอให้ช่วยหา: ประเภทงาน + จำนวนคน + งบต่อคน (คนช่วยหาต้องรู้กรอบเงินก่อนไปคุยกับใคร)
+    // ประเภทงานต้องผ่าน kindError — เลือก "อื่น ๆ" แล้วยังไม่พิมพ์ว่าเป็นงานอะไร ไม่นับว่าครบ
     const rowOk = it => hasMode(it) && (isCasting(it)
-        ? !!(it.kind && num(it.headcount) > 0 && num(it.fee) > 0)
-        : !!(it.kind && it.name.trim()));
+        ? !!(!kindError(it.kind) && num(it.headcount) > 0 && num(it.fee) > 0)
+        : !!(!kindError(it.kind) && it.name.trim()));
+    // แถวที่จะถูกบันทึก (กรอกแล้ว ไม่ล็อก) แต่เลือก "อื่น ๆ" แล้วยังไม่พิมพ์ / พิมพ์แต่ช่องว่าง — ห้ามบันทึกทั้งตอนสร้างและตอนแก้
+    // (ไม่งั้นคำว่า "อื่น ๆ" จะถูกเก็บเป็นประเภทงานตรง ๆ หรือกลายเป็นประเภทว่าง)
+    const kindBad = items.filter(it => hasMode(it) && !isLocked(it) && rowFilled(it) && it.kind && kindError(it.kind));
     // แถวที่ "ตกลงแล้ว" ขึ้นไปแต่ค่าตัวว่าง และเพิ่งถูกแก้ในฟอร์มนี้ (แถวใหม่ / สถานะหรือค่าตัวเปลี่ยน)
     // server ตีกลับอยู่แล้ว — เช็คก่อนส่งเพื่อบอกชื่อคนให้ชัด ไม่ต้องรอข้อความจากเซิร์ฟเวอร์
     const feeBlocked = it => {
@@ -232,15 +239,16 @@ export default function OtherProjectForm({ editing, onClose, onSaved, onConflict
     }
     // ตอนแก้ไขเช็คแค่ชื่องาน (เดิมช่องนี้ใช้ required ของเบราว์เซอร์ — ย้ายมาเตือนที่ช่องแบบเดียวกับช่องอื่น)
     // + ผู้ดูแลงานของงานที่เคยมีชื่อแล้ว · รายการจ้าง/แบรนด์ตอนแก้ไขไม่บังคับเหมือนเดิม
+    const kindMsg = kindBad.length ? ['ประเภทงาน "อื่น ๆ" — ระบุว่าเป็นงานอะไร'] : [];
     const missing = isEdit
-        ? [...(form.name.trim() ? [] : ['ชื่องาน']), ...(ownerMissing ? [T.owner] : [])]
-        : validate();
+        ? [...(form.name.trim() ? [] : ['ชื่องาน']), ...(ownerMissing ? [T.owner] : []), ...kindMsg]
+        : [...validate(), ...kindMsg];
 
     // ช่องที่ขาดของแถวหนึ่งแถว → ข้อความที่ขึ้นใต้ช่องนั้น
     const rowMissing = it => {
         const m = {};
         if (!hasMode(it) || isLocked(it)) return m;
-        if (!it.kind) m.kind = 'เลือกประเภทงาน';
+        if (kindError(it.kind)) m.kind = kindError(it.kind);
         if (isCasting(it)) {
             if (!(num(it.headcount) > 0)) m.headcount = 'ใส่จำนวนคน';
             if (!(num(it.fee) > 0)) m.fee = 'ใส่งบต่อคน';
@@ -257,7 +265,8 @@ export default function OtherProjectForm({ editing, onClose, onSaved, onConflict
         const started = open.filter(it => rowFilled(it) || !!it.kind);
         return new Set((started.length ? started : open.slice(0, 1)).map(it => String(it.key)));
     })();
-    const rowMiss = it => (flagKeys.has(String(it.key)) ? rowMissing(it) : {});
+    const rowMiss = it => (flagKeys.has(String(it.key)) ? rowMissing(it)
+        : tried && kindBad.includes(it) ? { kind: kindError(it.kind) } : {});
     const nameMiss = tried && !form.name.trim();
     const brandMiss = tried && !isEdit && !form.brand;
     const ownerMiss = tried && ownerMissing;
@@ -284,7 +293,7 @@ export default function OtherProjectForm({ editing, onClose, onSaved, onConflict
                     const casting = isCasting(it);
                     return {
                         key: it.key, mode: casting ? 'casting' : 'direct',
-                        kind: it.kind || null, name: casting ? null : (it.name.trim() || null),
+                        kind: kindValue(it.kind) || null, name: casting ? null : (it.name.trim() || null),
                         contact: casting ? null : (it.contact.trim() || null),
                         agency: casting ? null : (it.agency.trim() || null),
                         qty: casting ? null : (it.qty.trim() || null),
@@ -489,17 +498,13 @@ export default function OtherProjectForm({ editing, onClose, onSaved, onConflict
                                         )}
                                     </label>
                                     {hasMode(it) && (<>
-                                    <label className="hire-f">
+                                    {/* div ไม่ใช่ label — ในช่องมีทั้งดรอปดาวน์และช่องพิมพ์ (เลือก "อื่น ๆ") label ครอบสองช่องทำให้ชื่อที่โปรแกรมอ่านหน้าจออ่านปนกัน
+                                        ประเภทเก่าที่ไม่อยู่ในรายการโชว์เป็น "อื่น ๆ" + ข้อความเดิม */}
+                                    <div className="hire-f">
                                         <span>ประเภทงาน *</span>
-                                        <select value={it.kind} onChange={e => setItem(i, 'kind', e.target.value)}
-                                            className={miss.kind ? 'tc2-invalid' : undefined} aria-invalid={miss.kind ? 'true' : undefined}>
-                                            <option value="">— เลือก —</option>
-                                            {HIRE_KINDS.map(k => <option key={k} value={k}>{k}</option>)}
-                                            {/* ประเภทเก่าที่ไม่อยู่ในรายการแล้วต้องยังโชว์ ไม่งั้นช่องว่างแต่ค่ายังอยู่ */}
-                                            {it.kind && !HIRE_KINDS.includes(it.kind) && <option value={it.kind}>{it.kind}</option>}
-                                        </select>
+                                        <KindPicker variant="select" value={it.kind} onChange={v => setItem(i, 'kind', v)} invalid={!!miss.kind} />
                                         {ferr(miss.kind)}
-                                    </label>
+                                    </div>
                                     {!isCasting(it) ? (
                                         <>
                                             <label className="hire-f">

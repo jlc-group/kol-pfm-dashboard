@@ -5,8 +5,10 @@ import DatePicker from './DatePicker.jsx';
 import SideDrawer from './SideDrawer.jsx';
 import { useAuth } from '../auth/AuthContext.jsx';
 import { visibleBrands } from '../data/brands.js';
-import { HIRE_KINDS, HIRE_JOB_CLOSED } from './OtherProjectForm.jsx';
 import { T, feeMissing, needsFee, NEED_FEE_MSG, baht, requestLink, todayTH, addDays } from '../data/talentLabels.js';
+import { HIRE_JOB_CLOSED } from './OtherProjectForm.jsx';
+import KindPicker from './KindPicker.jsx';
+import { kindError, kindValue } from '../data/hireKinds.js';
 import { fmtDate } from '../utils/date.js';
 
 // ฟอร์มสั้นของหน้า Talent — แทนการเปิดฟอร์มเต็มแล้วเลือก "รูปแบบการจ้าง" ใน dropdown
@@ -198,7 +200,7 @@ export default function QuickHireForm({ mode = 'direct', job = null, onClose, on
             }
         }
         if (!casting && !f.name.trim()) e.name = 'ใส่ชื่อคนก่อนนะ';
-        if (!f.kind) e.kind = 'เลือกประเภทงาน';
+        if (kindError(f.kind)) e.kind = kindError(f.kind);
         if (casting) {
             if (!(num(f.fee) > 0)) e.fee = 'ใส่งบต่อคน';
         } else if (needsFee(f.status, f.fee)) {
@@ -215,7 +217,8 @@ export default function QuickHireForm({ mode = 'direct', job = null, onClose, on
         const el = wrapRef.current.querySelector('.qf-field.has-err');
         if (!el) return;
         el.scrollIntoView({ block: 'center', behavior: 'smooth' });
-        const input = el.querySelector('input:not([type=file]), textarea, select, button');
+        // ช่องประเภทงานที่เลือก "อื่น ๆ" ไว้ → ไปที่ช่องพิมพ์ ไม่ใช่ปุ่มแรก (กด Space ต่อจะกลายเป็นเลือกนางแบบ)
+        const input = el.querySelector('.kind-other') || el.querySelector('input:not([type=file]), textarea, select, button');
         if (input) input.focus({ preventScroll: true });
     }, [errTick]);
 
@@ -248,7 +251,7 @@ export default function QuickHireForm({ mode = 'direct', job = null, onClose, on
     function rowBody() {
         if (casting) {
             return {
-                mode: 'casting', kind: f.kind, headcount: hc, fee: num(f.fee),
+                mode: 'casting', kind: kindValue(f.kind), headcount: hc, fee: num(f.fee),
                 spec: trimOrNull(f.spec), scope: trimOrNull(f.scope),
                 deadline: f.deadline || null, use_date: f.use_date || null,
                 place: trimOrNull(f.place), note: trimOrNull(f.note),
@@ -256,7 +259,7 @@ export default function QuickHireForm({ mode = 'direct', job = null, onClose, on
             };
         }
         return {
-            mode: 'direct', kind: f.kind, name: f.name.trim(),
+            mode: 'direct', kind: kindValue(f.kind), name: f.name.trim(),
             contact: trimOrNull(f.contact), agency: trimOrNull(f.agency), qty: trimOrNull(f.qty),
             fee: num(f.fee), use_date: f.use_date || null, use_time: trimOrNull(f.use_time),
             place: trimOrNull(f.place), link: trimOrNull(f.link), note: trimOrNull(f.note),
@@ -491,14 +494,8 @@ export default function QuickHireForm({ mode = 'direct', job = null, onClose, on
         </>
     );
 
-    const kindChips = (
-        <div className="qf-chips" role="radiogroup" aria-labelledby={id('kind')}>
-            {HIRE_KINDS.map(k => (
-                <button type="button" key={k} role="radio" aria-checked={f.kind === k}
-                    className={'qf-chip' + (f.kind === k ? ' on' : '')} onClick={() => up('kind', k)}>{k}</button>
-            ))}
-        </div>
-    );
+    // เลือก "อื่น ๆ" แล้วมีช่องพิมพ์ว่าเป็นงานอะไร (KindPicker)
+    const kindChips = <KindPicker value={f.kind} onChange={v => up('kind', v)} labelId={id('kind')} invalid={!!E.kind} />;
 
     return (
         <SideDrawer title={title} subtitle={subtitle} onClose={requestClose} footer={footer} width={640} busy={busy}

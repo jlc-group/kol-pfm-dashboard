@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { api } from '../api/client.js';
 import DatePicker from './DatePicker.jsx';
-import { HIRE_KINDS } from './OtherProjectForm.jsx';
+import KindPicker from './KindPicker.jsx';
+import { kindError, kindValue } from '../data/hireKinds.js';
 import { T } from '../data/talentLabels.js';
 
 // แก้รายละเอียดของใบขอให้หาหนึ่งใบ (จากปุ่มดินสอบนการ์ดของใบ ไม่ต้องเปิดฟอร์มทั้งงาน)
@@ -27,14 +28,14 @@ export default function HireRequestEditModal({ request, onClose, onSaved }) {
     const filled = Number(request.filled) || 0;
 
     async function save() {
-        if (!f.kind) { setErr('กรุณาเลือกประเภทงาน'); return; }
+        if (kindError(f.kind)) { setErr(kindError(f.kind)); return; }
         if (!(Number(f.headcount) > 0)) { setErr('จำนวนคนที่ต้องการต้องมากกว่า 0'); return; }
         setSaving(true); setErr('');
         try {
             const res = await api(`/projects/${request.project_id}/hires/${request.key}`, {
                 method: 'PUT',
                 body: {
-                    kind: f.kind, headcount: Number(f.headcount) || 1, fee: Number(f.fee) || 0,
+                    kind: kindValue(f.kind), headcount: Number(f.headcount) || 1, fee: Number(f.fee) || 0,
                     use_date: f.use_date || null, deadline: f.deadline || null,
                     place: f.place, spec: f.spec, note: f.note,
                     ...(f.scope !== scope0 ? { scope: f.scope } : {})
@@ -56,14 +57,11 @@ export default function HireRequestEditModal({ request, onClose, onSaved }) {
                 {err && <div className="alert-error">{err}</div>}
 
                 <div className="hire-grid">
-                    <label className="hire-f">
+                    {/* div ไม่ใช่ label — ในช่องมีทั้งดรอปดาวน์และช่องพิมพ์ (เลือก "อื่น ๆ") */}
+                    <div className="hire-f">
                         <span>ประเภทงาน *</span>
-                        <select value={f.kind} onChange={e => up('kind', e.target.value)}>
-                            <option value="">— เลือก —</option>
-                            {HIRE_KINDS.map(k => <option key={k} value={k}>{k}</option>)}
-                            {f.kind && !HIRE_KINDS.includes(f.kind) && <option value={f.kind}>{f.kind}</option>}
-                        </select>
-                    </label>
+                        <KindPicker variant="select" value={f.kind} onChange={v => up('kind', v)} />
+                    </div>
                     <label className="hire-f">
                         <span>จำนวนคนที่ต้องการ *</span>
                         <input inputMode="numeric" value={f.headcount}

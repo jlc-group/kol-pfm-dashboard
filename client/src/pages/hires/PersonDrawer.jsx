@@ -4,7 +4,8 @@ import Icon from '../../components/Icon.jsx';
 import DatePicker from '../../components/DatePicker.jsx';
 import SideDrawer from '../../components/SideDrawer.jsx';
 import FilePreviewModal from '../../components/FilePreviewModal.jsx';
-import { HIRE_KINDS } from '../../components/OtherProjectForm.jsx';
+import KindPicker from '../../components/KindPicker.jsx';
+import { kindError } from '../../data/hireKinds.js';
 import {
     T, BOOKING_LABEL, PAYABLE_STATUS, feeMissing, NEED_FEE_MSG, hireStatusLabel
 } from '../../data/talentLabels.js';
@@ -203,7 +204,7 @@ export default function PersonDrawer({
     function fieldErrors() {
         const e = {};
         if (changed.includes('name') && !f.name.trim()) e.name = 'ใส่ชื่อคนก่อนนะ';
-        if (changed.includes('kind') && !f.kind.trim()) e.kind = 'เลือกประเภทงาน';
+        if (changed.includes('kind') && kindError(f.kind)) e.kind = kindError(f.kind);
         // ตกลงแล้วขึ้นไปต้องมีค่าตัว — แถวเก่าที่เป็นแบบนี้อยู่แล้ว (ไม่ได้แตะสถานะ/ค่าตัว) ยังบันทึกช่องอื่นได้
         if ((changed.includes('status') || changed.includes('fee')) && PAYABLE_STATUS.includes(f.status) && feeMissing(f.fee)) e.fee = NEED_FEE_MSG;
         if (changed.includes('status') && locked) e.status = `คนนี้ยังรอ${T.confirmQueue}ใน${T.request} — ${T.confirmQueue}ในใบก่อน`;
@@ -338,7 +339,6 @@ export default function PersonDrawer({
     const name = S(base && base.name).trim() || 'คนนี้';
     const fromReq = !!row && row.from_request != null;
     const bookingOpenNow = !!(row && row.booking && (row.booking.state === 'pending' || row.booking.state === 'fee_review'));
-    const kinds = baseForm.kind && !HIRE_KINDS.includes(baseForm.kind) ? [...HIRE_KINDS, baseForm.kind] : HIRE_KINDS;
     const oldStatusUnknown = baseForm.status && !PERSON_STEPS.includes(baseForm.status);
     const subtitle = [S(base && base.kind).trim(), fromReq ? `ได้จาก${T.request}` : ''].filter(Boolean).join(' · ');
     const imagePath = `/projects/${projectId}/hires/${encodeURIComponent(row ? row.key : '')}/image`;
@@ -372,12 +372,8 @@ export default function PersonDrawer({
                             maxLength={MAXLEN.name} autoComplete="off" placeholder="ชื่อ-นามสกุล หรือชื่อเล่น" />
                     </Field>
                     <Field label="ประเภทงาน" req err={E.kind} labelId={id('kind')}>
-                        <div className="qf-chips" role="radiogroup" aria-labelledby={id('kind')}>
-                            {kinds.map(k => (
-                                <button type="button" key={k} role="radio" aria-checked={f.kind === k}
-                                    className={'qf-chip' + (f.kind === k ? ' on' : '')} onClick={() => up('kind', k)}>{k}</button>
-                            ))}
-                        </div>
+                        {/* ประเภทเก่าที่ไม่อยู่ในรายการแล้ว (เช่น ช่างภาพ) โชว์เป็น "อื่น ๆ" + ข้อความเดิม แก้ต่อได้ */}
+                        <KindPicker value={f.kind} onChange={v => up('kind', v)} labelId={id('kind')} invalid={!!E.kind} />
                     </Field>
                     <Field label="ค่าตัว (บาท)" err={E.fee} htmlFor={id('fee')}
                         hint={agreeOnFee && !locked ? `ใส่ค่าตัวแล้วกดบันทึก — ระบบตั้งเป็น "${statusLabel(agreeOnFee)}" ให้` : 'ยังไม่รู้ก็เว้นไว้ได้ — ใส่ทีหลังได้'}>

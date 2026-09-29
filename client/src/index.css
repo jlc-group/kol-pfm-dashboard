@@ -3695,7 +3695,6 @@ button { color: inherit; }
 
 /* ชิปเลือกอย่างเดียว (ประเภทงาน / แบรนด์ / ส่งรายชื่อภายใน) */
 .qf-chips { display: flex; flex-wrap: wrap; gap: 8px; }
-.qf-chips-sm { margin-top: 8px; gap: 6px; }
 .qf-chip {
     min-height: 40px; padding: 8px 15px; border-radius: 999px; border: 1px solid var(--border);
     background: #fff; color: var(--text); font-family: inherit; font-size: 14px; font-weight: 600;
@@ -3703,7 +3702,8 @@ button { color: inherit; }
 }
 .qf-chip:hover { border-color: var(--mint); color: var(--mint-dark); }
 .qf-chip.on { background: var(--grad); color: #fff; border-color: transparent; }
-.qf-chip.sm { min-height: 34px; padding: 5px 12px; font-size: 13px; }
+/* ช่องพิมพ์ประเภทงานเองตอนเลือก "อื่น ๆ" (KindPicker) — ใต้ปุ่มตัวเลือก / ใต้ดรอปดาวน์ */
+.kind-other { display: block; width: 100%; margin-top: 8px; }
 
 /* ตัวเลือกสองทาง (งานที่มีอยู่ | งานใหม่ · กำลังคุย | ตกลงแล้ว) */
 .qf-seg { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
