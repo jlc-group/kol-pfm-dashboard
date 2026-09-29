@@ -1234,18 +1234,6 @@ a { text-decoration: none; color: inherit; }
 @media (max-width: 900px) { .ads-tbl-bar .ads-search { min-width: 0; flex: 1 1 100%; } }
 .ads-jump-btn { border: 1px solid var(--mint); border-radius: 999px; padding: 5px 10px; background: #ecfdf5; color: var(--mint-dark); font-size: 12px; font-weight: 700; cursor: pointer; }
 .ads-jump-btn:focus-visible { outline: 2px solid var(--mint-dark); outline-offset: 2px; }
-/* ตัวเลือกย่อขนาดตาราง — ชิดขวาสุด ตั้งใจให้เล็กเท่าปุ่มล้างตัวกรอง เป็นแค่ตัวช่วยดู ไม่ใช่ตัวกรองข้อมูล
-   ตัวย่อจริงเป็น CSS zoom ที่ .ads-tbl (ตั้งใน Ads.jsx) ไม่ได้ตั้งที่นี่ เพราะค่าเปลี่ยนตามที่ผู้ใช้เลือก */
-.ads-zoom { display: inline-flex; align-items: center; gap: 4px; margin-inline-start: auto; }
-.ads-zoom-lbl { font-size: 10.5px; font-weight: 700; color: var(--muted); letter-spacing: .3px; }
-.ads-zoom-btn {
-    padding: 2px 8px; border: 1px solid var(--border); border-radius: 999px;
-    background: #fff; color: var(--muted); font-size: 10.5px; font-weight: 700;
-    line-height: 1.5; cursor: pointer; white-space: nowrap; font-variant-numeric: tabular-nums;
-}
-.ads-zoom-btn:hover { border-color: var(--mint); color: var(--mint-dark); }
-.ads-zoom-btn:focus-visible { outline: 2px solid var(--mint); outline-offset: 1px; }
-.ads-zoom-btn.on { background: var(--mint); border-color: var(--mint); color: #fff; }
 /* ปุ่มกรองเล็กบนหัวคอลัมน์ (แบบตาราง Excel) */
 .colf { position: relative; display: inline-flex; vertical-align: middle; }
 .colf-btn {
