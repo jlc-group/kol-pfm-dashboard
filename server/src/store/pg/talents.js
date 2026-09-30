@@ -5,13 +5,15 @@
  * คนเดียวกัน = ชื่อ + ประเภทงาน (ไม่สนตัวพิมพ์ / ช่องว่างหัวท้าย) กติกาเดียวกับ personKey ใน pg/hires.js
  * — ในตารางนี้ห้ามมีคนซ้ำ (เส้น API เช็คด้วย findByKey ก่อนเพิ่ม/แก้) ไม่งั้นการ์ดเดียวจะมีหลายแถวให้แก้
  */
-const { query, withTransaction, insertRow, updateRow } = require('./_base');
+const { query, withTransaction, insertRow, updateRow, asJson } = require('./_base');
 
 // ช่องที่แก้ได้จากฟอร์ม — id / ผู้เพิ่ม / เวลา / ไฟล์ ไม่รับจากตรงนี้ (ไฟล์มีเส้นของตัวเอง)
-const EDITABLE = ['name', 'kind', 'link', 'contact_mode', 'contact_name', 'contact', 'agency', 'rate', 'rate_unit', 'scope', 'image_link', 'clip_link', 'note'];
+const EDITABLE = ['name', 'kind', 'link', 'contact_mode', 'contact_name', 'contact', 'agency', 'rate', 'rate_unit', 'scope', 'brands', 'image_link', 'clip_link', 'note'];
 const pick = fields => {
     const out = {};
     for (const k of EDITABLE) if (fields && fields[k] !== undefined) out[k] = fields[k];
+    // brands เป็น JSONB (array ของชื่อแบรนด์)
+    if (out.brands !== undefined) out.brands = asJson(Array.isArray(out.brands) ? out.brands : [], []);
     return out;
 };
 // id ของตาราง (SERIAL = int4) — เกินช่วงถือว่าไม่พบ ไม่ส่งไปให้ PostgreSQL ตอบ error 22003 (กลายเป็น 500)

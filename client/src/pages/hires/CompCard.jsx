@@ -202,9 +202,11 @@ export default function CompCard({ card, onPreview, onEdit }) {
 
                 <h3 className="tb-name" title={card.name}>{card.name}</h3>
 
-                {(card.kind || card.agency) && (
+                {(card.kind || card.agency || brands.length > 0) && (
                     <div className="tb-pills">
                         {card.kind && <span className="tb-pill"><span className="tb-pill-k">ประเภทงาน :</span> {card.kind}</span>}
+                        {/* แบรนด์ (จากงาน + ที่ทีมเลือกตอนเพิ่มเอง) — เดิมอยู่ท้ายบรรทัดล่างสุด ถูกตัดจนมองไม่เห็น */}
+                        {brands.length > 0 && <span className="tb-pill" title={brands.join(', ')}><span className="tb-pill-k">แบรนด์ :</span> {brands.join(', ')}</span>}
                         {card.agency && <span className="tb-pill"><span className="tb-pill-k">{viaAgency ? 'เอเจนซี่ :' : 'สังกัด :'}</span> {card.agency}</span>}
                     </div>
                 )}
@@ -280,7 +282,7 @@ export default function CompCard({ card, onPreview, onEdit }) {
                     <div className="tb-foot-line">
                         {/* ยังไม่เคยอยู่ในงาน = บอกว่าใครเพิ่มไว้ แทน "เคยเสนอให้ 0 งาน" */}
                         {[jobs > 0 ? `เคยเสนอให้ ${jobs} งาน` : `เพิ่มเข้า Talent Book${talent && talent.added_by ? ' โดย ' + talent.added_by : ''}`,
-                            brands.join(', '), last ? `ล่าสุด ${last}` : ''].filter(Boolean).join(' · ')}
+                            last ? `ล่าสุด ${last}` : ''].filter(Boolean).join(' · ')}
                     </div>
                     {projects.length > 0 && (
                         <div className="tb-jobs">

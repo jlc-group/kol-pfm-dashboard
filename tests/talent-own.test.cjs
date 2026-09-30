@@ -55,7 +55,7 @@ store.talents.findById = async id => { const r = rows.get(Number(id)); return r 
 store.talents.findByKey = async (name, kind, exceptId = null) =>
     [...rows.values()].find(r => norm(r.name) === norm(name) && norm(r.kind) === norm(kind) && r.id !== Number(exceptId)) || null;
 store.talents.create = async (fields, { byId = null, byName = null } = {}) => {
-    const r = { id: ++seq, name: null, kind: null, link: null, contact_mode: null, contact_name: null, contact: null, agency: null, rate: null, rate_unit: null, scope: null,
+    const r = { id: ++seq, name: null, kind: null, link: null, brands: [], contact_mode: null, contact_name: null, contact: null, agency: null, rate: null, rate_unit: null, scope: null,
         image: null, image_link: null, clip: null, clip_link: null, note: null,
         ...fields, created_by_id: byId, created_by: byName, created_at: iso(), updated_at: iso() };
     rows.set(r.id, r);
@@ -141,11 +141,43 @@ test('เพิ่มคน: ตรวจช่องบังคับ / อื
     await bad({ name: 'ต้น', kind: 'นางแบบ', rate: 2e9 }, /สูงเกินไป/);
     await bad({ name: 'ต้น', kind: 'นางแบบ', rate: 5000, rate_unit: 'ต่อปี' }, /หน่วยเรท/);
     await bad({ name: 'x'.repeat(201), kind: 'นางแบบ' }, /ชื่อยาวเกิน 200/);
+    // แบรนด์ (30 ก.ย. 2026): บังคับอย่างน้อย 1 · ต้องเป็นรายการ · ไม่เกิน 20 แบรนด์ / ชื่อละ 60 ตัวอักษร
+    await bad({ name: 'ต้น', kind: 'นางแบบ' }, /หน้าเว็บนี้เป็นรุ่นเก่า — กดรีเฟรชหน้า/);   // ไม่ส่ง brands เลย = ฟอร์มรุ่นเก่า
+    await bad({ name: 'ต้น', kind: 'นางแบบ', brands: [] }, /เลือกแบรนด์อย่างน้อย 1 แบรนด์/);
+    await bad({ name: 'ต้น', kind: 'นางแบบ', brands: ['  ', ''] }, /เลือกแบรนด์อย่างน้อย 1 แบรนด์/);
+    await bad({ name: 'ต้น', kind: 'นางแบบ', brands: 'Jdent' }, /แบรนด์ไม่ถูกต้อง/);
+    await bad({ name: 'ต้น', kind: 'นางแบบ', brands: ['x'.repeat(61)] }, /แบรนด์ไม่ถูกต้อง/);
+    await bad({ name: 'ต้น', kind: 'นางแบบ', brands: Array.from({ length: 21 }, (_, i) => 'B' + i) }, /แบรนด์ไม่ถูกต้อง/);
     assert.equal(rows.size, 0, 'ไม่มีอะไรถูกเพิ่ม');
 });
 
+test('แบรนด์: หลายแบรนด์ · ตัดช่องว่าง/ซ้ำ · แก้ได้ · ล้างจนว่างไม่ได้ · ขึ้นบนการ์ดและตัวกรอง Brand · คนอื่นแบรนด์อื่นก็เห็น', async () => {
+    const a = await call(2, 'POST', '/hires/talents', { name: 'ต้น', kind: 'นางแบบ', brands: [' Jdent ', 'Beauterry', 'Jdent'] });
+    assert.equal(a.status, 201);
+    assert.deepEqual(a.body.data.brands, ['Jdent', 'Beauterry']);
+    const up = await call(2, 'PUT', `/hires/talents/${a.body.data.id}`, { brands: ['Dermiq'] });
+    assert.deepEqual(up.body.data.brands, ['Dermiq']);
+    const empty = await call(2, 'PUT', `/hires/talents/${a.body.data.id}`, { brands: [] });
+    assert.equal(empty.status, 400);
+    assert.deepEqual(rows.get(a.body.data.id).brands, ['Dermiq'], 'ล้างจนว่างไม่ได้');
+    const keep = await call(2, 'PUT', `/hires/talents/${a.body.data.id}`, { note: 'x' });
+    assert.deepEqual(keep.body.data.brands, ['Dermiq'], 'แก้ช่องอื่น แบรนด์คงเดิม');
+    // ฝนดูแลแค่ Beauterry — ยังเห็นการ์ดที่ติดแบรนด์ Dermiq (แบรนด์ไม่ผูกสิทธิ์การเห็น)
+    const forFon = (await call(3, 'GET', '/hires/book')).body.data;
+    const c = forFon.cards.find(x => x.name === 'ต้น');
+    assert.ok(c, 'คนแบรนด์อื่นก็เห็น');
+    assert.deepEqual(c.brands, ['Dermiq']);
+    assert.ok(forFon.brands.includes('Dermiq'), 'แบรนด์ขึ้นในตัวกรอง Brand');
+});
+
+test('แบรนด์: การ์ดที่รวมกับคนในงาน = แบรนด์จากงาน + แบรนด์ที่ทีมเลือก ไม่ซ้ำ', async () => {
+    await call(2, 'POST', '/hires/talents', { name: 'มะลิ', kind: 'นางแบบ', brands: ['Jdent', 'Minimii'] });
+    const c = (await call(2, 'GET', '/hires/book')).body.data.cards.find(x => x.key === 'มะลิ|นางแบบ');
+    assert.deepEqual([...c.brands].sort(), ['Jdent', 'Minimii']);
+});
+
 test('เพิ่มคนสำเร็จ: ตัดช่องว่าง · เรทรับคอมมา · ผู้เพิ่ม = ชื่อเล่นของบัญชี · ไม่ส่ง id ผู้ใช้ออกไป · บันทึกประวัติ', async () => {
-    const r = await call(2, 'POST', '/hires/talents', {
+    const r = await call(2, 'POST', '/hires/talents', { brands: ['Jdent'],
         name: '  ใบเตย ', kind: 'ช่างแต่งหน้า', link: ' https://instagram.com/baitoey ', contact: '081-111-2222',
         rate: '5,000', rate_unit: 'ต่อวัน', note: ' ถนัดงานผิว '
     });
@@ -166,29 +198,29 @@ test('เพิ่มคนสำเร็จ: ตัดช่องว่าง
 });
 
 test('คนเดียวกัน (ชื่อ + ประเภทงาน ไม่สนตัวพิมพ์/ช่องว่าง) เพิ่มซ้ำไม่ได้ · ประเภทต่างกันเพิ่มได้', async () => {
-    assert.equal((await call(2, 'POST', '/hires/talents', { name: 'Mali', kind: 'นางแบบ' })).status, 201);
-    const dup = await call(3, 'POST', '/hires/talents', { name: '  mali ', kind: 'นางแบบ' });
+    assert.equal((await call(2, 'POST', '/hires/talents', { brands: ['Jdent'], name: 'Mali', kind: 'นางแบบ' })).status, 201);
+    const dup = await call(3, 'POST', '/hires/talents', { brands: ['Jdent'], name: '  mali ', kind: 'นางแบบ' });
     assert.equal(dup.status, 409);
     assert.match(dup.body.message, /มี "Mali" \(นางแบบ\) ใน Talent Book แล้ว/);
-    assert.equal((await call(3, 'POST', '/hires/talents', { name: 'Mali', kind: 'พิธีกร' })).status, 201);
+    assert.equal((await call(3, 'POST', '/hires/talents', { brands: ['Jdent'], name: 'Mali', kind: 'พิธีกร' })).status, 201);
     assert.equal(rows.size, 2);
 });
 
 test('ข้อความชื่อซ้ำ: คนที่แก้การ์ดเดิมได้ → กดแก้ไข · คนอื่น → ค้นหาการ์ดเดิม', async () => {
-    await call(2, 'POST', '/hires/talents', { name: 'ต้น', kind: 'นางแบบ' });
-    assert.match((await call(3, 'POST', '/hires/talents', { name: 'ต้น', kind: 'นางแบบ' })).body.message, /ค้นชื่อในแท็บนี้/);
-    assert.match((await call(1, 'POST', '/hires/talents', { name: 'ต้น', kind: 'นางแบบ' })).body.message, /กดแก้ไขที่การ์ดเดิม/);
+    await call(2, 'POST', '/hires/talents', { brands: ['Jdent'], name: 'ต้น', kind: 'นางแบบ' });
+    assert.match((await call(3, 'POST', '/hires/talents', { brands: ['Jdent'], name: 'ต้น', kind: 'นางแบบ' })).body.message, /ค้นชื่อในแท็บนี้/);
+    assert.match((await call(1, 'POST', '/hires/talents', { brands: ['Jdent'], name: 'ต้น', kind: 'นางแบบ' })).body.message, /กดแก้ไขที่การ์ดเดิม/);
 });
 
 test('กดเพิ่ม/แก้พร้อมกันจนชน unique index (23505) → 409 ไม่ใช่ 500', async () => {
-    await call(2, 'POST', '/hires/talents', { name: 'ต้น', kind: 'นางแบบ' });
+    await call(2, 'POST', '/hires/talents', { brands: ['Jdent'], name: 'ต้น', kind: 'นางแบบ' });
     const realCreate = store.talents.create, realUpdate = store.talents.update, realFind = store.talents.findByKey;
     let calls = 0;
     // ด่าน findByKey ครั้งแรกไม่เจอ (อีกคนยังไม่ commit) แล้ว INSERT ชน index
     store.talents.findByKey = async (...args) => (calls++ === 0 ? null : realFind(...args));
     store.talents.create = async () => { const e = new Error('duplicate key value violates unique constraint "talents_person_key"'); e.code = '23505'; throw e; };
     try {
-        const r = await call(3, 'POST', '/hires/talents', { name: 'ต้น', kind: 'นางแบบ' });
+        const r = await call(3, 'POST', '/hires/talents', { brands: ['Jdent'], name: 'ต้น', kind: 'นางแบบ' });
         assert.equal(r.status, 409);
         assert.match(r.body.message, /มี "ต้น" \(นางแบบ\) ใน Talent Book แล้ว/);
         const b = await realCreate({ name: 'ฟ้า', kind: 'นางแบบ' }, { byId: 2, byName: 'แพรว' });
@@ -203,14 +235,14 @@ test('กดเพิ่ม/แก้พร้อมกันจนชน unique
 });
 
 test('เอเจนซี่เพิ่มไม่ได้ (เส้น /api/hires ปิดให้บัญชีเอเจนซี่)', async () => {
-    const r = await call(4, 'POST', '/hires/talents', { name: 'ต้น', kind: 'นางแบบ' });
+    const r = await call(4, 'POST', '/hires/talents', { brands: ['Jdent'], name: 'ต้น', kind: 'นางแบบ' });
     assert.notEqual(r.status, 201);
     assert.equal(rows.size, 0);
 });
 
 // ---------------------------------------------------------------- ช่องทางติดต่อ (ผู้ใช้สั่ง 30 ก.ย. 2026)
 test('ช่องทางติดต่อ: ผ่าน Agency = ชื่อเอเจนซี่ + ผู้ติดต่อ ไม่เก็บเบอร์ · ติดต่อเอง = ชื่อผู้ติดต่อ + เบอร์ ไม่เก็บสังกัด', async () => {
-    const ag = await call(2, 'POST', '/hires/talents', { name: 'ต้น', kind: 'นางแบบ', contact_mode: 'agency',
+    const ag = await call(2, 'POST', '/hires/talents', { brands: ['Jdent'], name: 'ต้น', kind: 'นางแบบ', contact_mode: 'agency',
         agency: ' Star Model ', contact_name: ' พี่นก ', contact: '081-ซ่อนอยู่' });
     assert.equal(ag.status, 201);
     assert.equal(ag.body.data.contact_mode, 'agency');
@@ -218,7 +250,7 @@ test('ช่องทางติดต่อ: ผ่าน Agency = ชื่�
     assert.equal(ag.body.data.contact_name, 'พี่นก');
     assert.equal(ag.body.data.contact, null, 'ผ่านเอเจนซี่ไม่มีช่องเบอร์ — ค่าที่หลุดมาไม่ถูกเก็บ');
 
-    const me = await call(2, 'POST', '/hires/talents', { name: 'ฟ้า', kind: 'นางแบบ', contact_mode: 'self',
+    const me = await call(2, 'POST', '/hires/talents', { brands: ['Jdent'], name: 'ฟ้า', kind: 'นางแบบ', contact_mode: 'self',
         contact_name: 'ฟ้าเอง', contact: 'line: fah', agency: 'ค้างจากแบบเดิม' });
     assert.equal(me.status, 201);
     assert.equal(me.body.data.contact_mode, 'self');
@@ -238,22 +270,22 @@ test('ช่องทางติดต่อ: ผ่าน Agency = ชื่�
 });
 
 test('ช่องทางติดต่อ: แก้บางช่องโดยไม่ส่งแบบ (หน้าเว็บรุ่นเก่า) → ยึดแบบที่บันทึกไว้ ช่องของอีกแบบไม่กลับเข้ามา', async () => {
-    const ag = (await call(2, 'POST', '/hires/talents', { name: 'ต้น', kind: 'นางแบบ', contact_mode: 'agency', agency: 'Star Model' })).body.data;
-    const me = (await call(2, 'POST', '/hires/talents', { name: 'ฟ้า', kind: 'นางแบบ', contact_mode: 'self', contact: '081' })).body.data;
+    const ag = (await call(2, 'POST', '/hires/talents', { brands: ['Jdent'], name: 'ต้น', kind: 'นางแบบ', contact_mode: 'agency', agency: 'Star Model' })).body.data;
+    const me = (await call(2, 'POST', '/hires/talents', { brands: ['Jdent'], name: 'ฟ้า', kind: 'นางแบบ', contact_mode: 'self', contact: '081' })).body.data;
     const r1 = await call(2, 'PUT', `/hires/talents/${ag.id}`, { contact: '099-แอบใส่', note: 'x' });
     assert.equal(r1.status, 200);
     assert.deepEqual([r1.body.data.contact_mode, r1.body.data.contact, r1.body.data.agency, r1.body.data.note], ['agency', null, 'Star Model', 'x']);
     const r2 = await call(2, 'PUT', `/hires/talents/${me.id}`, { agency: 'แอบใส่ Co' });
     assert.deepEqual([r2.body.data.contact_mode, r2.body.data.agency, r2.body.data.contact], ['self', null, '081']);
     // แถวเก่าที่ยังไม่มีแบบ: แก้ได้ตามเดิม ไม่ล้างอะไร
-    const old = (await call(2, 'POST', '/hires/talents', { name: 'ดาว', kind: 'นางแบบ', contact: '080', agency: 'Old Co' })).body.data;
+    const old = (await call(2, 'POST', '/hires/talents', { brands: ['Jdent'], name: 'ดาว', kind: 'นางแบบ', contact: '080', agency: 'Old Co' })).body.data;
     const r3 = await call(2, 'PUT', `/hires/talents/${old.id}`, { contact: '080-ใหม่' });
     assert.deepEqual([r3.body.data.contact_mode, r3.body.data.contact, r3.body.data.agency], [null, '080-ใหม่', 'Old Co']);
 });
 
 test('Scope of work: เก็บ / แก้ / ล้างได้ · ยาวเกิน 2000 → 400 · ส่งไปกับการ์ด (card.talent.scope)', async () => {
     const scope = ' ถ่ายภาพนิ่ง 1 วัน\nคลิปสั้น 2 ชิ้น ';
-    const a = await call(2, 'POST', '/hires/talents', { name: 'ต้น', kind: 'นางแบบ', rate: 650000, rate_unit: 'ต่องาน', scope });
+    const a = await call(2, 'POST', '/hires/talents', { brands: ['Jdent'], name: 'ต้น', kind: 'นางแบบ', rate: 650000, rate_unit: 'ต่องาน', scope });
     assert.equal(a.status, 201);
     assert.equal(a.body.data.scope, 'ถ่ายภาพนิ่ง 1 วัน\nคลิปสั้น 2 ชิ้น', 'ตัดช่องว่างหัวท้าย เก็บการขึ้นบรรทัด');
     const card = (await call(2, 'GET', '/hires/book')).body.data.cards.find(x => x.name === 'ต้น');
@@ -267,17 +299,17 @@ test('Scope of work: เก็บ / แก้ / ล้างได้ · ยา�
 });
 
 test('ช่องทางติดต่อ: ค่าแปลก / ชื่อผู้ติดต่อยาวเกิน → 400 ไม่บันทึก', async () => {
-    const r1 = await call(2, 'POST', '/hires/talents', { name: 'ต้น', kind: 'นางแบบ', contact_mode: 'phone' });
+    const r1 = await call(2, 'POST', '/hires/talents', { brands: ['Jdent'], name: 'ต้น', kind: 'นางแบบ', contact_mode: 'phone' });
     assert.equal(r1.status, 400);
     assert.match(r1.body.message, /ช่องทางติดต่อไม่ถูกต้อง/);
-    const r2 = await call(2, 'POST', '/hires/talents', { name: 'ต้น', kind: 'นางแบบ', contact_mode: 'self', contact_name: 'ก'.repeat(201) });
+    const r2 = await call(2, 'POST', '/hires/talents', { brands: ['Jdent'], name: 'ต้น', kind: 'นางแบบ', contact_mode: 'self', contact_name: 'ก'.repeat(201) });
     assert.equal(r2.status, 400);
     assert.match(r2.body.message, /ชื่อผู้ติดต่อยาวเกิน 200/);
     assert.equal(rows.size, 0);
 });
 
 test('การ์ด Talent Book ส่งช่องทางติดต่อ + ชื่อผู้ติดต่อ · คนที่มาจากงานอย่างเดียวเป็น null', async () => {
-    await call(2, 'POST', '/hires/talents', { name: 'ต้น', kind: 'พิธีกร', contact_mode: 'agency', agency: 'Star Model', contact_name: 'พี่นก' });
+    await call(2, 'POST', '/hires/talents', { brands: ['Jdent'], name: 'ต้น', kind: 'พิธีกร', contact_mode: 'agency', agency: 'Star Model', contact_name: 'พี่นก' });
     const cards = (await call(2, 'GET', '/hires/book')).body.data.cards;
     const c = cards.find(x => x.name === 'ต้น');
     assert.deepEqual([c.contact_mode, c.contact_name, c.agency, c.contact], ['agency', 'พี่นก', 'Star Model', null]);
@@ -287,8 +319,8 @@ test('การ์ด Talent Book ส่งช่องทางติดต่�
 
 // ---------------------------------------------------------------- แก้ / ลบ
 test('แก้: คนที่เพิ่มแก้ได้ · คนอื่นไม่ได้ · admin ได้ · แก้บางช่องที่เหลือคงเดิม · เปลี่ยนชื่อไปชนคนอื่นไม่ได้', async () => {
-    const a = (await call(2, 'POST', '/hires/talents', { name: 'ต้น', kind: 'นางแบบ', agency: 'Model Co', rate: 3000, rate_unit: 'ต่องาน' })).body.data;
-    const b = (await call(2, 'POST', '/hires/talents', { name: 'ฟ้า', kind: 'นางแบบ' })).body.data;
+    const a = (await call(2, 'POST', '/hires/talents', { brands: ['Jdent'], name: 'ต้น', kind: 'นางแบบ', agency: 'Model Co', rate: 3000, rate_unit: 'ต่องาน' })).body.data;
+    const b = (await call(2, 'POST', '/hires/talents', { brands: ['Jdent'], name: 'ฟ้า', kind: 'นางแบบ' })).body.data;
 
     const other = await call(3, 'PUT', `/hires/talents/${a.id}`, { rate: 1 });
     assert.equal(other.status, 403);
@@ -314,7 +346,7 @@ test('แก้: คนที่เพิ่มแก้ได้ · คนอ�
 });
 
 test('ดูข้อมูลเต็ม (ฟอร์มแก้ไข): ทุกคนในทีมดูได้ · editable บอกตามคนที่ดู · id ไม่ถูกต้อง = ไม่พบ', async () => {
-    const a = (await call(2, 'POST', '/hires/talents', { name: 'ต้น', kind: 'นางแบบ' })).body.data;
+    const a = (await call(2, 'POST', '/hires/talents', { brands: ['Jdent'], name: 'ต้น', kind: 'นางแบบ' })).body.data;
     assert.equal((await call(2, 'GET', `/hires/talents/${a.id}`)).body.data.editable, true);
     assert.equal((await call(3, 'GET', `/hires/talents/${a.id}`)).body.data.editable, false);
     assert.equal((await call(1, 'GET', `/hires/talents/${a.id}`)).body.data.editable, true);
@@ -327,7 +359,7 @@ test('ดูข้อมูลเต็ม (ฟอร์มแก้ไข): ท
 });
 
 test('ลบ: คนอื่นไม่ได้ · คนที่เพิ่มได้ + ไฟล์ถูกลบตาม', async () => {
-    const a = (await call(2, 'POST', '/hires/talents', { name: 'ต้น', kind: 'นางแบบ' })).body.data;
+    const a = (await call(2, 'POST', '/hires/talents', { brands: ['Jdent'], name: 'ต้น', kind: 'นางแบบ' })).body.data;
     assert.equal((await upload(2, `/hires/talents/${a.id}/image`, 'a.png', PNG, 'image/png')).status, 200);
     assert.equal(uploadsNow().length, 1);
     assert.equal((await call(3, 'DELETE', `/hires/talents/${a.id}`)).status, 403);
@@ -341,7 +373,7 @@ test('ลบ: คนอื่นไม่ได้ · คนที่เพิ�
 
 // ---------------------------------------------------------------- ไฟล์
 test('ไฟล์: คนไม่มีสิทธิ์ส่งไฟล์มาไม่ได้ (ไม่เขียนลงเครื่อง) · นามสกุลผิดไม่รับ · อัปใหม่แทนไฟล์เดิม · เปิดดูได้ทุกคน · เอาออกได้', async () => {
-    const a = (await call(2, 'POST', '/hires/talents', { name: 'ต้น', kind: 'นางแบบ' })).body.data;
+    const a = (await call(2, 'POST', '/hires/talents', { brands: ['Jdent'], name: 'ต้น', kind: 'นางแบบ' })).body.data;
 
     const denied = await upload(3, `/hires/talents/${a.id}/image`, 'a.png', PNG, 'image/png');
     assert.equal(denied.status, 403);
@@ -379,7 +411,7 @@ test('ไฟล์: คนไม่มีสิทธิ์ส่งไฟล์
 
 // ---------------------------------------------------------------- การ์ดใน Talent Book
 test('Talent Book: คนที่เพิ่มเองขึ้นเป็นการ์ด Saved ทุกคนในทีมเห็น (ไม่ผูกแบรนด์) · แก้ได้เฉพาะคนที่เพิ่ม/admin', async () => {
-    const a = (await call(2, 'POST', '/hires/talents', { name: 'ใบเตย', kind: 'ช่างแต่งหน้า', rate: 5000, rate_unit: 'ต่อวัน', note: 'ถนัดงานผิว' })).body.data;
+    const a = (await call(2, 'POST', '/hires/talents', { brands: ['Jdent'], name: 'ใบเตย', kind: 'ช่างแต่งหน้า', rate: 5000, rate_unit: 'ต่อวัน', note: 'ถนัดงานผิว' })).body.data;
     await upload(2, `/hires/talents/${a.id}/image`, 'a.png', PNG, 'image/png');
 
     const forFon = (await call(3, 'GET', '/hires/book')).body.data;   // ฝนดูแลแค่ Beauterry
@@ -402,7 +434,7 @@ test('Talent Book: คนที่เพิ่มเองขึ้นเป็�
 });
 
 test('เปลี่ยนรูปแล้ว path บนการ์ดเปลี่ยน (หน้าเว็บจำรูปตาม path — ไม่งั้นการ์ดโชว์รูปเก่า) · server เปิดไฟล์ได้แม้มี ?v=', async () => {
-    const a = (await call(2, 'POST', '/hires/talents', { name: 'ต้น', kind: 'นางแบบ' })).body.data;
+    const a = (await call(2, 'POST', '/hires/talents', { brands: ['Jdent'], name: 'ต้น', kind: 'นางแบบ' })).body.data;
     await upload(2, `/hires/talents/${a.id}/image`, 'a.png', PNG, 'image/png');
     const p1 = (await call(2, 'GET', '/hires/book')).body.data.cards.find(x => x.name === 'ต้น').photo.path;
     await new Promise(r => setTimeout(r, 5));
@@ -414,7 +446,7 @@ test('เปลี่ยนรูปแล้ว path บนการ์ดเ�
 });
 
 test('Talent Book: ชื่อ + ประเภทงานตรงกับคนในงาน = การ์ดเดียว (สถานะตามงาน · มีเรทและปุ่มแก้ของที่เพิ่มเอง)', async () => {
-    await call(2, 'POST', '/hires/talents', { name: ' มะลิ ', kind: 'นางแบบ', rate: 12000, rate_unit: 'ต่องาน' });
+    await call(2, 'POST', '/hires/talents', { brands: ['Jdent'], name: ' มะลิ ', kind: 'นางแบบ', rate: 12000, rate_unit: 'ต่องาน' });
     const data = (await call(2, 'GET', '/hires/book')).body.data;
     const mali = data.cards.filter(x => x.key === 'มะลิ|นางแบบ');
     assert.equal(mali.length, 1, 'รวมเป็นใบเดียว');
@@ -442,7 +474,7 @@ test('การ์ดที่รวมกับคนในงาน: รูป
     FIXTURE.other_projects = [{ ...P90, hire_items: [{ ...P90.hire_items[0], contact: '080-OLD', agency: 'Old Co',
         image: { filename: 'hire_90_d1.jpg', original: 'old.jpg' }, use_date: '2027-01-01' }] }];
     try {
-        const a = (await call(2, 'POST', '/hires/talents', { name: 'มะลิ', kind: 'นางแบบ', contact: '099-NEW', agency: 'New Co' })).body.data;
+        const a = (await call(2, 'POST', '/hires/talents', { brands: ['Jdent'], name: 'มะลิ', kind: 'นางแบบ', contact: '099-NEW', agency: 'New Co' })).body.data;
         await upload(2, `/hires/talents/${a.id}/image`, 'new.png', PNG, 'image/png');
         const c = (await call(2, 'GET', '/hires/book')).body.data.cards.find(x => x.key === 'มะลิ|นางแบบ');
         assert.equal(c.contact, '099-NEW');
@@ -456,7 +488,7 @@ test('การ์ดที่รวมกับคนในงาน + ที�
     const saved = FIXTURE.other_projects;
     FIXTURE.other_projects = [{ ...P90, hire_items: [{ ...P90.hire_items[0], contact: '081-JOB', agency: 'Job Co' }] }];
     try {
-        const a = (await call(2, 'POST', '/hires/talents', { name: 'มะลิ', kind: 'นางแบบ', contact_mode: 'agency', agency: 'New Co', contact_name: 'พี่นก' })).body.data;
+        const a = (await call(2, 'POST', '/hires/talents', { brands: ['Jdent'], name: 'มะลิ', kind: 'นางแบบ', contact_mode: 'agency', agency: 'New Co', contact_name: 'พี่นก' })).body.data;
         let c = (await call(2, 'GET', '/hires/book')).body.data.cards.find(x => x.key === 'มะลิ|นางแบบ');
         assert.deepEqual([c.contact_mode, c.agency, c.contact, c.contact_name], ['agency', 'New Co', null, 'พี่นก'], 'ผ่านเอเจนซี่ = ไม่มีเบอร์จากงานโผล่');
         await call(2, 'PUT', `/hires/talents/${a.id}`, { contact_mode: 'self', contact: '', agency: '', contact_name: 'มะลิเอง' });

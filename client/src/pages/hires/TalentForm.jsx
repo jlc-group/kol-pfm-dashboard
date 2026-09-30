@@ -3,6 +3,7 @@ import { api, uploadFile } from '../../api/client.js';
 import SideDrawer from '../../components/SideDrawer.jsx';
 import KindPicker from '../../components/KindPicker.jsx';
 import { kindError, kindValue } from '../../data/hireKinds.js';
+import { BRANDS } from '../../data/brands.js';
 
 // ฟอร์มเพิ่ม / แก้คนใน Talent Book เอง — ไม่ต้องมีงาน (ผู้ใช้สั่ง 29 ก.ย. 2026)
 // talentId = null → เพิ่มใหม่ (POST /hires/talents) · มีค่า → แก้ (GET แล้ว PUT) และลบได้
@@ -13,7 +14,7 @@ export const RATE_UNITS = ['ต่อวัน', 'ต่องาน', 'ต่�
 // ช่องทางติดต่อ — ติ๊กเลือกก่อน แล้วช่องที่ต้องกรอกเปลี่ยนตามแบบ (ผู้ใช้สั่ง 30 ก.ย. 2026) · ค่าต้องตรงกับ CONTACT_MODES ใน server
 //   ติดต่อเอง = ชื่อผู้ติดต่อ + เบอร์/LINE · ผ่าน Agency = ชื่อเอเจนซี่ + ชื่อผู้ติดต่อของเอเจนซี่ (ไม่มีช่องเบอร์/LINE)
 export const CONTACT_MODES = [['self', 'ติดต่อเอง'], ['agency', 'ผ่าน Agency']];
-const EMPTY = { name: '', kind: '', link: '', contact_mode: '', contact_name: '', contact: '', agency: '', rate: '', rate_unit: RATE_UNITS[0], scope: '', image_link: '', clip_link: '', note: '' };
+const EMPTY = { name: '', brands: [], kind: '', link: '', contact_mode: '', contact_name: '', contact: '', agency: '', rate: '', rate_unit: RATE_UNITS[0], scope: '', image_link: '', clip_link: '', note: '' };
 const MAX = { name: 200, link: 1000, contact_name: 200, contact: 200, agency: 200, scope: 2000, image_link: 1000, clip_link: 1000, note: 1000 };
 // แถวที่บันทึกก่อนมีตัวเลือกนี้ (contact_mode ว่าง) — เดาจากข้อมูลที่มี: มีสังกัด = ผ่านเอเจนซี่ · มีเบอร์/ชื่อ = ติดต่อเอง
 // มีทั้งเบอร์และสังกัด (ฟอร์มรุ่นเก่า) = ไม่เดา ปล่อยให้คนเลือกเอง — เดาแล้วช่องที่ถูกซ่อนจะหายตอนกดบันทึกโดยไม่รู้ตัว
@@ -84,7 +85,8 @@ export default function TalentForm({ talentId = null, onClose, onSaved }) {
                 if (!on) return;
                 const t = res.data || {};
                 const next = {
-                    name: S(t.name), kind: S(t.kind), link: S(t.link),
+                    name: S(t.name), brands: Array.isArray(t.brands) ? t.brands.map(S).filter(Boolean) : [],
+                    kind: S(t.kind), link: S(t.link),
                     contact_mode: modeOf(t), contact_name: S(t.contact_name), contact: S(t.contact), agency: S(t.agency),
                     rate: t.rate == null ? '' : String(t.rate), rate_unit: t.rate_unit || RATE_UNITS[0], scope: S(t.scope),
                     image_link: S(t.image_link), clip_link: S(t.clip_link), note: S(t.note)
@@ -97,11 +99,17 @@ export default function TalentForm({ talentId = null, onClose, onSaved }) {
     }, [talentId]);
 
     const up = (k, v) => setF(s => ({ ...s, [k]: v }));
+    // แบรนด์เลือกได้หลายอัน — เรียงตามรายชื่อแบรนด์เสมอ (กดสลับลำดับไม่ทำให้ฟอร์มดูว่าแก้แล้ว)
+    const toggleBrand = b => setF(s => {
+        const on = s.brands.includes(b) ? s.brands.filter(x => x !== b) : [...s.brands, b];
+        return { ...s, brands: [...BRANDS.filter(x => on.includes(x)), ...on.filter(x => !BRANDS.includes(x))] };
+    });
     const editing = rowId != null;
 
     function fieldErrors() {
         const e = {};
         if (!f.name.trim()) e.name = 'ใส่ชื่อก่อนนะ';
+        if (!f.brands.length) e.brands = 'เลือกแบรนด์อย่างน้อย 1 แบรนด์';
         const ke = kindError(f.kind);
         if (ke) e.kind = ke;
         if (f.image_link.trim() && !isWeb(f.image_link.trim())) e.image = 'ลิงก์รูปต้องขึ้นต้นด้วย http:// หรือ https://';
@@ -157,7 +165,7 @@ export default function TalentForm({ talentId = null, onClose, onSaved }) {
         // ยังไม่เลือก = ส่งค่าเดิมกลับไปตามที่โหลดมา (คนใหม่ = ว่างอยู่แล้ว · แถวเก่าที่มีทั้งเบอร์และสังกัด = ไม่หาย)
         const mode = f.contact_mode;
         const body = {
-            name: f.name.trim(), kind: kindValue(f.kind), link: f.link.trim(),
+            name: f.name.trim(), brands: f.brands, kind: kindValue(f.kind), link: f.link.trim(),
             contact_mode: mode, contact_name: f.contact_name.trim(),
             contact: mode === 'agency' ? '' : f.contact.trim(), agency: mode === 'self' ? '' : f.agency.trim(),
             rate: hasRate ? rateNum(f.rate) : null, rate_unit: hasRate ? f.rate_unit : null, scope: f.scope.trim(),
@@ -270,6 +278,15 @@ export default function TalentForm({ talentId = null, onClose, onSaved }) {
                         <Field label="ชื่อ" req err={E.name} htmlFor={id('name')}>
                             <input id={id('name')} value={f.name} maxLength={MAX.name} autoComplete="off"
                                 onChange={e => up('name', e.target.value)} placeholder="ชื่อ-นามสกุล หรือชื่อเล่น" autoFocus={!talentId} />
+                        </Field>
+                        <Field label="แบรนด์" req err={E.brands} labelId={id('brands')} hint="เลือกได้หลายแบรนด์">
+                            <div className="qf-chips" role="group" aria-labelledby={id('brands')}>
+                                {/* แบรนด์ที่บันทึกไว้แต่ไม่อยู่ในรายชื่อแล้ว ยังโชว์ให้เอาออกได้ */}
+                                {[...BRANDS, ...f.brands.filter(b => !BRANDS.includes(b))].map(b => (
+                                    <button type="button" key={b} role="checkbox" aria-checked={f.brands.includes(b)}
+                                        className={'qf-chip' + (f.brands.includes(b) ? ' on' : '')} onClick={() => toggleBrand(b)}>{b}</button>
+                                ))}
+                            </div>
                         </Field>
                         <Field label="ประเภทงาน" req err={E.kind} labelId={id('kind')}>
                             <KindPicker value={f.kind} onChange={v => up('kind', v)} labelId={id('kind')} invalid={!!E.kind} />

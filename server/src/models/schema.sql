@@ -434,3 +434,5 @@ ALTER TABLE talents ADD COLUMN IF NOT EXISTS contact_mode VARCHAR(10);
 ALTER TABLE talents ADD COLUMN IF NOT EXISTS contact_name VARCHAR(200);
 -- Scope of work — ขอบเขตงานที่เรทราคานี้ครอบคลุม (ผู้ใช้สั่ง 30 ก.ย. 2026)
 ALTER TABLE talents ADD COLUMN IF NOT EXISTS scope TEXT;
+-- แบรนด์ที่คนนี้เหมาะ/เคยทำให้ (เลือกได้หลายแบรนด์ · บังคับเลือกในฟอร์ม · ไม่ผูกสิทธิ์การเห็น — ทุกคนในทีมยังเห็นการ์ด) 30 ก.ย. 2026
+ALTER TABLE talents ADD COLUMN IF NOT EXISTS brands JSONB NOT NULL DEFAULT '[]'::jsonb;

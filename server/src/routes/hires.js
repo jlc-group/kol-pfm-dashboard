@@ -101,6 +101,9 @@ const TALENT_LABEL = { name: 'ชื่อ', kind: 'ประเภทงาน'
 // ช่องทางติดต่อ (ผู้ใช้สั่ง 30 ก.ย. 2026) — ต้องตรงกับ CONTACT_MODES ใน client/src/pages/hires/TalentForm.jsx
 //   self = ติดต่อเอง: ชื่อผู้ติดต่อ + เบอร์/LINE · agency = ผ่านเอเจนซี่: ชื่อเอเจนซี่ + ชื่อผู้ติดต่อของเอเจนซี่ (ไม่มีเบอร์)
 const CONTACT_MODES = ['self', 'agency'];
+// แบรนด์ (เลือกได้หลายแบรนด์ · บังคับอย่างน้อย 1) — รายชื่อแบรนด์อยู่ฝั่งหน้าเว็บ (client/src/data/brands.js) ที่นี่กันแค่รูปแบบ/ขนาด
+const TALENT_BRANDS_MAX = 20;
+const TALENT_BRAND_LEN = 60;
 // หน่วยของเรทราคา — ต้องตรงกับตัวเลือกในฟอร์ม (client/src/pages/hires/TalentForm.jsx)
 const RATE_UNITS = ['ต่อวัน', 'ต่องาน', 'ต่อชั่วโมง', 'ต่อโพสต์', 'ต่อคลิป'];
 const RATE_MAX = 1e9;
@@ -146,6 +149,20 @@ function talentInput(body, { partial = false } = {}) {
         if (m === 'self') fields.agency = null;
         if (m === 'agency') fields.contact = null;
     }
+    // ตรวจท้ายสุด — ข้อความ error ของช่องอื่นขึ้นก่อน (ฟอร์มโชว์ทีละข้อ)
+    if (b.brands !== undefined) {
+        if (!Array.isArray(b.brands)) return { error: 'แบรนด์ไม่ถูกต้อง' };
+        const list = [...new Set(b.brands.map(textOf).filter(Boolean))];
+        if (list.length > TALENT_BRANDS_MAX || list.some(x => x.length > TALENT_BRAND_LEN)) return { error: 'แบรนด์ไม่ถูกต้อง' };
+        fields.brands = list;
+    }
+    if (!partial && b.brands === undefined) {
+        // ฟอร์มรุ่นก่อนมีช่องแบรนด์ (เปิดค้างไว้ก่อน deploy) ไม่ส่ง brands มาเลย — กด "เลือกแบรนด์" ไม่ได้ ต้องรีเฟรชก่อน
+        return { error: 'หน้าเว็บนี้เป็นรุ่นเก่า — กดรีเฟรชหน้า (F5) แล้วเลือกแบรนด์ก่อนบันทึก' };
+    }
+    if ((!partial || b.brands !== undefined) && !(fields.brands && fields.brands.length)) {
+        return { error: 'เลือกแบรนด์อย่างน้อย 1 แบรนด์' };
+    }
     return { fields };
 }
 
@@ -153,7 +170,7 @@ function talentInput(body, { partial = false } = {}) {
 const fileInfo = f => (f && typeof f === 'object' && (f.filename || f.original)
     ? { original: f.original || null, size: Number(f.size) || null } : null);
 const talentOut = (t, req) => ({
-    id: t.id, name: t.name, kind: t.kind, link: t.link || null,
+    id: t.id, name: t.name, kind: t.kind, link: t.link || null, brands: Array.isArray(t.brands) ? t.brands : [],
     contact_mode: t.contact_mode || null, contact_name: t.contact_name || null, contact: t.contact || null, agency: t.agency || null,
     rate: t.rate == null ? null : Number(t.rate), rate_unit: t.rate_unit || null, scope: t.scope || null,
     image: fileInfo(t.image), image_link: t.image_link || null,

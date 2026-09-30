@@ -2,8 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { api } from '../../api/client.js';
 import Icon from '../../components/Icon.jsx';
 import FilePreviewModal from '../../components/FilePreviewModal.jsx';
-import { useAuth } from '../../auth/AuthContext.jsx';
-import { visibleBrands } from '../../data/brands.js';
+import { BRANDS } from '../../data/brands.js';
 import { T } from '../../data/talentLabels.js';
 import CompCard, { accountOf } from './CompCard.jsx';
 import TalentForm from './TalentForm.jsx';
@@ -18,8 +17,6 @@ const NONE = [];
 const low = v => String(v == null ? '' : v).toLowerCase();
 
 export default function PeopleTab() {
-    const { user } = useAuth();
-    const BRANDS = visibleBrands(user);
     const [data, setData] = useState(null);
     const [error, setError] = useState('');
     const [search, setSearch] = useState('');
@@ -59,12 +56,19 @@ export default function PeopleTab() {
         && (!q || hay.get(c).includes(q));
     const shown = cards.filter(c => fits(c));
     const brandCount = b => cards.filter(c => fits(c, 'brand') && (!b || (c.brands || []).includes(b))).length;
-    const brandOptions = BRANDS.filter(b => cards.some(c => (c.brands || []).includes(b)));
+    // ตัวกรอง Brand = ทุกแบรนด์ที่มีบนการ์ด (เรียงตามรายชื่อแบรนด์) — การ์ดจากงาน server กรองตามสิทธิ์แบรนด์มาแล้ว
+    // แบรนด์ที่ทีมติดให้คนที่เพิ่มเอง ทุกคนเห็น (ผู้ใช้เลือก 30 ก.ย.) จึงต้องกรองได้ด้วย แม้ไม่ใช่แบรนด์ที่ตัวเองดูแล
+    const brandOptions = useMemo(() => {
+        const on = new Set(cards.flatMap(c => c.brands || []));
+        return [...BRANDS.filter(b => on.has(b)), ...[...on].filter(b => b && !BRANDS.includes(b)).sort()];
+    }, [cards]);
 
     // เปลี่ยนตัวกรอง → กลับไปเริ่มหน้าแรก (ไม่งั้นผลใหม่เปิดมาเต็มจำนวนที่กดดูเพิ่มไว้ รูปโหลดพรวดเดียว)
     useEffect(() => { setLimit(PAGE); }, [kind, brand, q]);
     // โหลดใหม่หลังแก้/ลบ แล้วประเภทที่กรองอยู่ไม่มีการ์ดแล้ว — ล้างตัวกรอง (ไม่งั้นดรอปดาวน์ไม่มีตัวเลือกนั้น แต่ยังกรองอยู่)
     useEffect(() => { if (kind && data && !kinds.includes(kind)) setKind(''); }, [kinds]);   // eslint-disable-line react-hooks/exhaustive-deps
+    // แบบเดียวกันกับตัวกรอง Brand — แบรนด์ของการ์ดที่เพิ่มเองแก้/ลบได้ ชิปแบรนด์ที่เลือกอยู่จึงหายไปได้
+    useEffect(() => { if (brand && data && !brandOptions.includes(brand)) setBrand(''); }, [brandOptions]);   // eslint-disable-line react-hooks/exhaustive-deps
     const filtered = !!(kind || brand || q);
     const clearAll = () => { setKind(''); setBrand(''); setSearch(''); };
     const rest = shown.length - limit;

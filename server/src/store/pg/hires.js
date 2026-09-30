@@ -227,6 +227,8 @@ const hires = {
                 key: personKey(t), name: str(t.name), kind: str(t.kind) || null,
                 agency: str(t.agency) || null, contact: str(t.contact) || null, link: str(t.link) || null,
                 contact_mode: str(t.contact_mode) || null, contact_name: str(t.contact_name) || null,
+                // แบรนด์ที่ทีมเลือกไว้ (หลายแบรนด์) — ไม่ใช่แบรนด์ของงาน (brand ของแถวนี้ยังเป็น null)
+                talent_brands: Array.isArray(t.brands) ? t.brands.map(str).filter(Boolean) : [],
                 date: thDayOf(t.updated_at) || thDayOf(t.created_at), ts: str(t.updated_at),
                 fee: 0, confirmed: false, sub: null,
                 file: fk ? { type: fk, path: `${files}image${ver(t.image)}` } : null,
@@ -302,7 +304,7 @@ const hires = {
                 proposed_by: uniq(list.map(e => e.by)),
                 jobs: projects.length,
                 projects,
-                brands: uniq(list.map(e => e.brand)),
+                brands: uniq(list.flatMap(e => [e.brand, ...(e.talent_brands || [])])),
                 last_date: first(e => e.date),
                 // คนที่เพิ่มเข้า Talent Book เอง: เรท / หมายเหตุ / ผู้เพิ่ม / แก้ได้ไหม (ไม่มี = มาจากงานอย่างเดียว)
                 talent: saved ? saved.talent : null
