@@ -432,3 +432,5 @@ CREATE UNIQUE INDEX IF NOT EXISTS talents_person_key ON talents ((lower(btrim(na
 --   | 'agency' ผ่านเอเจนซี่ (agency ชื่อเอเจนซี่ + contact_name คนที่ติดต่อกับเอเจนซี่ · ไม่มีเบอร์) | NULL = ยังไม่ได้เลือก
 ALTER TABLE talents ADD COLUMN IF NOT EXISTS contact_mode VARCHAR(10);
 ALTER TABLE talents ADD COLUMN IF NOT EXISTS contact_name VARCHAR(200);
+-- Scope of work — ขอบเขตงานที่เรทราคานี้ครอบคลุม (ผู้ใช้สั่ง 30 ก.ย. 2026)
+ALTER TABLE talents ADD COLUMN IF NOT EXISTS scope TEXT;

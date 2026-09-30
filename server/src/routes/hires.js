@@ -95,9 +95,9 @@ router.get('/tasks/count', async (req, res, next) => {
 // คนเดียวกัน = ชื่อ + ประเภทงาน (ไม่สนตัวพิมพ์) — ห้ามซ้ำในตาราง talents (การ์ดเดียวต้องมีแถวให้แก้แถวเดียว)
 // คนที่มาจากงานที่ชื่อ + ประเภทงานตรงกัน รวมเป็นการ์ดเดียวที่ store.hires.book()
 const KIND_OTHER = 'อื่น ๆ';   // ตัวเลือก "อื่น ๆ" ที่ยังไม่ได้พิมพ์ว่าเป็นงานอะไร (client/src/data/hireKinds.js) — ห้ามเก็บเป็นประเภทงาน
-const TALENT_MAX = { name: 200, kind: 100, link: 1000, contact_name: 200, contact: 200, agency: 200, rate_unit: 40, image_link: 1000, clip_link: 1000, note: 1000 };
+const TALENT_MAX = { name: 200, kind: 100, link: 1000, contact_name: 200, contact: 200, agency: 200, rate_unit: 40, scope: 2000, image_link: 1000, clip_link: 1000, note: 1000 };
 const TALENT_LABEL = { name: 'ชื่อ', kind: 'ประเภทงาน', link: 'Account', contact_name: 'ชื่อผู้ติดต่อ', contact: 'เบอร์ / LINE', agency: 'ชื่อเอเจนซี่',
-    rate_unit: 'หน่วยเรท', image_link: 'ลิงก์รูป', clip_link: 'ลิงก์คลิป', note: 'หมายเหตุ' };
+    rate_unit: 'หน่วยเรท', scope: 'Scope of work ', image_link: 'ลิงก์รูป', clip_link: 'ลิงก์คลิป', note: 'หมายเหตุ' };
 // ช่องทางติดต่อ (ผู้ใช้สั่ง 30 ก.ย. 2026) — ต้องตรงกับ CONTACT_MODES ใน client/src/pages/hires/TalentForm.jsx
 //   self = ติดต่อเอง: ชื่อผู้ติดต่อ + เบอร์/LINE · agency = ผ่านเอเจนซี่: ชื่อเอเจนซี่ + ชื่อผู้ติดต่อของเอเจนซี่ (ไม่มีเบอร์)
 const CONTACT_MODES = ['self', 'agency'];
@@ -155,7 +155,7 @@ const fileInfo = f => (f && typeof f === 'object' && (f.filename || f.original)
 const talentOut = (t, req) => ({
     id: t.id, name: t.name, kind: t.kind, link: t.link || null,
     contact_mode: t.contact_mode || null, contact_name: t.contact_name || null, contact: t.contact || null, agency: t.agency || null,
-    rate: t.rate == null ? null : Number(t.rate), rate_unit: t.rate_unit || null,
+    rate: t.rate == null ? null : Number(t.rate), rate_unit: t.rate_unit || null, scope: t.scope || null,
     image: fileInfo(t.image), image_link: t.image_link || null,
     clip: fileInfo(t.clip), clip_link: t.clip_link || null,
     note: t.note || null, added_by: t.created_by || null,

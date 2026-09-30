@@ -48,7 +48,7 @@ export default function PeopleTab() {
         c.name, c.agency, c.link, (accountOf(c.link) || {}).label, c.contact, c.contact_name,
         ...(c.team_contacts || []), ...(c.proposed_by || []), ...(c.projects || []).map(p => p && p.name),
         // คนที่เพิ่มเอง: หมายเหตุ + คนที่เพิ่ม
-        c.talent && c.talent.note, c.talent && c.talent.added_by
+        c.talent && c.talent.note, c.talent && c.talent.scope, c.talent && c.talent.added_by
     ].map(low).join('\n')])), [cards]);
 
     const q = search.trim().toLowerCase();

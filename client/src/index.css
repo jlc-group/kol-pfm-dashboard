@@ -4697,6 +4697,11 @@ button { color: inherit; }
 .tb-rows svg { flex-shrink: 0; color: var(--mint-dark); }
 .tb-row-v { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .tb-row-k { color: var(--muted); font-weight: 600; white-space: nowrap; }
+/* Scope of work ของคนที่เพิ่มเอง — ใต้ราคา ตัดเหลือ 2 บรรทัด (ชี้ดูเต็ม) · ขึ้นบรรทัดใหม่ตามที่พิมพ์ */
+.tb-scope {
+    flex-shrink: 0; font-size: 11.5px; line-height: 1.45; color: var(--text); white-space: pre-line; overflow-wrap: anywhere;
+    display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden;
+}
 .tb-acc { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: var(--mint-dark); font-weight: 700; }
 .tb-acc:hover { text-decoration: underline; }
 /* ข้อความสำหรับโปรแกรมอ่านจอ (ไอคอนบอกความหมายแทนป้ายบนจอ) */

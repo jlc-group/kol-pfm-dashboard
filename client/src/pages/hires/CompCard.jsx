@@ -163,6 +163,7 @@ export default function CompCard({ card, onPreview, onEdit }) {
     const savedOnly = card.group === 'saved';
     const talent = card.talent || null;
     const rate = talent && Number(talent.rate) > 0 ? Number(talent.rate) : 0;
+    const scope = talent ? str(talent.scope) : '';
     const sub = !booked ? SUB_LABEL[card.sub] || '' : '';
     // server ส่งมาใหม่สุดก่อน ไม่เกิน 3 บรรทัด และตัด ฿0 ออกแล้ว — กรองซ้ำกันข้อมูลหลุดรูปแบบ
     // มีเรทที่ใส่เอง = บรรทัดแรก แล้วตามด้วยราคาจากงาน (รวมไม่เกิน FEES_SHOWN บรรทัด)
@@ -227,6 +228,10 @@ export default function CompCard({ card, onPreview, onEdit }) {
                     </ul>
                 ) : (
                     <div className="tb-fees tb-fee-none">ยังไม่มีราคา</div>
+                )}
+
+                {scope && (
+                    <div className="tb-scope" title={scope}><span className="tb-row-k">Scope of work :</span> {scope}</div>
                 )}
 
                 {(acc || contact || selfName || agencyName || team.length > 0 || by.length > 0) && (

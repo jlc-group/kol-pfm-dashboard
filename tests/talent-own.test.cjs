@@ -55,7 +55,7 @@ store.talents.findById = async id => { const r = rows.get(Number(id)); return r 
 store.talents.findByKey = async (name, kind, exceptId = null) =>
     [...rows.values()].find(r => norm(r.name) === norm(name) && norm(r.kind) === norm(kind) && r.id !== Number(exceptId)) || null;
 store.talents.create = async (fields, { byId = null, byName = null } = {}) => {
-    const r = { id: ++seq, name: null, kind: null, link: null, contact_mode: null, contact_name: null, contact: null, agency: null, rate: null, rate_unit: null,
+    const r = { id: ++seq, name: null, kind: null, link: null, contact_mode: null, contact_name: null, contact: null, agency: null, rate: null, rate_unit: null, scope: null,
         image: null, image_link: null, clip: null, clip_link: null, note: null,
         ...fields, created_by_id: byId, created_by: byName, created_at: iso(), updated_at: iso() };
     rows.set(r.id, r);
@@ -251,6 +251,21 @@ test('ช่องทางติดต่อ: แก้บางช่องโ
     assert.deepEqual([r3.body.data.contact_mode, r3.body.data.contact, r3.body.data.agency], [null, '080-ใหม่', 'Old Co']);
 });
 
+test('Scope of work: เก็บ / แก้ / ล้างได้ · ยาวเกิน 2000 → 400 · ส่งไปกับการ์ด (card.talent.scope)', async () => {
+    const scope = ' ถ่ายภาพนิ่ง 1 วัน\nคลิปสั้น 2 ชิ้น ';
+    const a = await call(2, 'POST', '/hires/talents', { name: 'ต้น', kind: 'นางแบบ', rate: 650000, rate_unit: 'ต่องาน', scope });
+    assert.equal(a.status, 201);
+    assert.equal(a.body.data.scope, 'ถ่ายภาพนิ่ง 1 วัน\nคลิปสั้น 2 ชิ้น', 'ตัดช่องว่างหัวท้าย เก็บการขึ้นบรรทัด');
+    const card = (await call(2, 'GET', '/hires/book')).body.data.cards.find(x => x.name === 'ต้น');
+    assert.equal(card.talent.scope, 'ถ่ายภาพนิ่ง 1 วัน\nคลิปสั้น 2 ชิ้น');
+    const long = await call(2, 'PUT', `/hires/talents/${a.body.data.id}`, { scope: 'ก'.repeat(2001) });
+    assert.equal(long.status, 400);
+    assert.match(long.body.message, /Scope of work ยาวเกิน 2000/);
+    const cleared = await call(2, 'PUT', `/hires/talents/${a.body.data.id}`, { scope: '' });
+    assert.equal(cleared.body.data.scope, null);
+    assert.equal(cleared.body.data.rate, 650000, 'ช่องอื่นคงเดิม');
+});
+
 test('ช่องทางติดต่อ: ค่าแปลก / ชื่อผู้ติดต่อยาวเกิน → 400 ไม่บันทึก', async () => {
     const r1 = await call(2, 'POST', '/hires/talents', { name: 'ต้น', kind: 'นางแบบ', contact_mode: 'phone' });
     assert.equal(r1.status, 400);
@@ -377,7 +392,7 @@ test('Talent Book: คนที่เพิ่มเองขึ้นเป็�
     assert.deepEqual(c.fees, [], 'เรทที่ใส่เองไม่ใช่ราคาจากงาน');
     assert.equal(c.photo.type, 'image');
     assert.match(c.photo.path, talentPath(a.id, 'image'), 'path มีเวอร์ชันไฟล์ — เปลี่ยนรูปแล้วการ์ดโหลดใหม่');
-    assert.deepEqual(c.talent, { id: a.id, rate: 5000, rate_unit: 'ต่อวัน', note: 'ถนัดงานผิว', added_by: 'แพรว', editable: false });
+    assert.deepEqual(c.talent, { id: a.id, rate: 5000, rate_unit: 'ต่อวัน', scope: null, note: 'ถนัดงานผิว', added_by: 'แพรว', editable: false });
     assert.equal(forFon.counts.saved, 1);
 
     const forPraew = (await call(2, 'GET', '/hires/book')).body.data;
