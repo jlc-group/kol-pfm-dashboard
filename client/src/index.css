@@ -4655,6 +4655,8 @@ button { color: inherit; }
 .tb-fee.rate .tb-fee-v { color: #6d28d9; }
 .tb-toolbar .tb-add { flex: none; display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
 .tf-rate { display: grid; grid-template-columns: minmax(0, 1fr) 150px; gap: 8px; }
+/* การ์ด Talent Book: ชื่อผู้ติดต่อ (ติดต่อเอง) นำหน้าเบอร์/LINE */
+.tb-contact-name { font-weight: 700; }
 .tf-file { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .tf-file-name { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; padding: 6px 10px; border-radius: 9px;
     background: var(--bg-soft); font-size: 13px; overflow-wrap: anywhere; }

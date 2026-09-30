@@ -8,7 +8,7 @@
 const { query, withTransaction, insertRow, updateRow } = require('./_base');
 
 // ช่องที่แก้ได้จากฟอร์ม — id / ผู้เพิ่ม / เวลา / ไฟล์ ไม่รับจากตรงนี้ (ไฟล์มีเส้นของตัวเอง)
-const EDITABLE = ['name', 'kind', 'link', 'contact', 'agency', 'rate', 'rate_unit', 'image_link', 'clip_link', 'note'];
+const EDITABLE = ['name', 'kind', 'link', 'contact_mode', 'contact_name', 'contact', 'agency', 'rate', 'rate_unit', 'image_link', 'clip_link', 'note'];
 const pick = fields => {
     const out = {};
     for (const k of EDITABLE) if (fields && fields[k] !== undefined) out[k] = fields[k];

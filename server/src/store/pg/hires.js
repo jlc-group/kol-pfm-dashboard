@@ -226,6 +226,7 @@ const hires = {
                 direct: true, absorbed: false,
                 key: personKey(t), name: str(t.name), kind: str(t.kind) || null,
                 agency: str(t.agency) || null, contact: str(t.contact) || null, link: str(t.link) || null,
+                contact_mode: str(t.contact_mode) || null, contact_name: str(t.contact_name) || null,
                 date: thDayOf(t.updated_at) || thDayOf(t.created_at), ts: str(t.updated_at),
                 fee: 0, confirmed: false, sub: null,
                 file: fk ? { type: fk, path: `${files}image${ver(t.image)}` } : null,
@@ -259,6 +260,9 @@ const hires = {
             const mine = list.find(e => e.talent) || null;
             const first = pick => { for (const e of list) { const v = pick(e); if (v) return v; } return null; };
             const firstMine = pick => (mine && pick(mine)) || first(pick);
+            // ทีมเลือกช่องทางติดต่อไว้แล้ว (ติดต่อเอง / ผ่านเอเจนซี่) = เบอร์กับสังกัดเชื่อแถวที่เพิ่มเองทั้งชุด ไม่เติมจากงาน
+            // (ผ่านเอเจนซี่ตั้งใจไม่มีเบอร์ · ติดต่อเองไม่มีสังกัด — ถ้าเติมจากงาน เบอร์ของคนอื่นจะไปโผล่คู่ชื่อผู้ติดต่อ)
+            const modeSet = !!(mine && mine.contact_mode);
             // ชื่อที่เสนอที่ถูกยุบเข้าแถวคนแล้วไม่นับซ้ำเป็นสถานะ/ค่าตัว (แถวคนเป็นเรื่องจริงของเขาต่อจากนั้น)
             const own = list.filter(e => !e.absorbed);
             const head = own[0] || list[0];
@@ -280,7 +284,11 @@ const hires = {
                 key: head.key, name: head.name, kind: head.kind,
                 group: booked ? 'booked' : onlySaved ? 'saved' : 'casting',
                 sub: booked || onlySaved ? null : subFrom.sub,
-                agency: firstMine(e => e.agency), contact: firstMine(e => e.contact), link: firstMine(e => e.link),
+                agency: modeSet ? mine.agency : firstMine(e => e.agency),
+                contact: modeSet ? mine.contact : firstMine(e => e.contact),
+                link: firstMine(e => e.link),
+                // ช่องทางติดต่อที่ทีมเลือกไว้ตอนเพิ่มเอง (self / agency) + ชื่อผู้ติดต่อ — คนที่มาจากงานอย่างเดียวไม่มี (null)
+                contact_mode: mine ? mine.contact_mode : null, contact_name: mine ? mine.contact_name : null,
                 // รูปจริงก่อน (โชว์เป็นรูปย่อได้) → PDF → ลิงก์รูปภายนอก (หน้าเว็บไม่ดึงรูปจากเว็บคนอื่นมาโชว์ แค่เป็นปุ่มเปิด)
                 photo: fileOf('image') || fileOf('pdf') || (imageLink ? { type: 'link', url: imageLink } : null),
                 clip: clipFile ? { type: 'file', path: clipFile } : clipLink ? { type: 'link', url: clipLink } : null,

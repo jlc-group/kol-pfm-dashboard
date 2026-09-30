@@ -10,8 +10,16 @@ import { kindError, kindValue } from '../../data/hireKinds.js';
 // ไฟล์รูป / คลิปอัปหลังบันทึกข้อมูลแล้ว (ต้องมี id ก่อน) — อัปพลาด: ข้อมูลเก็บแล้ว ฟอร์มค้างอยู่ให้กดบันทึกซ้ำเพื่อลองอัปใหม่
 // หน่วยเรทต้องตรงกับ RATE_UNITS ใน server/src/routes/hires.js
 export const RATE_UNITS = ['ต่อวัน', 'ต่องาน', 'ต่อชั่วโมง', 'ต่อโพสต์', 'ต่อคลิป'];
-const EMPTY = { name: '', kind: '', link: '', contact: '', agency: '', rate: '', rate_unit: RATE_UNITS[0], image_link: '', clip_link: '', note: '' };
-const MAX = { name: 200, link: 1000, contact: 200, agency: 200, image_link: 1000, clip_link: 1000, note: 1000 };
+// ช่องทางติดต่อ — ติ๊กเลือกก่อน แล้วช่องที่ต้องกรอกเปลี่ยนตามแบบ (ผู้ใช้สั่ง 30 ก.ย. 2026) · ค่าต้องตรงกับ CONTACT_MODES ใน server
+//   ติดต่อเอง = ชื่อผู้ติดต่อ + เบอร์/LINE · ผ่าน Agency = ชื่อเอเจนซี่ + ชื่อผู้ติดต่อของเอเจนซี่ (ไม่มีช่องเบอร์/LINE)
+export const CONTACT_MODES = [['self', 'ติดต่อเอง'], ['agency', 'ผ่าน Agency']];
+const EMPTY = { name: '', kind: '', link: '', contact_mode: '', contact_name: '', contact: '', agency: '', rate: '', rate_unit: RATE_UNITS[0], image_link: '', clip_link: '', note: '' };
+const MAX = { name: 200, link: 1000, contact_name: 200, contact: 200, agency: 200, image_link: 1000, clip_link: 1000, note: 1000 };
+// แถวที่บันทึกก่อนมีตัวเลือกนี้ (contact_mode ว่าง) — เดาจากข้อมูลที่มี: มีสังกัด = ผ่านเอเจนซี่ · มีเบอร์/ชื่อ = ติดต่อเอง
+// มีทั้งเบอร์และสังกัด (ฟอร์มรุ่นเก่า) = ไม่เดา ปล่อยให้คนเลือกเอง — เดาแล้วช่องที่ถูกซ่อนจะหายตอนกดบันทึกโดยไม่รู้ตัว
+const modeOf = t => (t.contact_mode === 'self' || t.contact_mode === 'agency') ? t.contact_mode
+    : (t.agency && t.contact) ? ''
+    : t.agency ? 'agency' : (t.contact || t.contact_name) ? 'self' : '';
 const FILES = {
     image: { exts: ['.png', '.jpg', '.jpeg', '.webp', '.pdf'], mb: 10, accept: '.png,.jpg,.jpeg,.webp,.pdf', word: 'รูป/คอมการ์ด' },
     clip: { exts: ['.mp4', '.mov', '.m4v', '.webm'], mb: 95, accept: '.mp4,.mov,.m4v,.webm,video/*', word: 'คลิปผลงาน' }
@@ -76,7 +84,8 @@ export default function TalentForm({ talentId = null, onClose, onSaved }) {
                 if (!on) return;
                 const t = res.data || {};
                 const next = {
-                    name: S(t.name), kind: S(t.kind), link: S(t.link), contact: S(t.contact), agency: S(t.agency),
+                    name: S(t.name), kind: S(t.kind), link: S(t.link),
+                    contact_mode: modeOf(t), contact_name: S(t.contact_name), contact: S(t.contact), agency: S(t.agency),
                     rate: t.rate == null ? '' : String(t.rate), rate_unit: t.rate_unit || RATE_UNITS[0],
                     image_link: S(t.image_link), clip_link: S(t.clip_link), note: S(t.note)
                 };
@@ -110,6 +119,12 @@ export default function TalentForm({ talentId = null, onClose, onSaved }) {
         return e;
     }
     const errs = fieldErrors();
+    // ยังไม่เลือกช่องทางติดต่อ: คนใหม่ = บอกให้เลือก · แถวเก่าที่มีข้อมูลอยู่แล้ว = โชว์ของเดิมให้เห็น (ช่องยังซ่อนอยู่จนกว่าจะเลือก)
+    const legacy = [f.agency.trim() && `สังกัด ${f.agency.trim()}`, f.contact.trim() && `เบอร์/LINE ${f.contact.trim()}`,
+        f.contact_name.trim() && `ผู้ติดต่อ ${f.contact_name.trim()}`].filter(Boolean);
+    const modeHint = f.contact_mode ? ''
+        : legacy.length ? `ข้อมูลเดิม: ${legacy.join(' · ')} — เลือกแบบด้านบนเพื่อแก้ (ไม่เลือกก็เก็บไว้ตามเดิม)`
+        : 'เลือกก่อนว่าติดต่อคนนี้เอง หรือติดต่อผ่านเอเจนซี่ แล้วจะมีช่องให้กรอก';
     const E = tried ? errs : {};
     const dirty = JSON.stringify(f) !== clean.current || !!imageFile || !!clipFile || dropImage || dropClip;
 
@@ -138,9 +153,13 @@ export default function TalentForm({ talentId = null, onClose, onSaved }) {
         }
         setSaving(true); setErr('');
         const hasRate = f.rate.trim() !== '';
+        // ส่งเฉพาะช่องของแบบที่เลือก — สลับแบบไปมาแล้ว ของที่พิมพ์ในแบบเดิมยังอยู่ในฟอร์ม แต่ไม่ถูกบันทึก
+        // ยังไม่เลือก = ส่งค่าเดิมกลับไปตามที่โหลดมา (คนใหม่ = ว่างอยู่แล้ว · แถวเก่าที่มีทั้งเบอร์และสังกัด = ไม่หาย)
+        const mode = f.contact_mode;
         const body = {
-            name: f.name.trim(), kind: kindValue(f.kind),
-            link: f.link.trim(), contact: f.contact.trim(), agency: f.agency.trim(),
+            name: f.name.trim(), kind: kindValue(f.kind), link: f.link.trim(),
+            contact_mode: mode, contact_name: f.contact_name.trim(),
+            contact: mode === 'agency' ? '' : f.contact.trim(), agency: mode === 'self' ? '' : f.agency.trim(),
             rate: hasRate ? rateNum(f.rate) : null, rate_unit: hasRate ? f.rate_unit : null,
             image_link: f.image_link.trim(), clip_link: f.clip_link.trim(), note: f.note.trim()
         };
@@ -259,16 +278,38 @@ export default function TalentForm({ talentId = null, onClose, onSaved }) {
                             <input id={id('link')} value={f.link} maxLength={MAX.link} autoComplete="off"
                                 onChange={e => up('link', e.target.value)} placeholder="IG / TikTok / Facebook (https://...)" />
                         </Field>
-                        <div className="qf-row2">
-                            <Field label="เบอร์ / LINE" htmlFor={id('contact')}>
-                                <input id={id('contact')} value={f.contact} maxLength={MAX.contact} autoComplete="off"
-                                    onChange={e => up('contact', e.target.value)} placeholder="เบอร์โทร หรือ LINE ID" />
-                            </Field>
-                            <Field label="สังกัด" htmlFor={id('agency')}>
-                                <input id={id('agency')} value={f.agency} maxLength={MAX.agency} autoComplete="off"
-                                    onChange={e => up('agency', e.target.value)} placeholder="ไม่มีก็เว้นไว้" />
-                            </Field>
-                        </div>
+                        <Field label="ช่องทางติดต่อ" labelId={id('mode')} hint={modeHint}>
+                            <div className="qf-chips" role="radiogroup" aria-labelledby={id('mode')}>
+                                {CONTACT_MODES.map(([v, label]) => (
+                                    <button type="button" key={v} role="radio" aria-checked={f.contact_mode === v}
+                                        className={'qf-chip' + (f.contact_mode === v ? ' on' : '')} onClick={() => up('contact_mode', v)}>{label}</button>
+                                ))}
+                            </div>
+                        </Field>
+                        {f.contact_mode === 'self' && (
+                            <div className="qf-row2">
+                                <Field label="ชื่อผู้ติดต่อ" htmlFor={id('cname')}>
+                                    <input id={id('cname')} value={f.contact_name} maxLength={MAX.contact_name} autoComplete="off"
+                                        onChange={e => up('contact_name', e.target.value)} placeholder="เช่น ตัวเอง / ผู้จัดการส่วนตัว" />
+                                </Field>
+                                <Field label="เบอร์ / LINE" htmlFor={id('contact')}>
+                                    <input id={id('contact')} value={f.contact} maxLength={MAX.contact} autoComplete="off"
+                                        onChange={e => up('contact', e.target.value)} placeholder="เบอร์โทร หรือ LINE ID" />
+                                </Field>
+                            </div>
+                        )}
+                        {f.contact_mode === 'agency' && (
+                            <div className="qf-row2">
+                                <Field label="ชื่อเอเจนซี่" htmlFor={id('agency')}>
+                                    <input id={id('agency')} value={f.agency} maxLength={MAX.agency} autoComplete="off"
+                                        onChange={e => up('agency', e.target.value)} placeholder="ชื่อเอเจนซี่ / สังกัด" />
+                                </Field>
+                                <Field label="ชื่อผู้ติดต่อ (ของเอเจนซี่)" htmlFor={id('cname')}>
+                                    <input id={id('cname')} value={f.contact_name} maxLength={MAX.contact_name} autoComplete="off"
+                                        onChange={e => up('contact_name', e.target.value)} placeholder="คนที่เราคุยด้วยที่เอเจนซี่" />
+                                </Field>
+                            </div>
+                        )}
                         <Field label="เรทราคา (บาท)" err={E.rate} htmlFor={id('rate')} hint="ยังไม่รู้ก็เว้นไว้ได้">
                             <div className="tf-rate">
                                 <input id={id('rate')} inputMode="decimal" value={f.rate} autoComplete="off"

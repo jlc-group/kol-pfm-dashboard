@@ -215,6 +215,7 @@ test('book: a picked candidate and the person row it became are one card (even a
     assert.deepEqual(card(all, 'ดาว|นางแบบ'), {
         key: 'ดาว|นางแบบ', name: 'ดาว', kind: 'นางแบบ', group: 'casting', sub: 'booking',
         agency: 'Star Co', contact: '081-000-0003', link: 'https://www.tiktok.com/@dao',
+        contact_mode: null, contact_name: null,
         photo: { type: 'image', path: '/projects/72/hires/h9/image' },
         clip: { type: 'file', path: '/projects/72/hires/r1/candidates/c3/video' },
         fees: [{ fee: 6500, kind: 'proposed', project_id: 72, project_name: 'ถ่ายแบบ Sep', brand: 'Jdent', date: '2026-09-18' }],
@@ -351,7 +352,7 @@ test('book: only the listed fields leave the server (no notes, no user ids)', as
     for (const secret of ['โน้ตภายในทีม', 'เกินงบลับมาก', 'โน้ตคนเสนอ', 'by_id', 'assignee', 'requested_by', 'filename', 'hire_72_1.jpg']) {
         assert.ok(!json.includes(secret), secret);
     }
-    const KEYS = ['key', 'name', 'kind', 'group', 'sub', 'agency', 'contact', 'link', 'photo', 'clip', 'fees',
+    const KEYS = ['key', 'name', 'kind', 'group', 'sub', 'agency', 'contact', 'contact_mode', 'contact_name', 'link', 'photo', 'clip', 'fees',
         'team_contacts', 'proposed_by', 'jobs', 'projects', 'brands', 'last_date', 'talent'].sort();
     all.cards.forEach(c => assert.deepEqual(Object.keys(c).sort(), KEYS, c.key));
 });

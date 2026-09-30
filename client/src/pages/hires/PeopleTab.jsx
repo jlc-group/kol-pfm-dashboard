@@ -45,7 +45,7 @@ export default function PeopleTab() {
     // ข้อความที่ค้นได้ของแต่ละใบ — ชื่อ / สังกัด / Account / เบอร์-LINE / ผู้ติดต่อ / เสนอโดย / ชื่องาน
     const hay = useMemo(() => new Map(cards.map(c => [c, [
         // ชื่อบัญชีแบบที่การ์ดโชว์ (เช่น "IG @baitoey") — ลิงก์ IG / Facebook / X ไม่มี @ ในตัว พิมพ์ตามที่เห็นบนการ์ดต้องเจอ
-        c.name, c.agency, c.link, (accountOf(c.link) || {}).label, c.contact,
+        c.name, c.agency, c.link, (accountOf(c.link) || {}).label, c.contact, c.contact_name,
         ...(c.team_contacts || []), ...(c.proposed_by || []), ...(c.projects || []).map(p => p && p.name),
         // คนที่เพิ่มเอง: หมายเหตุ + คนที่เพิ่ม
         c.talent && c.talent.note, c.talent && c.talent.added_by

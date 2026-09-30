@@ -55,7 +55,7 @@ store.talents.findById = async id => { const r = rows.get(Number(id)); return r 
 store.talents.findByKey = async (name, kind, exceptId = null) =>
     [...rows.values()].find(r => norm(r.name) === norm(name) && norm(r.kind) === norm(kind) && r.id !== Number(exceptId)) || null;
 store.talents.create = async (fields, { byId = null, byName = null } = {}) => {
-    const r = { id: ++seq, name: null, kind: null, link: null, contact: null, agency: null, rate: null, rate_unit: null,
+    const r = { id: ++seq, name: null, kind: null, link: null, contact_mode: null, contact_name: null, contact: null, agency: null, rate: null, rate_unit: null,
         image: null, image_link: null, clip: null, clip_link: null, note: null,
         ...fields, created_by_id: byId, created_by: byName, created_at: iso(), updated_at: iso() };
     rows.set(r.id, r);
@@ -206,6 +206,68 @@ test('เอเจนซี่เพิ่มไม่ได้ (เส้น /a
     const r = await call(4, 'POST', '/hires/talents', { name: 'ต้น', kind: 'นางแบบ' });
     assert.notEqual(r.status, 201);
     assert.equal(rows.size, 0);
+});
+
+// ---------------------------------------------------------------- ช่องทางติดต่อ (ผู้ใช้สั่ง 30 ก.ย. 2026)
+test('ช่องทางติดต่อ: ผ่าน Agency = ชื่อเอเจนซี่ + ผู้ติดต่อ ไม่เก็บเบอร์ · ติดต่อเอง = ชื่อผู้ติดต่อ + เบอร์ ไม่เก็บสังกัด', async () => {
+    const ag = await call(2, 'POST', '/hires/talents', { name: 'ต้น', kind: 'นางแบบ', contact_mode: 'agency',
+        agency: ' Star Model ', contact_name: ' พี่นก ', contact: '081-ซ่อนอยู่' });
+    assert.equal(ag.status, 201);
+    assert.equal(ag.body.data.contact_mode, 'agency');
+    assert.equal(ag.body.data.agency, 'Star Model');
+    assert.equal(ag.body.data.contact_name, 'พี่นก');
+    assert.equal(ag.body.data.contact, null, 'ผ่านเอเจนซี่ไม่มีช่องเบอร์ — ค่าที่หลุดมาไม่ถูกเก็บ');
+
+    const me = await call(2, 'POST', '/hires/talents', { name: 'ฟ้า', kind: 'นางแบบ', contact_mode: 'self',
+        contact_name: 'ฟ้าเอง', contact: 'line: fah', agency: 'ค้างจากแบบเดิม' });
+    assert.equal(me.status, 201);
+    assert.equal(me.body.data.contact_mode, 'self');
+    assert.equal(me.body.data.contact_name, 'ฟ้าเอง');
+    assert.equal(me.body.data.contact, 'line: fah');
+    assert.equal(me.body.data.agency, null, 'ติดต่อเองไม่เก็บชื่อเอเจนซี่');
+
+    // สลับแบบตอนแก้ → ช่องของแบบเดิมถูกล้าง
+    const sw = await call(2, 'PUT', `/hires/talents/${ag.body.data.id}`, { contact_mode: 'self', contact: '099-000-1111', contact_name: 'ต้นเอง' });
+    assert.equal(sw.status, 200);
+    assert.deepEqual([sw.body.data.contact_mode, sw.body.data.agency, sw.body.data.contact, sw.body.data.contact_name],
+        ['self', null, '099-000-1111', 'ต้นเอง']);
+    // ยังไม่เลือก (ค่าว่าง) = ว่าง ไม่ล้างช่องอื่น
+    const none = await call(2, 'PUT', `/hires/talents/${me.body.data.id}`, { contact_mode: '' });
+    assert.equal(none.body.data.contact_mode, null);
+    assert.equal(none.body.data.contact, 'line: fah');
+});
+
+test('ช่องทางติดต่อ: แก้บางช่องโดยไม่ส่งแบบ (หน้าเว็บรุ่นเก่า) → ยึดแบบที่บันทึกไว้ ช่องของอีกแบบไม่กลับเข้ามา', async () => {
+    const ag = (await call(2, 'POST', '/hires/talents', { name: 'ต้น', kind: 'นางแบบ', contact_mode: 'agency', agency: 'Star Model' })).body.data;
+    const me = (await call(2, 'POST', '/hires/talents', { name: 'ฟ้า', kind: 'นางแบบ', contact_mode: 'self', contact: '081' })).body.data;
+    const r1 = await call(2, 'PUT', `/hires/talents/${ag.id}`, { contact: '099-แอบใส่', note: 'x' });
+    assert.equal(r1.status, 200);
+    assert.deepEqual([r1.body.data.contact_mode, r1.body.data.contact, r1.body.data.agency, r1.body.data.note], ['agency', null, 'Star Model', 'x']);
+    const r2 = await call(2, 'PUT', `/hires/talents/${me.id}`, { agency: 'แอบใส่ Co' });
+    assert.deepEqual([r2.body.data.contact_mode, r2.body.data.agency, r2.body.data.contact], ['self', null, '081']);
+    // แถวเก่าที่ยังไม่มีแบบ: แก้ได้ตามเดิม ไม่ล้างอะไร
+    const old = (await call(2, 'POST', '/hires/talents', { name: 'ดาว', kind: 'นางแบบ', contact: '080', agency: 'Old Co' })).body.data;
+    const r3 = await call(2, 'PUT', `/hires/talents/${old.id}`, { contact: '080-ใหม่' });
+    assert.deepEqual([r3.body.data.contact_mode, r3.body.data.contact, r3.body.data.agency], [null, '080-ใหม่', 'Old Co']);
+});
+
+test('ช่องทางติดต่อ: ค่าแปลก / ชื่อผู้ติดต่อยาวเกิน → 400 ไม่บันทึก', async () => {
+    const r1 = await call(2, 'POST', '/hires/talents', { name: 'ต้น', kind: 'นางแบบ', contact_mode: 'phone' });
+    assert.equal(r1.status, 400);
+    assert.match(r1.body.message, /ช่องทางติดต่อไม่ถูกต้อง/);
+    const r2 = await call(2, 'POST', '/hires/talents', { name: 'ต้น', kind: 'นางแบบ', contact_mode: 'self', contact_name: 'ก'.repeat(201) });
+    assert.equal(r2.status, 400);
+    assert.match(r2.body.message, /ชื่อผู้ติดต่อยาวเกิน 200/);
+    assert.equal(rows.size, 0);
+});
+
+test('การ์ด Talent Book ส่งช่องทางติดต่อ + ชื่อผู้ติดต่อ · คนที่มาจากงานอย่างเดียวเป็น null', async () => {
+    await call(2, 'POST', '/hires/talents', { name: 'ต้น', kind: 'พิธีกร', contact_mode: 'agency', agency: 'Star Model', contact_name: 'พี่นก' });
+    const cards = (await call(2, 'GET', '/hires/book')).body.data.cards;
+    const c = cards.find(x => x.name === 'ต้น');
+    assert.deepEqual([c.contact_mode, c.contact_name, c.agency, c.contact], ['agency', 'พี่นก', 'Star Model', null]);
+    const fromJob = cards.find(x => x.key === 'มะลิ|นางแบบ');
+    assert.deepEqual([fromJob.contact_mode, fromJob.contact_name], [null, null]);
 });
 
 // ---------------------------------------------------------------- แก้ / ลบ
@@ -372,6 +434,19 @@ test('การ์ดที่รวมกับคนในงาน: รูป
         assert.equal(c.agency, 'New Co');
         assert.match(c.photo.path, talentPath(a.id, 'image'));
         assert.equal(c.group, 'booked', 'สถานะยังมาจากงาน');
+    } finally { FIXTURE.other_projects = saved; }
+});
+
+test('การ์ดที่รวมกับคนในงาน + ทีมเลือกช่องทางติดต่อแล้ว: เบอร์/สังกัดเอาจากที่เพิ่มเองเท่านั้น ไม่เติมจากงาน', async () => {
+    const saved = FIXTURE.other_projects;
+    FIXTURE.other_projects = [{ ...P90, hire_items: [{ ...P90.hire_items[0], contact: '081-JOB', agency: 'Job Co' }] }];
+    try {
+        const a = (await call(2, 'POST', '/hires/talents', { name: 'มะลิ', kind: 'นางแบบ', contact_mode: 'agency', agency: 'New Co', contact_name: 'พี่นก' })).body.data;
+        let c = (await call(2, 'GET', '/hires/book')).body.data.cards.find(x => x.key === 'มะลิ|นางแบบ');
+        assert.deepEqual([c.contact_mode, c.agency, c.contact, c.contact_name], ['agency', 'New Co', null, 'พี่นก'], 'ผ่านเอเจนซี่ = ไม่มีเบอร์จากงานโผล่');
+        await call(2, 'PUT', `/hires/talents/${a.id}`, { contact_mode: 'self', contact: '', agency: '', contact_name: 'มะลิเอง' });
+        c = (await call(2, 'GET', '/hires/book')).body.data.cards.find(x => x.key === 'มะลิ|นางแบบ');
+        assert.deepEqual([c.contact_mode, c.agency, c.contact, c.contact_name], ['self', null, null, 'มะลิเอง'], 'ติดต่อเอง = ไม่มีสังกัด/เบอร์จากงานมาคู่ชื่อ');
     } finally { FIXTURE.other_projects = saved; }
 });
 

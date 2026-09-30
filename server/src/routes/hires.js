@@ -95,9 +95,12 @@ router.get('/tasks/count', async (req, res, next) => {
 // คนเดียวกัน = ชื่อ + ประเภทงาน (ไม่สนตัวพิมพ์) — ห้ามซ้ำในตาราง talents (การ์ดเดียวต้องมีแถวให้แก้แถวเดียว)
 // คนที่มาจากงานที่ชื่อ + ประเภทงานตรงกัน รวมเป็นการ์ดเดียวที่ store.hires.book()
 const KIND_OTHER = 'อื่น ๆ';   // ตัวเลือก "อื่น ๆ" ที่ยังไม่ได้พิมพ์ว่าเป็นงานอะไร (client/src/data/hireKinds.js) — ห้ามเก็บเป็นประเภทงาน
-const TALENT_MAX = { name: 200, kind: 100, link: 1000, contact: 200, agency: 200, rate_unit: 40, image_link: 1000, clip_link: 1000, note: 1000 };
-const TALENT_LABEL = { name: 'ชื่อ', kind: 'ประเภทงาน', link: 'Account', contact: 'เบอร์ / LINE', agency: 'สังกัด',
+const TALENT_MAX = { name: 200, kind: 100, link: 1000, contact_name: 200, contact: 200, agency: 200, rate_unit: 40, image_link: 1000, clip_link: 1000, note: 1000 };
+const TALENT_LABEL = { name: 'ชื่อ', kind: 'ประเภทงาน', link: 'Account', contact_name: 'ชื่อผู้ติดต่อ', contact: 'เบอร์ / LINE', agency: 'ชื่อเอเจนซี่',
     rate_unit: 'หน่วยเรท', image_link: 'ลิงก์รูป', clip_link: 'ลิงก์คลิป', note: 'หมายเหตุ' };
+// ช่องทางติดต่อ (ผู้ใช้สั่ง 30 ก.ย. 2026) — ต้องตรงกับ CONTACT_MODES ใน client/src/pages/hires/TalentForm.jsx
+//   self = ติดต่อเอง: ชื่อผู้ติดต่อ + เบอร์/LINE · agency = ผ่านเอเจนซี่: ชื่อเอเจนซี่ + ชื่อผู้ติดต่อของเอเจนซี่ (ไม่มีเบอร์)
+const CONTACT_MODES = ['self', 'agency'];
 // หน่วยของเรทราคา — ต้องตรงกับตัวเลือกในฟอร์ม (client/src/pages/hires/TalentForm.jsx)
 const RATE_UNITS = ['ต่อวัน', 'ต่องาน', 'ต่อชั่วโมง', 'ต่อโพสต์', 'ต่อคลิป'];
 const RATE_MAX = 1e9;
@@ -135,6 +138,14 @@ function talentInput(body, { partial = false } = {}) {
         }
     }
     if (fields.rate_unit && !RATE_UNITS.includes(fields.rate_unit)) return { error: 'หน่วยเรทไม่ถูกต้อง' };
+    if (b.contact_mode !== undefined) {
+        const m = textOf(b.contact_mode);
+        if (m && !CONTACT_MODES.includes(m)) return { error: 'ช่องทางติดต่อไม่ถูกต้อง' };
+        fields.contact_mode = m || null;
+        // ช่องที่ไม่ใช่ของแบบที่เลือกล้างทิ้ง — ข้อมูลที่ซ่อนอยู่ในฟอร์มไม่ค้างในฐาน
+        if (m === 'self') fields.agency = null;
+        if (m === 'agency') fields.contact = null;
+    }
     return { fields };
 }
 
@@ -142,7 +153,8 @@ function talentInput(body, { partial = false } = {}) {
 const fileInfo = f => (f && typeof f === 'object' && (f.filename || f.original)
     ? { original: f.original || null, size: Number(f.size) || null } : null);
 const talentOut = (t, req) => ({
-    id: t.id, name: t.name, kind: t.kind, link: t.link || null, contact: t.contact || null, agency: t.agency || null,
+    id: t.id, name: t.name, kind: t.kind, link: t.link || null,
+    contact_mode: t.contact_mode || null, contact_name: t.contact_name || null, contact: t.contact || null, agency: t.agency || null,
     rate: t.rate == null ? null : Number(t.rate), rate_unit: t.rate_unit || null,
     image: fileInfo(t.image), image_link: t.image_link || null,
     clip: fileInfo(t.clip), clip_link: t.clip_link || null,
@@ -220,6 +232,11 @@ router.put('/talents/:id', async (req, res, next) => {
         if (!acc.ok) return res.status(acc.code).json({ status: 'error', message: acc.message });
         const { fields, error } = talentInput(req.body, { partial: true });
         if (error) return res.status(400).json({ status: 'error', message: error });
+        // ไม่ได้ส่งช่องทางติดต่อมา (แก้บางช่อง / หน้าเว็บรุ่นเก่าที่ยังเปิดค้าง) → ยึดแบบที่บันทึกไว้ ช่องของอีกแบบห้ามกลับเข้ามา
+        if (fields.contact_mode === undefined) {
+            if (acc.talent.contact_mode === 'self' && fields.agency !== undefined) fields.agency = null;
+            if (acc.talent.contact_mode === 'agency' && fields.contact !== undefined) fields.contact = null;
+        }
         const name = fields.name !== undefined ? fields.name : acc.talent.name;
         const kind = fields.kind !== undefined ? fields.kind : acc.talent.kind;
         const dup = await store.talents.findByKey(name, kind, acc.talent.id);

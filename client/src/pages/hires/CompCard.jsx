@@ -169,6 +169,11 @@ export default function CompCard({ card, onPreview, onEdit }) {
     const fees = (Array.isArray(card.fees) ? card.fees : []).filter(f => f && Number(f.fee) > 0).slice(0, FEES_SHOWN - (rate ? 1 : 0));
     const acc = accountOf(card.link);
     const contact = str(card.contact);
+    // ช่องทางติดต่อที่ทีมเลือกตอนเพิ่มเอง: ติดต่อเอง = ชื่อผู้ติดต่อคู่กับเบอร์ · ผ่านเอเจนซี่ = คนที่ติดต่อกับเอเจนซี่
+    const viaAgency = card.contact_mode === 'agency';
+    const contactName = str(card.contact_name);
+    const selfName = card.contact_mode === 'self' ? contactName : '';
+    const agencyName = viaAgency ? contactName : '';
     const team = (card.team_contacts || []).map(str).filter(Boolean);
     const by = (card.proposed_by || []).map(str).filter(Boolean);
     const projects = (card.projects || []).filter(p => p && p.id != null);
@@ -199,7 +204,7 @@ export default function CompCard({ card, onPreview, onEdit }) {
                 {(card.kind || card.agency) && (
                     <div className="tb-pills">
                         {card.kind && <span className="tb-pill"><span className="tb-pill-k">ประเภทงาน :</span> {card.kind}</span>}
-                        {card.agency && <span className="tb-pill"><span className="tb-pill-k">สังกัด :</span> {card.agency}</span>}
+                        {card.agency && <span className="tb-pill"><span className="tb-pill-k">{viaAgency ? 'เอเจนซี่ :' : 'สังกัด :'}</span> {card.agency}</span>}
                     </div>
                 )}
 
@@ -224,7 +229,7 @@ export default function CompCard({ card, onPreview, onEdit }) {
                     <div className="tb-fees tb-fee-none">ยังไม่มีราคา</div>
                 )}
 
-                {(acc || contact || team.length > 0 || by.length > 0) && (
+                {(acc || contact || selfName || agencyName || team.length > 0 || by.length > 0) && (
                     <ul className="tb-rows">
                         {acc && (
                             <li title="Account / Social">
@@ -235,11 +240,20 @@ export default function CompCard({ card, onPreview, onEdit }) {
                                     : <span className="tb-row-v">{acc.label}</span>}
                             </li>
                         )}
-                        {contact && (
+                        {agencyName && (
+                            <li>
+                                <Icon name="users" size={15} />
+                                <span className="tb-row-v" title={agencyName}><span className="tb-row-k">ผู้ติดต่อเอเจนซี่ :</span> {agencyName}</span>
+                            </li>
+                        )}
+                        {(contact || selfName) && (
                             <li title={T.contact}>
                                 <Icon name="phone" size={15} />
                                 <span className="tb-sr">{T.contact}: </span>
-                                <span className="tb-row-v" title={contact}>{contact}</span>
+                                <span className="tb-row-v" title={[selfName, contact].filter(Boolean).join(' · ')}>
+                                    {selfName && <b className="tb-contact-name">{selfName}</b>}
+                                    {selfName && contact ? ' · ' : ''}{contact}
+                                </span>
                             </li>
                         )}
                         {team.length > 0 && (
