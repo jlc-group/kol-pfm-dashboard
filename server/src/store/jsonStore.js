@@ -433,7 +433,7 @@ function enrichProject(p) {
         ...p,
         // แถวที่บันทึกไว้ก่อนมีประเภทแคมเปญไม่มีคีย์นี้ — เติมให้เป็น 'kol' ตรงนี้ที่เดียว
         // (ฝั่ง Postgres คอลัมน์มี DEFAULT 'kol' อยู่แล้ว จึงไม่ต้องเติมซ้ำ)
-        campaign_type: p.campaign_type === 'other' ? 'other' : 'kol',
+        campaign_type: p.campaign_type === 'other' || p.campaign_type === 'solo' ? p.campaign_type : 'kol',
         hire_items: Array.isArray(p.hire_items) ? p.hire_items : [],
         team_name: team ? team.name : null,
         created_by_name: creator ? (creator.full_name || creator.username) : null,
@@ -545,7 +545,7 @@ const projects = {
             products: Array.isArray(fields.products) ? fields.products : [],
             ad_groups: Array.isArray(fields.ad_groups) ? fields.ad_groups : [],
             // ค่าที่ไม่รู้จักถอยไปเป็น 'kol' เสมอ — แคมเปญที่หลุดเป็นประเภทประหลาดจะหายจากหน้าโฆษณา/รายงานโดยไม่มีใครรู้
-            campaign_type: fields.campaign_type === 'other' ? 'other' : 'kol',
+            campaign_type: fields.campaign_type === 'other' || fields.campaign_type === 'solo' ? fields.campaign_type : 'kol',
             hire_items: Array.isArray(fields.hire_items) ? fields.hire_items : [],
             owner: fields.owner || null,
             creator: fields.creator || null,   // ชื่อคนสร้างโปรเจค (ทีมใช้บัญชีร่วมกัน created_by จึงบอกไม่ได้ว่าใคร)
@@ -570,7 +570,7 @@ const projects = {
             if (fields[key] !== undefined) p[key] = fields[key];
         }
         // ประเภทแคมเปญกรองค่าแยก ไม่ปล่อยให้ค่าดิบจาก body ลงฐานตรง ๆ (ให้ตรงกับฝั่ง Postgres)
-        if (fields.campaign_type !== undefined) p.campaign_type = fields.campaign_type === 'other' ? 'other' : 'kol';
+        if (fields.campaign_type !== undefined) p.campaign_type = fields.campaign_type === 'other' || fields.campaign_type === 'solo' ? fields.campaign_type : 'kol';
         p.updated_at = now(); persist();
         return clone(p);
     },

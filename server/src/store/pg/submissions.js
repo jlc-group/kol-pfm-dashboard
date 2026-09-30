@@ -56,7 +56,8 @@ const coerceCol = (k, v) => {
  * แล้วรายการจะเรียงกลับหัว — คลิป 2 ขึ้นก่อนคลิป 1 เพราะหน้าจอเรียงจากใหม่ไปเก่า
  */
 function newRow({ project_id, account_name, followers, platform, product, budget, agency, link_account,
-                  group_key, tier, content_type, agency_token, code_expire, person_key, clip_no, clip_name },
+                  group_key, tier, content_type, agency_token, code_expire, person_key, clip_no, clip_name,
+                  status, decided_by },
                 at = now()) {
     return {
         project_id: Number(project_id),
@@ -76,7 +77,8 @@ function newRow({ project_id, account_name, followers, platform, product, budget
         clip_no: Number(clip_no) || 1,
         clip_name: clip_name || null,
         agency_token: agency_token || null,   // เจ้าของ (ลิงก์เอเจนซี่ที่ส่งเข้ามา)
-        status: 'submitted',                  // submitted | confirmed | rejected
+        // submitted | confirmed | rejected — KOL รายคนเกิดมาเป็น confirmed (จ้างแล้ว ไม่มีขั้นคัดเลือก) ที่อื่นยังเป็น submitted
+        status: status === 'confirmed' ? 'confirmed' : 'submitted',
         draft_link: null, draft_link2: null, draft_link3: null, draft_link4: null, draft_link5: null,
         gencode: null, feedback: null, feedback2: null, feedback3: null, feedback4: null, feedback5: null,
         // Remark ของแต่ละดราฟ — เอเจนซี่เขียน ทีมอ่านอย่างเดียว
@@ -91,7 +93,7 @@ function newRow({ project_id, account_name, followers, platform, product, budget
         reposts: 0,   // เฉพาะ Instagram (แพลตฟอร์มอื่นไม่มีช่องนี้ให้กรอก)
         content_format: null, perf_synced_at: null,
         concept: null, gen_date: null,
-        submitted_at: at, decided_at: null, decided_by: null,
+        submitted_at: at, decided_at: status === 'confirmed' ? at : null, decided_by: status === 'confirmed' ? (decided_by || null) : null,
         list_updated_at: at, work_updated_at: null, draft_updated_at: null  // ใช้ทำแจ้งเตือนแท็บ + per-KOL ดราฟใหม่
     };
 }
@@ -413,3 +415,5 @@ const submissions = {
 };
 
 module.exports = submissions;
+// createSolo (pg/projects.js) สร้างแถวคลิปในทรานแซกชันเดียวกับแถวแคมเปญ — ใช้ตัวสร้างแถวชุดเดียวกัน
+module.exports.newRow = newRow;

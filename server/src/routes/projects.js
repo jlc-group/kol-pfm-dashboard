@@ -16,8 +16,13 @@ const {
     mergeHireItems, mergeBriefFiles, hireRowFee, cleanFee, cleanHeadcount, safeId,
     HIRE_BOOKED, BOOK_PENDING, BOOK_FEE, HIRE_JOB_CLOSED, hireBookings, newHireRow, payableWithoutFee, hireScope,
     PERSON_FIELDS, personPatch, releaseToRequest, bookingConfirm, bookingFeeDecision, bookingUnavailable, carryProductTargets, carryProductBudgets, carryProductConcepts,
-    carryNoGencode
+    carryNoGencode, normCampaignType
 } = require('../store/logic');
+const { soloInput, buildSoloGroup, soloName, soloDeleteBlock } = require('../store/soloKol');
+// KOL รายคน (campaign_type 'solo') — ข้อความเมื่อเส้นทั่วไปของแคมเปญถูกเรียกกับรายการ KOL รายคน
+// (หน้าเว็บรุ่นเก่าที่เปิดค้างไว้ไม่รู้จักประเภทนี้ ฟอร์มแคมเปญจะสร้างกลุ่มใหม่ทับจนข้อมูลของ KOL รายคนหาย)
+const SOLO_ONLY_MSG = 'รายการนี้เป็น KOL รายคน — แก้จากหน้าของ KOL คนนั้น (ถ้าเปิดหน้าเว็บค้างไว้นาน กด F5 ก่อน)';
+const isSoloProject = p => !!p && p.campaign_type === 'solo';
 const BOOKING_ACTIONS = ['confirm', 'unavailable', 'fee-approve', 'fee-reject'];
 if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 // รูปแนบในแชทกับเอเจนซี่ — รูปเท่านั้น
@@ -215,6 +220,8 @@ router.post('/', async (req, res, next) => {
     try {
         const { name } = req.body;
         if (!name) return res.status(400).json({ status: 'error', message: 'กรุณาระบุชื่อ Project' });
+        // KOL รายคนสร้างได้ทางเดียวคือ POST /projects/solo (ตรวจค่า + กลุ่ม + แถวคลิป + ค่าตัว) — เส้นนี้สร้างได้แค่แคมเปญ KOL / งาน Talent
+        if (req.body.campaign_type === 'solo') return res.status(400).json({ status: 'error', message: 'เพิ่ม KOL รายคนจากปุ่ม "เพิ่ม KOL รายคน" ในหน้าแคมเปญ' });
         // สร้างได้เฉพาะแบรนด์ที่ตัวเองมีสิทธิ์ ไม่งั้นแคมเปญจะหายจากรายการของคนสร้างทันที (member ต้องระบุแบรนด์เสมอ)
         if (!canSeeBrand(req.account || req.user, req.body.brand)) {
             return res.status(403).json({ status: 'error', message: 'เลือกได้เฉพาะแบรนด์ที่คุณได้รับสิทธิ์' });
@@ -259,11 +266,59 @@ router.post('/', async (req, res, next) => {
     } catch (err) { next(err); }
 });
 
+// POST /api/projects/solo — เพิ่ม KOL รายคน (จ้าง KOL เดี่ยว ไม่ต้องสร้างแคมเปญ · ผู้ใช้สั่ง 30 ก.ย. 2026)
+// server สร้างแถวแคมเปญ campaign_type 'solo' + กลุ่มโฆษณา 1 กลุ่ม + แถวคลิป (confirmed) ในทรานแซกชันเดียว
+// กลุ่มสร้างที่นี่เท่านั้น (ไม่รับกลุ่มจากหน้าเว็บ) · ค่าตัวบังคับ · งบ = ค่าตัว × จำนวนคลิป
+router.post('/solo', async (req, res, next) => {
+    try {
+        const { input, error } = soloInput(req.body);
+        if (error) return res.status(400).json({ status: 'error', message: error });
+        if (!canSeeBrand(req.account || req.user, input.brand)) {
+            return res.status(403).json({ status: 'error', message: 'เลือกได้เฉพาะแบรนด์ที่คุณได้รับสิทธิ์' });
+        }
+        const teamId = (req.user.role === 'admin' && req.body.team_id) ? req.body.team_id : req.user.team_id;
+        if (!teamId) return res.status(400).json({ status: 'error', message: 'ผู้ใช้ยังไม่ได้สังกัดทีม' });
+        const group = buildSoloGroup(input, 'g' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6));
+        const total = group.budget;
+        const who = actorName(req);
+        const { project, rows } = await store.projects.createSolo({
+            team_id: teamId, created_by: req.user.id,
+            name: soloName(input), brand: input.brand,
+            objective: input.note, brief_link: input.brief_link,
+            products: input.products, ad_groups: [group],
+            owner: input.owner, creator: input.owner,
+            platform_budgets: { [input.platform]: total },
+            kol_target: 1, budget: total,
+            start_date: input.hire_date, end_date: input.due_date || input.hire_date,
+            status: 'Active'
+        }, {
+            account_name: input.account_name, platform: input.platform, product: input.products.join(', '),
+            budget: input.fee, agency: input.agency, link_account: input.link_account, followers: input.followers,
+            group_key: group.key, tier: input.tier, content_type: input.content_type, code_expire: input.code_expire
+        }, input.clip_names, who);
+        // ค่าตัวที่ตั้งตอนเพิ่มไม่ได้ผ่านเส้นแก้ค่าตัว — บันทึกยอดไว้ในประวัติให้ตรวจย้อนหลังได้
+        const baht = n => '฿' + (Number(n) || 0).toLocaleString('th-TH');
+        await record(req, project.id, 'create',
+            `เพิ่ม KOL รายคน: @${input.account_name} (${input.platform} · ${rows.length} คลิป · ${baht(input.fee)}/คลิป · รวม ${baht(total)})`,
+            project.name, teamId);
+        res.status(201).json({ status: 'success', data: { project, rows } });
+    } catch (err) { next(err); }
+});
+
 // PUT /api/projects/:id — แก้ไข Project
 router.put('/:id', async (req, res, next) => {
     try {
         const check = await canEditProject(req, req.params.id);
         if (!check.ok) return res.status(check.code).json({ status: 'error', message: check.message });
+        // KOL รายคน: เส้นนี้แก้ได้แค่สถานะ (ปิดงาน / เปิดงานอีกครั้ง / ยกเลิก)
+        // ฟอร์มแคมเปญ (รวมถึงหน้าเว็บรุ่นเก่าที่เปิดค้าง) ส่งกลุ่มโฆษณาทั้งก้อนมาทับ — ข้อมูลของ KOL รายคนจะหาย
+        if (isSoloProject(check.project)) {
+            const keys = Object.keys(req.body || {}).filter(k => k !== 'expected_updated_at');
+            if (!keys.length || keys.some(k => k !== 'status')) return res.status(400).json({ status: 'error', message: SOLO_ONLY_MSG });
+            if (!['Active', 'Completed', 'Cancelled'].includes(req.body.status)) {
+                return res.status(400).json({ status: 'error', message: 'สถานะไม่ถูกต้อง' });
+            }
+        }
         // ย้ายแคมเปญไปแบรนด์ที่ตัวเองไม่มีสิทธิ์ไม่ได้ (ส่งมาแค่ status ไม่ต้องตรวจ)
         if (Object.prototype.hasOwnProperty.call(req.body, 'brand') && !canSeeBrand(req.account || req.user, req.body.brand)) {
             return res.status(403).json({ status: 'error', message: 'เลือกได้เฉพาะแบรนด์ที่คุณได้รับสิทธิ์' });
@@ -272,8 +327,8 @@ router.put('/:id', async (req, res, next) => {
         // ถ้าเปลี่ยนเป็น 'other' ข้อมูลพวกนั้นจะหายจากหน้าโฆษณาและรายงานทันทีโดยไม่มีอะไรเตือน
         if (Object.prototype.hasOwnProperty.call(req.body, 'campaign_type')) {
             const cur = await store.projects.findByIdFull(req.params.id);
-            const asked = req.body.campaign_type === 'other' ? 'other' : 'kol';
-            if (cur && (cur.campaign_type || 'kol') !== asked) {
+            const asked = normCampaignType(req.body.campaign_type);
+            if (cur && normCampaignType(cur.campaign_type) !== asked) {
                 return res.status(400).json({ status: 'error', message: 'เปลี่ยนประเภทแคมเปญหลังสร้างแล้วไม่ได้ — ให้สร้างแคมเปญใหม่แทน' });
             }
         }
@@ -355,6 +410,13 @@ router.delete('/:id', async (req, res, next) => {
         const check = await canEditProject(req, req.params.id);
         if (!check.ok) return res.status(check.code).json({ status: 'error', message: check.message });
         const proj = await store.projects.findByIdFull(req.params.id); // เก็บชื่อก่อนลบ
+        // KOL รายคน: มีงานเกิดขึ้นแล้ว (ลงงาน / ยิงแอด / สแตมป์ / ตั้งงวดจ่าย) = ห้ามลบ (ลบแล้วคลิป ค่าแอด งวดจ่ายหายหมด) ให้ตั้งเป็นยกเลิกแทน
+        if (isSoloProject(proj)) {
+            const subs = await store.submissions.listByProject(req.params.id);
+            const its = await store.installments.listByProject(req.params.id);
+            const why = soloDeleteBlock(subs, its);
+            if (why) return res.status(409).json({ status: 'error', message: `ลบไม่ได้ — ${why} · เปลี่ยนสถานะเป็น "ยกเลิก" แทน` });
+        }
         await store.projects.remove(req.params.id);
         await record(req, req.params.id, 'delete', 'ลบแคมเปญ', proj ? proj.name : null, proj ? proj.team_id : undefined);
         res.json({ status: 'success', message: 'ลบ Project แล้ว' });
@@ -1197,6 +1259,8 @@ router.post('/:id/share', async (req, res, next) => {
     try {
         const check = await canEditProject(req, req.params.id);
         if (!check.ok) return res.status(check.code).json({ status: 'error', message: check.message });
+        // KOL รายคนไม่มีลิงก์ให้เอเจนซี่ (ลิงก์แชร์แบบเก่าจะให้เอเจนซี่เพิ่มคนเข้ารายการได้)
+        if (isSoloProject(check.project)) return res.status(400).json({ status: 'error', message: SOLO_ONLY_MSG });
         const token = await store.projects.setShareToken(req.params.id, crypto.randomBytes(9).toString('hex'));
         res.json({ status: 'success', token });
     } catch (err) { next(err); }
@@ -1231,6 +1295,8 @@ router.post('/:id/agency-links', async (req, res, next) => {
     try {
         const check = await canEditProject(req, req.params.id);
         if (!check.ok) return res.status(check.code).json({ status: 'error', message: check.message });
+        // KOL รายคนยังไม่มีลิงก์ให้ Agency (ช่วงต่อไปถ้าผู้ใช้ต้องการ)
+        if (isSoloProject(check.project)) return res.status(400).json({ status: 'error', message: SOLO_ONLY_MSG });
         const { name, products, platforms, kol_count, groups, agency_user_id, new_agency_username } = req.body;
         const gErr = await requireGroups(req.params.id, groups);
         if (gErr) return res.status(400).json({ status: 'error', message: gErr });
@@ -1336,6 +1402,7 @@ router.post('/:id/submissions', async (req, res, next) => {
     try {
         const check = await canEditProject(req, req.params.id);
         if (!check.ok) return res.status(check.code).json({ status: 'error', message: check.message });
+        if (isSoloProject(check.project)) return res.status(400).json({ status: 'error', message: SOLO_ONLY_MSG });
         const { account_name, platform, product, agency, budget, link_account, followers, group_key, content_type } = req.body;
         if (!account_name) return res.status(400).json({ status: 'error', message: 'กรุณาระบุชื่อ Account' });
         const proj = await store.projects.findByIdFull(req.params.id);
@@ -1381,6 +1448,9 @@ router.put('/:id/submissions/:subId', async (req, res, next) => {
         if (status !== undefined && !['confirmed', 'rejected', 'submitted'].includes(status)) {
             return res.status(400).json({ status: 'error', message: 'สถานะไม่ถูกต้อง' });
         }
+        // KOL รายคน: คลิปเป็น "จ้างแล้ว" ตั้งแต่เกิด — เปลี่ยนสถานะรายคลิปไม่ได้ (หน้าเว็บรุ่นเก่าที่เปิดค้างมีปุ่ม ยกเลิก / ไม่เลือก)
+        // ไม่งั้นคลิปหายจากหน้าติดตามงาน แต่ยังนับในค่าตัวรวม · ยกเลิกทั้งการจ้างใช้สถานะของรายการแทน
+        if (status !== undefined && isSoloProject(check.project)) return res.status(400).json({ status: 'error', message: SOLO_ONLY_MSG });
         const user = await store.users.findById(req.user.id);
         const byName = user ? (user.full_name || user.username) : null;
         const data = await store.submissions.update(req.params.subId, req.params.id, {
@@ -1473,6 +1543,10 @@ router.put('/:id/fees', async (req, res, next) => {
         if (!check.ok) return res.status(check.code).json({ status: 'error', message: check.message });
         const parsed = parseFeeBody(req.body);
         if (parsed.error) return res.status(400).json({ status: 'error', message: parsed.error });
+        // KOL รายคน: ค่าตัวบังคับ (ผู้ใช้เลือก 30 ก.ย.) — ล้างเป็น 0 ไม่ได้ (หน้าเว็บรุ่นเก่ามีปุ่ม "ล้างค่าตัว" ของกลุ่ม)
+        if (isSoloProject(check.project) && parsed.items.some(it => !(it.budget > 0))) {
+            return res.status(400).json({ status: 'error', message: 'ค่าตัวของ KOL รายคนต้องมากกว่า 0' });
+        }
         // ทุกแถวต้องเป็นของแคมเปญนี้ — กันยิง sub_id ของแคมเปญ/แบรนด์อื่นเข้ามาแก้ผ่านแคมเปญที่ตัวเองมีสิทธิ์
         const all = await store.submissions.listByProject(req.params.id);
         const byId = new Map(all.map(s => [Number(s.id), s]));
@@ -1482,6 +1556,8 @@ router.put('/:id/fees', async (req, res, next) => {
         const user = await store.users.findById(req.user.id);
         const byName = user ? (user.full_name || user.username) : null;
         const { rows, changed } = await store.submissions.setFees(req.params.id, parsed.items, byName);
+        // KOL รายคน: งบของรายการ = ผลรวมค่าตัว → อัปเดตตามทันที
+        if (changed.length && isSoloProject(check.project)) await store.projects.syncSoloBudget(req.params.id);
         // บันทึกประวัติครั้งเดียวต่อคำขอ (ส่งค่าเดิมมาทั้งชุด = ไม่มีอะไรเปลี่ยน ไม่ต้องบันทึก)
         if (changed.length) await record(req, req.params.id, 'fee', feeSummary(parsed.reason, changed, byId));
         res.json({ status: 'success', data: { changed, rows } });
@@ -1530,6 +1606,8 @@ router.delete('/:id/submissions/:subId', async (req, res, next) => {
     try {
         const check = await canEditProject(req, req.params.id);
         if (!check.ok) return res.status(check.code).json({ status: 'error', message: check.message });
+        // KOL รายคน: ลบรายคลิปไม่ได้ (ลบทั้งคนจะล้างทุกคลิปรวมค่าแอด/สแตมป์ โดยไม่ผ่านตัวกันของการลบทั้งรายการ) — ลบ/ยกเลิกทั้งการจ้างแทน
+        if (isSoloProject(check.project)) return res.status(400).json({ status: 'error', message: SOLO_ONLY_MSG });
         // รายชื่อที่มาจากเอเจนซี่ให้ลบได้เฉพาะฝั่งเอเจนซี่ ฝั่งทีมใช้ "ไม่เลือก" แทน
         // ยกเว้นลิงก์นั้นถูกลบไปแล้ว — ไม่งั้นแถวจะค้างและไม่มีใครลบได้เลย
         const target = await store.submissions.get(req.params.subId);

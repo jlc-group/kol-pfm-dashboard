@@ -1,11 +1,14 @@
 import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { api } from '../api/client.js';
 import { useAuth } from '../auth/AuthContext.jsx';
 import Icon from '../components/Icon.jsx';
 import ProjectForm from '../components/ProjectForm.jsx';
 import { visibleBrands } from '../data/brands.js';
 import { groupPlatforms, quotaOf, clipCountFor } from '../data/adGroups.js';
+import SoloKolForm from '../components/SoloKolForm.jsx';
+import SoloKolList from './projects/SoloKolList.jsx';
+import { matchSoloSearch } from '../data/soloKol.js';
 
 const STATUS_LABEL = {
     Draft: 'ร่าง', Active: 'กำลังทำ', Completed: 'เสร็จสิ้น', Cancelled: 'ยกเลิก'
@@ -66,8 +69,8 @@ function inYear(p, y) {
     if (!s) return false;
     return s <= `${y}-12-31` && e >= `${y}-01-01`;
 }
-// แคมเปญที่บันทึกไว้ก่อนมีประเภท = แคมเปญ KOL ทั้งหมด
-const typeOf = p => (p.campaign_type === 'other' ? 'other' : 'kol');
+// แคมเปญที่บันทึกไว้ก่อนมีประเภท = แคมเปญ KOL ทั้งหมด · 'solo' = KOL รายคน (แท็บของตัวเอง)
+const typeOf = p => (p.campaign_type === 'other' || p.campaign_type === 'solo' ? p.campaign_type : 'kol');
 function matchSearch(p, q) {
     const s = q.trim().toLowerCase();
     if (!s) return true;
@@ -88,6 +91,17 @@ export default function Projects() {
     const [error, setError] = useState('');
     // หน้านี้สร้างได้อย่างเดียวคือแคมเปญ KOL — งานจ้างอื่น ๆ กับคำขอสอบถามราคาไปสร้างที่เมนู "งานจ้างอื่น ๆ"
     const [showForm, setShowForm] = useState(false);
+    // แท็บ แคมเปญ KOL | KOL รายคน (ผู้ใช้สั่ง 30 ก.ย. 2026) — จำไว้ใน URL (?view=solo) ให้ปุ่มย้อนกลับ/ลิงก์กลับมาแท็บเดิม
+    const [params, setParams] = useSearchParams();
+    const view = params.get('view') === 'solo' ? 'solo' : 'kol';
+    const setView = v => setParams(v === 'solo' ? { view: 'solo' } : {}, { replace: true });
+    const [showSolo, setShowSolo] = useState(false);
+    const [freshId, setFreshId] = useState(null);   // แถวที่เพิ่งเพิ่ม — ไฮไลต์สักครู่ให้เห็นว่าเข้าแล้ว
+    useEffect(() => {
+        if (!freshId) return undefined;
+        const t = setTimeout(() => setFreshId(null), 2500);
+        return () => clearTimeout(t);
+    }, [freshId]);
 
     function load() {
         setLoading(true);
@@ -102,19 +116,32 @@ export default function Projects() {
         setShowForm(false);
         navigate(`/projects/${project.id}`);
     }
+    // เพิ่ม KOL รายคนแล้ว: อยู่หน้าเดิม สลับไปแท็บ KOL รายคน โหลดรายการใหม่ และไฮไลต์แถวใหม่
+    // "บันทึกแล้วเพิ่มอีกคน" = ฟอร์มยังเปิดอยู่
+    function handleSoloSaved(project, { again } = {}) {
+        if (!again) setShowSolo(false);
+        setView('solo');
+        if (project && project.id) setFreshId(project.id);
+        load();
+    }
 
     // หน้านี้เหลือเฉพาะแคมเปญ KOL — งานจ้างอื่น ๆ ย้ายไปอยู่เมนู "งานจ้างอื่น ๆ" (รายชื่อผู้รับงาน)
     // และ "งานจัดหา" (ใบขอจัดหาที่ยังไม่ได้ตัวคน) ตัดออกตั้งแต่ต้นทางเพื่อให้ตัวนับทุกตัวไม่รวมของที่ไม่ได้โชว์
-    const kolProjects = projects.filter(p => typeOf(p) !== 'other');
+    // KOL รายคนแยกไปแท็บของตัวเอง — ตัวกรองค้นหา / ปี / เดือน / แบรนด์ ใช้ร่วมกัน แต่นับตามแท็บที่เปิดอยู่
+    const kolProjects = projects.filter(p => typeOf(p) === 'kol');
+    const soloProjects = projects.filter(p => typeOf(p) === 'solo');
+    const pool = view === 'solo' ? soloProjects : kolProjects;
+    const matchQ = view === 'solo' ? matchSoloSearch : matchSearch;
     // กรองด้วย search + ปี + เดือน ก่อน แล้วค่อยกรองแบรนด์ (นับจำนวนในชิปแบรนด์ให้ตรงกับตัวกรองปัจจุบัน)
-    const base = kolProjects.filter(p => inYear(p, year) && inMonth(p, month) && matchSearch(p, search));
+    const base = pool.filter(p => inYear(p, year) && inMonth(p, month) && matchQ(p, search));
     const shown = brand ? base.filter(p => p.brand === brand) : base;
     const countOf = b => base.filter(p => p.brand === b).length;
     const hasFilter = brand || search.trim() || month || year;
     // รายการเดือนสำหรับ dropdown (จากช่วงวันของทุก project) — ถ้าเลือกปีไว้ ให้เหลือเฉพาะเดือนของปีนั้น
-    const allMonths = [...new Set(kolProjects.flatMap(monthsOfProject))].sort().reverse();
-    const monthOptions = year ? allMonths.filter(mm => mm.startsWith(year + '-')) : allMonths;
-    const yearOptions = [...new Set(allMonths.map(mm => mm.slice(0, 4)))].sort().reverse();
+    const allMonths = [...new Set(pool.flatMap(monthsOfProject))].sort().reverse();
+    // ตัวเลือกคิดจากแท็บที่เปิดอยู่ — เดือน/ปีที่เลือกไว้จากอีกแท็บต้องยังอยู่ในรายการ (ไม่งั้นช่องขึ้น "ทุกเดือน" แต่ยังกรองอยู่)
+    const monthOptions = [...new Set([...(year ? allMonths.filter(mm => mm.startsWith(year + '-')) : allMonths), ...(month ? [month] : [])])].sort().reverse();
+    const yearOptions = [...new Set([...allMonths.map(mm => mm.slice(0, 4)), ...(year ? [year] : [])])].sort().reverse();
 
     // เปลี่ยนปีแล้วถ้าเดือนที่เลือกอยู่ไม่ใช่ของปีนั้น ให้ล้างเดือนทิ้ง กันเลือกขัดกันจนไม่เหลือผลลัพธ์
     function changeYear(y) {
@@ -163,11 +190,21 @@ export default function Projects() {
                 <p className="page-sub">{isAdmin ? 'จัดการแคมเปญของทุกทีมในที่เดียว' : 'จัดการแคมเปญของทีมคุณ'}</p>
             </header>
 
+            <div className="agency-tabs hub-tabs proj-type-tabs" role="tablist" aria-label="ประเภทงาน KOL">
+                <button type="button" role="tab" aria-selected={view === 'kol'} className={view === 'kol' ? 'active' : ''} onClick={() => setView('kol')}>
+                    แคมเปญ KOL <span className="agency-tab-count">{kolProjects.length}</span>
+                </button>
+                <button type="button" role="tab" aria-selected={view === 'solo'} className={view === 'solo' ? 'active' : ''} onClick={() => setView('solo')}>
+                    KOL รายคน <span className="agency-tab-count">{soloProjects.length}</span>
+                </button>
+            </div>
+
             {/* ค้นหา + กรองรายเดือน */}
             <div className="toolbar" style={{ flexWrap: 'wrap' }}>
                 <div className="search-wrap">
                     <Icon name="search" size={17} />
-                    <input aria-label="ค้นหาแคมเปญ" className="search-input" placeholder="ค้นหาชื่อแคมเปญ แบรนด์ หรือผู้ดูแล"
+                    <input aria-label="ค้นหาแคมเปญ" className="search-input"
+                        placeholder={view === 'solo' ? 'ค้นหาชื่อบัญชี KOL แบรนด์ Agency หรือผู้ดูแล' : 'ค้นหาชื่อแคมเปญ แบรนด์ หรือผู้ดูแล'}
                         value={search} onChange={e => setSearch(e.target.value)} />
                 </div>
                 <select aria-label="กรองตามปี" className="campaign-select" value={year} onChange={e => changeYear(e.target.value)}>
@@ -182,8 +219,12 @@ export default function Projects() {
 
             {/* ฟิลเตอร์ตามแบรนด์ (dropdown) + ปุ่มสร้าง (ซ้ายสุด) */}
             <div className="brand-filter">
-                <button className="btn-primary" style={{ marginRight: 6 }} onClick={() => setShowForm(true)}>
+                {/* ปุ่มของแท็บที่เปิดอยู่เป็นปุ่มหลัก อีกอันเป็นปุ่มรอง */}
+                <button className={view === 'kol' ? 'btn-primary' : 'btn-ghost'} style={{ marginRight: 6 }} onClick={() => setShowForm(true)}>
                     <Icon name="plus" size={17} /> สร้างแคมเปญ KOL
+                </button>
+                <button className={view === 'solo' ? 'btn-primary' : 'btn-ghost'} style={{ marginRight: 6 }} onClick={() => setShowSolo(true)}>
+                    <Icon name="plus" size={17} /> เพิ่ม KOL รายคน
                 </button>
                 <span className="brand-filter-label">แบรนด์</span>
                 <select aria-label="กรองตามแบรนด์" className="campaign-select" value={brand} onChange={e => setBrand(e.target.value)}>
@@ -198,6 +239,9 @@ export default function Projects() {
 
             {loading ? (
                 <div className="panel"><p className="empty">กำลังโหลด...</p></div>
+            ) : view === 'solo' ? (
+                <SoloKolList list={shown} onOpen={p => navigate(`/projects/${p.id}`)} onAdd={() => setShowSolo(true)}
+                    freshId={freshId} filtered={!!hasFilter} />
             ) : shown.length === 0 ? (
                 <div className="panel empty-state">
                     <div className="empty-emoji">🔍</div>
@@ -226,6 +270,7 @@ export default function Projects() {
             )}
 
             {showForm && <ProjectForm onClose={() => setShowForm(false)} onSaved={handleCreated} />}
+            {showSolo && <SoloKolForm onClose={changed => { setShowSolo(false); if (changed) load(); }} onSaved={handleSoloSaved} />}
         </div>
     );
 }

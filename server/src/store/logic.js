@@ -27,6 +27,12 @@ const AD_STAMP_AT = 10000;
 // คีย์ต้องตรงกับ projects.brand ทุกตัวอักษร · ฝั่งหน้าเว็บมีสำเนาที่ client/src/data/stamp.js ต้องแก้คู่กันเสมอ
 // (tests/stamp-threshold.test.cjs เทียบข้อความสองฝั่งให้ พิมพ์ไม่ตรงกันเมื่อไหร่เทสต์แดงทันที)
 const AD_STAMP_BY_BRAND = { Beauterry: 3000 };
+
+// ===== ประเภทแคมเปญ (projects.campaign_type) =====
+// 'kol' แคมเปญ KOL · 'other' งานจ้าง Talent · 'solo' KOL รายคน (จ้าง KOL เดี่ยวไม่ต้องสร้างแคมเปญ — ผู้ใช้สั่ง 30 ก.ย. 2026)
+// ค่าที่ไม่รู้จักถอยเป็น 'kol' เสมอ (แคมเปญที่หลุดเป็นประเภทประหลาดจะหายจากหน้าโฆษณา/รายงานโดยไม่มีใครรู้)
+// ส่วนอื่นของระบบกรองออกแค่ 'other' — 'solo' จึงไหลผ่านหน้า Ads / PFM / ฟีด Beauterry / รายงาน เหมือนแคมเปญ KOL
+const normCampaignType = v => (v === 'other' || v === 'solo' ? v : 'kol');
 const stampAtFor = brand => AD_STAMP_BY_BRAND[String(brand == null ? '' : brand).trim()] || AD_STAMP_AT;
 
 const now = () => new Date().toISOString();
@@ -1032,7 +1038,7 @@ function postCheckDecision(action, note, byName, at) {
 
 module.exports = {
     GOOD_CPM, GOOD_CPE, TARGET_PLATFORMS, CAMPAIGN_PLATFORMS, CAMPAIGN_AS_CTYPE, SOCIAL_CAMPAIGNS,
-    AD_STAMP_AT, AD_STAMP_BY_BRAND, stampAtFor, now, clone,
+    AD_STAMP_AT, AD_STAMP_BY_BRAND, stampAtFor, now, clone, normCampaignType,
     POST_CHECK_FIELDS, POST_CHECK_OPEN, postCheckWaiting, nextPostCheck, postCheckDecision,
     duplicateError, inScope, scopeProjects, hireRemaining, hireRowFee,
     HIRE_JOB_CLOSED, hireWaiting, hireNeedMore, hireStage,

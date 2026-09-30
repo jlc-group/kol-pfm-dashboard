@@ -736,7 +736,7 @@ test('unknown campaign types fall back to kol in the store', async () => {
     const dataFile = path.resolve(__dirname, '../server/data/db.json');
     const hadFile = fs.existsSync(dataFile);
     try {
-        for (const [sent, expected] of [['other', 'other'], ['kol', 'kol'], ['OTHER', 'kol'], [undefined, 'kol'], ['', 'kol'], [{}, 'kol']]) {
+        for (const [sent, expected] of [['other', 'other'], ['solo', 'solo'], ['kol', 'kol'], ['OTHER', 'kol'], ['SOLO', 'kol'], [undefined, 'kol'], ['', 'kol'], [{}, 'kol']]) {
             const created = await jsonStore.projects.create({ team_id: 1, created_by: 7, name: 'ทดสอบประเภทแคมเปญ', campaign_type: sent });
             assert.equal(created.campaign_type, expected, `create ${JSON.stringify(sent)}`);
             const updated = await jsonStore.projects.update(created.id, { campaign_type: sent });

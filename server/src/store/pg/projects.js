@@ -26,7 +26,8 @@ const {
 const {
     loadSnapshot, loadAgencyLinks, messageOut, reportOut, linkOut
 } = require('./_snapshot');
-const { now, clone, inScope, scopeProjects, linkGroupPlatforms, hireRowFee, sameInstant } = require('../logic');
+const { now, clone, inScope, scopeProjects, linkGroupPlatforms, hireRowFee, sameInstant, normCampaignType } = require('../logic');
+const { soloSummary } = require('../soloKol');
 
 // ช่องของ projects ที่แก้ได้จากฟอร์ม → ค่าที่พร้อมเขียนลงฐาน
 // null = ผู้ใช้ล้างค่าออกจริง ๆ (route ส่งเฉพาะคีย์ที่ client ส่งมา คีย์ที่ไม่ได้แก้จะเป็น undefined)
@@ -38,7 +39,7 @@ function projectPatchData(fields) {
     }
     put('products', v => asJson(v, []));
     put('ad_groups', v => asJson(v, []));
-    put('campaign_type', v => (v === 'other' ? 'other' : 'kol'));
+    put('campaign_type', v => normCampaignType(v));
     put('hire_items', v => asJson(v, []));
     put('product_briefs', v => asJson(v, {}));
     put('platform_briefs', v => asJson(v, {}));
@@ -107,7 +108,7 @@ function enrichProject(snap, p) {
     const kol_count = snap.project_kols.filter(pk => pk.project_id === p.id).length;
     const subs = snap.submissions.filter(s => s.project_id === p.id);
     const sub_confirmed = subs.filter(s => s.status === 'confirmed').length;
-    return {
+    const out = {
         ...p,
         team_name: team ? team.name : null,
         created_by_name: creator ? (creator.full_name || creator.username) : null,
@@ -116,6 +117,9 @@ function enrichProject(snap, p) {
         sub_count: subs.length,
         sub_confirmed
     };
+    // KOL รายคน: สรุปของแถวในแท็บ KOL รายคน (ชื่อบัญชี / ค่าตัว / คลิปลงแล้ว / ขั้นถัดไป) — คิดจาก snapshot ที่โหลดมาแล้ว ไม่ยิง query เพิ่ม
+    if (p.campaign_type === 'solo') out.solo_summary = soloSummary(subs, (p.ad_groups || [])[0] || null);
+    return out;
 }
 
 const projects = {
@@ -162,7 +166,8 @@ const projects = {
         return clone({ ...enriched, kols: kolsInProject });
     },
 
-    async create(fields) {
+    // client = ทรานแซกชันที่เปิดค้างไว้ (createSolo) · ไม่ส่ง = เขียนตรง
+    async create(fields, client) {
         const stamp = now();
         return await insertRow('projects', {
             team_id: fields.team_id,
@@ -174,7 +179,7 @@ const projects = {
             products: asJson(Array.isArray(fields.products) ? fields.products : [], []),
             ad_groups: asJson(Array.isArray(fields.ad_groups) ? fields.ad_groups : [], []),
             // ค่าที่ไม่รู้จักถอยไปเป็น 'kol' เสมอ — แคมเปญที่หลุดเป็นประเภทประหลาดจะหายจากหน้าโฆษณา/รายงานโดยไม่มีใครรู้
-            campaign_type: fields.campaign_type === 'other' ? 'other' : 'kol',
+            campaign_type: normCampaignType(fields.campaign_type),
             hire_items: asJson(Array.isArray(fields.hire_items) ? fields.hire_items : [], []),
             owner: fields.owner || null,
             creator: fields.creator || null,   // ชื่อคนสร้างโปรเจค (ทีมใช้บัญชีร่วมกัน created_by จึงบอกไม่ได้ว่าใคร)
@@ -191,6 +196,57 @@ const projects = {
             description: fields.description || null,
             created_at: stamp,
             updated_at: stamp
+        }, client);
+    },
+
+    // KOL รายคน: แถวแคมเปญ (campaign_type 'solo') + แถวคลิปทั้งหมด ในทรานแซกชันเดียว — สำเร็จทั้งชุดหรือไม่เกิดอะไรเลย
+    // personFields = ช่องของแถวคลิป (account_name / platform / budget ...) · clipNames = ชื่อคลิป (1 คลิป = [])
+    // แถวคลิปเกิดมาเป็น confirmed (จ้างแล้ว ไม่มีขั้นคัดเลือก) — On Process / Dashboard / รายงานนับเฉพาะ confirmed
+    async createSolo(fields, personFields, clipNames = [], decidedBy = null) {
+        const { newRow } = require('./submissions');
+        const names = Array.isArray(clipNames) ? clipNames.filter(c => c && String(c).trim()) : [];
+        return await withTransaction(async (c) => {
+            const project = await projects.create({ ...fields, campaign_type: 'solo' }, c);
+            const personKey = 'p' + Math.random().toString(36).slice(2, 10);
+            const at = now();   // ทุกคลิปของคนเดียวกันใช้เวลาเดียวกัน (รายการเรียงตามเวลา — ไม่งั้นคลิป 2 ขึ้นก่อนคลิป 1)
+            const count = names.length < 2 ? 1 : names.length;
+            const rows = [];
+            for (let i = 0; i < count; i++) {
+                rows.push(await insertRow('submissions', newRow({
+                    ...personFields, project_id: project.id, person_key: personKey,
+                    clip_no: i + 1, clip_name: names.length < 2 ? (names[0] || null) : names[i],
+                    status: 'confirmed', decided_by: decidedBy
+                }, at), c));
+            }
+            return { project, rows };
+        });
+    },
+
+    // KOL รายคน: งบของรายการ = ผลรวมค่าตัวของคลิปที่ยังไม่ถูกปฏิเสธ — เรียกหลังแก้ค่าตัวทุกครั้ง
+    // (ไม่งั้น Dashboard เห็นงบเก่าแล้วขึ้น "เกินงบ" ปลอม และฐานของแผนจ่ายเงินผิด) · ไม่ใช่ KOL รายคน = ไม่ทำอะไร
+    async syncSoloBudget(id) {
+        const n = intId(id);
+        if (n === null) return null;
+        return await withTransaction(async (c) => {
+            const r = await c.query('SELECT campaign_type, ad_groups FROM projects WHERE id = $1 FOR UPDATE', [n]);
+            const p = r.rows[0];
+            if (!p || p.campaign_type !== 'solo') return null;
+            const s = await c.query("SELECT COALESCE(SUM(budget), 0) AS total FROM submissions WHERE project_id = $1 AND status <> 'rejected'", [n]);
+            const total = Math.round((Number(s.rows[0].total) || 0) * 100) / 100;
+            const groups = Array.isArray(p.ad_groups) ? p.ad_groups.map(g => ({ ...g })) : [];
+            if (groups[0]) {
+                groups[0].budget = total;
+                if (Array.isArray(groups[0].blocks) && groups[0].blocks[0]) {
+                    groups[0].blocks = groups[0].blocks.map((b, i) => (i === 0 ? { ...b, budget: total } : b));
+                }
+            }
+            const plat = groups[0] && groups[0].platform;
+            return await updateRow('projects', n, {
+                budget: total,
+                ad_groups: asJson(groups, []),
+                platform_budgets: asJson(plat ? { [plat]: total } : {}, {}),
+                updated_at: now()
+            }, c);
         });
     },
 

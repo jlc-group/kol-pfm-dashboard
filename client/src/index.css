@@ -4655,6 +4655,82 @@ button { color: inherit; }
 .tb-fee.rate .tb-fee-v { color: #6d28d9; }
 .tb-toolbar .tb-add { flex: none; display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
 .tf-rate { display: grid; grid-template-columns: minmax(0, 1fr) 150px; gap: 8px; }
+
+/* ===== KOL รายคน (แท็บในหน้าแคมเปญ · ฟอร์ม · หน้ารายละเอียด) — 30 ก.ย. 2026 ===== */
+/* ตัวนับบนแท็บหน้าแคมเปญเท่านั้น — .hub-tabs ใช้ร่วมกับหน้า Talent ที่มีเลขแดง/เหลือง ห้ามทับ */
+.proj-type-tabs .agency-tab-count { background: var(--bg-soft); color: var(--mint-dark); }
+.proj-type-tabs button.active .agency-tab-count { background: rgba(255, 255, 255, .25); color: #fff; }
+.solo-prods { font-size: 11.5px; font-weight: 600; color: var(--mint-dark); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.solo-sumline { font-size: 13px; color: var(--muted); margin: 2px 0 10px; }
+.solo-stepbar { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 14px; }
+.solo-table { background: #fff; border: 1px solid var(--border); border-radius: 14px; overflow: hidden; }
+.solo-head, .solo-row {
+    display: grid; align-items: center; gap: 12px;
+    grid-template-columns: minmax(0, 1.7fr) minmax(0, 1.1fr) minmax(0, .8fr) minmax(0, 1fr) minmax(0, .9fr) minmax(0, .8fr) 18px;
+}
+.solo-head { padding: 9px 14px; font-size: 11px; font-weight: 700; color: var(--muted); letter-spacing: .3px; border-bottom: 1px solid var(--border); background: #fafdfb; }
+.solo-row {
+    width: 100%; padding: 11px 14px; border: 0; border-bottom: 1px solid var(--border); background: #fff; text-align: left;
+    font: inherit; font-size: 13px; color: var(--text); cursor: pointer; transition: background .15s;
+}
+.solo-row:last-child { border-bottom: 0; }
+.solo-row:hover { background: #f3fbf7; }
+.solo-row:focus-visible { outline: 2px solid var(--mint-dark); outline-offset: -2px; }
+.solo-row.fresh { animation: soloFresh 2.4s ease-out; }
+@keyframes soloFresh { 0%, 40% { background: #d1fae5; } 100% { background: #fff; } }
+.solo-row > svg { color: var(--muted); }
+.solo-kol { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.solo-avatar { flex: none; width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; background: var(--bg-soft); color: var(--mint-dark); font-weight: 700; }
+.solo-kol-text { display: flex; flex-direction: column; min-width: 0; }
+.solo-acc { font-size: 13.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.solo-meta { font-size: 11.5px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.solo-brand { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.solo-brand-name { font-weight: 700; font-size: 12.5px; }
+.solo-clips { font-size: 12px; color: var(--muted); display: flex; flex-direction: column; gap: 4px; }
+.solo-dots { display: flex; gap: 3px; }
+.solo-dots i { width: 9px; height: 9px; border-radius: 50%; background: #dfe7e3; }
+.solo-dots i.on { background: var(--mint); }
+.solo-step-cell { display: flex; flex-direction: column; align-items: flex-start; gap: 3px; min-width: 0; }
+.solo-step { display: inline-block; padding: 3px 10px; border-radius: 999px; font-size: 11.5px; font-weight: 700; white-space: nowrap; background: #eef2ff; color: #3730a3; }
+.solo-step.s-review, .solo-step.s-approved { background: #fef3c7; color: #92400e; }
+.solo-step.s-gencode, .solo-step.s-idpost, .solo-step.s-ad { background: #ffedd5; color: #9a3412; }
+.solo-step.s-done { background: #d1fae5; color: #065f46; }
+.solo-late { font-size: 11px; font-weight: 700; color: #dc2626; }
+.solo-fee { font-weight: 700; display: flex; flex-direction: column; }
+.solo-fee small { font-weight: 500; color: var(--muted); font-size: 11px; }
+.solo-fee-missing { display: inline-block; padding: 2px 8px; border-radius: 999px; background: #ffedd5; color: #9a3412; font-size: 11.5px; }
+.solo-owner { display: flex; flex-direction: column; font-size: 12.5px; min-width: 0; }
+.solo-owner small { font-size: 11px; color: var(--muted); }
+.solo-fold { width: 100%; border: 0; background: none; font: inherit; cursor: pointer; text-align: left; }
+.solo-fold-hint { font-size: 12px; color: var(--mint-dark); margin-left: 6px; }
+.solo-added { margin-bottom: 12px; padding: 9px 12px; border-radius: 10px; background: #ecfdf5; color: #065f46; font-size: 13px; font-weight: 600; }
+.solo-products .qf-chip { text-align: left; }
+.solo-prod-name { font-weight: 500; opacity: .75; }
+.solo-clip-names { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; margin-top: 8px; }
+.solo-check { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; font-size: 14px; cursor: pointer; }
+.solo-check input { width: auto; flex: none; margin: 0; }   /* ช่องกรอกในฟอร์มกว้างเต็มช่อง — ช่องติ๊กต้องไม่กว้างตาม */
+.solo-back { margin-bottom: 12px; }
+.solo-hero-top { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.solo-badge { padding: 3px 10px; border-radius: 999px; background: #ede9fe; color: #5b21b6; font-size: 11.5px; font-weight: 700; }
+.solo-hero-name { margin: 10px 0 4px; font-size: 26px; overflow-wrap: anywhere; }
+.solo-hero-meta { color: var(--muted); font-size: 13px; margin-top: 2px; }
+.solo-hero-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+.solo-del { color: #b91c1c; }
+.solo-done-hint { margin-top: 12px; padding: 9px 12px; border-radius: 10px; background: #ecfdf5; color: #065f46; font-size: 13px; font-weight: 600; }
+.solo-stats { margin: 14px 0; }
+.solo-stats .stat-card:hover { transform: none; }
+.solo-fee-input { margin-top: 8px; }
+.solo-info { display: flex; flex-wrap: wrap; gap: 8px; }
+.solo-info-chip { padding: 5px 11px; border-radius: 999px; background: var(--bg-soft); font-size: 12.5px; color: var(--text); overflow-wrap: anywhere; }
+.solo-info-chip b { color: var(--mint-dark); }
+.solo-work-title { font-size: 17px; margin: 18px 0 10px; }
+@media (max-width: 900px) {
+    .solo-head { display: none; }
+    .solo-row { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px 12px; }
+    .solo-kol { grid-column: 1 / -1; }
+    .solo-row > svg { display: none; }
+}
+@media (prefers-reduced-motion: reduce) { .solo-row.fresh { animation: none; background: #ecfdf5; } }
 /* การ์ด Talent Book: ชื่อผู้ติดต่อ (ติดต่อเอง) นำหน้าเบอร์/LINE */
 .tb-contact-name { font-weight: 700; }
 .tf-file { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
