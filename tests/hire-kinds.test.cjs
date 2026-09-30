@@ -9,14 +9,15 @@ before(async () => {
     k = await import(pathToFileURL(path.join(__dirname, '../client/src/data/hireKinds.js')).href);
 });
 
-test('รายการประเภทงาน: เอา ช่างภาพ/ช่างวิดีโอ/เสียงพากย์ ออก · Event เป็น งาน Event · อื่น ๆ อยู่ท้าย', () => {
-    assert.deepEqual(k.HIRE_KINDS, ['นางแบบ', 'นายแบบ', 'นักแสดง', 'Live สด', 'พิธีกร', 'งาน Event', 'อื่น ๆ']);
+test('รายการประเภทงาน: เอา ช่างภาพ/ช่างวิดีโอ/เสียงพากย์ ออก · Event เป็น งาน Event · เพิ่ม Presenter · อื่น ๆ อยู่ท้าย', () => {
+    assert.deepEqual(k.HIRE_KINDS, ['นางแบบ', 'นายแบบ', 'นักแสดง', 'Live สด', 'พิธีกร', 'งาน Event', 'Presenter', 'อื่น ๆ']);
     for (const gone of ['ช่างภาพ', 'ช่างวิดีโอ', 'เสียงพากย์', 'Event']) assert.equal(k.HIRE_KINDS.includes(gone), false, gone);
 });
 
 test('ตัวเลือกที่ติ๊ก: ในรายการ = ตัวมันเอง · ว่าง = ยังไม่เลือก · ข้อความอื่น/ของเก่า = อื่น ๆ', () => {
     assert.equal(k.kindChoiceOf('นางแบบ'), 'นางแบบ');
     assert.equal(k.kindChoiceOf('งาน Event'), 'งาน Event');
+    assert.equal(k.kindChoiceOf('Presenter'), 'Presenter', 'เคยพิมพ์เองใต้ อื่น ๆ → ตอนนี้ติ๊ก Presenter ให้');
     assert.equal(k.kindChoiceOf(''), '');
     assert.equal(k.kindChoiceOf(null), '');
     assert.equal(k.kindChoiceOf('อื่น ๆ'), 'อื่น ๆ');
