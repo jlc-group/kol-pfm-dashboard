@@ -1,7 +1,6 @@
-import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { fileBlobUrl } from '../../api/client.js';
 import Icon from '../../components/Icon.jsx';
+import useLazyImage from '../../utils/useLazyImage.js';
 import { T, BOOKING_LABEL, CAND_LABEL, baht } from '../../data/talentLabels.js';
 
 // คอมการ์ดของคนหนึ่งคนใน Talent Book — รูปแนวตั้งซ้าย ข้อมูลขวา (ตามแบบที่ผู้ใช้เลือก)
@@ -85,46 +84,6 @@ export function accountOf(raw) {
     if (!pf) return { href, label: host + (seg ? '/' + seg : '') };
     const isHandle = seg && (pf.at ? seg.startsWith('@') : !NOT_HANDLE.has(seg.toLowerCase()));
     return { href, label: isHandle ? `${pf.name} @${seg.replace(/^@/, '')}` : pf.name };
-}
-
-// โหลดรูปผ่าน token เป็น blob เฉพาะตอนการ์ดเลื่อนมาใกล้จอ (หน้านี้มีคนเป็นร้อย ไม่ดึงรูปทั้งหมดตั้งแต่เปิด)
-// การ์ดหลุดจากรายการ / path เปลี่ยน → คืนหน่วยความจำของรูปเดิมทันที · <img src> ตรง ๆ ใช้ไม่ได้เพราะไฟล์ต้องแนบ token
-function useLazyImage(path) {
-    const box = useRef(null);
-    const [got, setGot] = useState({ path: '', url: '', failed: false });
-    useEffect(() => {
-        if (!path) return undefined;
-        let alive = true;
-        let made = '';
-        let io = null;
-        const go = () => fileBlobUrl(path).then(r => {
-            // ไม่ใช่รูป (ไฟล์ถูกเปลี่ยนเป็น PDF ระหว่างนั้น) หรือการ์ดหายไปแล้ว → ไม่มีใครใช้ blob นี้ คืนทันที
-            if (!alive || !String(r.type || '').startsWith('image/')) {
-                URL.revokeObjectURL(r.url);
-                if (alive) setGot({ path, url: '', failed: true });
-                return;
-            }
-            made = r.url;
-            setGot({ path, url: r.url, failed: false });
-        }).catch(() => { if (alive) setGot({ path, url: '', failed: true }); });
-        const el = box.current;
-        if (el && typeof window.IntersectionObserver === 'function') {
-            io = new window.IntersectionObserver(entries => {
-                if (!entries.some(e => e.isIntersecting)) return;
-                io.disconnect(); io = null;
-                go();
-            }, { rootMargin: '300px 0px' });
-            io.observe(el);
-        } else {
-            go();
-        }
-        return () => {
-            alive = false;
-            if (io) io.disconnect();
-            if (made) URL.revokeObjectURL(made);
-        };
-    }, [path]);
-    return [box, got.path === path ? got : { url: '', failed: false }];
 }
 
 // รูปฝั่งซ้าย: รูปที่อัปไว้ (รูปย่อ กดดูใหญ่) · PDF (ปุ่มเปิดไฟล์) · ลิงก์รูป (ปุ่มเปิดแท็บใหม่ — ไม่ดึงรูปจากเว็บคนอื่นมาโชว์) · ไม่มีรูป (ตัวอักษรย่อ)

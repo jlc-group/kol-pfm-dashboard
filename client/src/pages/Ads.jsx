@@ -11,6 +11,7 @@ import { useAuth } from '../auth/AuthContext.jsx';
 import { campaignIsCtype } from '../data/adGroups.js';
 import { stampAtOf, stampAtText } from '../data/stamp.js';
 import { matchAdsSearch } from '../data/adsSearch.js';
+import PostThumb from '../components/PostThumb.jsx';
 
 
 const STATUSES = ['ยังไม่ยิง', 'ยิงแล้ว'];
@@ -281,6 +282,8 @@ function AdRow({ row, onSaved, canCost }) {
 
     return (
         <div className="kol-track-entry">
+            {/* IMAGE — รูปปกคลิป (TikTok ดึงอัตโนมัติ) กดเปิดโพสต์ */}
+            <div className="ads-cell ads-thumb-cell"><PostThumb row={row} /></div>
             <div className="ads-name">
                 <div className="ads-name-meta">
                     <span className="ads-acc">{row.account_name}</span>
@@ -614,6 +617,7 @@ export default function Ads() {
                     <div className="ads-tbl-headwrap" ref={headRef} onScroll={() => syncX(headRef, bodyRef)}>
                         <div className="ads-tbl">
                             <div className="ads-tbl-head">
+                                <span title="รูปปกคลิป — TikTok ดึงให้อัตโนมัติ · กดรูปเพื่อเปิดโพสต์">IMAGE</span>
                                 <span>KOL
                                     <ColumnFilter label="Platform" value={platform} onPick={setPlatform}
                                         options={[{ value: '', label: 'ทุก Platform', count: countIf('platform', () => true) },

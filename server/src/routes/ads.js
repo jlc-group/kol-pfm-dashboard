@@ -1,5 +1,8 @@
 const express = require('express');
+const path = require('node:path');
 const store = require('../store');
+const { UPLOAD_DIR } = require('../config/uploads');
+const { thumbPath, createThumbCache } = require('../services/adThumbs');
 const { authenticate } = require('../middleware/auth');
 const { allowedBrands, canSeeBrand, canSeeCostMetrics } = require('../data/roles');
 const { cleanFee, pfmManagedSpend, postCheckWaiting } = require('../store/logic');
@@ -24,6 +27,9 @@ function maskCost(data, user) {
 const router = express.Router();
 router.use(authenticate);
 
+// รูปปกคลิป TikTok (คอลัมน์ IMAGE) — ดึงครั้งแรกแล้วเก็บไว้ในเครื่อง ครั้งต่อไปเสิร์ฟจากไฟล์เลย
+const thumbs = createThumbCache({ dir: path.join(UPLOAD_DIR, 'ads-thumbs') });
+
 const AD_STATUSES = ['ยังไม่ยิง', 'ยิงแล้ว'];
 
 // GET /api/ads — รายการโพสต์ที่ยิงแอด + สรุปภาพรวม (ตามสิทธิ์ทีม + ตัวกรอง)
@@ -38,7 +44,26 @@ router.get('/', async (req, res, next) => {
             from: from || undefined,
             to: to || undefined
         });
+        // path รูปปกของแต่ละแถว (null = ไม่ใช่โพสต์ TikTok หน้าเว็บขึ้นไอคอนแทน)
+        (data.rows || []).forEach(r => { r.thumb = thumbPath(r); });
         res.json({ status: 'success', data: maskCost(data, req.account || req.user) });
+    } catch (err) { next(err); }
+});
+
+// GET /api/ads/:subId/thumb — รูปปกคลิป TikTok ของโพสต์ · สิทธิ์ตามแบรนด์เหมือนตอนแก้แถว
+router.get('/:subId/thumb', async (req, res, next) => {
+    try {
+        res.set('Cache-Control', 'no-store');   // ตอบ error ห้ามค้างในเบราว์เซอร์ (ดึงได้ทีหลังต้องเห็นรูป)
+        const ctx = await store.ads.subContext(req.params.subId);
+        if (!ctx) return res.status(404).json({ status: 'error', message: 'ไม่พบโพสต์' });
+        if (!canSeeBrand(req.account || req.user, ctx.brand)) {
+            return res.status(403).json({ status: 'error', message: 'ไม่มีสิทธิ์ดูข้อมูลของแบรนด์อื่น' });
+        }
+        const fp = await thumbs.get(ctx.submission.post_url);
+        if (!fp) return res.status(404).json({ status: 'error', message: 'ยังไม่มีรูปปกของโพสต์นี้' });
+        // รูปของคลิปเดิมไม่เปลี่ยน (เปลี่ยนลิงก์โพสต์ = ?v= ใหม่) — ให้เบราว์เซอร์เก็บไว้ 7 วัน เฉพาะเครื่องคนนั้น
+        // ใส่ผ่าน headers ของ sendFile = ตั้งเฉพาะตอนส่งไฟล์สำเร็จ (ส่งไม่ได้ยังเป็น no-store ข้างบน)
+        res.sendFile(fp, { cacheControl: false, headers: { 'Cache-Control': 'private, max-age=604800' } });
     } catch (err) { next(err); }
 });
 

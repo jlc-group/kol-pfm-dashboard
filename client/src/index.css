@@ -1223,8 +1223,9 @@ a { text-decoration: none; color: inherit; }
    เอาคอลัมน์ STYLE ออก (18 คอลัมน์) จึงลดเหลือ 2010px — คอลัมน์อื่นกว้างเท่าเดิม
    ID POST ต้องเห็นเลขครบ (TikTok 19 หลัก ไม่ตัดเป็น ...) จึงขยายคอลัมน์ 0.95fr → 1.3fr และกว้างรวมเป็น 2100px — Target ยังได้ ~163px
    ต่ำกว่านี้ Target จะโดนตัดเป็น ... / สูงกว่านี้ Target ไม่ได้กว้างขึ้นแล้ว มีแต่เลื่อนไกลขึ้นเปล่า ๆ
+   เพิ่มคอลัมน์ IMAGE (รูปปก 56px + ช่องไฟ 10px) ไว้หน้าสุด จึงขยายเป็น 2166px — คอลัมน์อื่นกว้างเท่าเดิม
    หมายเหตุ: --app-zoom ตอนนี้เป็น 1 (เปลี่ยนจาก 1.2 ใน edb8dc7) ความกว้างบนจอจึงเท่ากับค่านี้ */
-.ads-tbl { min-width: 2100px; }
+.ads-tbl { min-width: 2166px; }
 /* หัวการ์ดตาราง: ชื่อ + ปุ่มล้างตัวกรอง + ตัวเลือกขนาดตาราง อยู่บรรทัดเดียวกัน (จอแคบตกบรรทัดได้)
    เดิมกล่องนี้ไม่มีสไตล์เลย หัวข้อกับปุ่มจึงซ้อนกันเป็นบรรทัด ๆ */
 .ads-tbl-bar { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin-bottom: 14px; }
@@ -1274,9 +1275,9 @@ a { text-decoration: none; color: inherit; }
 .colf-dot.none { background: #c3cdc8; }
 .ads-tbl-head, .kol-track-entry {
     display: grid;
-    /* KOL BRANDS PRODUCT CAMPAIGN TARGET CONTENT-TYPE FORMAT POST GENCODE ID-POST วันลงงาน วันยิงแอด สถานะ ค่าแอด/REACH ยิงช้า STAMPED LIVE หมายเหตุ */
-    /* POST เป็นไอคอนอย่างเดียวจึงให้แคบสุด เพื่อเก็บพื้นที่ไว้ให้คอลัมน์ที่มีข้อความยาว */
-    grid-template-columns: 1fr 0.95fr 0.85fr 0.85fr 1.25fr 0.7fr 0.5fr 0.3fr 1fr 1.3fr 0.8fr 0.65fr 0.65fr 0.85fr 0.6fr 0.7fr 0.7fr 0.9fr;
+    /* IMAGE KOL BRANDS PRODUCT CAMPAIGN TARGET CONTENT-TYPE FORMAT POST GENCODE ID-POST วันลงงาน วันยิงแอด สถานะ ค่าแอด/REACH ยิงช้า STAMPED LIVE หมายเหตุ */
+    /* IMAGE กว้างคงที่เท่ารูปปก · POST เป็นไอคอนอย่างเดียวจึงให้แคบสุด เพื่อเก็บพื้นที่ไว้ให้คอลัมน์ที่มีข้อความยาว */
+    grid-template-columns: 56px 1fr 0.95fr 0.85fr 0.85fr 1.25fr 0.7fr 0.5fr 0.3fr 1fr 1.3fr 0.8fr 0.65fr 0.65fr 0.85fr 0.6fr 0.7fr 0.7fr 0.9fr;
     gap: 10px; align-items: center;
 }
 .ads-note input { width: 100%; }
@@ -1308,6 +1309,31 @@ a { text-decoration: none; color: inherit; }
 }
 .kol-track-entry input:focus { outline: none; border-color: var(--mint); box-shadow: 0 0 0 3px rgba(16,185,129,.12); }
 .ads-name { display: flex; align-items: center; gap: 9px; min-width: 0; }
+/* คอลัมน์ IMAGE — รูปปกคลิปแนวตั้งมุมมน กดเปิดโพสต์ (server ดึงปก TikTok มาเก็บไว้ — services/adThumbs.js) */
+.ads-thumb {
+    position: relative; display: block; width: 56px; height: 76px; flex-shrink: 0;
+    border-radius: 10px; overflow: hidden; background: #eef3f0; border: 1px solid var(--border);
+}
+.ads-thumb img { display: block; width: 100%; height: 100%; object-fit: cover; transition: transform .2s ease; }
+a.ads-thumb:hover { border-color: var(--mint); }
+a.ads-thumb:hover img { transform: scale(1.06); }
+a.ads-thumb:focus-visible { outline: 2px solid var(--mint-dark); outline-offset: 2px; }
+.ads-thumb.off { opacity: .55; }
+.ads-thumb-wait {
+    position: absolute; inset: 0;
+    background: linear-gradient(100deg, #eef3f0 30%, #f8fbf9 50%, #eef3f0 70%); background-size: 200% 100%;
+    animation: adsThumbWait 1.2s linear infinite;
+}
+@keyframes adsThumbWait { to { background-position: -200% 0; } }
+.ads-thumb-none {
+    position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
+    color: var(--muted);
+}
+.ads-thumb-none em { font-style: normal; font-size: 9.5px; font-weight: 700; }
+@media (prefers-reduced-motion: reduce) {
+    .ads-thumb-wait { animation: none; }
+    a.ads-thumb:hover img { transform: none; }
+}
 .ads-name-meta { display: flex; flex-direction: column; min-width: 0; }
 .ads-acc { font-weight: 700; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ads-plat { font-size: 11px; color: var(--muted); }
