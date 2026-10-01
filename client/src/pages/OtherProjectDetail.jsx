@@ -21,19 +21,20 @@ import {
 } from '../data/hireProgress.js';
 
 // หน้างานของ Talent (campaign_type = 'other') — ProjectDetail เรียกหน้านี้แทนเมื่อเป็นประเภท other
+// ตั้งแต่ 1 ต.ค. 2026 หน้า Talent เหลือแค่ Talent Book (ไม่มีแท็บงาน / ใบขอให้หา / ขอเรทราคา) — หน้านี้เก็บไว้ให้ลิงก์งานเก่าเปิดได้
 // งานแบบนี้ไม่มี Platform / คลิป / ค่าแอด / เอเจนซี่ — สิ่งที่ต้องดูคือ "ใคร ทำอะไร วันไหน เท่าไร ถึงขั้นไหนแล้ว"
 // รอบ 2: เลิกตารางที่แก้ในหน้าแล้วต้องกดแถบ "บันทึกการแก้ไข" (ลืมกดแล้วงานหาย / ชน 409 กับคนช่วยหา)
 //   • เปลี่ยนขั้นของคนด้วยปุ่ม "ถัดไป" คลิกเดียว บันทึกทันที มีแถบเลิกทำ 5 วินาที
 //   • แก้คนทีละคนในลิ้นชัก (PersonDrawer) ผ่านเส้นแก้แถวเดียว PATCH .../hires/:key/person
-//   • ใบขอให้หาของงานนี้เป็นบรรทัดสรุป กดแล้วเปิดลิ้นชักใบ (ตัวเดียวกับหน้า Talent) บนหน้านี้
-// ตัวเลขคน/เงิน/เรื่องที่ต้องทำ คิดด้วย jobProgress ชุดเดียวกับการ์ดงาน (server คิดแบบเดียวกัน มีเทสต์เทียบ)
+//   • ใบขอให้หาของงานนี้เป็นบรรทัดสรุป กดแล้วเปิดลิ้นชักใบ (RequestDrawer) บนหน้านี้ — ที่เดียวที่เปิดใบได้แล้ว (หน้า Talent ไม่มีแท็บใบ)
+// ตัวเลขคน/เงิน/เรื่องที่ต้องทำ คิดด้วย jobProgress (server คิดแบบเดียวกันใน GET /hires/jobs มีเทสต์เทียบ)
 
 // #req-<key> มาจาก URL ที่คนพิมพ์/วางเองได้ — % ที่ไม่ครบชุดทำให้ decodeURIComponent โยน error แล้วหน้าพังทั้งหน้า
 const safeDecode = s => { try { return decodeURIComponent(s); } catch { return s; } };
 // แถวเก่าที่บันทึกก่อนมี key ต้องมีรหัสให้ React เสมอ — แต่เส้นแก้แถวเดียวหาแถวนั้นไม่เจอ จึงติดป้าย _nokey ไว้ (แก้ได้ในฟอร์มเต็ม)
 const rowsOf = list => (Array.isArray(list) ? list : []).filter(Boolean)
     .map((it, i) => (it.key ? it : { ...it, key: 'h' + i, _nokey: true }));
-// ?show= ที่การ์ดงานส่งมา (ยังไม่ตกลง / ตกลงแล้ว / เสร็จแล้ว)
+// ?show= (ยังไม่ตกลง / ตกลงแล้ว / เสร็จแล้ว) — เดิมการ์ดงานในหน้า Talent ส่งมา แท็บนั้นเอาออกแล้ว แต่ลิงก์เก่ายังใช้ได้
 const SHOW_KEYS = ['pending', 'agreed', 'done'];
 // เรื่องที่ต้องทำแบบ "ดูคน" → ชิปกรองที่ตรงกัน
 const GROUP_OF_TODO = { talking: 'pending', past: 'agreed', deliver: 'done' };
@@ -186,7 +187,7 @@ export default function OtherProjectDetail({ project, reload, onDeleted }) {
         return () => { tasksSeq.current += 1; window.removeEventListener('kol:hire-tasks-changed', loadTasks); };
     }, [loadTasks]);
 
-    // ลิ้นชักใบเปิดตาม #req-<key> ใน URL ที่เดียว (ลิงก์จากหน้า Talent / ลิงก์ที่คัดลอกไว้ / กดในหน้านี้)
+    // ลิ้นชักใบเปิดตาม #req-<key> ใน URL ที่เดียว (ลิงก์ที่คัดลอกไว้ / กดในหน้านี้)
     // ปิดลิ้นชัก = เอา hash ออก (replace — ไม่เพิ่มประวัติ ปุ่มย้อนกลับของเบราว์เซอร์ยังพากลับหน้าที่มา)
     const hashMatch = /^#req-(.+)$/.exec(location.hash || '');
     const openReq = hashMatch ? safeDecode(hashMatch[1]) : null;
@@ -221,7 +222,7 @@ export default function OtherProjectDetail({ project, reload, onDeleted }) {
         setView('person');
         requestAnimationFrame(() => { if (peopleRef.current) peopleRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' }); });
     };
-    // มาจากการ์ดงาน (?show=pending|agreed|done) → เลือกชิปนั้นแล้วเลื่อนลงไปที่รายชื่อ
+    // ลิงก์ที่มี ?show=pending|agreed|done (จากการ์ดงานเดิม) → เลือกชิปนั้นแล้วเลื่อนลงไปที่รายชื่อ
     useEffect(() => {
         if (SHOW_KEYS.includes(showParam)) goPeople(showParam);
     }, [showParam]);   // eslint-disable-line react-hooks/exhaustive-deps
@@ -361,7 +362,7 @@ export default function OtherProjectDetail({ project, reload, onDeleted }) {
     const [showEdit, setShowEdit] = useState(false);      // ฟอร์มเต็ม (แก้หลายคนพร้อมกัน)
     const [showInfo, setShowInfo] = useState(false);      // แก้ข้อมูลงาน
 
-    // ปุ่มย้อนกลับ: มาจากในแอป (หน้าหลัก Talent / ลิ้นชักใบ / รายการงาน) → กลับหน้าเดิมพร้อมแท็บและตัวกรองเดิม
+    // ปุ่มย้อนกลับ: มาจากในแอป → กลับหน้าเดิมพร้อมตัวกรองเดิม
     // เปิดตรงจากลิงก์ (ไม่มีประวัติในแอป) → ไปหน้า Talent แทน ไม่ให้เด้งออกนอกเว็บ
     function goBack() {
         if (window.history.state && window.history.state.idx > 0) navigate(-1);
@@ -487,7 +488,7 @@ export default function OtherProjectDetail({ project, reload, onDeleted }) {
                             <span>บอกสเปค จำนวน งบต่อคน ให้{T.finder}ส่งรายชื่อมาให้เลือก</span>
                         </button>
                     </div>
-                    <Link className="tj-link" to="/hires?tab=people">เลือกจาก Talent Book →</Link>
+                    <Link className="tj-link" to="/hires">เลือกจาก Talent Book →</Link>
                 </div>
             ) : (
                 <>

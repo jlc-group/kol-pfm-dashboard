@@ -11,7 +11,8 @@ import { kindError, kindValue } from '../data/hireKinds.js';
 import { T, feeMissing, needsFee, NEED_FEE_MSG, baht, requestLink } from '../data/talentLabels.js';
 import { fmtDate } from '../utils/date.js';
 
-// ฟอร์มสั้นของหน้า Talent — แทนการเปิดฟอร์มเต็มแล้วเลือก "รูปแบบการจ้าง" ใน dropdown
+// ฟอร์มสั้นของงาน Talent — แทนการเปิดฟอร์มเต็มแล้วเลือก "รูปแบบการจ้าง" ใน dropdown
+// ตั้งแต่ 1 ต.ค. 2026 เปิดได้จากหน้างานแบบ other (OtherProjectDetail) ที่เดียว — หน้า Talent เหลือแค่ Talent Book
 // • mode 'direct'  = มีคนแล้ว บันทึกการจ้าง (1 คน = 1 แถว)
 // • mode 'casting' = ขอให้ช่วยหาคน (1 ใบขอให้หา)
 // บันทึกทีละแถวผ่าน POST /projects/:id/hires — ไม่ส่งรายการจ้างทั้งก้อน จึงไม่ชน 409 กับคนช่วยหาที่กำลังส่งชื่อเข้าใบอยู่

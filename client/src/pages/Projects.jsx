@@ -89,7 +89,7 @@ export default function Projects() {
     const [month, setMonth] = useState(''); // '' = ทุกเดือน
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
-    // หน้านี้สร้างได้อย่างเดียวคือแคมเปญ KOL — งานจ้างอื่น ๆ กับคำขอสอบถามราคาไปสร้างที่เมนู "งานจ้างอื่น ๆ"
+    // หน้านี้สร้างแคมเปญ KOL (และ KOL รายคนในแท็บของมัน) — งานจ้างอื่น ๆ / สอบถามราคา ไม่มีที่สร้างในหน้าเว็บแล้ว (หน้า Talent เหลือแค่ Talent Book)
     const [showForm, setShowForm] = useState(false);
     // แท็บ แคมเปญ KOL | KOL รายคน (ผู้ใช้สั่ง 30 ก.ย. 2026) — จำไว้ใน URL (?view=solo) ให้ปุ่มย้อนกลับ/ลิงก์กลับมาแท็บเดิม
     const [params, setParams] = useSearchParams();

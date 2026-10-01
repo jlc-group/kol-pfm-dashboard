@@ -1,7 +1,8 @@
 // ความคืบหน้าของงาน Talent (คน / เงิน / เรื่องที่ต้องทำก่อน) + ขั้นของคนแต่ละคน
 // ไฟล์นี้ต้องเป็น JS ล้วน (ไม่มี JSX / window) — เทสต์ import ตรงผ่าน node ได้
 // jobProgress ต้องตรงกับ jobProgress ฝั่ง server (server/src/store/logic.js) — tests/talent-r2-parity.test.cjs เทียบผลสองฝั่ง
-// การ์ดงานในแท็บงานทั้งหมดได้ผลนี้จาก server (GET /hires/jobs → progress) ส่วนหน้างานคิดเองจาก hire_items ที่โหลดมา
+// หน้างาน (OtherProjectDetail) คิดเองจาก hire_items ที่โหลดมา · server ส่งผลแบบเดียวกันใน GET /hires/jobs → progress
+// (เดิมการ์ดงานในแท็บงานทั้งหมดของหน้า Talent ใช้ — แท็บนั้นเอาออกแล้ว 1 ต.ค. 2026 · moneyLine เหลือแค่เทสต์เทียบที่ใช้)
 import { T, baht } from './talentLabels.js';
 
 const JOB_CLOSED = ['Completed', 'Cancelled'];
@@ -91,7 +92,7 @@ export function jobProgress(items, jobStatus, today) {
     return { people, money, todo, next };
 }
 
-// ประโยคของเรื่องที่ต้องทำ (บรรทัด "ถัดไป:" ของการ์ดงาน / กล่อง "ต้องทำในงานนี้")
+// ประโยคของเรื่องที่ต้องทำ (กล่อง "ต้องทำในงานนี้" ของหน้างาน)
 // target บอกว่าปุ่มควรพาไปไหน: 'request' = เปิดใบขอให้หา (keys[0]) · 'people' = ดูรายชื่อคนในงาน · 'job' = เปิดหน้างาน
 const d_m = d => { const [, m, dd] = String(d || '').split('-'); return m && dd ? `${Number(dd)}/${Number(m)}` : ''; };
 export function todoText(item, people = {}) {

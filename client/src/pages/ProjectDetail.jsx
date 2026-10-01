@@ -662,7 +662,8 @@ export default function ProjectDetail() {
     if (error) return <div className="alert-error">{error}</div>;
     if (!project) return <div className="empty">กำลังโหลด...</div>;
     // แยกที่นี่ที่เดียว — ลิงก์ /projects/:id เดิมทั้งหมด (หน้าแคมเปญ, ประวัติการแก้ไข, บุ๊กมาร์ก) จึงยังใช้ได้เหมือนเดิม
-    if (isOther) return <OtherProjectDetail project={project} reload={load} onDeleted={() => navigate('/hires?tab=jobs')} />;
+    // ลบงาน Talent เก่าแล้วกลับหน้า Talent (ไม่มีแท็บรายการงานแล้ว — หน้านั้นเหลือแค่ Talent Book)
+    if (isOther) return <OtherProjectDetail project={project} reload={load} onDeleted={() => navigate('/hires')} />;
     if (isSolo) return <SoloKolDetail project={project} reload={load} />;
 
     const kols = project.kols || [];

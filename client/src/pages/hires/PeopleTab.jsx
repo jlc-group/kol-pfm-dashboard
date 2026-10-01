@@ -7,7 +7,8 @@ import { T } from '../../data/talentLabels.js';
 import CompCard, { accountOf } from './CompCard.jsx';
 import TalentForm from './TalentForm.jsx';
 
-// แท็บ "Talent Book" — คอมการ์ดของทุกคนที่เคยเสนอหรือบันทึกให้แบรนด์ (อ่านอย่างเดียว ไว้เลือกคนเดิมซ้ำ ดูราคาเดิม)
+// Talent Book — ทั้งหน้า Talent มีแค่ส่วนนี้ (ผู้ใช้สั่ง 1 ต.ค. 2026): คอมการ์ด + เรทราคา ทีมเพิ่ม/แก้เองด้วย "+ Talent Book"
+// การ์ดจากงาน Talent เก่า (คนที่เคยบันทึก/เสนอในงาน) ยังรวมขึ้นมาให้ด้วย — อ่านอย่างเดียว ไว้เลือกคนเดิมซ้ำ ดูราคาเดิม
 // ป้ายบนการ์ดบอกว่า Booked (มีงานที่ตกลงแล้ว) หรือ Casting (เคยเสนอ / ยังไม่ได้งาน) — ไม่มีปุ่มกรองสองกลุ่มนี้ (ผู้ใช้ขอเอาออก)
 // server รวมคนเดียวกัน (ชื่อ + ประเภทงาน) เป็นใบเดียวและกรองสิทธิ์แบรนด์แล้ว — หน้านี้กรองต่อในเครื่อง (ข้อมูลชุดเล็ก)
 // แยกจากหน้าอินฟลูเอนเซอร์ตั้งใจ — งานพวกนี้ไม่มียอดวิว/CPM ถ้าเอาไปปนกัน ค่าเฉลี่ยของหน้านั้นจะเพี้ยน
@@ -83,7 +84,7 @@ export default function PeopleTab() {
                 <div className="ka-search">
                     <Icon name="search" size={15} />
                     <input value={search} onChange={e => setSearch(e.target.value)} aria-label="ค้นหาคอมการ์ด"
-                        placeholder={`ค้นหาชื่อ / สังกัด / Account / ${T.contact} / ผู้ติดต่อ / เสนอโดย / งาน...`} />
+                        placeholder={`ค้นหาชื่อ / สังกัด / Account / ${T.contact} / ผู้ติดต่อ / Scope...`} />
                     {search && (
                         <button type="button" className="ka-search-x" onClick={() => setSearch('')} title="ล้างคำค้นหา">✕</button>
                     )}
@@ -117,7 +118,7 @@ export default function PeopleTab() {
                     {cards.length === 0 ? (
                         <>
                             <div className="tb-empty-title">ยังไม่มีคอมการ์ด</div>
-                            <p>กด "+ Talent Book" เพื่อเพิ่มคนเองได้เลย — คนที่บันทึกไว้ในงาน และชื่อที่{T.finder}เสนอมาใน{T.request} ก็จะขึ้นที่นี่เองพร้อมรูปและราคา</p>
+                            <p>กด "+ Talent Book" เพื่อเพิ่มคอมการ์ดพร้อมเรทราคาได้เลย — แบรนด์ไหนจ้างใคร เพิ่มเก็บไว้ที่นี่ ทุกคนในทีมเห็น</p>
                         </>
                     ) : (
                         <>

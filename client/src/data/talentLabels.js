@@ -68,7 +68,8 @@ export const CAND_LABEL = { 'เสนอ': 'รอเลือก', 'เลื�
 // เหตุผลสั้น ๆ ตอนกด "ไม่เอา" (ชิปลัด — พิมพ์เองได้เสมอ)
 export const REJECT_REASONS = ['ไม่ตรงสเปค', 'เกินงบ', 'คิวไม่ตรง'];
 
-// ลิงก์ของใบ (ส่ง LINE ให้คนช่วยหา / ทีม) — รูปแบบเดิม ลิงก์เก่าที่ส่งไปแล้วยังเปิดได้
+// ลิงก์ของใบ (ส่ง LINE ให้คนช่วยหา / ทีม) — รูปแบบเดิม (มีเทสต์ล็อกไว้)
+// ตั้งแต่ 1 ต.ค. 2026 หน้า Talent เหลือแค่ Talent Book ไม่อ่าน ?open= แล้ว ลิงก์นี้จึงมาลงหน้า Talent Book (ไม่เปิดใบ) — ใบเปิดได้ที่หน้างาน #req-<key>
 export const requestLink = (origin, projectId, key) => `${origin}/hires?tab=requests&open=${projectId}~${key}`;
 export const parseOpen = v => {
     const [pid, key] = String(v || '').split('~');

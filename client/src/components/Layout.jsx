@@ -16,7 +16,7 @@ const MAIN_NAV = [
     { to: '/ads', label: 'Ads', icon: 'target' },
     { to: '/budget', label: 'Campaign Reports', icon: 'bars' },
     { to: '/kols', label: 'Influencers', icon: 'star' },
-    // Talent (เดิม "งานจ้างอื่น ๆ") = นางแบบ / นักแสดง / Live / พิธีกร — รวมงานจัดหาไว้แล้ว (แท็บใบขอจัดหา) /hire-tasks เดิมพามาที่แท็บนั้น
+    // Talent = Talent Book อย่างเดียว (คอมการ์ด + เรทราคา นางแบบ / นักแสดง / Live / พิธีกร) — ไม่มีใบขอให้หา/ขอเรทราคาแล้ว จึงไม่มีเลขแดงบนเมนูนี้
     { to: '/hires', label: 'Talent', icon: 'team' }
 ];
 
@@ -76,32 +76,7 @@ export default function Layout() {
         return () => { alive = false; clearInterval(t); window.removeEventListener('kol:users-changed', load); };
     }, [user]);
 
-    // ใบขอจัดหาที่ถึงตาเรา (ต้องหาคน / ต้องอนุมัติชื่อ / ต้องมอบหมายคนหา) — ระบบไม่มีอีเมลแจ้ง ต้องเห็นจากตัวเลขบนเมนู
-    const [taskCount, setTaskCount] = useState(0);
-    const [taskTip, setTaskTip] = useState('');
-    useEffect(() => {
-        if (!user || user.role === 'agency') return;
-        let alive = true;
-        const load = () => api('/hires/tasks/count')
-            .then(r => {
-                if (!alive) return;
-                const c = r.data || {};
-                setTaskCount(c.total || 0);
-                setTaskTip([
-                    c.to_find ? `หาคน ${c.to_find}` : '',
-                    c.to_decide ? `เลือกชื่อ ${c.to_decide}` : '',
-                    c.to_assign ? `เลือกคนช่วยหา ${c.to_assign}` : '',
-                    c.to_confirm ? `ยืนยันคิว ${c.to_confirm}` : '',
-                    c.to_fee ? `ตัดสินค่าตัวใหม่ ${c.to_fee}` : ''
-                ].filter(Boolean).join(' · '));
-            })
-            .catch(() => {});
-        load();
-        const t = setInterval(load, 60000);
-        // เสนอ/เลือกชื่อเสร็จ หน้างานจัดหาจะยิง event นี้มา ตัวเลขจะได้เปลี่ยนทันทีไม่ต้องรอครบนาที
-        window.addEventListener('kol:hire-tasks-changed', load);
-        return () => { alive = false; clearInterval(t); window.removeEventListener('kol:hire-tasks-changed', load); };
-    }, [user]);
+    // (เลขแดงใบขอให้หาบนเมนู Talent เอาออกแล้ว 1 ต.ค. 2026 — หน้า Talent เหลือแค่ Talent Book ไม่ต้องดึง /hires/tasks/count ทุกนาที)
 
     useEffect(() => {
         setNavOpen(false);
@@ -118,7 +93,7 @@ export default function Layout() {
     }
 
     // เลขแดงของเมนู — ตอนพับต้องเอาไปต่อท้ายชื่อใน aria-label ด้วย (เห็นด้วยตา แต่โปรแกรมอ่านหน้าจอไม่เห็นถ้าไม่ใส่)
-    const navCount = to => (to === '/users' ? pendingCount : to === '/hires' ? taskCount : 0);
+    const navCount = to => (to === '/users' ? pendingCount : 0);
 
     function renderItem(item) {
         return (
@@ -142,9 +117,6 @@ export default function Layout() {
                 <span className="nav-label">{item.label}</span>
                 {item.to === '/users' && pendingCount > 0 && (
                     <span className="nav-badge" title={`มี ${pendingCount} คนรออนุมัติ`}>{pendingCount}</span>
-                )}
-                {item.to === '/hires' && taskCount > 0 && (
-                    <span className="nav-badge" title={`ใบขอให้หาที่ถึงตาคุณ ${taskCount} ใบ${taskTip ? ` (${taskTip})` : ''}`}>{taskCount}</span>
                 )}
             </NavLink>
         );

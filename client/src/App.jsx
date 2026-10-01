@@ -41,8 +41,8 @@ export default function App() {
                         <Route index element={<Dashboard />} />
                         <Route path="kols" element={<Kols />} />
                         <Route path="hires" element={<OtherWork />} />
-                        {/* เมนู "งานจัดหา" เดิมรวมเข้าเมนูงานจ้างอื่น ๆ แล้ว — ลิงก์/บุ๊กมาร์กเก่าพาไปที่แท็บใบขอจัดหา */}
-                        <Route path="hire-tasks" element={<Navigate to="/hires?tab=requests" replace />} />
+                        {/* เมนู "งานจัดหา" เดิม — หน้า Talent เหลือแค่ Talent Book แล้ว (1 ต.ค. 2026) ลิงก์/บุ๊กมาร์กเก่าพาไปหน้านั้น */}
+                        <Route path="hire-tasks" element={<Navigate to="/hires" replace />} />
                         <Route path="influencers/:id" element={<InfluencerDetail />} />
                         <Route path="projects" element={<Projects />} />
                         <Route path="projects/:id" element={<ProjectDetail />} />

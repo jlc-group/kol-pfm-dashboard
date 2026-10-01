@@ -259,7 +259,6 @@ export default function SoloKolForm({ onClose, onSaved, project = null, clipName
             if (!d.content_type || !ctypeOptionsOf(p).includes(d.content_type)) e['ct_' + p] = tag(p, campaignIsCtype(p) ? 'เลือก Campaign' : 'เลือก Content Type');
             if (targetOptionsOf(p).length && !d.target.length) e['tg_' + p] = tag(p, 'เลือก Target อย่างน้อย 1 กลุ่ม (หน้า Ads และระบบยิงแอดใช้ค่านี้)');
         });
-        if (j.brief_link.trim() && !isWeb(j.brief_link.trim())) e.brief_link = 'ลิงก์ต้องขึ้นต้นด้วย http:// หรือ https://';
         return e;
     }
     const errs = errors();
@@ -317,7 +316,10 @@ export default function SoloKolForm({ onClose, onSaved, project = null, clipName
             brand: j.brand, products: j.products,
             clips: j.clips, clip_names: j.clip_names.slice(0, j.clips).map(n => n.trim()),
             owner: j.owner, code_expire: j.code_expire, no_gencode: j.no_gencode,
-            concept: j.concept.trim(), brief_link: j.brief_link.trim(), note: j.note.trim()
+            concept: j.concept.trim(),
+            // ช่องลิงก์บรีฟ / หมายเหตุ เอาออกจากฟอร์มแล้ว (ผู้ใช้สั่ง 1 ต.ค. 2026) — ตอนแก้ไขส่งค่าเดิมของการจ้างกลับไปตามเดิม
+            // (server เขียนสองช่องนี้ทุกครั้งที่บันทึก ไม่ส่ง = ค่าเดิมหาย) · เพิ่มใหม่ = ว่าง
+            brief_link: j.brief_link.trim(), note: j.note.trim()
         };
         try {
             if (editing) {
@@ -541,12 +543,6 @@ export default function SoloKolForm({ onClose, onSaved, project = null, clipName
                     </div>
                     <Field label="Concept" opt="ไม่บังคับ" htmlFor={id('cc')}>
                         <textarea id={id('cc')} rows={2} value={j.concept} maxLength={1000} onChange={e => upJ('concept', e.target.value)} />
-                    </Field>
-                    <Field label="ลิงก์บรีฟ" opt="ไม่บังคับ" err={E.brief_link} htmlFor={id('bl')}>
-                        <input id={id('bl')} value={j.brief_link} maxLength={1000} autoComplete="off" onChange={e => upJ('brief_link', e.target.value)} placeholder="https://..." />
-                    </Field>
-                    <Field label="หมายเหตุ" opt="ไม่บังคับ" htmlFor={id('nt')}>
-                        <textarea id={id('nt')} rows={2} value={j.note} maxLength={1000} onChange={e => upJ('note', e.target.value)} />
                     </Field>
                 </section>
             </div>
