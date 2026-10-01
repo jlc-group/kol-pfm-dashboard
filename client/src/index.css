@@ -1274,7 +1274,7 @@ a { text-decoration: none; color: inherit; }
     line-height: 1.5; cursor: pointer; white-space: nowrap;
 }
 .btn-clearfilter:hover { border-color: var(--mint); color: var(--mint-dark); }
-/* จุดสีในเมนูกรอง ให้ตรงกับสีป้ายในคอลัมน์ยิงช้า */
+/* จุดสีในเมนูกรอง ให้ตรงกับสีป้ายในคอลัมน์ระยะเวลายิง */
 .colf-dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
 .colf-dot.ontime { background: var(--mint); }
 .colf-dot.warn { background: #e0a72c; }
@@ -1282,7 +1282,7 @@ a { text-decoration: none; color: inherit; }
 .colf-dot.none { background: #c3cdc8; }
 .ads-tbl-head, .kol-track-entry {
     display: grid;
-    /* IMAGE KOL BRANDS PRODUCT CAMPAIGN TARGET CONTENT-TYPE FORMAT GENCODE ID-POST วันลงงาน วันยิงแอด สถานะ ค่าแอด/REACH ยิงช้า STAMPED LIVE หมายเหตุ */
+    /* IMAGE KOL BRANDS PRODUCT CAMPAIGN TARGET CONTENT-TYPE FORMAT GENCODE ID-POST วันลงงาน วันยิงแอด สถานะ ค่าแอด/REACH ระยะเวลายิง STAMPED LIVE หมายเหตุ */
     /* IMAGE กว้างคงที่เท่ารูปปก (กดรูปเปิดโพสต์ — คอลัมน์ POST เดิมเอาออกแล้ว) */
     grid-template-columns: 56px 1fr 0.95fr 0.85fr 0.85fr 1.25fr 0.7fr 0.5fr 1fr 1.3fr 0.8fr 0.65fr 0.65fr 0.85fr 0.6fr 0.7fr 0.7fr 0.9fr;
     gap: 10px; align-items: center;

@@ -191,6 +191,8 @@ const ads = {
                     id_post_at: s.id_post_at || null, id_post_by: s.id_post_by || null,
                     post_date_at: s.post_date_at || null, post_date_by: s.post_date_by || null,
                     post_check: s.post_check || null,
+                    // เวลาที่ทีมอนุมัติข้อมูลโพสต์ — หน้าเว็บใช้คิด "วันพร้อมยิง" ของคอลัมน์ระยะเวลายิง (client/src/data/adTiming.js)
+                    post_check_at: s.post_check_at || null,
                     project_id: s.project_id,
                     project_name: p ? p.name : null,
                     brand: p ? (p.brand || 'อื่นๆ') : 'อื่นๆ',

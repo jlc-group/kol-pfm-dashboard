@@ -12,6 +12,7 @@ import { campaignIsCtype } from '../data/adGroups.js';
 import { stampAtOf, stampAtText } from '../data/stamp.js';
 import { matchAdsSearch } from '../data/adsSearch.js';
 import PostThumb from '../components/PostThumb.jsx';
+import { adTiming, timingLevel, timingTip, TIMING_OPTS } from '../data/adTiming.js';
 
 
 const STATUSES = ['ยังไม่ยิง', 'ยิงแล้ว'];
@@ -121,12 +122,6 @@ const fmtNum = n => {
 };
 // ระดับความช้าจากจำนวนวัน — ใช้ทั้งสีป้ายในตารางและตัวกรอง จะได้ไม่หลุดกัน
 //   เขียว ≤ 3 วัน (รวมยิงตรงวัน) · เหลือง 4-5 วัน · แดง 6 วันขึ้นไป
-const lateLevel = d => (d <= 3 ? 'ontime' : d <= 5 ? 'warn' : 'bad');
-const LATE_OPTS = [
-    ['ontime', 'ไม่เกิน 3 วัน'],
-    ['warn', 'ช้า 4-5 วัน'],
-    ['bad', 'ช้า 6 วันขึ้นไป'],
-];
 // จำนวนวันระหว่าง 2 วันที่ (to - from) เป็นจำนวนวัน (คืน null ถ้าข้อมูลไม่ครบ)
 function daysBetween(from, to) {
     if (!from || !to) return null;
@@ -272,9 +267,9 @@ function AdRow({ row, onSaved, canCost }) {
     const shownStatus = (adStatus === 'ยิงแล้ว' || ranBySpend) ? 'ยิงแล้ว' : 'ยังไม่ยิง';
     const doneFromSpend = ranBySpend && adStatus !== 'ยิงแล้ว';
 
-    // ยิงแอดช้าไปกี่วันหลังวันลงคลิป (นับจาก Post Date → วันยิงแอด)
+    // ระยะเวลายิง — นับจากวันพร้อมยิง (ข้อมูลครบชิ้นสุดท้าย: ลงคลิป / Gencode / ID Post / ทีมอนุมัติ) → วันยิงแอด (ดู data/adTiming.js)
     // แถวที่รู้จากค่าแอดก็นับได้ถ้า PFM ลงวันยิงแอดมาให้แล้ว
-    const lateDays = (shownStatus === 'ยิงแล้ว' && row.post_date && end) ? daysBetween(row.post_date, end) : null;
+    const timing = shownStatus === 'ยิงแล้ว' && end ? adTiming(row, end) : null;
     // แจ้งเข้าระบบช้าไปกี่วันหลัง KOL ลงงานจริง — แยกให้เห็นว่ายิงแอดช้าเพราะเราช้าหรือเพราะเพิ่งได้รับแจ้ง
     const reportLag = (row.post_date && row.post_date_at)
         ? daysBetween(row.post_date, String(row.post_date_at).slice(0, 10))
@@ -384,11 +379,11 @@ function AdRow({ row, onSaved, canCost }) {
                     onChange={e => { setReach(e.target.value.replace(/[^0-9]/g, '')); setReachDirty(true); }} onBlur={saveReach} />
             </div>
             <div className="ads-cell ads-late">
-                {lateDays === null
+                {timing === null
                     ? <span className="muted">—</span>
-                    : lateDays <= 0
-                        ? <span className="late-chip ontime" title="ยิงแอดในวันเดียวกับที่ลงคลิป">ตรงเวลา</span>
-                        : <span className={'late-chip ' + lateLevel(lateDays)} title={`ยิงแอดช้ากว่าวันลงคลิป ${lateDays} วัน`}>ช้า {lateDays} วัน</span>}
+                    : timing.late <= 0
+                        ? <span className="late-chip ontime" title={timingTip(timing)}>ตรงเวลา</span>
+                        : <span className={'late-chip ' + timingLevel(timing.late)} title={timingTip(timing)}>ช้า {timing.late} วัน</span>}
             </div>
             <div className="ads-cell"><StampCell row={row} /></div>
             <div className="ads-cell"><LiveCell row={row} /></div>
@@ -439,11 +434,11 @@ export default function Ads() {
 
     // จัดกลุ่มความช้า — นับเฉพาะโพสต์ที่ยิงแล้วและมีวันครบทั้งสองฝั่ง
     // เขียว = ช้าไม่เกิน 3 วัน (รวมยิงตรงวัน) · เหลือง = 4-5 วัน · แดง = 6 วันขึ้นไป
+    // ตัวกรองคอลัมน์ระยะเวลายิง — กติกาเดียวกับป้ายในแถว (data/adTiming.js)
     const lateBucket = r => {
-        if (r.ad_status !== 'ยิงแล้ว' || !r.post_date || !r.ad_end) return null;
-        const d = daysBetween(r.post_date, r.ad_end);
-        if (d === null) return null;
-        return lateLevel(d);
+        if (r.ad_status !== 'ยิงแล้ว' || !r.ad_end) return null;
+        const t = adTiming(r, r.ad_end);
+        return t ? timingLevel(t.late) : null;
     };
     // skip = ข้ามตัวกรองตัวนั้น ใช้ตอนนับเลขบนปุ่ม (เลขบอกว่า "ถ้ากดปุ่มนี้จะเหลือกี่รายการ")
     // ใช้สถานะที่โชว์ (ad_status_shown) เพื่อให้เลขบนปุ่มตรงกับที่ตาเห็นในตาราง
@@ -630,10 +625,10 @@ export default function Ads() {
                                         ...STATUSES.map(st => ({ value: st, label: st === 'ยิงแล้ว' ? '✓ ยิงแล้ว' : st, count: countIf('status', r => shownStatusOf(r) === st) }))]} />
                                 </span>
                                 <span title="ค่าแอดสะสม (บาท) และ Reach — กรอกเองได้ บันทึกเมื่อออกจากช่อง">ค่าแอด / REACH</span>
-                                <span>ยิงช้า
-                                    <ColumnFilter label="ความช้า" value={late} onPick={setLate}
+                                <span title="นับจากวันที่ข้อมูลครบพร้อมยิง (ลงคลิป / Gencode / ID Post / ทีมอนุมัติ) ถึงวันยิงแอด — ภายใน 3 วัน = ตรงเวลา">ระยะเวลายิง
+                                    <ColumnFilter label="ระยะเวลายิง" value={late} onPick={setLate}
                                         options={[{ value: '', label: 'ทั้งหมด', count: countIf('late', () => true) },
-                                        ...LATE_OPTS.map(([v, l]) => ({ value: v, label: l, dot: v, count: countIf('late', r => lateBucket(r) === v) }))]} />
+                                        ...TIMING_OPTS.map(([v, l]) => ({ value: v, label: l, dot: v, count: countIf('late', r => lateBucket(r) === v) }))]} />
                                 </span>
                                 <span title="ผลที่ระบบล็อกไว้ตอนค่ายิงแอดสะสมถึงเกณฑ์ของแบรนด์นั้น — แก้ไม่ได้ (ชี้ที่ป้ายในแถวเพื่อดูตัวเลขของแบรนด์)">STAMPED PFM 🔒</span>
                                 <span title="ผลตอนนี้ คำนวณสดจากข้อมูลล่าสุด — ใช้ตัดสินว่าควรยิงต่อหรือหยุด">PFM</span>
