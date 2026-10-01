@@ -6,7 +6,8 @@ import { useEffect, useRef, useState } from 'react';
 // - บันทึกไม่ผ่าน ข้อความ error ค้างไว้ให้เห็นจนกว่าจะเริ่มแก้ใหม่ (ไม่หายเองแบบ toast)
 const MAX_FEE = 10000000;
 
-const fmt = v => { const n = Number(v) || 0; return n > 0 ? n.toLocaleString('th-TH') : ''; };
+// zero = แสดง 0 เป็น "0" (ได้ฟรี) แทนช่องว่าง — ใช้กับ KOL รายคน (allowZero)
+const fmt = (v, zero = false) => { const n = Number(v) || 0; return n > 0 || zero ? n.toLocaleString('th-TH') : ''; };
 
 // รับได้ทั้ง "12,000" / "฿12000" / "12000.50" · ช่องว่าง = null (ไม่เปลี่ยน) · อย่างอื่น = NaN
 // ช่องว่างไม่นับเป็น 0 — กันลบเผลอแล้วคลิกออกจนค่าตัวหาย ถ้าต้องการ 0 จริงให้พิมพ์ 0
@@ -19,9 +20,11 @@ function parseFee(text) {
 
 // dirty = คลิปของคนนี้ยังไม่เท่ากัน/มีคลิปที่เป็น 0 → พิมพ์ยอดเดิมก็ต้องบันทึก
 // version = ค่าตัวของทุกคลิป (จากหน้าแคมเปญ) ใช้จับว่าระหว่างพิมพ์มีคนแก้ไปแล้วหรือยัง
-export default function FeeInput({ value, onSave, missing, disabled = false, dirty = false, version }) {
+// allowZero = ค่าตัว 0 คือ "ได้ฟรี" ไม่ใช่ยังไม่ใส่ (KOL รายคน) — ช่องโชว์ 0 ไว้ ไม่ปล่อยว่าง · แคมเปญไม่ส่งค่านี้ (ทำงานแบบเดิม)
+export default function FeeInput({ value, onSave, missing, disabled = false, dirty = false, version, allowZero = false }) {
     const current = Number(value) || 0;
-    const [draft, setDraft] = useState(fmt(current));
+    const show = v => fmt(v, allowZero);
+    const [draft, setDraft] = useState(show(current));
     const [state, setState] = useState('idle');      // idle | saving | saved | error
     const [msg, setMsg] = useState('');
     const focused = useRef(false);
@@ -46,11 +49,11 @@ export default function FeeInput({ value, onSave, missing, disabled = false, dir
     // ค่าจากเซิร์ฟเวอร์เปลี่ยน -> ตามให้ เว้นแต่คนกำลังพิมพ์หรือกำลังบันทึกอยู่
     // ตอนขึ้น error (ยังไม่ได้พิมพ์ต่อ) ก็ตามให้ด้วย ไม่งั้นช่องที่ยังโฟกัสอยู่จะโชว์ค่าเก่า ทั้งที่โหลดค่าล่าสุดมาแล้ว
     useEffect(() => {
-        if ((!focused.current || state === 'error') && state !== 'saving') setDraft(fmt(current));
-    }, [current, state]);
+        if ((!focused.current || state === 'error') && state !== 'saving') setDraft(fmt(current, allowZero));
+    }, [current, state, allowZero]);
 
     function fail(text) {
-        setDraft(fmt(latest.current));
+        setDraft(show(latest.current));
         setState('error');
         setMsg(text);
     }
@@ -61,15 +64,15 @@ export default function FeeInput({ value, onSave, missing, disabled = false, dir
         const edited = typed.current;
         typed.current = false;
         const next = parseFee(draft);
-        if (next === null) { setDraft(fmt(latest.current)); return; }
+        if (next === null) { setDraft(show(latest.current)); return; }
         if (Number.isNaN(next) || next < 0) { fail('กรอกเป็นตัวเลขเท่านั้น'); return; }
         if (next > MAX_FEE) { fail('ค่าตัวต่อคลิปต้องไม่เกิน ฿10,000,000'); return; }
         // ระหว่างพิมพ์มีคนแก้ค่าตัวคนนี้ไปแล้ว (หน้าโหลดค่าใหม่มา) — ไม่บันทึกทับ ให้ดูค่าล่าสุดก่อน
         if (startVer !== null && startVer !== latestVer.current) { fail('มีคนแก้ค่าตัวนี้ไปแล้ว — โหลดค่าล่าสุดให้แล้ว ลองใหม่อีกครั้ง'); return; }
         // ยอดเท่าเดิมไม่ต้องส่ง — ยกเว้นคลิปยังไม่เท่ากัน/มีคลิปที่เป็น 0 (dirty) และผู้ใช้พิมพ์ยอดนั้นเอง จะได้ทำให้ทุกคลิปเท่ากันได้
         // ถ้าแค่คลิกเข้าแล้วออก ช่องเติมยอดคลิปแรกให้เอง ห้ามถือว่าตั้งใจเขียนทับคลิปอื่น
-        if (next === latest.current && !(dirty && edited)) { setDraft(fmt(next)); return; }
-        setDraft(fmt(next));
+        if (next === latest.current && !(dirty && edited)) { setDraft(show(next)); return; }
+        setDraft(show(next));
         setState('saving'); setMsg('');
         try {
             await onSave(next);
@@ -82,7 +85,7 @@ export default function FeeInput({ value, onSave, missing, disabled = false, dir
         } catch (err) {
             if (!alive.current) return;
             // กดยกเลิกที่หน้าต่างยืนยัน — คืนค่าเดิมเงียบ ๆ ไม่ใช่ error
-            if (err && err.cancelled) { setDraft(fmt(latest.current)); setState('idle'); setMsg(''); return; }
+            if (err && err.cancelled) { setDraft(show(latest.current)); setState('idle'); setMsg(''); return; }
             fail((err && err.message) || 'บันทึกค่าตัวไม่สำเร็จ');
         }
     }
@@ -111,7 +114,7 @@ export default function FeeInput({ value, onSave, missing, disabled = false, dir
                         baseVer.current = latestVer.current;
                         typed.current = false;
                         // ตอนแก้ให้เห็นเลขล้วน ไม่มีคอมมา แล้วเลือกทั้งช่องไว้ พิมพ์ทับได้เลย
-                        setDraft(latest.current > 0 ? String(latest.current) : '');
+                        setDraft(latest.current > 0 || allowZero ? String(latest.current) : '');
                         const el = e.target;
                         setTimeout(() => { try { el.select(); } catch { /* ช่องถูกถอดไปแล้ว */ } }, 0);
                     }}
@@ -130,7 +133,7 @@ export default function FeeInput({ value, onSave, missing, disabled = false, dir
                         focused.current = false;
                         if (skipCommit.current) {
                             skipCommit.current = false;
-                            setDraft(fmt(latest.current));
+                            setDraft(show(latest.current));
                             return;
                         }
                         if (!saving) commit();

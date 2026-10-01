@@ -8,13 +8,12 @@
  * คนเดิมที่ถูกจ้างสองงานจะมีสองแถวคนละ key เสมอ
  */
 const { loadSnapshot } = require('./_snapshot');
-const { clone, scopeProjects, inScope, hireRemaining, hireRowFee, hireWaiting, hireNeedMore, hireStage, HIRE_JOB_CLOSED, hireBookings, bookingOpen, jobProgress, HIRE_PAYABLE } = require('../logic');
+// todayTH = วันนี้ตามเวลาไทย (YYYY-MM-DD) — ใช้เทียบกับกำหนดส่งรายชื่อที่เก็บเป็นวันที่ล้วน
+const { clone, scopeProjects, inScope, hireRemaining, hireRowFee, hireWaiting, hireNeedMore, hireStage, HIRE_JOB_CLOSED, hireBookings, bookingOpen, jobProgress, HIRE_PAYABLE, todayTH } = require('../logic');
 
 const isOther = p => (p.campaign_type || 'kol') === 'other';
 const str = v => String(v == null ? '' : v).trim();
 const personKey = it => str(it.name).toLowerCase() + '|' + str(it.kind).toLowerCase();
-// วันนี้ตามเวลาไทย (YYYY-MM-DD) — ใช้เทียบกับกำหนดส่งรายชื่อที่เก็บเป็นวันที่ล้วน
-const todayTH = () => new Date(Date.now() + 7 * 3600 * 1000).toISOString().slice(0, 10);
 
 // ===== Talent Book (book) =====
 // สถานะของชื่อที่เสนอในใบขอให้หา — ค่าในฐานชุดเดียวกับ routes/projects.js (CAND_*) · ไม่มีสถานะ = ชื่อเก่าที่ยังรอเลือก

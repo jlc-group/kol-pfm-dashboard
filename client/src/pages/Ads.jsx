@@ -76,7 +76,11 @@ function LiveCell({ row }) {
         return <span className="perf-pill wait fee" title="ทีมยังไม่ได้ใส่ค่าตัว KOL คลิปนี้ — ยังคิด CPM/CPE และตัดสินผ่าน/ไม่ผ่านไม่ได้ ใส่ค่าตัวที่หน้าแคมเปญ">รอค่าตัว</span>;
     }
     if (!row.performance) {
-        return <span className="perf-pill none" title="ยังไม่มียอดวิว/engagement ให้ตัดสิน">Not rated</span>;
+        // มียอดวิวแล้วแต่ไม่มี CPM = KOL รายคนได้ฟรีที่ยังไม่มีค่าแอด (ไม่มีต้นทุนให้คิด) — ไม่ใช่ยังไม่มียอดวิว
+        const freeNoCost = Number(row.views) > 0 && row.content_cpm == null;
+        return <span className="perf-pill none" title={freeNoCost
+            ? 'ได้ฟรี ยังไม่มีค่าแอด — ยังไม่มีต้นทุนให้คิด CPM/CPE จึงยังตัดสินไม่ได้ (ไม่ได้แปลว่าทำได้แย่)'
+            : 'ยังไม่มียอดวิว/engagement ให้ตัดสิน'}>Not rated</span>;
     }
     const pass = row.performance === 'Good';
     const st = row.perf_stamp;
@@ -324,12 +328,7 @@ function AdRow({ row, onSaved, canCost }) {
             <div className="ads-cell ads-stack">
                 {row.media_type ? <span className="proc-ctype-chip media">{row.media_type}</span> : <span className="muted">—</span>}
             </div>
-            {/* POST — ลิงก์โพสต์จริง (ไอคอนอย่างเดียว คอลัมน์จึงแคบสุดในตาราง) */}
-            <div className="ads-cell">
-                {row.post_url
-                    ? <a href={row.post_url} target="_blank" rel="noreferrer" title="เปิดโพสต์"><Icon name="eye" size={15} /></a>
-                    : <span className="muted">—</span>}
-            </div>
+            {/* คอลัมน์ POST (ไอคอนตาเปิดโพสต์) เอาออกแล้ว 1 ต.ค. 2026 — กดรูปปกในคอลัมน์ IMAGE เปิดโพสต์แทน */}
             {/* GENCODE — โค้ดยาว 65 ตัว แสดงไม่ครบแน่นอน จึงตัดด้วย ... แล้วให้กดปุ่มคัดลอกเอาไปใช้แทน */}
             <div className="ads-cell"><CopyCode value={row.gencode} none={row.no_gencode === true} /></div>
             {/* ID POST — ตัวเลขยาว ~19 หลัก มักโดนตัด ... จึงมีปุ่มคัดลอกแบบเดียวกับ Gencode */}
@@ -624,7 +623,7 @@ export default function Ads() {
                                         ...platformOptions.map(p => ({ value: p, label: p, count: countIf('platform', r => r.platform === p) }))]} />
                                 </span>
                                 <span>BRANDS</span><span>PRODUCTS</span><span>CAMPAIGN</span><span>TARGET</span><span>CONTENT TYPE</span><span>FORMAT</span>
-                                <span>POST</span><span>GENCODE</span><span>ID POST</span><span>วันลงงาน</span><span>วันยิงแอด</span>
+                                <span>GENCODE</span><span>ID POST</span><span>วันลงงาน</span><span>วันยิงแอด</span>
                                 <span>สถานะ
                                     <ColumnFilter label="สถานะยิงแอด" value={status} onPick={setStatus}
                                         options={[{ value: '', label: 'ทุกสถานะ', count: countIf('status', () => true) },

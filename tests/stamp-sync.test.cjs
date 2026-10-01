@@ -104,6 +104,41 @@ test('หน้า Influencers ส่งเกณฑ์ของแบรนด�
     assert.equal(byId(rows, 3).stamp_at, 10000);
 });
 
+test('KOL รายคนได้ฟรี (ค่าตัว 0): ซิงก์ PFM สแตมป์เมื่อค่าแอดถึงเกณฑ์ ต้นทุน = ค่าแอด · หน้า Ads / Influencers ไม่ขึ้นรอค่าตัว', async () => {
+    const saved = { projects: FIXTURE.projects, submissions: FIXTURE.submissions };
+    FIXTURE.projects = [...saved.projects, { id: 73, name: 'KOL รายคน · @free (TikTok)', brand: 'Beauterry', team_id: 1, campaign_type: 'solo', ad_groups: [] }];
+    FIXTURE.submissions = [...structuredClone(saved.submissions),
+        SUB({ id: 5, project_id: 73, budget: 0, ad_spend: 3000, id_post: '900005' }),   // ได้ฟรี ค่าแอดถึงเกณฑ์ Beauterry
+        SUB({ id: 6, project_id: 73, budget: 0, ad_spend: 0, id_post: '900006' }),      // ได้ฟรี ยังไม่ยิงแอด
+        SUB({ id: 7, project_id: 71, budget: 0, ad_spend: 3000, id_post: '900007' })    // แคมเปญ KOL ค่าตัว 0 = ยังไม่ใส่ค่าตัว
+    ];
+    try {
+        const { rows } = await ads.list({});
+        const free = byId(rows, 5), idle = byId(rows, 6), kol = byId(rows, 7);
+        assert.deepEqual([free.fee_missing, free.stamp_waiting, free.stamp_wait_reason], [false, false, null]);
+        assert.deepEqual([free.content_cpm, free.content_cpe, free.performance], [30, 2.94, 'Improve']);
+        assert.deepEqual([idle.fee_missing, idle.content_cpm, idle.content_cpe, idle.performance], [false, null, null, null]);
+        assert.deepEqual([kol.fee_missing, kol.stamp_wait_reason], [true, 'fee'], 'แคมเปญ KOL ยังรอค่าตัวตามเดิม');
+        const inf = (await kols.analytics(null)).rows;
+        assert.deepEqual([byId(inf, 5).fee_missing, byId(inf, 5).stamp_wait_reason], [false, null]);
+        assert.equal(byId(inf, 6).performance, null);
+
+        written = [];
+        const out = await adsSync.apply([
+            { id_post: '900005', ad_spend: 3000 },
+            { id_post: '900006', ad_spend: 0 },
+            { id_post: '900007', ad_spend: 3000 }
+        ]);
+        assert.equal(out.stamped, 1, 'สแตมป์เฉพาะ KOL รายคนที่ได้ฟรี');
+        const stamp = JSON.parse(written.find(w => w.id === 5).patch.perf_stamp);
+        assert.deepEqual([stamp.total_cost, stamp.ad_spend, stamp.cpm], [3000, 3000, 30]);
+        assert.equal('perf_stamp' in ((written.find(w => w.id === 7) || {}).patch || {}), false);
+    } finally {
+        FIXTURE.projects = saved.projects;
+        FIXTURE.submissions = saved.submissions;
+    }
+});
+
 test('ซิงก์ PFM ลงวันยิงแอดจาก first_ad_date เฉพาะแถวที่ยังว่าง ไม่ทับวันที่ที่มีอยู่', async () => {
     const fixture = structuredClone(FIXTURE.submissions);
     FIXTURE.submissions.find(s => s.id === 2).ad_end = '2026-09-27';

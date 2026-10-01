@@ -44,7 +44,9 @@ const dashboard = {
         const totalFee = subs.reduce((a, s) => a + (Number(s.budget) || 0), 0);           // ค่าใช้จ่ายจริงของ KOL
         // คลิปที่ยังไม่ใส่ค่าตัว — ยอดรวมข้างบนบวก 0 ให้ตามเดิม แต่หน้าเว็บต้องบอกว่ายังไม่รวมกี่คลิป
         // นับจากชุด subs เดียวกับยอดรวม (คัดเลือกแล้ว + ตามสิทธิ์/ตัวกรอง/ช่วงวันลงงาน)
-        const feeMissingClips = subs.filter(s => feeMissing(s.budget)).length;
+        // KOL รายคน: ค่าตัว 0 = ได้ฟรี ไม่นับเป็น "ยังไม่ใส่ค่าตัว" (feeMissing รู้จากประเภทแคมเปญ)
+        const typeOfSub = s => (projById[s.project_id] || {}).campaign_type;
+        const feeMissingClips = subs.filter(s => feeMissing(s.budget, typeOfSub(s))).length;
         // 1 แถว = 1 คลิป — คนเดียวกันอาจมีหลายคลิป จึงนับ "คน" จาก person_key
         const totalKols = new Set(subs.map(s => s.person_key || ('sub:' + s.id))).size;
         const totalClips = subs.length;
@@ -70,7 +72,7 @@ const dashboard = {
 
         // 5) ตัวชี้วัดความคุ้มค่า
         // CPM รวมคิดเฉพาะคลิปที่ใส่ค่าตัวแล้ว — คลิปที่ยังไม่ใส่มี reach แต่ค่าตัวเป็น 0 ถ้านับด้วยจะกด CPM ให้ต่ำเกินจริง
-        const feeSubs = subs.filter(s => !feeMissing(s.budget));
+        const feeSubs = subs.filter(s => !feeMissing(s.budget, typeOfSub(s)));
         const feeSum = feeSubs.reduce((a, s) => a + (Number(s.budget) || 0), 0);
         const feeReach = feeSubs.reduce((a, s) => a + (Number(s.ad_reach) || 0), 0);
         const cpm = feeReach > 0 ? Math.round(feeSum / (feeReach / 1000)) : 0;
@@ -103,7 +105,7 @@ const dashboard = {
             const fee = Number(s.budget) || 0;
             const adSpend = Number(s.ad_spend) || 0;
             // ต้นทุนรวม = ค่าตัว + ค่ายิงแอด · ยังไม่ใส่ค่าตัว = cpm/cpe เป็น null (ดู clipCostMetrics)
-            const { fee_missing, cost, cpm, cpe } = clipCostMetrics({ fee, adSpend, views, engagement: engagementTotal });
+            const { fee_missing, cost, cpm, cpe } = clipCostMetrics({ fee, adSpend, views, engagement: engagementTotal, campaignType: typeOfSub(s) });
             return {
                 kol_id: s.id, name: s.account_name, platform: s.platform || null,
                 brand: (projById[s.project_id] || {}).brand || null,   // แบรนด์มาจากแคมเปญที่ KOL คนนี้สังกัด
@@ -156,12 +158,14 @@ const dashboard = {
                 const nCpm = costAxisNorm(k, 'cpm', rCpm, hasCpm);
                 const nCpe = costAxisNorm(k, 'cpe', rCpe, hasCpe);
                 const NO_FEE = 'ยังไม่ใส่ค่าตัว';
+                // KOL รายคนได้ฟรีและยังไม่มีค่าแอด — ไม่มีต้นทุนให้คิด CPM/CPE (cpm/cpe เป็น null ได้ 0 ในแกนนั้น)
+                const NO_COST = 'ได้ฟรี ยังไม่มีค่าแอด';
                 const pct = w => Math.round(w * 100);
                 k.score_parts = [
                     { key: 'er', label: 'Engagement Rate', value: k.engagement || 0, unit: '%', weight: pct(SCORE_W.er), earned: Number((SCORE_W.er * nEr * 100).toFixed(1)), better: 'สูง', note: edge(k.engagement || 0, rEr, false) },
                     { key: 'views', label: 'ยอดวิว', value: k.views, unit: '', weight: pct(SCORE_W.views), earned: Number((SCORE_W.views * nVw * 100).toFixed(1)), better: 'สูง', note: edge(k.views, rVw, false) },
-                    { key: 'cpm', label: 'CPM', value: k.cpm, unit: '฿', weight: pct(SCORE_W.cpm), earned: Number((SCORE_W.cpm * nCpm * 100).toFixed(1)), better: 'ต่ำ', note: k.fee_missing ? NO_FEE : edge(k.cpm, rCpm, true) },
-                    { key: 'cpe', label: 'CPE', value: k.cpe, unit: '฿', weight: pct(SCORE_W.cpe), earned: Number((SCORE_W.cpe * nCpe * 100).toFixed(1)), better: 'ต่ำ', note: k.fee_missing ? NO_FEE : (k.engagement_total > 0 ? edge(k.cpe, rCpe, true) : 'ยังไม่มี engagement') }
+                    { key: 'cpm', label: 'CPM', value: k.cpm, unit: '฿', weight: pct(SCORE_W.cpm), earned: Number((SCORE_W.cpm * nCpm * 100).toFixed(1)), better: 'ต่ำ', note: k.fee_missing ? NO_FEE : (k.cpm == null ? NO_COST : edge(k.cpm, rCpm, true)) },
+                    { key: 'cpe', label: 'CPE', value: k.cpe, unit: '฿', weight: pct(SCORE_W.cpe), earned: Number((SCORE_W.cpe * nCpe * 100).toFixed(1)), better: 'ต่ำ', note: k.fee_missing ? NO_FEE : (k.cpe == null ? NO_COST : (k.engagement_total > 0 ? edge(k.cpe, rCpe, true) : 'ยังไม่มี engagement')) }
                 ];
                 k.score = Number(k.score_parts.reduce((a, p) => a + p.earned, 0).toFixed(1));
             });

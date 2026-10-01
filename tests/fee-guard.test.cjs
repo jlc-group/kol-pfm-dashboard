@@ -18,7 +18,8 @@ const { pool } = require(path.join(SRC, 'config/db'));
 pool.query = async () => noRealDb();
 
 // ---------- ตาราง submissions ปลอม ----------
-let rows, sql, released;
+// projectType = projects.campaign_type ของแคมเปญ 41 (ค่าเริ่มต้นแคมเปญ KOL · 'solo' = KOL รายคน ค่าตัว 0 คือได้ฟรี)
+let rows, sql, released, projectType;
 
 const row = fields => ({
     project_id: 41, person_key: null, clip_no: 1, account_name: 'น้องเอ', status: 'confirmed',
@@ -38,6 +39,7 @@ function reset() {
     ]);
     sql = [];
     released = 0;
+    projectType = 'kol';
 }
 
 // UPDATE submissions SET a = $1, b = $2 WHERE id = $3 RETURNING *  ->  { id, set: { a, b } }
@@ -74,10 +76,10 @@ const fakeClient = {
         if (text === 'SELECT * FROM submissions WHERE id = $1') {
             return result(rows.has(params[0]) ? [rows.get(params[0])] : []);
         }
-        // เกณฑ์สแตมป์แยกตามแบรนด์ — updateOne หาแบรนด์ของแคมเปญก่อน แล้วค่อยตัดสินใจสแตมป์
-        // ฟิกซ์เจอร์นี้ใช้แบรนด์ที่ยังใช้เกณฑ์กลาง 10,000 เคสเดิมจึงยังวัดสิ่งเดียวกันเป๊ะ
-        if (text === 'SELECT brand FROM projects WHERE id = $1') {
-            return result([{ brand: 'Dermiq' }]);
+        // เกณฑ์สแตมป์แยกตามแบรนด์ — updateOne หาแบรนด์ (+ ประเภทแคมเปญ) ก่อน แล้วค่อยตัดสินใจสแตมป์
+        // ฟิกซ์เจอร์นี้ใช้แบรนด์ที่ยังใช้เกณฑ์กลาง 10,000 และแคมเปญ KOL ปกติ เคสเดิมจึงยังวัดสิ่งเดียวกันเป๊ะ
+        if (text === 'SELECT brand, campaign_type FROM projects WHERE id = $1') {
+            return result([{ brand: 'Dermiq', campaign_type: projectType }]);
         }
         if (text === 'SELECT * FROM submissions WHERE person_key = $1 AND project_id = $2 ORDER BY id') {
             return result([...rows.values()].filter(r => r.person_key === params[0] && r.project_id === params[1]).sort(byId));
@@ -175,6 +177,33 @@ test('setFees() is the path that writes budget', async () => {
     assert.deepEqual(Object.keys(stamped.set), ['budget', 'perf_stamp']);
     assert.equal(stamped.set.budget, 3000);
     assert.equal(JSON.parse(stamped.set.perf_stamp).total_cost, 15000);
+});
+
+test('KOL รายคน: campaign_type is read with the brand — fee 0 (free) stamps with ad spend as the whole cost on every write path', async () => {
+    // setFees: ตั้งเป็นได้ฟรี (0) → สแตมป์ในคำสั่งเดียวกัน ต้นทุน = ค่าแอดอย่างเดียว
+    reset();
+    projectType = 'solo';
+    rows.get(7).budget = 4000;
+    await submissions.setFees(41, [{ sub_id: 7, budget: 0, from: 4000 }], 'tester');
+    const [viaFees] = updates();
+    assert.deepEqual(Object.keys(viaFees.set), ['budget', 'perf_stamp']);
+    assert.equal(viaFees.set.budget, 0);
+    assert.equal(JSON.parse(viaFees.set.perf_stamp).total_cost, 12000);
+    assert.equal(sql.filter(q => q.text === 'SELECT brand, campaign_type FROM projects WHERE id = $1').length, 1, 'หาครั้งเดียวต่อคำขอ');
+    // updatePerson / update: คลิปได้ฟรีที่ค่าแอดถึงเกณฑ์ สแตมป์ตอนแก้ข้อมูลครั้งถัดไป
+    reset();
+    projectType = 'solo';
+    await submissions.updatePerson(7, 41, { account_name: 'น้องบี' }, 'tester');
+    assert.equal(JSON.parse(updates()[0].set.perf_stamp).total_cost, 12000);
+    reset();
+    projectType = 'solo';
+    await submissions.update(7, 41, { team_note: 'x' }, 'tester');
+    assert.equal(JSON.parse(updates()[0].set.perf_stamp).total_cost, 12000);
+    // แคมเปญ KOL: ค่าตัว 0 = ยังไม่ใส่ ยังรอค่าตัวเหมือนเดิม
+    reset();
+    await submissions.update(7, 41, { team_note: 'x' }, 'tester');
+    assert.equal('perf_stamp' in updates()[0].set, false);
+    assert.equal(rows.get(7).perf_stamp, null);
 });
 
 test('setFees() with a stale "from" rolls back and writes nothing', async () => {

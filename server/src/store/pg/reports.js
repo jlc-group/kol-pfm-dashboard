@@ -10,7 +10,14 @@
  * ไม่เอามาคิดค่าเฉลี่ย CPM/CPE, แกนคะแนน CPM/CPE และการตัดสิน Good — ใช้กฎกลางจาก logic.js ชุดเดียวกับหน้า Dashboard
  */
 const { loadSnapshot } = require('./_snapshot');
-const { clone, inScope, scopeProjects, clipCostMetrics, costAxisRange, costAxisNorm, perfVerdict, feeCostAverages } = require('../logic');
+const { clone, inScope, scopeProjects, clipCostMetrics, costAxisRange, costAxisNorm, perfVerdict, feeCostAverages, resolveGroupMedia } = require('../logic');
+
+// กลุ่มของ KOL รายคนหลาย Platform — Photo/VDO + Format ระดับกลุ่มเป็นของ Platform แรก ห้ามให้ Platform อื่นยืมไปใช้
+// (buildSoloGroup รุ่นปัจจุบันตั้งเป็น null อยู่แล้ว · กันกลุ่มที่บันทึกก่อนแก้ซึ่งยังมีค่าค้าง) · Platform เดียว = ใช้กลุ่มเดิม
+const soloMediaGroup = g => {
+    const plats = Array.isArray(g.platforms) ? g.platforms : (Array.isArray(g.blocks) ? g.blocks : []);
+    return plats.length > 1 ? { ...g, media_type: null, content_format: null } : g;
+};
 
 const reports = {
     // รายการแคมเปญ + ตัวเลขสรุปสำหรับหน้ารายงาน (KOLS / BUDGET / USED / POST RATE)
@@ -53,6 +60,8 @@ const reports = {
         if ((p.campaign_type || 'kol') === 'other') return null;
 
         const subs = snap.submissions.filter(s => s.project_id === p.id && s.status === 'confirmed');
+        // KOL รายคน (รอบ 4): ค่าตัว 0 = ได้ฟรี ไม่ใช่ "รอค่าตัว" · กลุ่มเดียวมีหลาย Platform — Format อ่านต่อ Platform ของคลิป
+        const solo = p.campaign_type === 'solo';
         const rows = subs.map((s, i) => {
             // กลุ่มโฆษณาที่ KOL คนนี้สังกัด — เอา Content Format ที่บรีฟไว้มาใช้
             const grp = Array.isArray(p.ad_groups) ? p.ad_groups.find(g => g.key === s.group_key) : null;
@@ -67,7 +76,7 @@ const reports = {
             const reach = Number(s.ad_reach) || 0;
             // CPM/CPE คิดจากยอดคอนเทนต์จริง (เดิมใช้ reach และเดา engagement เป็น 2% ของ reach)
             // ต้นทุนรวม = ค่าตัว + ค่ายิงแอด · ยังไม่ใส่ค่าตัว = cpm/cpe เป็น null (ดู clipCostMetrics)
-            const { fee_missing, cost, cpm, cpe } = clipCostMetrics({ fee, adSpend, views, engagement });
+            const { fee_missing, cost, cpm, cpe } = clipCostMetrics({ fee, adSpend, views, engagement, campaignType: p.campaign_type });
             const posted = !!(s.post_url && String(s.post_url).trim());
             const boosted = s.ad_status === 'ยิงแล้ว';
             // เกณฑ์ผ่าน/ไม่ผ่าน (perfVerdict) ใช้ร่วมกับหน้า Influencer และหน้า Ads (หน้า Dashboard ใช้คะแนนไล่ระดับแทน)
@@ -82,7 +91,12 @@ const reports = {
                 views, likes, comments, saves, shares, engagement, er,
                 // Content Format ยึดจากที่บรีฟไว้ตอนตั้งแคมเปญ
                 // s.content_format คือของเก่าที่เคยกรอกมือก่อนเปลี่ยนวิธี เก็บไว้เป็น fallback
-                format: (grp && grp.content_format) || s.content_format || null
+                // KOL รายคน: ค่าระดับกลุ่มเป็นของ Platform แรกเท่านั้น — อ่านของ Platform + Content Type ของคลิปนี้อย่างเดียว
+                // ห้ามถอยไป grp.content_format (Platform ที่ไม่ได้เลือก Format จะได้ของ Platform แรกไปผิด ๆ)
+                // กลุ่มหลาย Platform ตัดค่าระดับกลุ่มออกก่อนอ่านด้วย — resolveGroupMedia ถอยไปอ่านค่านั้นเมื่อ Platform นี้ไม่ได้เลือก
+                format: solo
+                    ? ((grp && resolveGroupMedia(soloMediaGroup(grp), s.platform, s.content_type).content_format) || s.content_format || null)
+                    : ((grp && grp.content_format) || s.content_format || null)
             };
         });
 
@@ -213,8 +227,8 @@ const reports = {
             platforms, all_count: kols,
             post_rate: { rate: kols > 0 ? Math.round((postedCount / kols) * 100) : 0, posted: postedCount, total: kols },
             ads_boosted: rows.filter(r => r.boosted).length,
-            // total = คลิปที่ตัดสินได้ (ไม่นับคลิปที่ยังไม่ใส่ค่าตัว) — ตรงกับจำนวน Good + Improve ในตาราง
-            good_performance: { good: rows.filter(r => r.performance === 'Good').length, total: rows.filter(r => !r.fee_missing).length },
+            // total = คลิปที่ตัดสินได้ (ไม่นับคลิปที่ยังไม่ใส่ค่าตัว / KOL รายคนได้ฟรีที่ยังไม่มีต้นทุน) — ตรงกับจำนวน Good + Improve ในตาราง
+            good_performance: { good: rows.filter(r => r.performance === 'Good').length, total: rows.filter(r => r.performance != null).length },
             // fee_missing_clips = คลิปที่ยังไม่รวมใน kol_cost · fee_clips = คลิปที่ใช้คิด avg_cpm/avg_cpe
             cost: { kol_cost, ads_cost, avg_cpm, avg_cpe, total: kol_cost + ads_cost, fee_missing_clips, fee_clips },
             // ผลงานคอนเทนต์

@@ -71,6 +71,29 @@ test('fee set later: the stamp locks on that update', () => {
     assert.equal(stampWaitReason(s), null);
 });
 
+test('KOL รายคน (solo): fee 0 means free — stamps once ad spend reaches the threshold, cost = ad spend, never waits for a fee', () => {
+    // แคมเปญ KOL (ไม่ส่งประเภท / 'kol') ยังรอค่าตัวเหมือนเดิม
+    assert.equal(maybeStamp(clip({ budget: 0 })), null);
+    assert.equal(maybeStamp(clip({ budget: 0 }), AD_STAMP_AT, 'kol'), null);
+    assert.equal(stampWaitReason(clip({ budget: 0 })), 'fee');
+    for (const budget of [0, '0', '', null]) {
+        assert.equal(stampWaitReason(clip({ budget }), AD_STAMP_AT, 'solo'), null, String(budget));
+    }
+    const s = clip({ budget: 0 });
+    const stamp = maybeStamp(s, AD_STAMP_AT, 'solo');
+    assert.ok(stamp);
+    assert.equal(s.perf_stamp, stamp);
+    assert.equal(stamp.total_cost, 12000);
+    assert.equal(stamp.cpm, 120);
+    assert.equal(stamp.cpe, 10);
+    // ยังรอยอดวิว / ค่าแอดยังไม่ถึงเกณฑ์ = ยังไม่สแตมป์เหมือนเดิม
+    assert.equal(maybeStamp(clip({ budget: 0, views: 0 }), AD_STAMP_AT, 'solo'), null);
+    assert.equal(stampWaitReason(clip({ budget: 0, views: 0 }), AD_STAMP_AT, 'solo'), 'views');
+    assert.equal(maybeStamp(clip({ budget: 0, ad_spend: AD_STAMP_AT - 1 }), AD_STAMP_AT, 'solo'), null);
+    // KOL รายคนที่มีค่าตัว = ต้นทุนค่าตัว + ค่าแอด ตามเดิม
+    assert.equal(maybeStamp(clip(), AD_STAMP_AT, 'solo').total_cost, 17000);
+});
+
 test('stampWaitReason says what a stamp is waiting for', () => {
     assert.equal(stampWaitReason(clip({ budget: 0 })), 'fee');
     assert.equal(stampWaitReason(clip({ views: 0 })), 'views');

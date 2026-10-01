@@ -27,6 +27,31 @@ test('clipCostMetrics: no fee gives null CPM/CPE instead of an ad-only bargain',
         { fee_missing: false, cost: 5000, cpm: 0, cpe: 0 });
 });
 
+test('KOL รายคน (solo): fee 0 = free, not missing — cost is ad spend only, no cost at all = not rated', () => {
+    for (const b of [0, '0', '', null, undefined]) {
+        assert.equal(feeMissing(b, 'solo'), false, String(b));
+        assert.equal(feeMissing(b, 'kol'), true, String(b));
+    }
+    // ได้ฟรี + ยังไม่ยิงแอด = ไม่มีต้นทุนให้ตัดสิน (null ไม่ใช่ 0 ที่ดูคุ้มสุด)
+    assert.deepEqual(clipCostMetrics({ fee: 0, adSpend: 0, views: 300000, engagement: 10000, campaignType: 'solo' }),
+        { fee_missing: false, fee_free: true, cost: 0, cpm: null, cpe: null });
+    // ได้ฟรี + ยิงแอดแล้ว = ต้นทุนคือค่าแอด
+    assert.deepEqual(clipCostMetrics({ fee: '0.00', adSpend: 4000, views: 200000, engagement: 4000, campaignType: 'solo' }),
+        { fee_missing: false, fee_free: true, cost: 4000, cpm: 20, cpe: 1 });
+    assert.deepEqual(clipCostMetrics({ fee: 5000, adSpend: 0, views: 100000, engagement: 1000, campaignType: 'solo' }),
+        { fee_missing: false, fee_free: false, cost: 5000, cpm: 50, cpe: 5 });
+    // แคมเปญอื่นไม่มี fee_free (รูปผลลัพธ์เดิม)
+    assert.deepEqual(clipCostMetrics({ fee: 0, adSpend: 500, views: 1, engagement: 1, campaignType: 'kol' }),
+        { fee_missing: true, cost: 500, cpm: null, cpe: null });
+    assert.equal(perfVerdict({ fee_missing: false, views: 300000, cpm: null, cpe: null }), null, 'ไม่มี CPM = ยังตัดสินไม่ได้');
+    assert.equal(perfVerdict({ fee_missing: false, views: 200000, cpm: 20, cpe: 1 }), 'Good');
+    // ค่าเฉลี่ยไม่เอาคลิปที่ไม่มี CPM (null จะถูกนับเป็น 0)
+    assert.deepEqual(feeCostAverages([
+        { fee_missing: false, reach: 100000, cpm: 20, cpe: 1 },
+        { fee_missing: false, reach: 5000, cpm: null, cpe: null }
+    ]), { avg_cpm: 20, avg_cpe: 1, fee_clips: 1, fee_missing_clips: 0 });
+});
+
 test('costAxisRange ignores clips without a fee or without the metric', () => {
     const rows = [
         { fee_missing: false, cpm: 25, cpe: 0.83 },
@@ -113,7 +138,14 @@ const FIXTURE = {
         { id: 42, name: 'แบรนด์อื่น', brand: 'Code Lab', budget: 50000, status: 'Active', team_id: 2,
           created_at: '2026-07-02T00:00:00.000Z', start_date: null, end_date: null, ad_groups: [], products: [] },
         { id: 43, name: 'ค่าตัวครบ', brand: 'Jarvit', budget: 20000, status: 'Active', team_id: 1,
-          created_at: '2026-08-01T00:00:00.000Z', start_date: '2026-08-01', end_date: null, ad_groups: [], products: [] }
+          created_at: '2026-08-01T00:00:00.000Z', start_date: '2026-08-01', end_date: null, ad_groups: [], products: [] },
+        // KOL รายคน (รอบ 4): ค่าตัว 0 = ได้ฟรี ไม่ใช่ "ยังไม่ใส่ค่าตัว"
+        // กลุ่มหลาย Platform: ค่าระดับกลุ่มเป็นของ TikTok · Instagram มี Format ของตัวเอง
+        { id: 44, name: 'KOL รายคน · @free (TikTok, Instagram)', brand: 'Beauterry', budget: 3000, status: 'Active', team_id: 1, campaign_type: 'solo',
+          created_at: '2026-10-01T00:00:00.000Z', start_date: '2026-10-01', end_date: '2026-10-01', products: [],
+          ad_groups: [{ key: 'g44', platform: 'TikTok', platforms: ['TikTok', 'Instagram'], content_format: 'Review', allocations: [
+              { platform: 'TikTok', tier: 'Nano 1k - 10k', kols: 1, content_type: 'Review', media_type: 'VDO', content_format: 'Review' },
+              { platform: 'Instagram', tier: 'Nano 1k - 10k', kols: 1, content_type: 'Reels', media_type: 'Photo', content_format: 'Unbox' }] }] }
     ],
     submissions: [
         // น้องเอ: มีค่าตัว ผ่านเกณฑ์คุ้มค่า (CPM 25 · CPE 0.83)
@@ -138,7 +170,13 @@ const FIXTURE = {
         // ถูกมาก: CPE = 100 / 25,000 = 0.004 ปัดเหลือ 0.00 · กลาง: 0.012 → 0.01 · แพงสุด: 0.2
         SUB({ id: 9, project_id: 43, account_name: 'ถูกมาก', person_key: 'j1', budget: 100, views: 100000, likes: 25000 }),
         SUB({ id: 10, project_id: 43, account_name: 'กลาง', person_key: 'j2', budget: 300, views: 100000, likes: 25000 }),
-        SUB({ id: 11, project_id: 43, account_name: 'แพงสุด', person_key: 'j3', budget: 5000, views: 100000, likes: 25000 })
+        SUB({ id: 11, project_id: 43, account_name: 'แพงสุด', person_key: 'j3', budget: 5000, views: 100000, likes: 25000 }),
+        // แคมเปญ 44 (KOL รายคน · 1 การจ้าง = person_key เดียว): ได้ฟรียังไม่ยิงแอด / ได้ฟรียิงแอด 4,000 (CPM 20 · CPE 1) / มีค่าตัวยังไม่มีผลงาน
+        SUB({ id: 12, project_id: 44, account_name: 'ฟรียังไม่ยิง', person_key: 'ps', ad_reach: 5000, views: 50000, likes: 500,
+              post_url: 'https://example.test/12', post_date: '2026-10-02', group_key: 'g44', content_type: 'Review' }),
+        SUB({ id: 13, project_id: 44, account_name: 'ฟรียิงแล้ว', person_key: 'ps', ad_spend: 4000, ad_reach: 100000, views: 200000, likes: 4000,
+              post_url: 'https://example.test/13', post_date: '2026-10-02', group_key: 'g44', content_type: 'Review' }),
+        SUB({ id: 14, project_id: 44, account_name: 'มีค่าตัว', person_key: 'ps', budget: 3000, platform: 'Instagram', group_key: 'g44', content_type: 'Reels' })
     ]
 };
 
@@ -267,6 +305,38 @@ test('Influencer page lists only people who have posted, and the summary counts 
     }
 });
 
+test('KOL รายคนได้ฟรี: Dashboard / Report / Influencer / Ads ไม่นับเป็นรอค่าตัว · ยังไม่มีต้นทุน = ยังไม่ตัดสิน', async () => {
+    const d = await dashboard.overview({ scopeBrands: ['Beauterry'] });
+    assert.deepEqual([d.fee_missing_clips, d.total_spent, d.total_clips, d.total_kols], [0, 3000, 3, 1]);
+    const dk = name => d.top_kols.find(k => k.name === name);
+    const free = dk('ฟรียังไม่ยิง');
+    assert.deepEqual([free.fee_missing, free.cpm, free.cpe, free.cost], [false, null, null, 0]);
+    assert.deepEqual(free.score_parts.filter(p => p.key === 'cpm' || p.key === 'cpe').map(p => [p.earned, p.note]),
+        [[0, 'ได้ฟรี ยังไม่มีค่าแอด'], [0, 'ได้ฟรี ยังไม่มีค่าแอด']]);
+    assert.deepEqual([dk('ฟรียิงแล้ว').fee_missing, dk('ฟรียิงแล้ว').cpm, dk('ฟรียิงแล้ว').cpe], [false, 20, 1]);
+
+    const r = await reports.detail(44, ['Beauterry']);
+    const rk = name => r.kols.find(k => k.name === name);
+    assert.deepEqual([rk('ฟรียังไม่ยิง').fee_missing, rk('ฟรียังไม่ยิง').cpm, rk('ฟรียังไม่ยิง').performance], [false, null, null]);
+    assert.deepEqual([rk('ฟรียิงแล้ว').cpm, rk('ฟรียิงแล้ว').cpe, rk('ฟรียิงแล้ว').performance], [20, 1, 'Good']);
+    assert.equal(rk('มีค่าตัว').performance, 'Improve');
+    assert.deepEqual(r.good_performance, { good: 1, total: 2 }, 'ไม่นับคลิปที่ยังตัดสินไม่ได้');
+    assert.deepEqual([r.cost.fee_missing_clips, r.cost.fee_clips, r.cost.avg_cpm, r.cost.avg_cpe], [0, 1, 20, 1]);
+    // Format ต่อแถวอ่านของ Platform + Content Type ของคลิป (ไม่ใช่ค่าระดับกลุ่มที่เป็นของ Platform แรก)
+    assert.deepEqual(r.kols.map(k => [k.name, k.platform, k.format]),
+        [['ฟรียังไม่ยิง', 'TikTok', 'Review'], ['ฟรียิงแล้ว', 'TikTok', 'Review'], ['มีค่าตัว', 'Instagram', 'Unbox']]);
+
+    const { rows: inf } = await kols.analytics(['Beauterry']);
+    const ik = name => inf.find(x => x.kol_name === name);
+    assert.deepEqual([ik('ฟรียังไม่ยิง').fee_missing, ik('ฟรียังไม่ยิง').cpm, ik('ฟรียังไม่ยิง').performance], [false, null, null]);
+    assert.deepEqual([ik('ฟรียิงแล้ว').fee_missing, ik('ฟรียิงแล้ว').performance, ik('ฟรียิงแล้ว').stamp_wait_reason], [false, 'Good', null]);
+
+    const { rows: adRows } = await ads.list({ scopeBrands: ['Beauterry'] });
+    const ak = name => adRows.find(x => x.account_name === name);
+    assert.deepEqual([ak('ฟรียังไม่ยิง').fee_missing, ak('ฟรียังไม่ยิง').content_cpm, ak('ฟรียังไม่ยิง').performance], [false, null, null]);
+    assert.deepEqual([ak('ฟรียิงแล้ว').content_cpm, ak('ฟรียิงแล้ว').performance, ak('ฟรียิงแล้ว').stamp_wait_reason], [20, 'Good', null]);
+});
+
 test('Ads page: the live verdict waits for the fee too', async () => {
     const { rows } = await ads.list({ scopeBrands: ['Jdent'] });
     const by = name => rows.find(r => r.account_name === name);
@@ -274,4 +344,34 @@ test('Ads page: the live verdict waits for the fee too', async () => {
     assert.deepEqual([c.fee_missing, c.content_cpm, c.content_cpe, c.performance], [true, null, null, null]);
     const a = by('น้องเอ');
     assert.deepEqual([a.fee_missing, a.content_cpm, a.content_cpe, a.performance], [false, 25, 0.83, 'Good']);
+});
+
+test('Report (KOL รายคนหลาย Platform): Platform ที่ไม่ได้เลือก Format ได้ null — ไม่ยืม Format ระดับกลุ่มของ Platform แรก', async () => {
+    const g = FIXTURE.projects.find(p => p.id === 44).ad_groups[0];
+    const saved = structuredClone(g.allocations);
+    // Instagram ไม่ได้เลือก Photo/VDO + Format · กลุ่มยังมีค่าระดับกลุ่ม (Review ของ TikTok) ค้างอยู่แบบกลุ่มที่บันทึกก่อนแก้
+    g.allocations[1] = { ...g.allocations[1], media_type: null, content_format: null };
+    try {
+        const r = await reports.detail(44, ['Beauterry']);
+        assert.deepEqual(r.kols.map(k => [k.platform, k.format]), [['TikTok', 'Review'], ['TikTok', 'Review'], ['Instagram', null]]);
+    } finally {
+        g.allocations = saved;
+    }
+});
+
+test('ScoreModal: KOL รายคนได้ฟรีที่ยังไม่มีค่าแอด อธิบายแบบไม่มีต้นทุน — ไม่นับ CPM/CPE เป็นจุดอ่อน ไม่สรุปเรื่องความคุ้มค่า', async () => {
+    const fs = require('node:fs');
+    const src = fs.readFileSync(path.join(__dirname, '../client/src/components/ScoreModal.jsx'), 'utf8');
+    // ส่วนหัวของไฟล์ (ก่อนคอมโพเนนต์) เป็น JS ล้วน — B / N / verdict
+    const verdict = new Function(src.slice(0, src.indexOf('/**')) + '; return verdict;')();
+    const d = await dashboard.overview({ scopeBrands: ['Beauterry'] });
+    const free = d.top_kols.find(k => k.name === 'ฟรียังไม่ยิง');
+    assert.deepEqual([free.fee_missing, free.cpm, free.cpe], [false, null, null]);
+    const lines = verdict(free);
+    assert.equal(lines[0], 'ได้ฟรี ยังไม่มีค่าแอด — ยังคิด CPM/CPE ไม่ได้ คะแนนตอนนี้มาจาก Engagement Rate และยอดวิวเท่านั้น (เต็ม 60)');
+    assert.ok(!lines.slice(1).some(t => /CPM|CPE/.test(t)), 'CPM/CPE ไม่ถูกนับเป็นจุดอ่อน: ' + JSON.stringify(lines));
+    assert.ok(!lines.some(t => /ต้นทุน|คุ้ม/.test(t)), 'ไม่สรุปเรื่องความคุ้มค่า: ' + JSON.stringify(lines));
+    // ได้ฟรีแต่ยิงแอดแล้ว (มีต้นทุน) = อธิบายแบบปกติ · รอค่าตัวยังใช้ข้อความเดิม
+    assert.ok(!verdict(d.top_kols.find(k => k.name === 'ฟรียิงแล้ว')).some(t => /ได้ฟรี/.test(t)));
+    assert.match(verdict({ ...free, fee_missing: true })[0], /^ยังไม่ได้ใส่ค่าตัว/);
 });

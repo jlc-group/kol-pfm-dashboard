@@ -42,6 +42,10 @@ function PerfBadge({ row }) {
         return <span className="perf-pill wait fee" title="ทีมยังไม่ได้ใส่ค่าตัว KOL คลิปนี้ — ยังคิด CPM/CPE และตัดสินผ่าน/ไม่ผ่านไม่ได้ ใส่ค่าตัวที่หน้าแคมเปญ">รอค่าตัว</span>;
     }
     if (!row.performance) {
+        // มียอดวิวแล้วแต่ไม่มี CPM = KOL รายคนได้ฟรีที่ยังไม่มีค่าแอด (ไม่มีต้นทุนให้คิด) — ไม่ใช่ยังไม่กรอกผลงาน
+        if (Number(row.views) > 0 && row.cpm == null) {
+            return <span className="perf-pill none" title="ได้ฟรี ยังไม่มีค่าแอด — ยังไม่มีต้นทุนให้คิด CPM/CPE จึงยังตัดสินผ่าน/ไม่ผ่านไม่ได้ (ไม่ได้แปลว่าทำได้แย่)">Not rated</span>;
+        }
         return (
             <span className="perf-pill none" title={`ยังตัดสินไม่ได้ เพราะยังไม่ได้กรอกผลงานคอนเทนต์
 (View / Like / Comment / Save / Share)
@@ -261,7 +265,7 @@ export default function Kols() {
     const budget = shown.reduce((a, r) => a + r.cost, 0);
 
     return (
-        <div>
+        <div className="kols-page">
             <header className="page-head with-action">
                 <div>
                     <h1>KOL Analytics</h1>
@@ -328,8 +332,8 @@ export default function Kols() {
                 ))}
             </div>
 
-            {/* ตาราง */}
-            <div className="panel no-pad">
+            {/* ตาราง — การ์ดนี้กินเต็มความกว้างหน้าแบบเดียวกับหน้า Ads (.kols-tbl-panel) */}
+            <div className="panel no-pad kols-tbl-panel">
                 <div className="ka-table-scroll">
                     <table className="data-table ka-table">
                         <thead>

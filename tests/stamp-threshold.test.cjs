@@ -61,6 +61,20 @@ test('เกณฑ์ต่ำลงแล้ว เงื่อนไขอื�
     assert.equal(stampWaitReason(clip({ ad_spend: at - 1, views: 0 }), at), null);
 });
 
+test('KOL รายคนได้ฟรี (ค่าตัว 0): ถึงเกณฑ์ของแบรนด์แล้วสแตมป์เลย ต้นทุน = ค่าแอด · ไม่มีวันรอค่าตัว', () => {
+    const at = stampAtFor('Beauterry');
+    const stamped = maybeStamp(clip({ budget: 0 }), at, 'solo');
+    assert.ok(stamped, 'ได้ฟรี + ค่าแอด 3,000 ต้องสแตมป์');
+    assert.equal(stamped.total_cost, 3000);
+    assert.equal(stamped.ad_spend, 3000);
+    assert.equal(stampWaitReason(clip({ budget: 0 }), at, 'solo'), null);
+    assert.equal(stampWaitReason(clip({ budget: 0, views: 0 }), at, 'solo'), 'views');
+    assert.equal(maybeStamp(clip({ budget: 0, ad_spend: at - 1 }), at, 'solo'), null);
+    // แคมเปญ KOL ค่าตัว 0 = ยังไม่ใส่ค่าตัว รอเหมือนเดิม
+    assert.equal(maybeStamp(clip({ budget: 0 }), at), null);
+    assert.equal(stampWaitReason(clip({ budget: 0 }), at), 'fee');
+});
+
 test('สแตมป์แล้วห้ามแตะซ้ำ แม้เกณฑ์จะเปลี่ยน', () => {
     const old = { verdict: 'Pass', ad_spend: 12000 };
     const s = clip({ perf_stamp: old, ad_spend: 50000 });

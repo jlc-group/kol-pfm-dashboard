@@ -1,32 +1,33 @@
 import { useState } from 'react';
 import Icon from '../../components/Icon.jsx';
 import {
-    SOLO_STEP_LABEL, SOLO_STEP_FILTERS, soloStepOf, matchStepFilter, soloTotals, overdueDays, soloDueOf, baht, followersText, tierShort
+    SOLO_STEP_LABEL, SOLO_STEP_FILTERS, soloStepOf, matchStepFilter, soloTotals, baht, followersText, tierShort, soloAccountsOf, soloPlatformsOf
 } from '../../data/soloKol.js';
 
 // แท็บ "KOL รายคน" ในหน้าแคมเปญ — 1 แถว = การจ้าง 1 ครั้ง (ผู้ใช้สั่ง 30 ก.ย. 2026)
 // ข้อมูลของแถวมาจาก p.solo_summary ที่ server คิดให้ (server/src/store/soloKol.js soloSummary) · กดแถว = เปิดหน้าของ KOL คนนั้น
+// รอบ 4 (1 ต.ค. 2026): หลาย Platform — แถวโชว์บัญชีหลัก (+ ชื่อบัญชีอื่น) · ค่าตัว 0 ทุกคลิป = ได้ฟรี · ไม่มีกำหนดลงงาน / เลยกำหนดแล้ว
 const STATUS_LABEL = { Active: 'กำลังทำ', Completed: 'เสร็จสิ้น', Cancelled: 'ยกเลิก' };
 const STATUS_ORDER = ['Active', 'Completed', 'Cancelled'];
-const todayStr = () => {
-    const d = new Date();
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-};
-const TH_MONTHS = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
-const shortDate = d => { if (!d) return ''; const [y, m, day] = d.split('-'); return `${Number(day)} ${TH_MONTHS[Number(m) - 1]} ${y.slice(2)}`; };
 
-function Row({ p, onOpen, fresh, today }) {
+function Row({ p, onOpen, fresh }) {
     const s = p.solo_summary || {};
     const step = soloStepOf(p);
-    const late = overdueDays(p, today);
-    const fol = followersText(s.followers);
+    const accounts = soloAccountsOf(p);
+    const primary = accounts[0] || {};
+    const name = s.account_name || primary.account_name || '';
+    // ชื่อบัญชีอื่นที่ไม่ซ้ำกับบัญชีหลัก (Platform อื่นใช้ชื่อเดียวกันไม่นับ — Platform บอกอยู่แล้วในบรรทัดถัดไป)
+    const more = new Set(accounts.map(a => a.account_name).filter(n => n && n !== name)).size;
+    const fol = followersText(primary.followers != null ? primary.followers : s.followers);
     return (
         <button type="button" className={'solo-row' + (fresh ? ' fresh' : '')} onClick={() => onOpen(p)}>
             <span className="solo-kol">
-                <span className="solo-avatar" aria-hidden="true">{String(s.account_name || '?').slice(0, 1).toUpperCase()}</span>
+                <span className="solo-avatar" aria-hidden="true">{String(name || '?').slice(0, 1).toUpperCase()}</span>
                 <span className="solo-kol-text">
-                    <b className="solo-acc">@{s.account_name || '—'}</b>
-                    <span className="solo-meta">{[s.platform, fol, tierShort(s.tier)].filter(Boolean).join(' · ')}</span>
+                    <b className="solo-acc" title={accounts.map(a => `${a.platform} @${a.account_name || '—'}`).join(' · ')}>
+                        @{name || '—'}{more > 0 && <small> +{more}</small>}
+                    </b>
+                    <span className="solo-meta">{[soloPlatformsOf(p).join(', '), fol, tierShort(primary.tier || s.tier)].filter(Boolean).join(' · ')}</span>
                     <span className="solo-meta">{s.contact_mode === 'agency' ? `Agency: ${s.agency || s.payee || '—'}` : 'ติดต่อเอง'}</span>
                 </span>
             </span>
@@ -39,7 +40,7 @@ function Row({ p, onOpen, fresh, today }) {
                     </span>
                 )}
             </span>
-            <span className="solo-clips" title={`ลงงานแล้ว ${s.posted || 0} จาก ${s.clips || 0} คลิป`}>
+            <span className="solo-clips" title={`ลงงานแล้ว ${s.posted || 0} จาก ${s.clips || 0} โพสต์`}>
                 <span className="solo-dots" aria-hidden="true">
                     {Array.from({ length: s.clips || 0 }, (_, i) => <i key={i} className={i < (s.posted || 0) ? 'on' : ''} />)}
                 </span>
@@ -47,16 +48,14 @@ function Row({ p, onOpen, fresh, today }) {
             </span>
             <span className="solo-step-cell">
                 <span className={'solo-step s-' + step}>{SOLO_STEP_LABEL[step] || step}</span>
-                {late > 0 && <span className="solo-late">เลยกำหนด {late} วัน</span>}
             </span>
             <span className="solo-fee">
-                {s.fee_missing ? <span className="solo-fee-missing">รอค่าตัว</span>
-                    : <>{baht(s.fee_per_clip)}{s.clips > 1 && <small> × {s.clips} = {baht(s.fee_total)}</small>}</>}
+                {/* fee_per_clip = null เมื่อค่าตัวแต่ละคลิป/Platform ไม่เท่ากัน → โชว์ยอดรวมอย่างเดียว */}
+                {s.fee_free ? 'ได้ฟรี'
+                    : s.fee_per_clip != null ? <>{baht(s.fee_per_clip)}{s.clips > 1 && <small> × {s.clips} = {baht(s.fee_total)}</small>}</>
+                        : baht(s.fee_total)}
             </span>
-            <span className="solo-owner">
-                {p.owner || '—'}
-                {soloDueOf(p) && <small>กำหนด {shortDate(soloDueOf(p))}</small>}
-            </span>
+            <span className="solo-owner">{p.owner || '—'}</span>
             <Icon name="chevron" size={16} />
         </button>
     );
@@ -65,7 +64,6 @@ function Row({ p, onOpen, fresh, today }) {
 export default function SoloKolList({ list, onOpen, onAdd, freshId, filtered }) {
     const [step, setStep] = useState('all');
     const [openDone, setOpenDone] = useState(false);
-    const today = todayStr();
     const shown = list.filter(p => matchStepFilter(p, step));
     const tot = soloTotals(list);
     const countStep = key => list.filter(p => matchStepFilter(p, key)).length;
@@ -101,7 +99,7 @@ export default function SoloKolList({ list, onOpen, onAdd, freshId, filtered }) 
                         <div className="solo-head" aria-hidden="true">
                             <span>KOL</span><span>แบรนด์ · สินค้า</span><span>คลิป</span><span>ขั้นถัดไป</span><span>ค่าตัว</span><span>ผู้ดูแล</span><span />
                         </div>
-                        {rows.map(p => <Row key={p.id} p={p} onOpen={onOpen} fresh={freshId === p.id} today={today} />)}
+                        {rows.map(p => <Row key={p.id} p={p} onOpen={onOpen} fresh={freshId === p.id} />)}
                     </div>
                 );
                 return (

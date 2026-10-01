@@ -229,11 +229,13 @@ const kols = {
                 const reposts = Number(s.reposts) || 0;   // IG เท่านั้น อันอื่นเป็น 0 อยู่แล้ว
                 const engagement = likes + comments + saves + shares + reposts;
                 // ยังไม่ใส่ค่าตัว = cpm/cpe เป็น null (กฎเดียวกับหน้า Report — ดู clipCostMetrics)
-                const { fee_missing, cost: totalCost, cpm, cpe } = clipCostMetrics({ fee: s.budget, adSpend: s.ad_spend, views, engagement });
+                // KOL รายคน: ค่าตัว 0 = ได้ฟรี ไม่ใช่ "รอค่าตัว" (ส่งประเภทแคมเปญให้ทั้งการคิดต้นทุนและเหตุที่รอสแตมป์)
+                const campaignType = p ? p.campaign_type : undefined;
+                const { fee_missing, cost: totalCost, cpm, cpe } = clipCostMetrics({ fee: s.budget, adSpend: s.ad_spend, views, engagement, campaignType });
                 const er = views > 0 ? Number(((engagement / views) * 100).toFixed(2)) : 0;
                 const spendNow = Number(s.ad_spend) || 0;
                 const stampAt = stampAtFor(p && p.brand);
-                const waitReason = stampWaitReason(s, stampAt);
+                const waitReason = stampWaitReason(s, stampAt, campaignType);
                 const perf = {
                     views, likes, comments, saves, shares, reposts, engagement, er,
                     ad_spend: spendNow, total_cost: totalCost, cpm, cpe, fee_missing,

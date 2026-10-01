@@ -4,15 +4,21 @@ const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 
 // KOL รายคน — ตรรกะฝั่งหน้าเว็บ (client/src/data/soloKol.js) + ตัวเลือกต้องตรงกับ server (server/src/store/soloKol.js)
+// รอบ 4 (1 ต.ค. 2026): หลาย Platform — สรุปมีบัญชีต่อ Platform (solo_summary.accounts) · ไม่มีกำหนดลงงาน/เลยกำหนดแล้ว
 const server = require(path.join(__dirname, '../server/src/store/soloKol'));
 let c;
+let ad;
 before(async () => {
     c = await import(pathToFileURL(path.join(__dirname, '../client/src/data/soloKol.js')).href);
+    ad = await import(pathToFileURL(path.join(__dirname, '../client/src/data/adGroups.js')).href);
 });
 
-test('ตัวเลือกฝั่งหน้าเว็บตรงกับ server (Platform / Tier / อายุ Gencode / จำนวนคลิป / ขั้นงาน)', () => {
+test('ตัวเลือกฝั่งหน้าเว็บตรงกับ server (Platform / Tier / Photo-VDO / Campaign / อายุ Gencode / จำนวนคลิป / ขั้นงาน)', () => {
     assert.deepEqual(c.SOLO_PLATFORMS, server.SOLO_PLATFORMS);
     assert.deepEqual(c.SOLO_TIERS, server.SOLO_TIERS);
+    assert.deepEqual(c.SOLO_MEDIA, server.SOLO_MEDIA);
+    // ฟอร์มใช้ CAMPAIGN_TYPES (TikTok) ของ adGroups — server ตรวจกับ SOLO_CAMPAIGNS
+    assert.deepEqual(ad.CAMPAIGN_TYPES, server.SOLO_CAMPAIGNS);
     assert.deepEqual(c.SOLO_CODE_EXPIRE, server.SOLO_CODE_EXPIRE);
     assert.equal(c.SOLO_MAX_CLIPS, server.SOLO_MAX_CLIPS);
     assert.deepEqual(Object.keys(c.SOLO_STEP_LABEL).sort(), [...server.SOLO_STEPS].sort(), 'ทุกขั้นที่ server ส่งมามีป้าย');
@@ -31,37 +37,109 @@ test('tierFromFollowers: แนะนำ Tier ตามผู้ติดตา�
     assert.equal(c.tierShort('Micro 10k - 100k'), 'Micro');
 });
 
+// บัญชีต่อ Platform ตามรูป solo_summary.accounts ของ server
+const acct = (platform, account_name, over = {}) => ({ platform, account_name, link_account: null, followers: 0, tier: 'Micro 10k - 100k', ...over });
 const row = (id, over = {}, sum = {}) => ({
-    id, name: `KOL รายคน · @a${id} (TikTok)`, brand: 'Beauterry', owner: 'แพรว', status: 'Active', end_date: '2026-10-10', ...over,
-    solo_summary: { account_name: 'a' + id, payee: 'a' + id, products: ['BTA4-01'], clips: 1, posted: 0, ad_fired: 0, fee_total: 5000, next_step: 'todo', due_date: '2026-10-10', ...sum }
+    id, name: `KOL รายคน · @a${id} (TikTok)`, brand: 'Beauterry', owner: 'แพรว', status: 'Active', ...over,
+    solo_summary: {
+        account_name: 'a' + id, platform: 'TikTok', platforms: ['TikTok'], accounts: [acct('TikTok', 'a' + id)],
+        payee: 'a' + id, products: ['BTA4-01'], clip_count: 1, clips: 1, posted: 0, ad_fired: 0,
+        fee_per_clip: 5000, fee_total: 5000, fee_missing: false, fee_free: false, next_step: 'todo', ...sum
+    }
 });
 
 test('ค้นหา / กรองขั้นงาน / สรุปยอด', () => {
-    const list = [row(1), row(2, { brand: 'Jdent' }, { payee: 'Star Model', agency: 'Star Model', next_step: 'gencode' }), row(3, {}, { next_step: 'idpost', clips: 2, posted: 2, fee_total: 12000 })];
+    const list = [
+        row(1),
+        row(2, { brand: 'Jdent' }, { payee: 'Star Model', agency: 'Star Model', next_step: 'gencode' }),
+        // 2 Platform × 2 คลิป = 4 โพสต์ · บัญชี Instagram ชื่อไม่เหมือนบัญชีหลัก
+        row(3, {}, {
+            platforms: ['TikTok', 'Instagram'], accounts: [acct('TikTok', 'a3'), acct('Instagram', 'a3.ig')],
+            next_step: 'idpost', clip_count: 2, clips: 4, posted: 2, fee_per_clip: null, fee_total: 12000
+        })
+    ];
     assert.deepEqual(list.filter(p => c.matchSoloSearch(p, '@A2')).map(p => p.id), [2], 'ชื่อบัญชี (มี @ นำหน้าก็เจอ)');
+    assert.deepEqual(list.filter(p => c.matchSoloSearch(p, 'a3.ig')).map(p => p.id), [3], 'ชื่อบัญชีของ Platform อื่น (ไม่ใช่บัญชีหลัก)');
     assert.deepEqual(list.filter(p => c.matchSoloSearch(p, 'star')).map(p => p.id), [2], 'Agency');
     assert.deepEqual(list.filter(p => c.matchSoloSearch(p, 'jdent')).map(p => p.id), [2], 'แบรนด์');
     assert.deepEqual(list.filter(p => c.matchSoloSearch(p, 'bta4-01')).map(p => p.id), [1, 2, 3], 'สินค้า');
+    assert.deepEqual(list.filter(p => c.matchSoloSearch(p, '')).map(p => p.id), [1, 2, 3], 'ไม่พิมพ์ = ทั้งหมด');
     assert.deepEqual(list.filter(p => c.matchStepFilter(p, 'code')).map(p => p.id), [2, 3], 'Gencode + ID Post รวมปุ่มเดียว');
     assert.deepEqual(list.filter(p => c.matchStepFilter(p, 'all')).map(p => p.id), [1, 2, 3]);
-    assert.deepEqual(c.soloTotals(list), { people: 3, clips: 4, fee: 22000, posted: 2, ad: 0 });
+    assert.deepEqual(c.soloTotals(list), { people: 3, clips: 6, fee: 22000, posted: 2, ad: 0 }, 'clips = จำนวนโพสต์ทั้งหมด (คลิป × Platform)');
 });
 
-test('overdueDays: เลยกำหนดลงงาน เฉพาะที่ยังลงไม่ครบและยังเปิดอยู่', () => {
-    assert.equal(c.overdueDays(row(1), '2026-10-13'), 3);
-    assert.equal(c.overdueDays(row(1), '2026-10-10'), 0);
-    assert.equal(c.overdueDays(row(1, {}, { posted: 1, clips: 1 }), '2026-10-13'), 0, 'ลงครบแล้ว');
-    assert.equal(c.overdueDays(row(1, { status: 'Completed' }), '2026-10-13'), 0, 'ปิดงานแล้ว');
-    assert.equal(c.overdueDays(row(1, {}, { due_date: null }), '2026-10-13'), 0, 'ไม่มีกำหนด');
-    // server ตั้ง end_date = วันจ้างเมื่อไม่ใส่กำหนด — ต้องไม่ขึ้นเลยกำหนดจาก end_date
-    assert.equal(c.overdueDays(row(1, { end_date: '2026-09-30' }, { due_date: null }), '2026-10-13'), 0, 'ไม่ใช้ end_date');
-    assert.equal(c.soloDueOf(row(1)), '2026-10-10');
+test('soloAccountsOf / soloPlatformsOf: บัญชีและ Platform ของการจ้าง (มีของเดิมรุ่นก่อนรอบ 4 ก็อ่านได้)', () => {
+    const multi = row(1, {}, { platforms: ['Instagram', 'TikTok'], accounts: [acct('TikTok', 'a1'), acct('Instagram', 'b1')] });
+    assert.deepEqual(c.soloAccountsOf(multi).map(a => a.account_name), ['a1', 'b1']);
+    assert.deepEqual(c.soloPlatformsOf(multi), ['TikTok', 'Instagram'], 'เรียงตาม SOLO_PLATFORMS เสมอ (ตัวแรก = Platform หลัก)');
+    // สรุปรุ่นเก่า: บัญชีเดียวที่ระดับบนสุด ไม่มี accounts / platforms
+    const old = { id: 9, solo_summary: { account_name: 'old', platform: 'Lemon8', followers: 1200, tier: 'Nano 1k - 10k', link_account: 'https://x.y' } };
+    assert.deepEqual(c.soloAccountsOf(old), [{ platform: 'Lemon8', account_name: 'old', link_account: 'https://x.y', followers: 1200, tier: 'Nano 1k - 10k' }]);
+    assert.deepEqual(c.soloPlatformsOf(old), ['Lemon8']);
+    // ไม่มีสรุป — ถอยไปอ่านบล็อกในกลุ่มโฆษณา แล้วจึง Platform ของกลุ่ม
+    assert.deepEqual(c.soloPlatformsOf({ ad_groups: [{ platform: 'YouTube', blocks: [{ platform: 'YouTube' }, { platform: 'TikTok' }] }] }), ['TikTok', 'YouTube']);
+    assert.deepEqual(c.soloPlatformsOf({ ad_groups: [{ platform: 'X' }] }), ['X']);
+    assert.deepEqual(c.soloPlatformsOf({}), []);
+    assert.deepEqual(c.soloAccountsOf({}), []);
+    assert.deepEqual(c.soloPlatformOrder(['YouTube', 'Other', 'TikTok', 'TikTok', '']), ['TikTok', 'YouTube', 'Other'], 'ค่าที่ไม่อยู่ในลิสต์ต่อท้าย ไม่ทิ้ง · ตัดซ้ำ/ค่าว่าง');
 });
 
 test('ตัวเลขบนหน้า: ค่าตัว / ผู้ติดตาม', () => {
     assert.equal(c.baht(10000), '฿10,000');
+    assert.equal(c.baht(0), '฿0');
     assert.equal(c.followersText(85000), '85K');
     assert.equal(c.followersText(1500), '1.5K');
     assert.equal(c.followersText(2500000), '2.5M');
     assert.equal(c.followersText(0), '');
+});
+
+test('clipEmpty ตรงกับ soloClipEmpty ของ server ทุกแถวตัวอย่าง (ล็อก Platform / จำนวนคลิปในฟอร์มแก้ไขใช้เกณฑ์เดียวกับ updateSolo)', () => {
+    const rows = [
+        null, undefined, {}, { platform: 'TikTok', clip_no: 1, status: 'confirmed', budget: 5000 },
+        { draft_link: 'https://d' }, { draft_link2: 'x' }, { draft_link3: 'x' }, { draft_link4: 'x' }, { draft_link5: 'x' },
+        { draft_link: '   ' }, { draft_link: '' }, { draft_link: null },
+        { post_url: 'https://p' }, { post_url: ' ' }, { gencode: '#abc' }, { gencode: '' }, { id_post: '7400000000000000000' }, { id_post: 0 },
+        { ad_spend: 1 }, { ad_spend: '0.01' }, { ad_spend: 0 }, { ad_spend: '0' }, { ad_spend: -5 }, { ad_spend: 'abc' },
+        { views: 10 }, { views: '3' }, { views: 0 }, { views: null },
+        { perf_stamp: { at: '2026-10-01' } }, { perf_stamp: null }, { perf_stamp: '' },
+        { ad_status: 'ยิงแล้ว' }, { ad_status: 'ยังไม่ยิง' }, { ad_status: 'ยิงแล้ว ' },
+        { draft_status: 'approve' }, { likes: 500 }, { budget: 0 }, { status: 'rejected' }
+    ];
+    for (const s of rows) assert.equal(c.clipEmpty(s), server.soloClipEmpty(s), JSON.stringify(s));
+    assert.equal(c.clipEmpty({}), true);
+    assert.equal(c.clipEmpty({ draft_link: 'https://d' }), false, 'มีดราฟแล้ว = ไม่ว่าง (ลงงาน/ยิงแอดยังไม่มี ก็ล็อก)');
+});
+
+test('soloEditLimits: Platform ที่เอาออกไม่ได้ + จำนวนคลิปต่ำสุด จากคลิปที่ไม่ว่าง', () => {
+    const clip = (platform, clip_no, over = {}) => ({ id: clip_no, platform, clip_no, status: 'confirmed', budget: 0, ...over });
+    assert.deepEqual(c.soloEditLimits([]), { lockedPlatforms: [], minClips: 1 });
+    assert.deepEqual(c.soloEditLimits(undefined), { lockedPlatforms: [], minClips: 1 });
+    assert.deepEqual(c.soloEditLimits([clip('TikTok', 1), clip('TikTok', 2), clip('Instagram', 1), clip('Instagram', 2)]),
+        { lockedPlatforms: [], minClips: 1 }, 'ทุกคลิปว่าง');
+    // ดราฟอย่างเดียวก็ล็อกแล้ว (server ไม่ยอมลบคลิปที่มีดราฟ) · ลำดับ Platform ตาม SOLO_PLATFORMS
+    assert.deepEqual(c.soloEditLimits([clip('Instagram', 3, { draft_link: 'https://d' }), clip('TikTok', 1, { gencode: '#g' }), clip('Facebook', 2)]),
+        { lockedPlatforms: ['TikTok', 'Instagram'], minClips: 3 });
+    assert.deepEqual(c.soloEditLimits([clip('X', 2, { id_post: '1' }), clip('X', 1)]), { lockedPlatforms: ['X'], minClips: 2 });
+});
+
+test('server รุ่นเก่า: 404 นับเป็น "ยังไม่มีเส้นนี้" เฉพาะ API route not found · ข้อความแยกรุ่นอื่นตามเดิม', () => {
+    const err = (status, message) => Object.assign(new Error(message), { status });
+    assert.equal(c.isOldServerError(err(404, 'API route not found')), true);
+    assert.equal(c.isOldServerError(err(404, 'ไม่พบ Project')), false, 'รายการถูกลบไปแล้ว — โชว์ข้อความของ server');
+    assert.equal(c.isOldServerError(err(404, 'ไม่พบรายการ')), false);
+    for (const m of c.OLD_SERVER_MSGS) assert.equal(c.isOldServerError(err(400, m)), true, m);
+    assert.deepEqual(c.OLD_SERVER_MSGS, ['ใส่Platformก่อนนะ', 'ใส่ชื่อบัญชี KOLก่อนนะ']);
+    assert.equal(c.isOldServerError(err(409, 'หน้าเว็บนี้เป็นรุ่นเก่า — กด F5 แล้วแก้อีกครั้ง')), false);
+    assert.equal(c.isOldServerError(err(400, 'TikTok: ใส่ชื่อบัญชี KOL ก่อนนะ')), false, 'ข้อความของ server รุ่นใหม่ (มีชื่อ Platform นำ)');
+    assert.equal(c.isOldServerError(null), false);
+    assert.equal(c.OLD_SERVER_FEE_MSG, 'ค่าตัวของ KOL รายคนต้องมากกว่า 0', 'ข้อความของ server ก่อนรอบ 4 ตอนตั้งค่าตัว 0');
+    assert.match(c.OLD_SERVER_TEXT, /F5/);
+    // server รุ่นนี้ไม่คืนข้อความแยกรุ่นจากการตรวจค่าเลย (ทั้งตอนเพิ่มและแก้ไข)
+    for (const opts of [{}, { editing: true }]) {
+        for (const body of [{}, { platform: '' }, { platforms: [{}] }, { platforms: [{ platform: 'TikTok' }] }, { platform: 'TikTok' }]) {
+            const e = server.soloInput(body, opts).error;
+            assert.ok(!c.OLD_SERVER_MSGS.includes(e) && e !== c.OLD_SERVER_FEE_MSG, JSON.stringify(body) + ' → ' + e);
+        }
+    }
 });

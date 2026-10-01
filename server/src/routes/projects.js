@@ -16,9 +16,9 @@ const {
     mergeHireItems, mergeBriefFiles, hireRowFee, cleanFee, cleanHeadcount, safeId,
     HIRE_BOOKED, BOOK_PENDING, BOOK_FEE, HIRE_JOB_CLOSED, hireBookings, newHireRow, payableWithoutFee, hireScope,
     PERSON_FIELDS, personPatch, releaseToRequest, bookingConfirm, bookingFeeDecision, bookingUnavailable, carryProductTargets, carryProductBudgets, carryProductConcepts,
-    carryNoGencode, normCampaignType
+    carryNoGencode, normCampaignType, todayTH
 } = require('../store/logic');
-const { soloInput, buildSoloGroup, soloName, soloDeleteBlock } = require('../store/soloKol');
+const { soloInput, buildSoloGroup, soloPersons, soloAccountsText, soloName, soloDeleteBlock } = require('../store/soloKol');
 // KOL รายคน (campaign_type 'solo') — ข้อความเมื่อเส้นทั่วไปของแคมเปญถูกเรียกกับรายการ KOL รายคน
 // (หน้าเว็บรุ่นเก่าที่เปิดค้างไว้ไม่รู้จักประเภทนี้ ฟอร์มแคมเปญจะสร้างกลุ่มใหม่ทับจนข้อมูลของ KOL รายคนหาย)
 const SOLO_ONLY_MSG = 'รายการนี้เป็น KOL รายคน — แก้จากหน้าของ KOL คนนั้น (ถ้าเปิดหน้าเว็บค้างไว้นาน กด F5 ก่อน)';
@@ -267,8 +267,9 @@ router.post('/', async (req, res, next) => {
 });
 
 // POST /api/projects/solo — เพิ่ม KOL รายคน (จ้าง KOL เดี่ยว ไม่ต้องสร้างแคมเปญ · ผู้ใช้สั่ง 30 ก.ย. 2026)
-// server สร้างแถวแคมเปญ campaign_type 'solo' + กลุ่มโฆษณา 1 กลุ่ม + แถวคลิป (confirmed) ในทรานแซกชันเดียว
-// กลุ่มสร้างที่นี่เท่านั้น (ไม่รับกลุ่มจากหน้าเว็บ) · ค่าตัวบังคับ · งบ = ค่าตัว × จำนวนคลิป
+// server สร้างแถวแคมเปญ campaign_type 'solo' + กลุ่มโฆษณา 1 กลุ่ม (1 บล็อก / Platform) + แถวคลิป (confirmed) ในทรานแซกชันเดียว
+// กลุ่มสร้างที่นี่เท่านั้น (ไม่รับกลุ่มจากหน้าเว็บ) · ค่าตัวบังคับทุก Platform (0 = ได้ฟรี) · งบ = ค่าตัว × จำนวนคลิป ของแต่ละ Platform
+// ไม่มีวันที่จ้าง/กำหนดลงงานแล้ว (รอบ 4) — วันที่ของรายการ = วันที่สร้าง (ตัวกรองปี/เดือนหน้าแคมเปญใช้ start/end_date)
 router.post('/solo', async (req, res, next) => {
     try {
         const { input, error } = soloInput(req.body);
@@ -280,6 +281,9 @@ router.post('/solo', async (req, res, next) => {
         if (!teamId) return res.status(400).json({ status: 'error', message: 'ผู้ใช้ยังไม่ได้สังกัดทีม' });
         const group = buildSoloGroup(input, 'g' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6));
         const total = group.budget;
+        const platform_budgets = {};
+        group.blocks.forEach(b => { platform_budgets[b.platform] = b.budget; });
+        const today = todayTH();
         const who = actorName(req);
         const { project, rows } = await store.projects.createSolo({
             team_id: teamId, created_by: req.user.id,
@@ -287,56 +291,73 @@ router.post('/solo', async (req, res, next) => {
             objective: input.note, brief_link: input.brief_link,
             products: input.products, ad_groups: [group],
             owner: input.owner, creator: input.owner,
-            platform_budgets: { [input.platform]: total },
+            platform_budgets,
             kol_target: 1, budget: total,
-            start_date: input.hire_date, end_date: input.due_date || input.hire_date,
+            start_date: today, end_date: today,
             status: 'Active'
-        }, {
-            account_name: input.account_name, platform: input.platform, product: input.products.join(', '),
-            budget: input.fee, agency: input.agency, link_account: input.link_account, followers: input.followers,
-            group_key: group.key, tier: input.tier, content_type: input.content_type, code_expire: input.code_expire
-        }, input.clip_names, who);
-        // ค่าตัวที่ตั้งตอนเพิ่มไม่ได้ผ่านเส้นแก้ค่าตัว — บันทึกยอดไว้ในประวัติให้ตรวจย้อนหลังได้
+        }, soloPersons(input, group.key), input.clip_names, who);
+        // ค่าตัวที่ตั้งตอนเพิ่มไม่ได้ผ่านเส้นแก้ค่าตัว — บันทึกยอดของทุก Platform ไว้ในประวัติให้ตรวจย้อนหลังได้
         const baht = n => '฿' + (Number(n) || 0).toLocaleString('th-TH');
-        await record(req, project.id, 'create',
-            `เพิ่ม KOL รายคน: @${input.account_name} (${input.platform} · ${rows.length} คลิป · ${baht(input.fee)}/คลิป · รวม ${baht(total)})`,
-            project.name, teamId);
+        const parts = input.platforms.map(p =>
+            `@${p.account_name} (${p.platform} · ${input.clips} คลิป · ${p.fee > 0 ? `${baht(p.fee)}/คลิป` : 'ได้ฟรี'})`);
+        await record(req, project.id, 'create', `เพิ่ม KOL รายคน: ${parts.join(' · ')} · รวม ${baht(total)}`, project.name, teamId);
         res.status(201).json({ status: 'success', data: { project, rows } });
     } catch (err) { next(err); }
 });
 
-// PUT /api/projects/:id/solo — แก้ข้อมูลการจ้าง KOL รายคน (ช่วง 3 · 1 ต.ค. 2026)
-// รับฟอร์มเดียวกับตอนเพิ่ม ยกเว้นค่าตัว (แก้ที่ช่องค่าตัวในหน้า KOL → PUT /:id/fees) · กลุ่มสร้างใหม่ที่ server (คงคีย์เดิม)
+// PUT /api/projects/:id/solo — แก้ข้อมูลการจ้าง KOL รายคน (ช่วง 3 · รอบ 4 หลาย Platform)
+// รับฟอร์มเดียวกับตอนเพิ่ม · ค่าตัวส่งมาเฉพาะ Platform ที่เพิ่มใหม่ (Platform เดิมแก้ที่ช่องค่าตัวในหน้า KOL → PUT /:id/fees)
+// กลุ่มสร้างใหม่ที่ server (คงคีย์เดิม) · ไม่แตะวันที่ของรายการ
+// หน้าเว็บก่อนรอบ 4 (แท็บเปิดค้าง) ส่งแบบแบน Platform เดียว (ไม่มี platforms[]) — ถ้าการจ้างมีหลาย Platform แล้ว
+//   หรือส่ง Platform อื่นมา (สลับ Platform) ส่งต่อไปจะลบคลิปของ Platform ที่ฟอร์มเก่ามองไม่เห็น → 409 ให้กด F5 ก่อน
+//   Platform เดียวเหมือนเดิมยังแก้ได้ · POST (เพิ่มใหม่) ยังรับแบบแบนตามเดิม
+const SOLO_STALE_FORM_MSG = 'หน้าเว็บนี้เป็นรุ่นเก่า — กด F5 แล้วแก้อีกครั้ง';
+const soloStoredPlatforms = g => {
+    if (!g) return [];
+    if (Array.isArray(g.platforms) && g.platforms.length) return g.platforms.filter(Boolean);
+    const blocks = (Array.isArray(g.blocks) ? g.blocks : []).map(b => b && b.platform).filter(Boolean);
+    if (blocks.length) return blocks;
+    return g.platform ? [g.platform] : [];
+};
 router.put('/:id/solo', async (req, res, next) => {
     try {
         const check = await canEditProject(req, req.params.id);
         if (!check.ok) return res.status(check.code).json({ status: 'error', message: check.message });
         if (!isSoloProject(check.project)) return res.status(400).json({ status: 'error', message: 'รายการนี้ไม่ใช่ KOL รายคน' });
+        const g0 = (check.project.ad_groups || [])[0] || {};
+        if (!Array.isArray(req.body && req.body.platforms)) {
+            const stored = [...new Set(soloStoredPlatforms(g0))];
+            const flat = (req.body && req.body.platform) || '';
+            const sent = typeof flat === 'string' ? flat.trim() : '';
+            if (stored.length > 1 || (stored.length === 1 && sent !== stored[0])) {
+                return res.status(409).json({ status: 'error', message: SOLO_STALE_FORM_MSG });
+            }
+        }
         const { input, error } = soloInput(req.body, { editing: true });
         if (error) return res.status(400).json({ status: 'error', message: error });
         if (!canSeeBrand(req.account || req.user, input.brand)) {
             return res.status(403).json({ status: 'error', message: 'เลือกได้เฉพาะแบรนด์ที่คุณได้รับสิทธิ์' });
         }
-        const g0 = (check.project.ad_groups || [])[0] || {};
-        const group = buildSoloGroup(input, g0.key || ('g' + Date.now().toString(36)));
+        // ส่งกลุ่มเดิมไปด้วย — ผู้รับเงิน (ติดต่อเอง) คงเป็นบัญชีของ Platform เดิม เพิ่ม Platform ที่เรียงมาก่อนไม่ย้ายงวดจ่าย
+        const group = buildSoloGroup(input, g0.key || ('g' + Date.now().toString(36)), g0);
         const who = actorName(req);
         const out = await store.projects.updateSolo(req.params.id, {
             fields: {
                 name: soloName(input), brand: input.brand, objective: input.note, brief_link: input.brief_link,
-                products: input.products, owner: input.owner, start_date: input.hire_date,
-                end_date: input.due_date || input.hire_date, updated_by: req.user.id
+                products: input.products, owner: input.owner, updated_by: req.user.id
             },
             group,
-            person: {
-                account_name: input.account_name, platform: input.platform, product: input.products.join(', '),
-                agency: input.agency, link_account: input.link_account, followers: input.followers,
-                tier: input.tier, content_type: input.content_type
-            },
+            persons: soloPersons(input, group.key),
             clipNames: input.clip_names, codeExpire: input.code_expire
         }, who);
         if (out.error) return res.status(out.error.code).json({ status: 'error', message: out.error.message });
-        const extra = [out.added ? `เพิ่ม ${out.added} คลิป` : '', out.removed ? `ลด ${out.removed} คลิป` : ''].filter(Boolean).join(' · ');
-        await record(req, req.params.id, 'update', `แก้ข้อมูล KOL รายคน: @${input.account_name}${extra ? ` (${extra})` : ''}`, out.project.name, out.project.team_id);
+        const extra = [
+            ...(out.platforms_added || []).map(p => `เพิ่ม ${p}`),
+            ...(out.platforms_removed || []).map(p => `เอา ${p} ออก`),
+            out.added ? `เพิ่ม ${out.added} คลิป` : '',
+            out.removed ? `ลด ${out.removed} คลิป` : ''
+        ].filter(Boolean).join(' · ');
+        await record(req, req.params.id, 'update', `แก้ข้อมูล KOL รายคน: ${soloAccountsText(input.platforms)}${extra ? ` (${extra})` : ''}`, out.project.name, out.project.team_id);
         res.json({ status: 'success', data: out.project });
     } catch (err) { next(err); }
 });
@@ -346,7 +367,7 @@ router.put('/:id', async (req, res, next) => {
     try {
         const check = await canEditProject(req, req.params.id);
         if (!check.ok) return res.status(check.code).json({ status: 'error', message: check.message });
-        // KOL รายคน: เส้นนี้แก้ได้แค่สถานะ (ปิดงาน / เปิดงานอีกครั้ง / ยกเลิก)
+        // KOL รายคน: เส้นนี้แก้ได้แค่สถานะ (ยกเลิก / เปิดงานอีกครั้ง — ปุ่มปิดงานเอาออกแล้วในรอบ 4 แต่ยังรับ Completed ไว้ให้แถวเก่า)
         // ฟอร์มแคมเปญ (รวมถึงหน้าเว็บรุ่นเก่าที่เปิดค้าง) ส่งกลุ่มโฆษณาทั้งก้อนมาทับ — ข้อมูลของ KOL รายคนจะหาย
         if (isSoloProject(check.project)) {
             const keys = Object.keys(req.body || {}).filter(k => k !== 'expected_updated_at');
@@ -1579,15 +1600,21 @@ router.put('/:id/fees', async (req, res, next) => {
         if (!check.ok) return res.status(check.code).json({ status: 'error', message: check.message });
         const parsed = parseFeeBody(req.body);
         if (parsed.error) return res.status(400).json({ status: 'error', message: parsed.error });
-        // KOL รายคน: ค่าตัวบังคับ (ผู้ใช้เลือก 30 ก.ย.) — ล้างเป็น 0 ไม่ได้ (หน้าเว็บรุ่นเก่ามีปุ่ม "ล้างค่าตัว" ของกลุ่ม)
-        if (isSoloProject(check.project) && parsed.items.some(it => !(it.budget > 0))) {
-            return res.status(400).json({ status: 'error', message: 'ค่าตัวของ KOL รายคนต้องมากกว่า 0' });
+        // KOL รายคน: 0 = ได้ฟรี (รอบ 4) ตั้งได้เฉพาะจากช่องค่าตัวในหน้าของ KOL คนนั้น (reason 'manual' — ตั้งใจพิมพ์ 0 เอง)
+        // ปุ่ม "ล้างค่าตัว" / หารเฉลี่ยของกลุ่ม (หน้าเว็บรุ่นเก่า) ห้ามทำให้กลายเป็นได้ฟรีโดยไม่ตั้งใจ
+        if (isSoloProject(check.project) && parsed.reason !== 'manual' && parsed.items.some(it => !(it.budget > 0))) {
+            return res.status(400).json({ status: 'error', message: 'ล้างค่าตัวของ KOL รายคนไม่ได้ — ถ้าได้ฟรีให้พิมพ์ 0 ที่ช่องค่าตัวในหน้าของ KOL คนนั้น' });
         }
         // ทุกแถวต้องเป็นของแคมเปญนี้ — กันยิง sub_id ของแคมเปญ/แบรนด์อื่นเข้ามาแก้ผ่านแคมเปญที่ตัวเองมีสิทธิ์
         const all = await store.submissions.listByProject(req.params.id);
         const byId = new Map(all.map(s => [Number(s.id), s]));
         if (parsed.items.some(it => !byId.has(it.sub_id))) {
             return res.status(400).json({ status: 'error', message: 'มีรายการที่ไม่ได้อยู่ในแคมเปญนี้ กรุณารีเฟรช' });
+        }
+        // KOL รายคน (รอบ 4): ค่าตัวแยกต่อ Platform — หน้าเว็บรุ่นเก่าที่เปิดค้างมีช่องค่าตัวช่องเดียว ส่งทุกคลิปของการจ้างมาเป็นยอดเดียว
+        // (ทับค่าตัวของ Platform อื่น รวมถึงที่ได้ฟรี) · ตอบ 400 ไม่ใช่ 409 — หน้าเว็บเก่าขึ้นข้อความนี้ตรง ๆ (409 จะกลายเป็น "มีคนแก้ไปแล้ว")
+        if (isSoloProject(check.project) && new Set(parsed.items.map(it => byId.get(it.sub_id).platform || '')).size > 1) {
+            return res.status(400).json({ status: 'error', message: 'ค่าตัวของ KOL รายคนแก้ทีละ Platform — กด F5 แล้วลองใหม่' });
         }
         const user = await store.users.findById(req.user.id);
         const byName = user ? (user.full_name || user.username) : null;

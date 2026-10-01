@@ -459,18 +459,21 @@ function CampaignCard({ row, onOpen }) {
     const planned = Number(row.planned_amount) || 0;
     const paid = Number(row.paid_amount) || 0;
     const pct = planned > 0 ? Math.round((paid / planned) * 100) : 0;
-    const state = planned === 0 ? 'none' : paid >= planned ? 'done' : 'part';
+    // KOL รายคนที่ได้ฟรี (ค่าตัว 0 ทุกคลิป · งบ 0) — ไม่มีอะไรต้องจ่าย ไม่ใช่ "ยังไม่ตั้งงวด"
+    const free = row.campaign_type === 'solo' && !(Number(row.budget) > 0) && planned === 0;
+    const state = free ? 'free' : planned === 0 ? 'none' : paid >= planned ? 'done' : 'part';
+    const settled = state === 'done' || state === 'free';
     const invTotal = (row.installments || []).length;
     const invDone = (row.installments || []).filter(i => i.invoice || i.invoice_link).length;
     // แผนรวมมากกว่างบ = สัญญาณว่ามีแผนซ้อนกัน (ทั้งแคมเปญ + รายกลุ่ม)
     const overPlan = planned > 0 && Number(row.budget) > 0 && planned > Number(row.budget);
     return (
         <div className="pcard" onClick={onOpen}>
-            <div className={'pcard-accent payacc-' + (state === 'done' ? 'pay-done' : 'pay-wait')} />
+            <div className={'pcard-accent payacc-' + (settled ? 'pay-done' : 'pay-wait')} />
             <div className="pcard-body">
                 <div className="pcard-head">
-                    <span className={'status ' + (state === 'done' ? 'pay-done' : 'pay-wait')}>
-                        {state === 'none' ? 'ยังไม่ตั้งงวด' : state === 'done' ? 'จ่ายครบแล้ว' : 'จ่ายแล้ว ' + pct + '%'}
+                    <span className={'status ' + (settled ? 'pay-done' : 'pay-wait')}>
+                        {state === 'free' ? 'ได้ฟรี' : state === 'none' ? 'ยังไม่ตั้งงวด' : state === 'done' ? 'จ่ายครบแล้ว' : 'จ่ายแล้ว ' + pct + '%'}
                     </span>
                     {row.campaign_type === 'solo' && <span className="solo-badge" title="จ้าง KOL เดี่ยว (ไม่มีแคมเปญ) — ผู้รับเงิน = Agency ที่ระบุ หรือตัว KOL">KOL รายคน</span>}
                     {overPlan && (
@@ -497,7 +500,7 @@ function CampaignCard({ row, onOpen }) {
                 )}
                 <div className="pcard-foot">
                     <div>
-                        <div className="pcard-budget-val">{baht(row.budget)}</div>
+                        <div className="pcard-budget-val">{free ? 'ได้ฟรี' : baht(row.budget)}</div>
                         <div className="pcard-budget-lbl">{row.hire_breakdown ? 'งบงานจ้าง' : row.campaign_type === 'solo' ? 'ค่าตัว KOL' : 'งบแคมเปญ'}</div>
                         {/* งานจ้างอื่น ๆ: งบรวมงบของคนที่ยังไม่ตกลง/ยังหาไม่ได้ — แยกให้เห็นก่อนตั้งงวด */}
                         {row.hire_breakdown && <HireSplit split={row.hire_breakdown} />}

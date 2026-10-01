@@ -290,14 +290,18 @@ export default function Report() {
                                             : B(k.cost)}
                                     </td>
                                     <td>{k.link ? <a className="work-link" href={k.link} target="_blank" rel="noreferrer"><Icon name="eye" size={12} /> เปิด</a> : '-'}</td>
-                                    <td className="num">{k.fee_missing ? '—' : k.cpm}</td>
-                                    <td className="num">{k.fee_missing ? '—' : k.cpe}</td>
+                                    {/* KOL รายคนได้ฟรีที่ยังไม่มีค่าแอด = ไม่มีต้นทุน CPM/CPE เป็น null — ขึ้นขีด ไม่ใช่ช่องว่าง */}
+                                    <td className="num">{k.fee_missing || k.cpm == null ? '—' : k.cpm}</td>
+                                    <td className="num">{k.fee_missing || k.cpe == null ? '—' : k.cpe}</td>
                                     <td>
                                         {k.fee_missing
                                             ? <span className="fee-missing-chip in-cell" title="ยังไม่มีค่าตัว จึงยังคิด CPM/CPE และตัดสินผลไม่ได้ — ไม่ได้แปลว่าทำได้แย่">รอค่าตัว</span>
-                                            : k.performance === 'Good'
-                                                ? <span className="perf-good">✓ Good</span>
-                                                : <span className="perf-improve">📈 Improve</span>}
+                                            : k.performance == null
+                                                // ได้ฟรีและยังไม่มีค่าแอด — server ยังไม่ตัดสิน (performance null) ห้ามตกไปเป็น Improve
+                                                ? <span className="perf-pill none" title="ได้ฟรี ยังไม่มีค่าแอด — ยังไม่มีต้นทุนให้ตัดสิน (ไม่ได้แปลว่าทำได้แย่)">Not rated</span>
+                                                : k.performance === 'Good'
+                                                    ? <span className="perf-good">✓ Good</span>
+                                                    : <span className="perf-improve">📈 Improve</span>}
                                     </td>
                                 </tr>
                             ))}

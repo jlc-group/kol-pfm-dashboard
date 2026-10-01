@@ -49,9 +49,10 @@ const adsSync = {
         if (!rows || !rows.length) return out;
 
         // ต้องมี projects ด้วย เพราะเกณฑ์สแตมป์แยกตามแบรนด์ และแบรนด์อยู่ที่ projects.brand
+        // ประเภทแคมเปญด้วย — KOL รายคนค่าตัว 0 = ได้ฟรี สแตมป์ได้โดยไม่ต้องรอค่าตัว
         const snap = await loadSnapshot(['projects', 'submissions']);
-        const brandOf = {};
-        snap.projects.forEach(p => { brandOf[p.id] = p.brand; });
+        const brandOf = {}, typeOf = {};
+        snap.projects.forEach(p => { brandOf[p.id] = p.brand; typeOf[p.id] = p.campaign_type; });
         // เก็บ "คอลัมน์ที่ถูกแตะ" ต่อ submission เพื่อไม่เขียนทับฟิลด์ที่ไม่เกี่ยวข้อง
         const touched = new Map();   // subId -> { sub, cols:Set }
         const mark = (s, col) => {
@@ -108,7 +109,7 @@ const adsSync = {
             mark(s, 'ad_synced_at');
             mark(s, 'updated_at');
             out.updated++;
-            if (maybeStamp(s, stampAtFor(brandOf[s.project_id]))) { out.stamped++; mark(s, 'perf_stamp'); }
+            if (maybeStamp(s, stampAtFor(brandOf[s.project_id]), typeOf[s.project_id])) { out.stamped++; mark(s, 'perf_stamp'); }
         }
 
         // persist() ของเดิม = เขียนไฟล์ทั้งก้อน · ที่นี่ = UPDATE จริงใน transaction เดียว
@@ -158,8 +159,10 @@ const ads = {
                 const spend = Number(s.ad_spend) || 0;
                 const reach = Number(s.ad_reach) || 0;
                 // ค่าแอดถึงเกณฑ์แล้วแต่ยังสแตมป์ไม่ได้เพราะรออะไร: 'views' ยอดวิว / 'fee' ค่าตัว (ไม่ได้รอ = null)
+                // KOL รายคนไม่รอค่าตัว (0 = ได้ฟรี) — ประเภทแคมเปญส่งต่อให้ทั้งเหตุที่รอและการคิดต้นทุน
                 const stampAt = stampAtFor(p && p.brand);
-                const waitReason = stampWaitReason(s, stampAt);
+                const campaignType = p ? p.campaign_type : undefined;
+                const waitReason = stampWaitReason(s, stampAt, campaignType);
                 // กลุ่มโฆษณาที่ KOL คนนี้สังกัด (ผูก Target/Content Type จาก Project อัตโนมัติ)
                 const grp = (p && Array.isArray(p.ad_groups)) ? p.ad_groups.find(g => g.key === s.group_key) : null;
                 // Content Type ผูกกับคน (1 Platform ในกลุ่มเดียวมีได้หลายอย่าง) แถวเก่าค่อยถอยไปใช้ของกลุ่ม
@@ -214,7 +217,7 @@ const ads = {
                         const views = Number(s.views) || 0;
                         const eng = engagementOf(s);
                         // ยังไม่ใส่ค่าตัว = content_cpm/cpe เป็น null และยังไม่ตัดสิน (กฎเดียวกับหน้า Report — ดู clipCostMetrics)
-                        const { fee_missing, cpm: cCpm, cpe: cCpe } = clipCostMetrics({ fee: s.budget, adSpend: spend, views, engagement: eng });
+                        const { fee_missing, cpm: cCpm, cpe: cCpe } = clipCostMetrics({ fee: s.budget, adSpend: spend, views, engagement: eng, campaignType });
                         return {
                             views, engagement: eng, fee_missing,
                             content_cpm: cCpm, content_cpe: cCpe,
@@ -230,7 +233,7 @@ const ads = {
                         const views = Number(s.views) || 0;
                         const eng = engagementOf(s);
                         // ยังไม่ใส่ค่าตัว = content_cpm/cpe เป็น null และยังไม่ตัดสิน (กฎเดียวกับหน้า Report — ดู clipCostMetrics)
-                        const { fee_missing, cpm: cCpm, cpe: cCpe } = clipCostMetrics({ fee: s.budget, adSpend: spend, views, engagement: eng });
+                        const { fee_missing, cpm: cCpm, cpe: cCpe } = clipCostMetrics({ fee: s.budget, adSpend: spend, views, engagement: eng, campaignType });
                         return {
                             views, engagement: eng, fee_missing,
                             content_cpm: cCpm, content_cpe: cCpe,

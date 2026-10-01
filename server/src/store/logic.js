@@ -36,6 +36,8 @@ const normCampaignType = v => (v === 'other' || v === 'solo' ? v : 'kol');
 const stampAtFor = brand => AD_STAMP_BY_BRAND[String(brand == null ? '' : brand).trim()] || AD_STAMP_AT;
 
 const now = () => new Date().toISOString();
+// วันนี้ตามเวลาไทย (YYYY-MM-DD) — ใช้กับช่องวันที่ล้วน (กำหนดส่งรายชื่อ / วันที่ของ KOL รายคน)
+const todayTH = () => new Date(Date.now() + 7 * 3600 * 1000).toISOString().slice(0, 10);
 const clone = (v) => (v === undefined ? undefined : structuredClone(v));
 
 
@@ -877,7 +879,8 @@ function engagementOf(s) {
 
 // คืนค่า stamp ถ้าเพิ่งสแตมป์รอบนี้ / null ถ้ายังไม่ถึงเงื่อนไข
 // at = เกณฑ์ค่าแอดของแบรนด์นั้น (ตัวเรียกหาจาก stampAtFor) — ไม่ส่งมาก็ใช้ค่ากลาง
-function maybeStamp(s, at = AD_STAMP_AT) {
+// campaignType = projects.campaign_type ของคลิปนี้ — KOL รายคน ('solo') ค่าตัว 0 = ได้ฟรี ไม่ต้องรอค่าตัว (ต้นทุน = ค่าแอด)
+function maybeStamp(s, at = AD_STAMP_AT, campaignType) {
     if (!s || s.perf_stamp) return null;                       // สแตมป์แล้วห้ามแตะซ้ำ
     const spend = Number(s.ad_spend) || 0;
     if (spend < (Number(at) || AD_STAMP_AT)) return null;
@@ -886,7 +889,7 @@ function maybeStamp(s, at = AD_STAMP_AT) {
     if (views <= 0) return null;
     // ยังไม่ได้ใส่ค่าตัว -> รอไว้ก่อน ไม่งั้นต้นทุนรวมเหลือแค่ค่าแอด CPM/CPE ต่ำเกินจริงแล้วล็อกค้างถาวร
     // (ใส่ค่าตัวเมื่อไหร่ submissions.updateOne เรียกฟังก์ชันนี้ซ้ำ แล้วสแตมป์ตอนนั้นเอง)
-    if ((Number(s.budget) || 0) <= 0) return null;
+    if (feeMissing(s.budget, campaignType)) return null;
     const engagement = engagementOf(s);
     const totalCost = (Number(s.budget) || 0) + spend;
     const cpm = Number((totalCost / (views / 1000)).toFixed(2));
@@ -906,12 +909,12 @@ function maybeStamp(s, at = AD_STAMP_AT) {
 // ค่าแอดถึงเกณฑ์แล้วแต่ยังสแตมป์ไม่ได้เพราะรออะไรอยู่ — ให้หน้าเว็บบอกได้ว่าต้องไปกรอกช่องไหน
 // 'views' = ยังไม่มียอดวิว · 'fee' = ยังไม่ได้ใส่ค่าตัว
 // null = ไม่ได้รออะไร (สแตมป์แล้ว / ค่าแอดยังไม่ถึงเกณฑ์ / ครบแล้วรอสแตมป์รอบถัดไป)
-// ลำดับการเช็คต้องตรงกับ maybeStamp: ยอดวิวก่อน แล้วค่อยค่าตัว
-function stampWaitReason(s, at = AD_STAMP_AT) {
+// ลำดับการเช็คต้องตรงกับ maybeStamp: ยอดวิวก่อน แล้วค่อยค่าตัว · KOL รายคน ('solo') ไม่มีวันรอค่าตัว (0 = ได้ฟรี)
+function stampWaitReason(s, at = AD_STAMP_AT, campaignType) {
     if (!s || s.perf_stamp) return null;
     if ((Number(s.ad_spend) || 0) < (Number(at) || AD_STAMP_AT)) return null;
     if ((Number(s.views) || 0) <= 0) return 'views';
-    if ((Number(s.budget) || 0) <= 0) return 'fee';
+    if (feeMissing(s.budget, campaignType)) return 'fee';
     return null;
 }
 
@@ -919,18 +922,25 @@ function stampWaitReason(s, at = AD_STAMP_AT) {
 // ค่าตัว (submissions.budget) เก็บต่อคลิป · 0 / ว่าง = ทีมยังไม่ได้ใส่ (เงื่อนไขเดียวกับ maybeStamp)
 // ยอดรวมค่าจ้างยังบวกตามเดิม (0 ไม่ได้เพิ่มอะไร) แต่ CPM/CPE ของคลิปพวกนี้เหลือแค่ค่าแอด หรือเป็น 0
 // ซึ่งดูถูกเกินจริง จึงตัดออกจากค่าเฉลี่ย CPM/CPE, แกนคะแนน CPM/CPE และการตัดสิน Good/Improve
-function feeMissing(budget) {
+// campaignType = projects.campaign_type — KOL รายคน ('solo') ค่าตัวบังคับตอนเพิ่ม 0 จึงแปลว่า "ได้ฟรี" ไม่ใช่ "ยังไม่ใส่" (รอบ 4)
+// ไม่ส่งมา = แคมเปญ KOL ตามเดิม
+function feeMissing(budget, campaignType) {
+    if (campaignType === 'solo') return false;
     return (Number(budget) || 0) <= 0;
 }
 
 // CPM/CPE ของ 1 คลิป — ต้นทุน = ค่าตัว + ค่ายิงแอด
 // ยังไม่ใส่ค่าตัว = cpm/cpe เป็น null (ห้ามคืน 0 หรือคิดจากค่าแอดอย่างเดียว เพราะจะดูคุ้มเกินจริง)
-function clipCostMetrics({ fee, adSpend, views, engagement }) {
+// KOL รายคน: คืน fee_free ด้วย (ค่าตัว 0 = ได้ฟรี ต้นทุน = ค่าแอดอย่างเดียว) · ต้นทุนรวมยังเป็น 0 (ได้ฟรี + ยังไม่ยิงแอด)
+// = cpm/cpe เป็น null "ยังไม่มีต้นทุนให้ตัดสิน" ไม่ใช่ 0 ที่ดูคุ้มสุด
+function clipCostMetrics({ fee, adSpend, views, engagement, campaignType }) {
     const f = Number(fee) || 0;
     const cost = f + (Number(adSpend) || 0);
-    if (feeMissing(f)) return { fee_missing: true, cost, cpm: null, cpe: null };
+    if (feeMissing(f, campaignType)) return { fee_missing: true, cost, cpm: null, cpe: null };
+    const free = campaignType === 'solo' ? { fee_free: f <= 0 } : {};
+    if (cost <= 0) return { fee_missing: false, ...free, cost, cpm: null, cpe: null };
     return {
-        fee_missing: false, cost,
+        fee_missing: false, ...free, cost,
         cpm: views > 0 ? Number((cost / (views / 1000)).toFixed(2)) : 0,
         cpe: engagement > 0 ? Number((cost / engagement).toFixed(2)) : 0
     };
@@ -958,15 +968,17 @@ function costAxisNorm(row, key, range, has = hasPositive(key)) {
 }
 
 // ผ่าน/ไม่ผ่านเกณฑ์คุ้มค่า — ยังไม่ใส่ค่าตัว = null (ยังตัดสินไม่ได้ ไม่นับเป็นทั้ง Good และ Improve)
+// ไม่มี CPM (KOL รายคนได้ฟรีและยังไม่ยิงแอด — ไม่มีต้นทุนให้เทียบ) = null เหมือนกัน
 function perfVerdict({ fee_missing, views, cpm, cpe }) {
-    if (fee_missing) return null;
+    if (fee_missing || cpm == null) return null;
     return (views > 0 && cpm > 0 && cpm <= GOOD_CPM && cpe > 0 && cpe <= GOOD_CPE) ? 'Good' : 'Improve';
 }
 
 // ค่าเฉลี่ย CPM/CPE ต่อคลิปของหน้า Report — เฉพาะคลิปที่มีค่าตัวและมี reach จากแอดแล้ว
 // fee_clips = จำนวนคลิปที่เอามาเฉลี่ยจริง · fee_missing_clips = คลิปที่ยังไม่ใส่ค่าตัว (นับทุกแถวที่รวมอยู่ในยอดค่าจ้าง)
+// คลิปที่ไม่มี CPM (KOL รายคนได้ฟรีและยังไม่มีค่าแอด) ไม่เข้าเฉลี่ย — ไม่งั้น null ถูกนับเป็น 0 ดึงค่าเฉลี่ยลง
 function feeCostAverages(rows) {
-    const used = rows.filter(r => !r.fee_missing && r.reach > 0);
+    const used = rows.filter(r => !r.fee_missing && r.reach > 0 && r.cpm != null);
     const avg = key => (used.length ? Number((used.reduce((a, r) => a + r[key], 0) / used.length).toFixed(2)) : 0);
     return {
         avg_cpm: avg('cpm'), avg_cpe: avg('cpe'),
@@ -1038,7 +1050,7 @@ function postCheckDecision(action, note, byName, at) {
 
 module.exports = {
     GOOD_CPM, GOOD_CPE, TARGET_PLATFORMS, CAMPAIGN_PLATFORMS, CAMPAIGN_AS_CTYPE, SOCIAL_CAMPAIGNS,
-    AD_STAMP_AT, AD_STAMP_BY_BRAND, stampAtFor, now, clone, normCampaignType,
+    AD_STAMP_AT, AD_STAMP_BY_BRAND, stampAtFor, now, todayTH, clone, normCampaignType,
     POST_CHECK_FIELDS, POST_CHECK_OPEN, postCheckWaiting, nextPostCheck, postCheckDecision,
     duplicateError, inScope, scopeProjects, hireRemaining, hireRowFee,
     HIRE_JOB_CLOSED, hireWaiting, hireNeedMore, hireStage,

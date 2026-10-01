@@ -27,7 +27,20 @@ const {
     loadSnapshot, loadAgencyLinks, messageOut, reportOut, linkOut
 } = require('./_snapshot');
 const { now, clone, inScope, scopeProjects, linkGroupPlatforms, hireRowFee, sameInstant, normCampaignType } = require('../logic');
-const { soloSummary, soloClipLive, soloClipEmpty } = require('../soloKol');
+const { soloSummary, soloClipLive, soloClipEmpty, withSoloBudgets } = require('../soloKol');
+
+// KOL รายคน: ผลรวมค่าตัวต่อ Platform ของคลิปที่ไม่ถูกปฏิเสธ (งบของแต่ละบล็อกในกลุ่ม)
+const SOLO_SUMS_SQL = "SELECT platform, COALESCE(SUM(budget), 0) AS total FROM submissions WHERE project_id = $1 AND status <> 'rejected' GROUP BY platform";
+const soloSums = rows => {
+    const per = {};
+    (rows || []).forEach(r => { if (r.platform) per[r.platform] = Number(r.total) || 0; });
+    return per;
+};
+// updateSolo ตีกลับ (ข้อมูลไม่ผ่าน) — โยนจากในทรานแซกชันให้ ROLLBACK เสมอ แล้วแปลงเป็น { error } ข้างนอก
+// (withTransaction COMMIT เมื่อ callback คืนค่าปกติ ถ้าคืน { error } เฉย ๆ หลังเขียนอะไรไปแล้ว ส่วนนั้นจะค้างในฐาน)
+class SoloReject extends Error {
+    constructor(httpCode, message) { super(message); this.httpCode = httpCode; }
+}
 
 // ช่องของ projects ที่แก้ได้จากฟอร์ม → ค่าที่พร้อมเขียนลงฐาน
 // null = ผู้ใช้ล้างค่าออกจริง ๆ (route ส่งเฉพาะคีย์ที่ client ส่งมา คีย์ที่ไม่ได้แก้จะเป็น undefined)
@@ -200,107 +213,148 @@ const projects = {
     },
 
     // KOL รายคน: แถวแคมเปญ (campaign_type 'solo') + แถวคลิปทั้งหมด ในทรานแซกชันเดียว — สำเร็จทั้งชุดหรือไม่เกิดอะไรเลย
-    // personFields = ช่องของแถวคลิป (account_name / platform / budget ...) · clipNames = ชื่อคลิป (1 คลิป = [])
+    // persons = ข้อมูลแถวคลิปต่อ Platform ตามลำดับ (soloPersons: ชื่อบัญชี / ลิงก์ / ผู้ติดตาม / Tier / Content Type / fee
+    //   + สินค้า / Agency / group_key / อายุ Gencode ที่ใช้ร่วมกัน) · clipNames = ชื่อคลิป (1 คลิป = []) ใช้ร่วมทุก Platform
+    // แถว = Platform × คลิป · person_key เดียวทุกแถว (1 การจ้าง = 1 คนใน Dashboard) · ทุกแถวใช้เวลาเดียวกัน
     // แถวคลิปเกิดมาเป็น confirmed (จ้างแล้ว ไม่มีขั้นคัดเลือก) — On Process / Dashboard / รายงานนับเฉพาะ confirmed
-    async createSolo(fields, personFields, clipNames = [], decidedBy = null) {
+    async createSolo(fields, persons, clipNames = [], decidedBy = null) {
         const { newRow } = require('./submissions');
+        const people = Array.isArray(persons) ? persons.filter(Boolean) : [];
+        if (!people.length) throw new Error('createSolo: ต้องมีอย่างน้อย 1 Platform');
         const names = Array.isArray(clipNames) ? clipNames.filter(c => c && String(c).trim()) : [];
         return await withTransaction(async (c) => {
             const project = await projects.create({ ...fields, campaign_type: 'solo' }, c);
             const personKey = 'p' + Math.random().toString(36).slice(2, 10);
-            const at = now();   // ทุกคลิปของคนเดียวกันใช้เวลาเดียวกัน (รายการเรียงตามเวลา — ไม่งั้นคลิป 2 ขึ้นก่อนคลิป 1)
+            const at = now();   // ทุกคลิปของการจ้างใช้เวลาเดียวกัน (รายการเรียงตามเวลา — ไม่งั้นคลิป 2 ขึ้นก่อนคลิป 1)
             const count = names.length < 2 ? 1 : names.length;
             const rows = [];
-            for (let i = 0; i < count; i++) {
-                rows.push(await insertRow('submissions', newRow({
-                    ...personFields, project_id: project.id, person_key: personKey,
-                    clip_no: i + 1, clip_name: names.length < 2 ? (names[0] || null) : names[i],
-                    status: 'confirmed', decided_by: decidedBy
-                }, at), c));
+            for (const p of people) {
+                const { fee, ...cols } = p;
+                for (let i = 0; i < count; i++) {
+                    rows.push(await insertRow('submissions', newRow({
+                        ...cols, budget: fee, project_id: project.id, person_key: personKey,
+                        clip_no: i + 1, clip_name: names.length < 2 ? (names[0] || null) : names[i],
+                        status: 'confirmed', decided_by: decidedBy
+                    }, at), c));
+                }
             }
             return { project, rows };
         });
     },
 
-    // KOL รายคน: แก้ข้อมูลการจ้าง (ช่วง 3 · 1 ต.ค. 2026) — ทั้งหมดในทรานแซกชันเดียว ล็อกรายการและทุกคลิปก่อน
-    //  • แบรนด์ / Platform เปลี่ยนไม่ได้เมื่อมีคลิปเริ่มงานแล้ว (เกณฑ์สแตมป์ / ฟีดยิงแอด / ค่าแอดผูกอยู่)
-    //  • ลดจำนวนคลิป = ลบคลิปท้าย ๆ ได้เฉพาะคลิปที่ยังว่าง · เพิ่ม = คลิปใหม่ (จ้างแล้ว) ค่าตัวเท่าคลิปแรก
-    //  • ข้อมูลคน (ชื่อบัญชี / ลิงก์ / ผู้ติดตาม / Tier / Agency) + สินค้า / Content Type ไล่แก้ทุกคลิป · ชื่อคลิปตามลำดับ
-    //  • อายุ Gencode ใหม่ใช้กับคลิปที่ยังไม่มี Gencode เท่านั้น · งบ = ผลรวมค่าตัวจริงของคลิป
-    // คืน { project } หรือ { error: { code, message } }
-    async updateSolo(id, { fields, group, person, clipNames = [], codeExpire }, decidedBy = null) {
+    // KOL รายคน: แก้ข้อมูลการจ้าง (ช่วง 3 · รอบ 4 หลาย Platform) — ทั้งหมดในทรานแซกชันเดียว ล็อกรายการและทุกคลิปก่อน
+    // ตรวจทุกข้อก่อนเขียนอะไรเลย (ตีกลับ = โยน SoloReject ให้ ROLLBACK):
+    //  • แบรนด์เปลี่ยนไม่ได้เมื่อมีคลิปเริ่มงานแล้ว (เกณฑ์สแตมป์ / ฟีดยิงแอด / ค่าแอดผูกอยู่)
+    //  • เอา Platform ออกได้เมื่อทุกคลิปของ Platform นั้นยังว่าง · ลดจำนวนคลิป = ลบคลิปท้าย ๆ ได้เฉพาะคลิปที่ยังว่าง
+    //  • Platform ที่เพิ่มใหม่ (ยังไม่มีคลิป) ต้องมีค่าตัว (0 = ได้ฟรี)
+    //  • ผู้รับเงินเปลี่ยน: งวดที่รอจ่ายย้ายตาม · มีงวดจ่ายแล้ว/เข้ารอบทำจ่ายแล้ว = ห้าม
+    // แล้วค่อยเขียน: แถวเดิมได้ข้อมูลของ Platform ตัวเอง (ไม่เปลี่ยน Platform ของแถว) · คลิปที่ขาด (Platform × คลิป) เพิ่มให้
+    //   ค่าตัวเท่าคลิปแรกของ Platform นั้น (Platform ใหม่ = ค่าตัวที่ส่งมา) · อายุ Gencode ใหม่ใช้กับคลิปที่ยังไม่มี Gencode
+    //   งบ = ผลรวมค่าตัวจริงต่อ Platform · ไม่แตะ start_date / end_date (วันที่สร้างรายการ)
+    // persons = soloPersons (fee: null = ไม่ได้ส่งค่าตัวมา) · คืน { project, removed, added, platforms_added, platforms_removed } หรือ { error: { code, message } }
+    async updateSolo(id, { fields, group, persons = [], clipNames = [], codeExpire }, decidedBy = null) {
         const n = intId(id);
         if (n === null) return { error: { code: 404, message: 'ไม่พบรายการ' } };
         const { newRow } = require('./submissions');
-        return await withTransaction(async (c) => {
-            const cur = (await c.query('SELECT * FROM projects WHERE id = $1 FOR UPDATE', [n])).rows[0];
-            if (!cur) return { error: { code: 404, message: 'ไม่พบรายการ' } };
-            if (cur.campaign_type !== 'solo') return { error: { code: 400, message: 'รายการนี้ไม่ใช่ KOL รายคน' } };
-            const subs = (await c.query('SELECT * FROM submissions WHERE project_id = $1 ORDER BY clip_no, id FOR UPDATE', [n])).rows;
-            const g0 = (Array.isArray(cur.ad_groups) ? cur.ad_groups[0] : null) || {};
-            const live = subs.some(soloClipLive);
-            if (live && fields.brand !== cur.brand) return { error: { code: 409, message: 'เปลี่ยนแบรนด์ไม่ได้ — มีคลิปที่ลงงาน/ยิงแอดแล้ว' } };
-            if (live && group.platform !== g0.platform) return { error: { code: 409, message: 'เปลี่ยน Platform ไม่ได้ — มีคลิปที่ลงงาน/ยิงแอดแล้ว' } };
-            // ผู้รับเงินเปลี่ยน (แก้ชื่อบัญชี / ชื่อ Agency / สลับติดต่อเอง-ผ่าน Agency) — งวดจ่ายผูกกับชื่อผู้รับเงิน (installments.agency)
-            // งวดที่ยังรอจ่ายย้ายตามชื่อใหม่ · มีงวดที่จ่ายแล้วหรือเข้ารอบทำจ่ายแล้ว = ห้ามเปลี่ยน (สลิป/รอบออกไปแล้วในชื่อเดิม)
-            const s0 = g0.solo || {};
-            const oldPayee = String(s0.payee || s0.account_name || '').trim();
-            const newPayee = String((group.solo && group.solo.payee) || '').trim();
-            if (oldPayee && newPayee && oldPayee !== newPayee) {
-                const its = (await c.query('SELECT id, status, batch_id FROM installments WHERE project_id = $1 AND agency = $2 FOR UPDATE', [n, oldPayee])).rows;
-                if (its.some(it => it.status === 'paid' || it.batch_id != null)) {
-                    return { error: { code: 409, message: `เปลี่ยนผู้รับเงินไม่ได้ — มีงวดจ่ายของ "${oldPayee}" ที่จ่ายแล้วหรืออยู่ในรอบทำจ่ายแล้ว` } };
+        const reject = (code, message) => { throw new SoloReject(code, message); };
+        try {
+            return await withTransaction(async (c) => {
+                const cur = (await c.query('SELECT * FROM projects WHERE id = $1 FOR UPDATE', [n])).rows[0];
+                if (!cur) reject(404, 'ไม่พบรายการ');
+                if (cur.campaign_type !== 'solo') reject(400, 'รายการนี้ไม่ใช่ KOL รายคน');
+                const subs = (await c.query('SELECT * FROM submissions WHERE project_id = $1 ORDER BY clip_no, id FOR UPDATE', [n])).rows;
+                const g0 = (Array.isArray(cur.ad_groups) ? cur.ad_groups[0] : null) || {};
+                const people = (Array.isArray(persons) ? persons : []).filter(p => p && p.platform);
+                if (!people.length) reject(400, 'เลือก Platform อย่างน้อย 1 ตัว');
+                const plats = people.map(p => p.platform);
+                const names = Array.isArray(clipNames) ? clipNames : [];
+                const want = names.length < 2 ? 1 : names.length;
+                const clipLabel = s => `${s.platform} คลิปที่ ${s.clip_no}${s.clip_name ? ` (${s.clip_name})` : ''}`;
+
+                // ---- ตรวจทั้งหมดก่อนเขียน ----
+                if (fields.brand !== cur.brand && subs.some(soloClipLive)) reject(409, 'เปลี่ยนแบรนด์ไม่ได้ — มีคลิปที่ลงงาน/ยิงแอดแล้ว');
+                const gone = subs.filter(s => !plats.includes(s.platform));
+                const goneBusy = gone.find(s => !soloClipEmpty(s));
+                if (goneBusy) reject(409, `เอา ${goneBusy.platform} ออกไม่ได้ — ${clipLabel(goneBusy)} มีงานแล้ว`);
+                const kept = subs.filter(s => plats.includes(s.platform));
+                const drop = kept.filter(s => (Number(s.clip_no) || 1) > want);
+                const busy = drop.find(s => !soloClipEmpty(s));
+                if (busy) reject(409, `ลดจำนวนคลิปไม่ได้ — ${clipLabel(busy)} มีงานแล้ว`);
+                const had = new Set(kept.map(s => s.platform));
+                const noFee = people.find(p => !had.has(p.platform) && p.fee == null);
+                if (noFee) reject(400, `${noFee.platform}: ใส่ค่าตัวต่อคลิป (ได้ฟรีใส่ 0)`);
+                // ผู้รับเงินเปลี่ยน (แก้ชื่อบัญชี / ชื่อ Agency / สลับติดต่อเอง-ผ่าน Agency) — งวดจ่ายผูกกับชื่อผู้รับเงิน (installments.agency)
+                // งวดที่ยังรอจ่ายย้ายตามชื่อใหม่ · มีงวดที่จ่ายแล้วหรือเข้ารอบทำจ่ายแล้ว = ห้ามเปลี่ยน (สลิป/รอบออกไปแล้วในชื่อเดิม)
+                const s0 = g0.solo || {};
+                const oldPayee = String(s0.payee || s0.account_name || '').trim();
+                const newPayee = String((group.solo && group.solo.payee) || '').trim();
+                let its = [];
+                if (oldPayee && newPayee && oldPayee !== newPayee) {
+                    its = (await c.query('SELECT id, status, batch_id FROM installments WHERE project_id = $1 AND agency = $2 FOR UPDATE', [n, oldPayee])).rows;
+                    if (its.some(it => it.status === 'paid' || it.batch_id != null)) {
+                        reject(409, `เปลี่ยนผู้รับเงินไม่ได้ — มีงวดจ่ายของ "${oldPayee}" ที่จ่ายแล้วหรืออยู่ในรอบทำจ่ายแล้ว`);
+                    }
                 }
+
+                // ---- เขียน ----
                 if (its.length) await c.query('UPDATE installments SET agency = $1 WHERE project_id = $2 AND agency = $3', [newPayee, n, oldPayee]);
-            }
-            const names = Array.isArray(clipNames) ? clipNames : [];
-            const want = names.length < 2 ? 1 : names.length;
-            const keep = subs.filter(s => (Number(s.clip_no) || 1) <= want);
-            const drop = subs.filter(s => (Number(s.clip_no) || 1) > want);
-            const busy = drop.find(s => !soloClipEmpty(s));
-            if (busy) return { error: { code: 409, message: `ลดจำนวนคลิปไม่ได้ — คลิปที่ ${busy.clip_no}${busy.clip_name ? ` (${busy.clip_name})` : ''} มีงานแล้ว` } };
-            for (const s of drop) await c.query('DELETE FROM submissions WHERE id = $1', [s.id]);
-            const at = now();
-            for (const s of keep) {
-                const i = (Number(s.clip_no) || 1) - 1;
-                const patch = {
-                    account_name: person.account_name, link_account: person.link_account || null, followers: asNum(person.followers || 0, 0),
-                    tier: person.tier || null, agency: person.agency || null, platform: person.platform, product: person.product,
-                    content_type: person.content_type, group_key: g0.key || s.group_key,
-                    clip_name: names.length < 2 ? null : names[i], list_updated_at: at
+                for (const s of [...gone, ...drop]) await c.query('DELETE FROM submissions WHERE id = $1', [s.id]);
+                const at = now();
+                const key = g0.key || group.key;
+                const byPlat = new Map(people.map(p => [p.platform, p]));
+                const keep = kept.filter(s => (Number(s.clip_no) || 1) <= want);
+                for (const s of keep) {
+                    const p = byPlat.get(s.platform);
+                    const i = (Number(s.clip_no) || 1) - 1;
+                    const patch = {
+                        account_name: p.account_name, link_account: p.link_account || null, followers: asNum(p.followers || 0, 0),
+                        tier: p.tier || null, agency: p.agency || null, product: p.product,
+                        content_type: p.content_type, group_key: key || s.group_key,
+                        clip_name: names.length < 2 ? null : names[i], list_updated_at: at
+                    };
+                    if (!String(s.gencode || '').trim()) patch.code_expire = Number(codeExpire) || 60;
+                    await updateRow('submissions', s.id, patch, c);
+                }
+                const personKey = (subs.find(s => s.person_key) || {}).person_key || ('p' + Math.random().toString(36).slice(2, 10));
+                let added = 0;
+                for (const p of people) {
+                    const prior = kept.filter(s => s.platform === p.platform);
+                    const fee = prior.length ? Number(prior[0].budget) || 0 : p.fee;
+                    const nos = new Set(keep.filter(s => s.platform === p.platform).map(s => Number(s.clip_no) || 1));
+                    for (let k = 1; k <= want; k++) {
+                        if (nos.has(k)) continue;
+                        await insertRow('submissions', newRow({
+                            project_id: n, account_name: p.account_name, followers: p.followers, platform: p.platform,
+                            product: p.product, budget: fee, agency: p.agency, link_account: p.link_account,
+                            group_key: key, tier: p.tier, content_type: p.content_type, code_expire: codeExpire,
+                            person_key: personKey, clip_no: k, clip_name: names.length < 2 ? null : names[k - 1],
+                            status: 'confirmed', decided_by: decidedBy
+                        }, at), c);
+                        if (had.has(p.platform)) added++;
+                    }
+                }
+                const sums = soloSums((await c.query(SOLO_SUMS_SQL, [n])).rows);
+                const { group: g, total, platform_budgets } = withSoloBudgets({ ...group, key }, sums);
+                const row = await updateRow('projects', n, {
+                    name: fields.name, brand: fields.brand, objective: fields.objective || null, brief_link: fields.brief_link || null,
+                    products: asJson(fields.products || [], []), ad_groups: asJson([g], []),
+                    owner: fields.owner || null, creator: fields.owner || null,
+                    budget: total, platform_budgets: asJson(platform_budgets, {}),
+                    updated_by: fields.updated_by || null, updated_at: now()
+                }, c);
+                return {
+                    project: row, removed: drop.length, added,
+                    platforms_added: plats.filter(p => !had.has(p)),
+                    platforms_removed: [...new Set(gone.map(s => s.platform))]
                 };
-                if (!String(s.gencode || '').trim()) patch.code_expire = Number(codeExpire) || 60;
-                await updateRow('submissions', s.id, patch, c);
-            }
-            const first = keep[0] || subs[0] || null;
-            const fee = first ? Number(first.budget) || 0 : 0;
-            const personKey = (first && first.person_key) || ('p' + Math.random().toString(36).slice(2, 10));
-            for (let k = keep.length; k < want; k++) {
-                await insertRow('submissions', newRow({
-                    project_id: n, account_name: person.account_name, followers: person.followers, platform: person.platform,
-                    product: person.product, budget: fee, agency: person.agency, link_account: person.link_account,
-                    group_key: g0.key, tier: person.tier, content_type: person.content_type, code_expire: codeExpire,
-                    person_key: personKey, clip_no: k + 1, clip_name: names.length < 2 ? null : names[k],
-                    status: 'confirmed', decided_by: decidedBy
-                }, at), c);
-            }
-            const s = await c.query("SELECT COALESCE(SUM(budget), 0) AS total FROM submissions WHERE project_id = $1 AND status <> 'rejected'", [n]);
-            const total = Math.round((Number(s.rows[0].total) || 0) * 100) / 100;
-            const g = { ...group, key: g0.key || group.key, budget: total };
-            if (Array.isArray(g.blocks) && g.blocks[0]) g.blocks = g.blocks.map((b, x) => (x === 0 ? { ...b, budget: total } : b));
-            const row = await updateRow('projects', n, {
-                name: fields.name, brand: fields.brand, objective: fields.objective || null, brief_link: fields.brief_link || null,
-                products: asJson(fields.products || [], []), ad_groups: asJson([g], []),
-                owner: fields.owner || null, creator: fields.owner || null,
-                start_date: asDate(fields.start_date || null), end_date: asDate(fields.end_date || null),
-                budget: total, platform_budgets: asJson({ [g.platform]: total }, {}),
-                updated_by: fields.updated_by || null, updated_at: now()
-            }, c);
-            return { project: row, removed: drop.length, added: Math.max(0, want - keep.length) };
-        });
+            });
+        } catch (e) {
+            if (e instanceof SoloReject) return { error: { code: e.httpCode, message: e.message } };
+            throw e;
+        }
     },
 
-    // KOL รายคน: งบของรายการ = ผลรวมค่าตัวของคลิปที่ยังไม่ถูกปฏิเสธ — เรียกหลังแก้ค่าตัวทุกครั้ง
+    // KOL รายคน: งบของรายการ = ผลรวมค่าตัวของคลิปที่ยังไม่ถูกปฏิเสธ (แยกต่อ Platform ลงบล็อกของ Platform นั้น) — เรียกหลังแก้ค่าตัวทุกครั้ง
     // (ไม่งั้น Dashboard เห็นงบเก่าแล้วขึ้น "เกินงบ" ปลอม และฐานของแผนจ่ายเงินผิด) · ไม่ใช่ KOL รายคน = ไม่ทำอะไร
     async syncSoloBudget(id) {
         const n = intId(id);
@@ -309,20 +363,14 @@ const projects = {
             const r = await c.query('SELECT campaign_type, ad_groups FROM projects WHERE id = $1 FOR UPDATE', [n]);
             const p = r.rows[0];
             if (!p || p.campaign_type !== 'solo') return null;
-            const s = await c.query("SELECT COALESCE(SUM(budget), 0) AS total FROM submissions WHERE project_id = $1 AND status <> 'rejected'", [n]);
-            const total = Math.round((Number(s.rows[0].total) || 0) * 100) / 100;
+            const sums = soloSums((await c.query(SOLO_SUMS_SQL, [n])).rows);
             const groups = Array.isArray(p.ad_groups) ? p.ad_groups.map(g => ({ ...g })) : [];
-            if (groups[0]) {
-                groups[0].budget = total;
-                if (Array.isArray(groups[0].blocks) && groups[0].blocks[0]) {
-                    groups[0].blocks = groups[0].blocks.map((b, i) => (i === 0 ? { ...b, budget: total } : b));
-                }
-            }
-            const plat = groups[0] && groups[0].platform;
+            const out = withSoloBudgets(groups[0] || {}, sums);
+            if (groups[0]) groups[0] = out.group;
             return await updateRow('projects', n, {
-                budget: total,
+                budget: out.total,
                 ad_groups: asJson(groups, []),
-                platform_budgets: asJson(plat ? { [plat]: total } : {}, {}),
+                platform_budgets: asJson(out.platform_budgets, {}),
                 updated_at: now()
             }, c);
         });

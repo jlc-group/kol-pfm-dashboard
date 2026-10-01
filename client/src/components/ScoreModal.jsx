@@ -6,7 +6,10 @@ function verdict(k) {
     const parts = k.score_parts || [];
     const by = key => parts.find(p => p.key === key) || { earned: 0, weight: 0 };
     // ยังไม่ใส่ค่าตัว = คะแนนด้านต้นทุน (CPM/CPE) ยังคิดไม่ได้ — ไม่นับเป็นจุดอ่อน และไม่สรุปเรื่องความคุ้มค่า
-    const scored = k.fee_missing ? parts.filter(p => p.key !== 'cpm' && p.key !== 'cpe') : parts;
+    // KOL รายคนได้ฟรีที่ยังไม่มีค่าแอด (ไม่ได้รอค่าตัว แต่ cpm เป็น null) = ไม่มีต้นทุนให้คิด — อธิบายแบบเดียวกัน (server ไม่ได้เปลี่ยนวิธีให้คะแนน)
+    const freeNoCost = !k.fee_missing && k.cpm == null;
+    const noCost = k.fee_missing || freeNoCost;
+    const scored = noCost ? parts.filter(p => p.key !== 'cpm' && p.key !== 'cpe') : parts;
     const strong = scored.filter(p => p.weight > 0 && p.earned / p.weight >= 0.7);
     const weak = scored.filter(p => p.weight > 0 && p.earned / p.weight <= 0.3);
     const costPts = by('cpm').earned + by('cpe').earned;      // เต็ม 40
@@ -14,9 +17,10 @@ function verdict(k) {
 
     const lines = [];
     if (k.fee_missing) lines.push('ยังไม่ได้ใส่ค่าตัว — ยังคิด CPM/CPE ไม่ได้ คะแนนตอนนี้มาจาก Engagement Rate และยอดวิวเท่านั้น (เต็ม 60)');
+    else if (freeNoCost) lines.push('ได้ฟรี ยังไม่มีค่าแอด — ยังคิด CPM/CPE ไม่ได้ คะแนนตอนนี้มาจาก Engagement Rate และยอดวิวเท่านั้น (เต็ม 60)');
     if (strong.length) lines.push(`ได้คะแนนดีจาก ${strong.map(p => p.label).join(' และ ')}`);
     if (weak.length) lines.push(`เสียคะแนนที่ ${weak.map(p => p.label).join(' และ ')}`);
-    if (k.fee_missing) return lines;
+    if (noCost) return lines;
 
     // ประเด็นที่มักเป็นสาเหตุจริง: วิวเยอะแต่ต้นทุนแพง
     if (by('views').earned / 25 >= 0.7 && costPts / 40 <= 0.35) {
