@@ -87,7 +87,8 @@ export const emptySet = (over = {}) => ({ campaign: '', content_type: '', media_
 // product_targets = Target แยกต่อสินค้า { รหัสสินค้า: [Target] } · target = รวมทุกสินค้า (ให้หน้าที่ยังอ่านแบบรวมใช้ต่อได้)
 // budget_mode = 'total' งบรวมก้อนเดียว (budget) | 'split' แยกงบต่อสินค้า (product_budgets { รหัส: งบ } และ budget = ผลรวม)
 // concept_split / product_concepts = Concept แยกต่อสินค้าของ Platform นี้ (ว่าง = ใช้ Concept หลักของกลุ่ม)
-export const emptyBlock = platform => ({ platform, target: [], product_targets: {}, budget: '', budget_mode: 'total', product_budgets: {}, concept_split: false, product_concepts: {}, products: [], clips: [], sets: [emptySet()] });
+// kol_split / product_kols = จำนวน KOL แยกต่อสินค้าของ Platform นี้ { รหัส: จำนวนคน } (ผลรวม = จำนวนคนจากแถว Tier พอดี)
+export const emptyBlock = platform => ({ platform, target: [], product_targets: {}, budget: '', budget_mode: 'total', product_budgets: {}, concept_split: false, product_concepts: {}, kol_split: false, product_kols: {}, products: [], clips: [], sets: [emptySet()] });
 
 export const setKol = s => (s.tiers || []).reduce((n, t) => n + (Number(t.kols) || 0), 0);
 export const blockKol = b => (b.sets || []).reduce((n, s) => n + setKol(s), 0);
@@ -144,6 +145,9 @@ export function toBlocks(g, platformCsv) {
                 product_budgets: isMap(b.product_budgets) ? { ...b.product_budgets } : {},
                 concept_split: b.concept_split === true,
                 product_concepts: isMap(b.product_concepts) ? { ...b.product_concepts } : {},
+                // จำนวน KOL แยกต่อสินค้า — ข้อมูลเก่าที่ไม่มีช่องนี้ = ไม่แยก
+                kol_split: b.kol_split === true,
+                product_kols: isMap(b.product_kols) ? { ...b.product_kols } : {},
                 products: [...(b.products || [])],
                 clips: [...(b.clips || [])],
                 sets: (b.sets && b.sets.length ? b.sets : [emptySet()]).map(s => ({
@@ -176,6 +180,8 @@ export function toBlocks(g, platformCsv) {
         product_budgets: {},
         concept_split: false,
         product_concepts: {},
+        kol_split: false,
+        product_kols: {},
         // ของเก่าสินค้า/คลิปเป็นของกลุ่ม = ทุก Platform ใช้ชุดเดียวกันอยู่แล้ว ยกลงให้ครบทุกบล็อก
         products: [...(g.products || [])],
         clips: [...(g.clips || [])],
@@ -372,6 +378,84 @@ export function packConcepts(b) {
         if (v) pc[c] = v;
     });
     return { ...rest, concept_split: true, product_concepts: pc };
+}
+
+// ---------- จำนวน KOL แยกต่อสินค้า (ต่อ Platform — ช่อง "คน" อยู่ในแถวสินค้าที่เดียวกับ Target / งบ / Concept) ----------
+// b.kol_split = Platform นี้แยกจำนวนคนต่อสินค้า · b.product_kols = { รหัส: จำนวนคน }
+// กติกา: ทุกสินค้าในบล็อกใส่อย่างน้อย 1 คน และผลรวมต้องเท่าจำนวน KOL ของ Platform (ผลรวมแถว Tier = blockKol) พอดี
+// จำนวนคนรวมยังมาจากแถว Tier ที่เดียวเหมือนเดิม — ตัวเลขต่อสินค้าเป็นแค่การแบ่งยอดนั้น (โควตา / allocations ไม่เปลี่ยน)
+export const isKolSplit = b => !!b && b.kol_split === true;
+export const productKolOf = (b, code) => num(b && isMap(b.product_kols) ? b.product_kols[code] : 0);
+// ผลรวมจำนวนคนของสินค้าที่ยังอยู่ในบล็อก
+export const productKolSum = b => ((b && b.products) || []).reduce((n, c) => n + productKolOf(b, c), 0);
+
+// สถานะของบล็อกที่แยกจำนวนคน (null = ไม่ได้แยก) — ฟอร์มใช้ทั้งป้ายหัวรายการสินค้าและตัวตรวจก่อนบันทึก
+// total = จำนวนคนจากแถว Tier · sum = ผลรวมที่ใส่ · filled / count = ใส่แล้วกี่สินค้า / ทั้งหมดกี่สินค้า · missing = สินค้าที่ยังไม่ใส่ (หรือใส่ 0)
+export function kolSplitState(b) {
+    if (!isKolSplit(b)) return null;
+    const products = b.products || [];
+    const missing = products.filter(c => productKolOf(b, c) < 1);
+    const sum = productKolSum(b);
+    const total = blockKol(b);
+    return {
+        total, sum, missing, count: products.length, filled: products.length - missing.length,
+        ok: products.length > 0 && missing.length === 0 && sum === total
+    };
+}
+
+// ข้อความที่ฟอร์มขึ้นตอนบันทึกไม่ได้ (null = ผ่าน / ไม่ได้แยก) — label = ที่อยู่ในวงเล็บ เช่น "TikTok" หรือ "กลุ่มที่ 2 · TikTok"
+// เช่น "จำนวน KOL ต่อสินค้า (TikTok) รวมได้ 8 / 10 คน — ขาด 2 คน"
+export function kolSplitProblem(b, label) {
+    const st = kolSplitState(b);
+    if (!st || st.ok) return null;
+    const head = 'จำนวน KOL ต่อสินค้า (' + (label || b.platform) + ')';
+    if (!st.count) return head + ' ยังไม่ได้เลือกสินค้า';
+    const diff = st.total - st.sum;
+    const parts = [];
+    if (st.missing.length) parts.push('ยังไม่ใส่จำนวนของ ' + st.missing.join(', ') + ' (อย่างน้อย 1 คน)');
+    if (diff !== 0) parts.push('รวมได้ ' + st.sum + ' / ' + st.total + ' คน — ' + (diff > 0 ? 'ขาด ' + diff : 'เกิน ' + (-diff)) + ' คน');
+    return head + ' ' + parts.join(' · ');
+}
+
+// ตอนบันทึก (ต่อบล็อก): เขียน kol_split ไว้ชัด ๆ เสมอ (server ใช้แยกฟอร์มรุ่นใหม่ออกจากแท็บเก่าที่ไม่รู้จักช่องนี้)
+// แยกอยู่ → เก็บเฉพาะสินค้าที่ยังอยู่ในบล็อกเป็นตัวเลข · ไม่แยก → ไม่ส่ง product_kols (ตัวเลขที่พิมพ์ค้างในฟอร์มไม่ถูกบันทึก)
+// ต้องตรงกับ carryProductKols ฝั่ง server (server/src/store/logic.js)
+export function packKols(b) {
+    const { product_kols, ...rest } = b;
+    if (!isKolSplit(b)) return { ...rest, kol_split: false };
+    const pk = {};
+    (rest.products || []).forEach(c => {
+        const n = num(isMap(product_kols) ? product_kols[c] : 0);
+        if (n > 0) pk[c] = n;
+    });
+    return { ...rest, kol_split: true, product_kols: pk };
+}
+
+// ความคืบหน้าต่อสินค้าของกลุ่ม (เฉพาะบล็อกที่แยกจำนวนคน) — หน้าเอเจนซี่ / แท็บรายชื่อ / On Process ใช้ตัวเดียวกัน
+// คืน [{ platform, rows: [{ code, need, sent, over, full }] }] · ไม่มีบล็อกไหนแยก = []
+// sent = จำนวน "คน" (person_key) ของ Platform นั้นในกลุ่มนี้ที่ยังไม่ถูกปฏิเสธ — 1 คนที่ช่องสินค้ามีหลายรหัส นับให้ทุกรหัสที่มี
+// subs = รายชื่อที่ผู้ดูเห็น (เอเจนซี่ = ของลิงก์ตัวเอง) · platforms = Platform ในขอบเขตที่ดูอยู่ (ว่าง = ทุก Platform)
+export function productKolProgress(g, subs, platforms) {
+    if (!g || !Array.isArray(g.blocks)) return [];
+    const pf = (platforms || []).filter(Boolean);
+    return g.blocks
+        .filter(b => isKolSplit(b) && (b.products || []).length && (!pf.length || pf.includes(b.platform)))
+        .map(b => {
+            const people = {};
+            (subs || []).forEach(s => {
+                if (!s || s.group_key !== g.key || s.platform !== b.platform || s.status === 'rejected') return;
+                const who = s.person_key || ('sub:' + s.id);
+                productCodesIn(s.product, b.products).forEach(c => { (people[c] = people[c] || new Set()).add(who); });
+            });
+            return {
+                platform: b.platform,
+                rows: b.products.map(code => {
+                    const need = productKolOf(b, code);
+                    const sent = people[code] ? people[code].size : 0;
+                    return { code, need, sent, over: sent > need, full: need > 0 && sent === need };
+                })
+            };
+        });
 }
 
 // ---------- กลุ่มที่ไม่ใช้ Gencode ("-" ในฟอร์มแคมเปญ) ----------

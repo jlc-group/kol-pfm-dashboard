@@ -794,6 +794,39 @@ function carryProductBudgets(incoming, stored) {
     });
 }
 
+// จำนวน KOL แยกต่อสินค้า: แท็บที่เปิดค้างจากก่อน deploy ส่งบล็อกมาโดยไม่มี kol_split (ฟอร์มรุ่นใหม่ส่ง true/false เสมอ)
+// ของในฐานแยกอยู่ + ทุกสินค้าที่ส่งมามีจำนวนเดิม (อย่างน้อย 1 คน) + ผลรวมเท่าจำนวน KOL ของ Platform ที่ส่งมา (ไม่ได้แตะสินค้า/แถว Tier) → ยกจำนวนต่อสินค้าเดิมมาต่อ
+// นอกนั้นไม่แยกตามที่ส่งมา (จำนวนคนรวมของ Platform ยังมาจากแถว Tier เสมอ) · ต้องตรงกับ packKols / kolSplitState ฝั่งหน้าเว็บ
+function carryProductKols(incoming, stored) {
+    if (!Array.isArray(incoming) || !Array.isArray(stored)) return incoming;
+    const isMap = v => !!v && typeof v === 'object' && !Array.isArray(v);
+    const count = v => Number(String(v == null ? '' : v).replace(/[^0-9]/g, '')) || 0;
+    // จำนวน KOL ของบล็อก = ผลรวมแถว Tier ทุกชุด (เหมือน blockKol ฝั่งหน้าเว็บ) · ไม่มีชุดส่งมา = ผลรวม allocations ของ Platform นั้น
+    const blockTotal = (g, b) => (Array.isArray(b.sets) && b.sets.length
+        ? b.sets.reduce((n, s) => n + (s && Array.isArray(s.tiers) ? s.tiers : []).reduce((m, t) => m + (Number(t && t.kols) || 0), 0), 0)
+        : (Array.isArray(g.allocations) ? g.allocations : []).filter(a => a && a.platform === b.platform).reduce((n, a) => n + (Number(a.kols) || 0), 0));
+    return incoming.map(g => {
+        if (!g || !Array.isArray(g.blocks) || !g.key) return g;
+        const old = stored.find(s => s && s.key === g.key);
+        if (!old || !Array.isArray(old.blocks)) return g;
+        let changed = false;
+        const blocks = g.blocks.map(b => {
+            if (!b || b.kol_split !== undefined) return b;
+            const ob = old.blocks.find(x => x && x.platform === b.platform && x.kol_split === true && isMap(x.product_kols));
+            if (!ob) return b;
+            const products = Array.isArray(b.products) ? b.products : [];
+            if (!products.length || !products.every(c => count(ob.product_kols[c]) >= 1)) return b;
+            const pk = {};
+            products.forEach(c => { pk[c] = count(ob.product_kols[c]); });
+            const sum = Object.values(pk).reduce((n, v) => n + v, 0);
+            if (sum !== blockTotal(g, b)) return b;
+            changed = true;
+            return { ...b, kol_split: true, product_kols: pk };
+        });
+        return changed ? { ...g, blocks } : g;
+    });
+}
+
 // หน้าเว็บที่เปิดค้างไว้ตั้งแต่ก่อน deploy (ฟอร์มรุ่นเก่า) ไม่รู้จัก product_targets — บันทึกเมื่อไหร่ Target ต่อสินค้าหายทั้งก้อน
 // บล็อกที่ส่งมาไม่มี product_targets แต่ของในฐานมี และ Target รวมยังเท่าเดิม (คนกดบันทึกไม่ได้แตะ Target) → ยกของเดิมมาต่อ
 // เฉพาะสินค้าที่ยังอยู่ในบล็อก · ถ้า Target รวมเปลี่ยน = แก้ Target จริง ปล่อยให้ฟอร์มรุ่นใหม่แบ่งใหม่ตอนเปิดครั้งหน้า
@@ -1060,7 +1093,7 @@ module.exports = {
     HIRE_PAYABLE, HIRE_DIRECT_STATUS, newHireRow, payableWithoutFee, isDateStr, clipText, HIRE_SCOPE_MAX, hireScope,
     PERSON_FIELDS, personPatch,
     resolveInside, sameInstant, mergeHireItems, mergeBriefFiles, cleanFee, cleanHeadcount, safeId, safeSlug,
-    linkGroupPlatforms, resolveGroupClips, resolveGroupTarget, productCodesIn, carryProductTargets, carryProductBudgets, carryProductConcepts,
+    linkGroupPlatforms, resolveGroupClips, resolveGroupTarget, productCodesIn, carryProductTargets, carryProductBudgets, carryProductConcepts, carryProductKols,
     groupNoGencode, postNoGencode, carryNoGencode,
     resolveGroupProducts, resolveGroupCtype, resolveGroupMedia, resolveGroupCampaign,
     engagementOf, maybeStamp, stampWaitReason,

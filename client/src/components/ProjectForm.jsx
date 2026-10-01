@@ -12,7 +12,8 @@ import {
     emptyTier, emptySet, emptyBlock, blocksKol, toBlocks, flattenBlocks,
     num, blocksBudget, platformBudgets, blocksProducts, withProductTargets, packProductTargets,
     needCampaign, campaignIsCtype, withCampaignFromCtype, packCampaigns, setTypeOk, isSplitBudget, productBudgetSum, packBudgets,
-    isSplitConcept, isBlockSplitConcept, packConcepts, conceptParts
+    isSplitConcept, isBlockSplitConcept, packConcepts, conceptParts,
+    isKolSplit, productKolOf, kolSplitState, kolSplitProblem, packKols
 } from '../data/adGroups.js';
 
 // รายชื่อทีมงานที่รับเป็น Owner ของแคมเปญ — แก้/เพิ่มชื่อตรงนี้ได้เลย
@@ -234,13 +235,15 @@ export default function ProjectForm({ editing, onClose, onSaved }) {
         const sum = productBudgetSum({ ...b, product_budgets: pb });
         return { ...b, product_budgets: pb, budget: sum > 0 ? String(sum) : '' };
     });
-    // เอาสินค้าออกจากบล็อก = งบ / Concept ของสินค้านั้นหายไปด้วย และงบรวม (ตอนแยกงบ) คิดใหม่
+    // เอาสินค้าออกจากบล็อก = งบ / Concept / จำนวนคน ของสินค้านั้นหายไปด้วย และงบรวม (ตอนแยกงบ) คิดใหม่
     const dropProductExtras = (b, code) => {
         const pb = { ...(b.product_budgets || {}) };
         delete pb[code];
         const pc = { ...(b.product_concepts || {}) };
         delete pc[code];
-        const next = { ...b, product_budgets: pb, product_concepts: pc };
+        const pk = { ...(b.product_kols || {}) };
+        delete pk[code];
+        const next = { ...b, product_budgets: pb, product_concepts: pc, product_kols: pk };
         if (!isSplitBudget(next)) return next;
         const sum = productBudgetSum(next);
         return { ...next, budget: sum > 0 ? String(sum) : '' };
@@ -288,6 +291,20 @@ export default function ProjectForm({ editing, onClose, onSaved }) {
     // Concept แยกต่อสินค้า (ต่อ Platform) — ปิดแล้วข้อความที่พิมพ์ไว้ยังอยู่ในฟอร์ม (เปิดใหม่ได้คืน) แต่ไม่ถูกบันทึก
     const toggleConceptSplit = (i, bi) => mapBlock(i, bi, b => ({ ...b, concept_split: !b.concept_split }));
     const setProductConcept = (i, bi, code, v) => mapBlock(i, bi, b => ({ ...b, product_concepts: { ...(b.product_concepts || {}), [code]: v } }));
+    // จำนวน KOL แยกต่อสินค้า (ต่อ Platform) — เปิดแล้วช่องเริ่มว่าง (ไม่เดาตัวเลขให้) · ปิดแล้วตัวเลขที่ใส่ไว้ยังอยู่ในฟอร์ม (เปิดใหม่ได้คืน) แต่ไม่ถูกบันทึก
+    const toggleKolSplit = (i, bi) => mapBlock(i, bi, b => ({ ...b, kol_split: !b.kol_split }));
+    // รับเฉพาะตัวเลขจำนวนเต็ม (ตัด 0 นำหน้า) — 0 / ว่าง = ยังไม่ใส่ (แถวขึ้นแดง)
+    const setProductKol = (i, bi, code, v) => mapBlock(i, bi, b => ({
+        ...b, product_kols: { ...(b.product_kols || {}), [code]: String(v).replace(/[^0-9]/g, '').replace(/^0+(?=\d)/, '') }
+    }));
+    // บล็อกที่แยกจำนวนคนแล้วยอดไม่ตรงจำนวน KOL ของ Platform — ตรวจทั้งตอนสร้างและตอนแก้ไข (ข้อความบอกว่าขาด/เกินกี่คน)
+    // มีหลายกลุ่ม = บอกเลขกลุ่มด้วย จะได้รู้ว่าต้องไปแก้ที่กลุ่มไหน
+    const kolProblems = () => adGroups.flatMap((g, gi) => {
+        const plats = splitCsv(g.platform);
+        return (g.blocks || []).filter(b => plats.includes(b.platform))
+            .map(b => kolSplitProblem(b, adGroups.length > 1 ? `กลุ่มที่ ${gi + 1} · ${b.platform}` : b.platform))
+            .filter(Boolean);
+    });
     // เลือกกลุ่ม Target ได้หลายอัน (array)
 
     // ตรวจว่ากรอกครบทุกช่องไหม (คืน list ช่องที่ยังไม่ครบ)
@@ -323,6 +340,8 @@ export default function ProjectForm({ editing, onClose, onSaved }) {
                 ? (b.products || []).length > 0 && b.products.every(c => num((b.product_budgets || {})[c]) > 0)
                 : num(b.budget) > 0)));
         if (!budgetOk) m.push('Budget ของแต่ละ Platform ในกลุ่มสินค้า (ถ้าแยกงบต่อสินค้า ทุกสินค้าต้องใส่งบ)');
+        // แยกจำนวน KOL ต่อสินค้า: ทุกสินค้าใส่อย่างน้อย 1 คน และรวมแล้วต้องเท่าจำนวน KOL ของ Platform พอดี
+        m.push(...kolProblems());
         if (!form.start_date) m.push('วันเริ่ม (Start)');
         if (!form.end_date) m.push('วันสิ้นสุด (End)');
         return m;
@@ -333,6 +352,10 @@ export default function ProjectForm({ editing, onClose, onSaved }) {
         if (!isEdit) {
             const m = validate();
             if (m.length) { setError('กรุณากรอกให้ครบทุกช่อง: ' + m.join(', ')); return; }
+        } else {
+            // ตอนแก้ไขไม่บังคับช่องอื่น (แคมเปญเก่าบางอันกรอกไม่ครบ) แต่จำนวน KOL ต่อสินค้าที่เปิดแยกไว้ต้องรวมได้ตรง
+            const k = kolProblems();
+            if (k.length) { setError('กรุณาแก้ให้ถูกต้องก่อนบันทึก: ' + k.join(', ')); return; }
         }
         setError(''); setSaving(true);
         try {
@@ -343,8 +366,9 @@ export default function ProjectForm({ editing, onClose, onSaved }) {
                 // Campaign: Platform ที่ไม่ใช้ (ไม่ใช่ TikTok/Facebook/Instagram) เก็บเป็นว่าง · Facebook/Instagram เก็บซ้ำลง content_type (packCampaigns)
                 // งบ: แยกต่อสินค้า → budget = ผลรวม (packBudgets)
                 // Concept แยกต่อสินค้า: เก็บเฉพาะสินค้าที่ยังอยู่และมีข้อความ (packConcepts)
+                // จำนวน KOL แยกต่อสินค้า: ส่ง kol_split เสมอ + จำนวนเฉพาะสินค้าที่ยังอยู่ (packKols — server carryProductKols ใช้แยกแท็บเก่า)
                 // ไม่ใช้ Gencode: ส่ง no_gencode เป็น boolean เสมอ — server (carryNoGencode) ใช้แยกฟอร์มรุ่นใหม่ออกจากแท็บเก่าที่ไม่ส่งคีย์นี้
-                const blocks = (g.blocks || []).filter(b => plats.includes(b.platform)).map(b => packCampaigns(packProductTargets(packBudgets(packConcepts(b)))));
+                const blocks = (g.blocks || []).filter(b => plats.includes(b.platform)).map(b => packCampaigns(packProductTargets(packBudgets(packConcepts(packKols(b))))));
                 // แบนโครง 3 ชั้นออกเป็น allocations — 1 แถว = Platform + Content Type + Tier
                 // หน้าอื่นที่ยังอ่านแบบเดิมจะยังทำงานได้ และมีข้อมูลพอให้แยกตาม Platform ได้ด้วย
                 const allocations = flattenBlocks(blocks);
@@ -416,7 +440,9 @@ export default function ProjectForm({ editing, onClose, onSaved }) {
     }
 
     const missing = validate();
-    const canSubmit = isEdit || missing.length === 0;
+    // ตอนแก้ไขบังคับแค่จำนวน KOL ต่อสินค้า (ช่องอื่นไม่บังคับเหมือนเดิม)
+    const editProblems = isEdit ? kolProblems() : [];
+    const canSubmit = isEdit ? editProblems.length === 0 : missing.length === 0;
 
     return (
         <div className="modal-backdrop" onClick={onClose}>
@@ -561,7 +587,27 @@ export default function ProjectForm({ editing, onClose, onSaved }) {
                                                 </div>
                                             );
                                         };
-                                        const rowLabel = [withTarget && 'Target', split && 'งบ', cSplit && 'Concept'].filter(Boolean).join(' + ') + ' ของแต่ละสินค้า';
+                                        // จำนวน KOL แยกต่อสินค้า — ช่อง "คน" ในแถวสินค้า · รวมแล้วต้องเท่าจำนวน KOL ของ Platform (แถว Tier ด้านล่าง) พอดี
+                                        const kSplit = isKolSplit(b);
+                                        const kst = kolSplitState(b);
+                                        const kOf = code => productKolOf(b, code);
+                                        const kolDiff = kst ? kst.total - kst.sum : 0;
+                                        const kolHint = kst && (kst.ok
+                                            ? <span className="tgt-ok">✓ ใส่จำนวนครบ {kst.count} สินค้า · รวม {kst.sum} / {kst.total} คน</span>
+                                            : <span className={'tgt-hint' + (kolDiff < 0 ? ' over' : '')}>
+                                                ใส่จำนวนแล้ว {kst.filled} / {kst.count} สินค้า · รวม {kst.sum} / {kst.total} คน
+                                                {kolDiff !== 0 && (kolDiff > 0 ? ` — ขาด ${kolDiff} คน` : ` — เกิน ${-kolDiff} คน`)}
+                                            </span>);
+                                        const kolInput = code => (
+                                            // ช่องข้อความรับเฉพาะตัวเลข (แบบช่องงบ) — type=number ปล่อยให้พิมพ์จุด/e ได้แล้วค่าหายกลางคัน
+                                            <div className={'ptgt-kol' + (kOf(code) >= 1 ? '' : ' need')}>
+                                                <input type="text" inputMode="numeric" placeholder="0" aria-label={`จำนวน KOL ของ ${code}`}
+                                                    value={String((b.product_kols || {})[code] ?? '')}
+                                                    onChange={e => setProductKol(i, bi, code, e.target.value)} />
+                                                <span>คน</span>
+                                            </div>
+                                        );
+                                        const rowLabel = [withTarget && 'Target', split && 'งบ', kSplit && 'จำนวนคน', cSplit && 'Concept'].filter(Boolean).join(' + ') + ' ของแต่ละสินค้า';
                                         const moneyInput = code => (
                                             // div ไม่ใช่ label — .field label ของฟอร์มบังคับเป็น block ตัวอักษรใหญ่ ทำให้ ฿ ตกบรรทัด
                                             <div className={'ptgt-money' + (pbOf(code) > 0 ? '' : ' need')}>
@@ -615,25 +661,35 @@ export default function ProjectForm({ editing, onClose, onSaved }) {
                                                     onClick={() => toggleConceptSplit(i, bi)}>
                                                     {cSplit ? '☑' : '☐'} 📝 แยก Concept ต่อสินค้า
                                                 </button>
+                                                {/* กดแล้วแถวสินค้าได้ช่อง "คน" — แบ่งจำนวน KOL ของ Platform นี้ให้แต่ละสินค้า (รวมต้องเท่าจำนวนจากแถว Tier) */}
+                                                <button type="button" className={kSplit ? 'on' : ''} aria-pressed={kSplit}
+                                                    title={kSplit ? 'กดอีกครั้งเพื่อกลับไปใช้จำนวน KOL รวมของ Platform' : 'ใส่จำนวน KOL ของแต่ละสินค้า — รวมแล้วต้องเท่าจำนวน KOL ของ Platform นี้'}
+                                                    onClick={() => toggleKolSplit(i, bi)}>
+                                                    {kSplit ? '☑' : '☐'} 👥 แยกจำนวน KOL ต่อสินค้า
+                                                </button>
                                             </div>
                                             {/* Platform ที่ใช้ Target (ตอนนี้ TikTok): 1 แถว = 1 สินค้า + Target ของสินค้านั้น
                                                 Platform อื่นไม่มี Target — แสดงแค่รายการสินค้า */}
-                                            {(b.products || []).length > 0 && !withTarget && (split || cSplit) && (
+                                            {(b.products || []).length > 0 && !withTarget && (split || cSplit || kSplit) && (
                                                 <div className="ptgt-list">
                                                     <div className="tgt-label">
-                                                        <span>{split ? '💰' : '📝'} {rowLabel}{split && <b className="tgt-req"> *</b>}</span>
-                                                        {split && (budgetMissing.length > 0
-                                                            ? <span className="tgt-hint">ใส่งบแล้ว {b.products.length - budgetMissing.length} / {b.products.length} สินค้า</span>
-                                                            : <span className="tgt-ok">✓ ใส่งบครบ {b.products.length} สินค้า</span>)}
+                                                        <span>{split ? '💰' : kSplit ? '👥' : '📝'} {rowLabel}{(split || kSplit) && <b className="tgt-req"> *</b>}</span>
+                                                        <span className="tgt-hints">
+                                                            {split && (budgetMissing.length > 0
+                                                                ? <span className="tgt-hint">ใส่งบแล้ว {b.products.length - budgetMissing.length} / {b.products.length} สินค้า</span>
+                                                                : <span className="tgt-ok">✓ ใส่งบครบ {b.products.length} สินค้า</span>)}
+                                                            {kolHint}
+                                                        </span>
                                                     </div>
                                                     {b.products.map(code => (
-                                                        <div className={'ptgt-row' + (split && pbOf(code) <= 0 ? ' need-budget' : '')} key={code}>
+                                                        <div className={'ptgt-row' + (split && pbOf(code) <= 0 ? ' need-budget' : '') + (kSplit && kOf(code) < 1 ? ' need-kol' : '')} key={code}>
                                                             <div className="ptgt-prod" title={productLabel(code)}>
                                                                 <b>{code}</b>
                                                                 <span>{productLabel(code).replace(code + ' - ', '')}</span>
                                                             </div>
-                                                            {/* ไม่มีช่องอื่นในแถว = Concept อยู่บรรทัดเดียวกับสินค้า · มีงบด้วย = Concept ขึ้นบรรทัดที่สอง */}
+                                                            {/* ไม่มีงบในแถว = Concept อยู่บรรทัดเดียวกับสินค้า (ช่อง "คน" เล็ก ชิดขวาได้) · มีงบด้วย = Concept ขึ้นบรรทัดที่สอง */}
                                                             {cSplit && !split && conceptField(code, true)}
+                                                            {kSplit && kolInput(code)}
                                                             {split && moneyInput(code)}
                                                             <button type="button" className="ptgt-rm" title={`เอา ${code} ออกจาก Platform นี้`}
                                                                 onClick={() => removeBlockProduct(i, bi, code)}>×</button>
@@ -642,7 +698,7 @@ export default function ProjectForm({ editing, onClose, onSaved }) {
                                                     ))}
                                                 </div>
                                             )}
-                                            {(b.products || []).length > 0 && !withTarget && !split && !cSplit && (
+                                            {(b.products || []).length > 0 && !withTarget && !split && !cSplit && !kSplit && (
                                                 <div className="prodchip-wrap" style={{ marginBottom: 8 }}>
                                                     {b.products.map(code => (
                                                         <span className="prodchip removable" key={code} title={productLabel(code)}>
@@ -655,28 +711,32 @@ export default function ProjectForm({ editing, onClose, onSaved }) {
                                                 <div className="ptgt-list">
                                                     <div className="tgt-label">
                                                         <span>🎯 {rowLabel} <b className="tgt-req">*</b></span>
-                                                        {split ? (
-                                                            // แยกงบ: ✓ ได้เมื่อครบทั้ง Target และงบ — ไม่งั้นบอกว่าขาดอะไรกี่สินค้า
-                                                            (needCount === 0 || doneCount === needCount) && budgetMissing.length === 0
-                                                                ? <span className="tgt-ok">✓ Target และงบครบ {b.products.length} สินค้า</span>
-                                                                : <span className="tgt-hint">
-                                                                    {[needCount > 0 && doneCount < needCount ? `เลือก Target แล้ว ${doneCount} / ${needCount}` : null,
-                                                                        budgetMissing.length > 0 ? `ใส่งบแล้ว ${b.products.length - budgetMissing.length} / ${b.products.length}` : null]
-                                                                        .filter(Boolean).join(' · ')} สินค้า
-                                                                </span>
-                                                        ) : needCount === 0 ? <span className="tgt-hint">สินค้าที่เลือกยังไม่มี Target ให้เลือก</span>
-                                                            : doneCount < needCount
-                                                                ? <span className="tgt-hint">เลือกแล้ว {doneCount} / {needCount} สินค้า — ทุกสินค้าต้องมีอย่างน้อย 1 กลุ่ม</span>
-                                                                : <span className="tgt-ok">✓ เลือกครบ {needCount} สินค้า</span>}
+                                                        <span className="tgt-hints">
+                                                            {split ? (
+                                                                // แยกงบ: ✓ ได้เมื่อครบทั้ง Target และงบ — ไม่งั้นบอกว่าขาดอะไรกี่สินค้า
+                                                                (needCount === 0 || doneCount === needCount) && budgetMissing.length === 0
+                                                                    ? <span className="tgt-ok">✓ Target และงบครบ {b.products.length} สินค้า</span>
+                                                                    : <span className="tgt-hint">
+                                                                        {[needCount > 0 && doneCount < needCount ? `เลือก Target แล้ว ${doneCount} / ${needCount}` : null,
+                                                                            budgetMissing.length > 0 ? `ใส่งบแล้ว ${b.products.length - budgetMissing.length} / ${b.products.length}` : null]
+                                                                            .filter(Boolean).join(' · ')} สินค้า
+                                                                    </span>
+                                                            ) : needCount === 0 ? <span className="tgt-hint">สินค้าที่เลือกยังไม่มี Target ให้เลือก</span>
+                                                                : doneCount < needCount
+                                                                    ? <span className="tgt-hint">เลือกแล้ว {doneCount} / {needCount} สินค้า — ทุกสินค้าต้องมีอย่างน้อย 1 กลุ่ม</span>
+                                                                    : <span className="tgt-ok">✓ เลือกครบ {needCount} สินค้า</span>}
+                                                            {kolHint}
+                                                        </span>
                                                     </div>
                                                     {b.products.map(code => {
                                                         const opts = [...new Set([...targetsForProduct(code), ...ptOf(code)])];
                                                         const sel = ptOf(code);
                                                         const need = targetsForProduct(code).length > 0 && sel.length === 0;
-                                                        // ยังไม่ใส่งบ (ตอนแยกงบ) — แถวแดง แต่ปุ่ม Target ไม่แดง (Target เลือกแล้ว)
+                                                        // ยังไม่ใส่งบ / จำนวนคน (ตอนแยก) — แถวแดง แต่ปุ่ม Target ไม่แดง (Target เลือกแล้ว)
                                                         const needBudget = split && pbOf(code) <= 0;
+                                                        const needKol = kSplit && kOf(code) < 1;
                                                         return (
-                                                            <div className={'ptgt-row' + (need ? ' need' : '') + (needBudget ? ' need-budget' : '')} key={code}>
+                                                            <div className={'ptgt-row' + (need ? ' need' : '') + (needBudget ? ' need-budget' : '') + (needKol ? ' need-kol' : '')} key={code}>
                                                                 <div className="ptgt-prod" title={productLabel(code)}>
                                                                     <b>{code}</b>
                                                                     <span>{productLabel(code).replace(code + ' - ', '')}</span>
@@ -694,6 +754,7 @@ export default function ProjectForm({ editing, onClose, onSaved }) {
                                                                         onToggle={t => toggleProductTarget(i, bi, code, t)}
                                                                     />
                                                                 </div>
+                                                                {kSplit && kolInput(code)}
                                                                 {split && moneyInput(code)}
                                                                 <button type="button" className="ptgt-rm" title={`เอา ${code} ออกจาก Platform นี้`}
                                                                     onClick={() => removeBlockProduct(i, bi, code)}>×</button>
@@ -850,6 +911,9 @@ export default function ProjectForm({ editing, onClose, onSaved }) {
 
                     {!isEdit && missing.length > 0 && (
                         <div className="form-missing-hint">⚠️ กรุณากรอกให้ครบก่อนบันทึก: {missing.join(' · ')}</div>
+                    )}
+                    {isEdit && editProblems.length > 0 && (
+                        <div className="form-missing-hint">⚠️ กรุณาแก้ให้ถูกต้องก่อนบันทึก: {editProblems.join(' · ')}</div>
                     )}
                     <div className="modal-actions">
                         <button type="button" className="btn-ghost" onClick={onClose}>ยกเลิก</button>

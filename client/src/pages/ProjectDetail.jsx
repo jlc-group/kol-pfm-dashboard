@@ -16,7 +16,8 @@ import { productLabel, asTargetArray } from '../data/products.js';
 import {
     groupPlatforms, kolInScope, contentTypesOf, mediaFor, quotaOf,
     toBlocks, blockKol, blocksKol, blocksBudget, num, needTarget, isSplitBudget, hasOwnConcepts,
-    contentCells, cellKeyOf, cellKey, clipCountFor, targetFor, groupNoGencode, productsFor, allocsInScope, conceptOneLine
+    contentCells, cellKeyOf, cellKey, clipCountFor, targetFor, groupNoGencode, productsFor, allocsInScope, conceptOneLine,
+    isKolSplit, productKolOf, productKolProgress
 } from '../data/adGroups.js';
 import { collapseByPerson, countPeople } from '../data/clips.js';
 import ProductFilter from '../components/ProductFilter.jsx';
@@ -916,11 +917,14 @@ export default function ProjectDetail() {
         const feeRows = plats.flatMap(p => feeEligible(submissions, g, p));
         const feeSet = feeRows.reduce((n, s) => n + feeOf(s), 0);
         const feeMissing = countPeople(feeRows.filter(s => feeOf(s) <= 0));
+        // จำนวน KOL แยกต่อสินค้า (บล็อกที่ทีมเปิดแยกไว้) — ส่งแล้ว / ต้องการ ของแต่ละสินค้า ตาม Platform ที่กรองอยู่
+        // นับทุกรายชื่อของกลุ่ม (ไม่ขึ้นกับตัวกรอง Content Type / สินค้า / ค่าตัว) ไม่นับคนที่ "ไม่เลือก" — หน้าตาเดียวกับหน้าเอเจนซี่
+        const productNeeds = productKolProgress(g, submissions, plats);
         return (
             <>
                 <GroupNeedHead group={g} gi={gi} products={products} platforms={plats}
                     need={need} perClip={perClip} needClips={needClips}
-                    sent={countPeople(scoped)} sentClips={scoped.length}
+                    sent={countPeople(scoped)} sentClips={scoped.length} productNeeds={productNeeds}
                     progExtra={(
                         // เฉพาะทีม: ส่งมากี่คนแล้วเลือกไปกี่คน (หน้าเอเจนซี่ไม่มีบรรทัดนี้)
                         // แยกคลิปเป็นบรรทัดของตัวเอง คอลัมน์ขวาจะได้ไม่กว้างกว่าของเอเจนซี่มาก (จอแคบหัวกลุ่มไม่โดนบีบ)
@@ -1167,6 +1171,19 @@ export default function ProjectDetail() {
                                                                         {b.products.map(c => (
                                                                             <span className="adg-pbud" key={c} title={productLabel(c)}>
                                                                                 <b>{c}</b> ฿{num((b.product_budgets || {})[c]).toLocaleString('th-TH')}
+                                                                            </span>
+                                                                        ))}
+                                                                    </div>
+                                                                </div>
+                                                            )}
+                                                            {/* จำนวน KOL แยกต่อสินค้า (ผลรวม = จำนวนคนของ Platform ที่หัวบล็อก) */}
+                                                            {isKolSplit(b) && (b.products || []).length > 0 && (
+                                                                <div className="adg-field">
+                                                                    <span className="adg-label">จำนวน KOL ต่อสินค้า</span>
+                                                                    <div className="adg-val">
+                                                                        {b.products.map(c => (
+                                                                            <span className="adg-pbud adg-pkol" key={c} title={productLabel(c)}>
+                                                                                <b>{c}</b> {productKolOf(b, c)} คน
                                                                             </span>
                                                                         ))}
                                                                     </div>

@@ -5,7 +5,8 @@ import DatePicker from './DatePicker.jsx';
 import DraftModal from './DraftModal.jsx';
 import PerfModal from './PerfModal.jsx';
 import { asTargetArray } from '../data/products.js';
-import { mediaFor, contentTypesOf, quotaOf, targetFor, conceptText, conceptOneLine, groupNoGencode, postNoGencode } from '../data/adGroups.js';
+import { mediaFor, contentTypesOf, quotaOf, targetFor, conceptText, conceptOneLine, groupNoGencode, postNoGencode, productKolProgress } from '../data/adGroups.js';
+import { productLabel } from '../data/products.js';
 import { ProductSummary } from './ProductChips.jsx';
 import ProductFilter from './ProductFilter.jsx';
 import { knownProductCodes, matchProducts, productFilterOptions } from '../data/productFilter.js';
@@ -304,8 +305,10 @@ const procHead = (showAds = false) => (
 
 // แถบหัวกลุ่มสินค้า (กลุ่มที่ N + รหัสสินค้า + concept + จำนวน)
 // scope = { products, platforms } ที่ผู้ดูเห็น (หน้าเอเจนซี่) — Concept แยกต่อสินค้าโชว์เฉพาะของขอบเขตนี้
-function GroupBar({ group, gi, count, scope }) {
+// kolNeeds = จำนวน KOL แยกต่อสินค้า (productKolProgress) — [] = กลุ่มนี้ไม่ได้แยก ไม่มีแถวนี้
+function GroupBar({ group, gi, count, scope, kolNeeds = [] }) {
     const concept = conceptText(group, false, scope && scope.products, scope && scope.platforms);
+    const multiPlat = kolNeeds.length > 1;
     return (
         <div className="grp-bar">
             <span className="grp-no">กลุ่มที่ {gi + 1}</span>
@@ -317,6 +320,18 @@ function GroupBar({ group, gi, count, scope }) {
             {/* กลุ่มที่ตั้ง "-" ในฟอร์มแคมเปญ — บอกไว้ที่หัวกลุ่มว่าช่อง Gencode ว่างได้ ไม่ใช่ลืมกรอก */}
             {groupNoGencode(group) && <span className="grp-concept" title="กลุ่มนี้ไม่ใช้ Gencode — แถวที่ไม่มี Gencode ไม่ต้องกรอก">ไม่ใช้ Gencode</span>}
             <span className="grp-count">{count} คน</span>
+            {/* แยกจำนวน KOL ต่อสินค้า: ส่งแล้ว / ต้องการ ของแต่ละสินค้า (นับคน ไม่นับคนที่ไม่ถูกเลือก) — เกินโควตาขึ้นสีแดงแต่ไม่ได้ห้าม */}
+            {kolNeeds.length > 0 && (
+                <div className="grp-pkol">
+                    <span className="grp-pkol-lbl">👥 คนต่อสินค้า (ส่งแล้ว/ต้องการ)</span>
+                    {kolNeeds.map(p => p.rows.map(r => (
+                        <span className={'grp-pkol-chip' + (r.over ? ' over' : r.full ? ' full' : '')} key={p.platform + '::' + r.code}
+                            title={`${productLabel(r.code)} · ${p.platform} — ส่งแล้ว ${r.sent} คน / ต้องการ ${r.need} คน${r.over ? ` (เกิน ${r.sent - r.need})` : ''}`}>
+                            {multiPlat && <small>{p.platform}</small>}<b>{r.code}</b> {r.sent}/{r.need}
+                        </span>
+                    )))}
+                </div>
+            )}
         </div>
     );
 }
@@ -475,6 +490,10 @@ export default function OnProcessTable({ subs = [], groups = [], showAds = false
         const groupKeys = new Set(groups.map(g => g.key));
         const ungrouped = view.filter(s => !s.group_key || !groupKeys.has(s.group_key));
         const visibleGroups = groups.filter(g => view.some(s => s.group_key === g.key));
+        // จำนวน KOL ต่อสินค้า: นับจากรายชื่อทั้งหมดที่ส่งมา (ไม่ใช่เฉพาะที่คัดเลือก/ตามตัวกรอง) เทียบกับโควตาของแต่ละสินค้า
+        // Platform = ที่กรองอยู่ หรือขอบเขตของผู้ดู (หน้าเอเจนซี่) · ไม่ได้กรอง = ทุก Platform ของกลุ่ม
+        const kolNeedsOf = g => productKolProgress(g, subs,
+            platFilter !== 'all' ? [platFilter] : (conceptScope ? (conceptScope(g).platforms || []) : []));
         return (
             <div>
                 {stageBar}
@@ -488,7 +507,7 @@ export default function OnProcessTable({ subs = [], groups = [], showAds = false
                             const gs = view.filter(s => s.group_key === g.key);
                             return (
                                 <div className="proc-group" key={g.key || gi}>
-                                    <GroupBar group={g} gi={gi} count={gs.length} scope={conceptScope ? conceptScope(g) : null} />
+                                    <GroupBar group={g} gi={gi} count={gs.length} scope={conceptScope ? conceptScope(g) : null} kolNeeds={kolNeedsOf(g)} />
                                     {procHead(showAds)}{rowsFor(gs)}
                                 </div>
                             );

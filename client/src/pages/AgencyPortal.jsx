@@ -13,7 +13,7 @@ import GroupNeedHead, { groupClipNeed } from '../components/GroupNeedHead.jsx';
 import { productLabel } from '../data/products.js';
 import {
     groupPlatforms, allocsInScope, contentTypesOf, mediaFor,
-    tiersOf, productsFor, quotaOf, contentCells, cellKeyOf, cellKey
+    tiersOf, productsFor, quotaOf, contentCells, cellKeyOf, cellKey, productKolProgress
 } from '../data/adGroups.js';
 import { collapseByPerson, countPeople } from '../data/clips.js';
 import ProductFilter from '../components/ProductFilter.jsx';
@@ -419,6 +419,8 @@ function GroupSection({ token, group, gi, subs, onReload, onEdit, onDelete, onNo
     // คิดด้วยตัวช่วยเดียวกับแท็บรายชื่อฝั่งทีม (GroupNeedHead) ตัวเลขสองฝั่งจะได้ตรงกัน
     const { perClip, clips: scopeClips } = groupClipNeed(group, scopePlats);
     const total = myKol || group.kol_count || 0;
+    // ทีมแยกจำนวน KOL ต่อสินค้า — ต้องการกี่คน / ลิงก์นี้ส่งแล้วกี่คน ของแต่ละสินค้า (Platform ในขอบเขตที่ดูอยู่ · ไม่นับคนที่ไม่ถูกเลือก)
+    const productNeeds = productKolProgress(group, subs, scopePlats);
 
     // ช่องกรอก 1 ช่อง = Platform + Content Type — กรอกในช่องไหนก็เป็นของช่องนั้น ไม่ต้องติ๊กเอง
     const cells = contentCells(group, scopePlats);
@@ -444,7 +446,7 @@ function GroupSection({ token, group, gi, subs, onReload, onEdit, onDelete, onNo
                 แก้หน้าตาที่ GroupNeedHead ที่เดียว — Concept / สินค้า จำกัดเฉพาะที่ลิงก์นี้เห็น */}
             <GroupNeedHead group={group} gi={gi} products={groupProducts} platforms={scopePlats}
                 need={total} perClip={perClip} needClips={totalClips}
-                sent={groupSubs.length} sentClips={groupRows.length} />
+                sent={groupSubs.length} sentClips={groupRows.length} productNeeds={productNeeds} />
 
             {cells.map(c => {
                 const key = cellKey(c);

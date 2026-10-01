@@ -3,6 +3,7 @@ import ProductChips from './ProductChips.jsx';
 import ConceptLines from './ConceptLines.jsx';
 import { clipCountFor, clipsFor, quotaOf, hasOwnConcepts, groupNoGencode, conceptOneLine } from '../data/adGroups.js';
 import { clipCount } from '../data/clips.js';
+import { productLabel } from '../data/products.js';
 
 // จำนวนคลิปของกลุ่มในขอบเขต Platform ที่ผู้ดูเห็น — ใช้ทั้งหน้าเอเจนซี่ (GroupSection) และแท็บรายชื่อฝั่งทีม (ProjectDetail)
 // คิดที่เดียวกัน ตัวเลข "× N คลิป = T คลิป" สองฝั่งจะได้ไม่เพี้ยนกัน
@@ -21,7 +22,8 @@ export function groupClipNeed(group, platforms = [], contentType = null) {
 // products / platforms = สินค้า / Platform ในขอบเขต (ใช้กับ Concept ต่อสินค้าด้วย)
 // need / needClips = ต้องการกี่คน / กี่คลิป · sent / sentClips = ส่งแล้วกี่คน / กี่คลิป
 // progExtra = บรรทัดเสริมใต้ตัวเลขด้านขวา (ฝั่งทีมใช้โชว์ "คัดเลือกแล้ว" — เอเจนซี่ไม่มี)
-export default function GroupNeedHead({ group, gi, products = [], platforms = [], need = 0, perClip = 1, needClips = 0, sent = 0, sentClips = 0, progExtra = null }) {
+// productNeeds = จำนวน KOL แยกต่อสินค้า (productKolProgress) ของ Platform ในขอบเขต — [] = ไม่มีบล็อกไหนแยก ไม่ต้องโชว์
+export default function GroupNeedHead({ group, gi, products = [], platforms = [], need = 0, perClip = 1, needClips = 0, sent = 0, sentClips = 0, progExtra = null, productNeeds = [] }) {
     // ชื่อคลิปตั้งแยกต่อ Platform — group.clips เก็บแค่ของ Platform แรก (server ก็ห้ามอ่านตรง ๆ) จึงอ่านของ Platform ในขอบเขต
     // โชว์เฉพาะตอนทุก Platform ในขอบเขตใช้ชุดชื่อเดียวกัน ไม่งั้นจะบอกชื่อคลิปของอีก Platform ผิด ๆ
     const lists = (platforms.length ? platforms.map(p => clipsFor(group, p)) : [group.clips || []])
@@ -37,6 +39,24 @@ export default function GroupNeedHead({ group, gi, products = [], platforms = []
                         <div className="ag-group-need">
                             ต้องการ {need} คน
                             {perClip > 1 && <span className="ag-clip-note"> × {perClip} คลิป = {needClips} คลิป</span>}
+                        </div>
+                    )}
+                    {/* ทีมแยกจำนวน KOL ต่อสินค้า — บอกว่าแต่ละสินค้าต้องการกี่คน ส่งแล้วกี่คน (ไม่นับคนที่ไม่ถูกเลือก)
+                        เกินโควตาของสินค้า = ขึ้นสีแดงให้เห็น แต่ไม่ได้ห้ามส่ง · หลาย Platform ในขอบเขต = บอกชื่อ Platform นำหน้า */}
+                    {productNeeds.length > 0 && (
+                        <div className="ag-pkol">
+                            <div className="ag-pkol-lbl">👥 จำนวน KOL ต่อสินค้า</div>
+                            {productNeeds.map(p => (
+                                <div className="ag-pkol-plat" key={p.platform}>
+                                    {platforms.length > 1 && <span className="ag-pkol-pf">📱 {p.platform}</span>}
+                                    {p.rows.map(r => (
+                                        <span className={'ag-pkol-row' + (r.over ? ' over' : r.full ? ' full' : '')} key={r.code}
+                                            title={productLabel(r.code) + (r.over ? ` — ส่งเกินโควตาของสินค้านี้ ${r.sent - r.need} คน` : '')}>
+                                            <b>{r.code}</b> ต้องการ {r.need} คน · ส่งแล้ว {r.sent}{r.over ? ` (เกิน ${r.sent - r.need})` : r.full ? ' ✓' : ''}
+                                        </span>
+                                    ))}
+                                </div>
+                            ))}
                         </div>
                     )}
                     {/* Concept แยกต่อสินค้า — บรีฟ KOL ตามสินค้าของแต่ละคนได้ (เฉพาะสินค้าในขอบเขตที่เห็น) */}

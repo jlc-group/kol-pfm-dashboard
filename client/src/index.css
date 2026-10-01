@@ -2945,8 +2945,37 @@ a.ads-thumb:focus-visible { outline: 2px solid var(--mint-dark); outline-offset:
 .ptgt-money input { width: 100%; min-width: 0; margin: 0; padding: 7px 8px; text-align: right; font-size: 12px; font-variant-numeric: tabular-nums; }
 .ptgt-money.need input { border-color: #f87171; background: #fff7f7; }
 .ptgt-money span { font-size: 11.5px; color: #7d938d; }
+/* จำนวน KOL แยกต่อสินค้า — ช่อง "คน" เล็ก ๆ ชิดขวาของแถวสินค้า (อยู่หน้าช่องงบถ้าแยกงบด้วย) */
+.ptgt-kol { flex: 0 0 74px; display: flex; align-items: center; gap: 4px; margin-left: auto; }
+.ptgt-kol + .ptgt-money { margin-left: 0; }
+.ptgt-kol input { width: 100%; min-width: 0; margin: 0; padding: 7px 8px; text-align: right; font-size: 12px; font-variant-numeric: tabular-nums; }
+.ptgt-kol.need input { border-color: #f87171; background: #fff7f7; }
+.ptgt-kol span { font-size: 11.5px; color: #7d938d; white-space: nowrap; }
+.ptgt-row.need-kol { border-color: #fca5a5; background: #fff7f7; }
+/* ป้ายสถานะหัวรายการสินค้า (Target / งบ / จำนวนคน) เรียงลงมาชิดขวา */
+.tgt-hints { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; margin-left: auto; text-align: right; }
+.tgt-hint.over { color: #b91c1c; }
 .adg-pbud { display: inline-flex; align-items: center; gap: 4px; padding: 3px 9px; border-radius: 8px; background: #fff7e6; border: 1px solid #fde3b0; color: #8a5a00; font-size: 11.5px; font-variant-numeric: tabular-nums; }
 .adg-pbud b { font-weight: 800; }
+/* จำนวน KOL ต่อสินค้า ในการ์ดกลุ่มหน้ารายละเอียดแคมเปญ — สีฟ้า แยกจากงบต่อสินค้า (สีส้ม) */
+.adg-pbud.adg-pkol { background: #eef4ff; border-color: #d6e2ff; color: #3b5ba5; }
+/* จำนวน KOL ต่อสินค้า ที่หัวกลุ่ม (หน้าเอเจนซี่ + แท็บรายชื่อฝั่งทีม) — ต้องการกี่คน · ส่งแล้วกี่คน */
+.ag-pkol { margin-top: 8px; display: flex; flex-direction: column; gap: 5px; }
+.ag-pkol-lbl { font-size: 11.5px; font-weight: 700; color: var(--muted); }
+.ag-pkol-plat { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; }
+.ag-pkol-pf { font-size: 11.5px; font-weight: 700; color: #45605a; margin-right: 2px; }
+.ag-pkol-row { display: inline-flex; align-items: center; gap: 4px; padding: 3px 10px; border-radius: 8px; background: #eef4ff; border: 1px solid #d6e2ff; color: #3b5ba5; font-size: 12px; font-variant-numeric: tabular-nums; }
+.ag-pkol-row b { font-weight: 800; }
+.ag-pkol-row.full { background: #e7f7ef; border-color: #a7e3c8; color: #0f766e; }
+.ag-pkol-row.over { background: #fff1f0; border-color: #fca5a5; color: #b91c1c; font-weight: 700; }
+/* แถบหัวกลุ่ม On Process: ส่งแล้ว/ต้องการ ต่อสินค้า — ขึ้นบรรทัดใหม่ใต้แถวหลักของแถบ */
+.grp-pkol { flex-basis: 100%; display: flex; flex-wrap: wrap; align-items: center; gap: 5px; }
+.grp-pkol-lbl { font-size: 11.5px; font-weight: 700; opacity: .95; }
+.grp-pkol-chip { display: inline-flex; align-items: center; gap: 4px; padding: 2px 9px; border-radius: 8px; background: #fff; color: var(--mint-dark); font-size: 11.5px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.grp-pkol-chip small { font-size: 10px; font-weight: 600; opacity: .8; }
+.grp-pkol-chip b { font-weight: 900; }
+.grp-pkol-chip.over { background: #fee2e2; color: #b91c1c; box-shadow: inset 0 0 0 1.5px #f87171; }
+.grp-pkol-chip.full::after { content: '✓'; margin-left: 1px; }
 .grp-kol-note { font-weight: 400; font-size: 11px; color: #7d938d; margin-left: 8px; }
 
 /* ช่องเลือกกลุ่ม Target — ต้องมองออกว่าเป็นช่องที่ต้องกดเลือก */
