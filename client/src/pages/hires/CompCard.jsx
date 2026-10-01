@@ -1,28 +1,24 @@
-import { Link } from 'react-router-dom';
 import Icon from '../../components/Icon.jsx';
 import useLazyImage from '../../utils/useLazyImage.js';
-import { T, BOOKING_LABEL, CAND_LABEL, baht } from '../../data/talentLabels.js';
+import { baht } from '../../data/talentLabels.js';
+import { normalizeSocials, socialLabel, SOCIAL_SHORT } from '../../data/talentSocials.js';
+import { jobsCountOf } from '../../data/talentJobs.js';
 
 // คอมการ์ดของคนหนึ่งคนใน Talent Book — รูปแนวตั้งซ้าย ข้อมูลขวา (ตามแบบที่ผู้ใช้เลือก)
+// ผู้ใช้สั่ง 1 ต.ค. 2026: หน้าการ์ด = ข้อมูลของ KOL อย่างเดียว — รูป · ชื่อ · ช่องทาง Social (กดเปิดลิงก์ได้ทีละช่องทาง) · เรทราคา
+//   + ป้าย "จ้างแล้ว N งาน" · ปุ่มแก้ไข · ประเภทงานเป็นบรรทัดเล็กเหนือชื่อ (ไว้กวาดตาหา)
+//   รายละเอียดอื่น (แบรนด์ / เอเจนซี่ / ผู้ติดต่อ / Scope / หมายเหตุ / คลิป / งานที่จ้าง) อยู่ในหน้ารายละเอียด — กดตรงไหนของการ์ดก็เปิด (onOpen)
 // ข้อมูลมาจาก GET /api/hires/book ที่ server รวมคนเดียวกัน (ชื่อ + ประเภทงาน) เป็นใบเดียวแล้ว — ไฟล์นี้แสดงผลอย่างเดียว ไม่แก้ข้อมูล
-// การ์ดที่มีคนที่ทีมเพิ่มเอง (card.talent): ป้าย Saved ถ้ายังไม่เคยอยู่ในงาน · เรทที่ใส่เอง · ปุ่มแก้ไข (คนที่เพิ่ม / admin — onEdit)
+// ช่องทาง Social: card.socials (หรือ talent.socials) · แถวรุ่นเก่า/การ์ดจากงานเก่ามีแค่ link ช่องเดียว → ใช้เป็น 1 ช่องทาง (normalizeSocials)
 
-// สถานะย่อของ Casting — ใช้คำชุดเดียวกับใบขอให้หา คนที่เคยเห็นในใบจะอ่านออกทันที
-const SUB_LABEL = {
-    waiting: CAND_LABEL['เสนอ'],         // รอเลือก
-    spare: T.spare,                       // สำรองไว้
-    dropped: 'ไม่ได้เลือก',                // ทีมกด "ไม่เอา" ในใบ
-    unavailable: 'มาไม่ได้',              // ถูกเลือกแล้ว แต่คนช่วยหาแจ้งว่าคิวไม่ว่าง (ใบขอให้หาก็โชว์คำนี้)
-    talking: T.talking,                   // แถวในงานที่ยังคุยอยู่
-    booking: BOOKING_LABEL.pending        // เลือกแล้ว รอยืนยันคิว / รอตัดสินค่าตัวใหม่
-};
-// การ์ดเป็นสี่เหลี่ยมจัตุรัส (ผู้ใช้ขอ 1:1 สามใบต่อแถว) — พื้นที่จำกัด จึงโชว์ราคา 2 บรรทัด ลิงก์งาน 2 อัน ที่เหลือเป็น "+N" (ชี้ดูชื่อได้)
-const JOBS_SHOWN = 2;
-const FEES_SHOWN = 2;
+// การ์ดเป็นสี่เหลี่ยมจัตุรัส (สามใบต่อแถว) — ช่องทางโชว์ได้ 3 บรรทัด ที่เหลือเป็น "+N ช่องทาง" (ชี้ดูได้ / เปิดดูครบในรายละเอียด)
+const SOCIALS_SHOWN = 3;
+// สีของป้ายแพลตฟอร์ม (คลาส tb-soc-pf p-xx)
+export const PLATFORM_CLASS = { TikTok: 'tt', Instagram: 'ig', Facebook: 'fb', YouTube: 'yt', X: 'x', Lemon8: 'l8' };
 
-const str = v => String(v == null ? '' : v).trim();
+export const str = v => String(v == null ? '' : v).trim();
 // ลิงก์ที่ผู้ใช้กรอกเอง — กดได้เฉพาะ http/https (กัน javascript: / data: ที่แฝงมากับข้อมูล)
-function httpUrl(v) {
+export function httpUrl(v) {
     const s = str(v);
     if (!s) return '';
     try {
@@ -31,12 +27,12 @@ function httpUrl(v) {
     } catch { return ''; }
 }
 // path ไฟล์ต้องเป็นเส้นไฟล์ของงานจ้าง หรือไฟล์ของคนที่เพิ่มเข้า Talent Book เอง เท่านั้น (fileBlobUrl แนบ token ให้ — ไม่ยอมให้ข้อมูลพาไปเส้นอื่น)
-const okPath = p => typeof p === 'string' && !p.includes('..')
+export const okPath = p => typeof p === 'string' && !p.includes('..')
     && (/^\/projects\/[^/?#]+\/hires\/[^?#]+$/.test(p) || /^\/hires\/talents\/\d+\/(image|clip)(\?v=\d+)?$/.test(p));
 
 // ตัวอักษรย่อบนรูปว่าง — กติกาเดียวกับรูปย่อในหน้างาน (PersonDrawer): ข้ามสระนำหน้าของไทย ชื่ออังกฤษสองคำใช้สองตัว
 const THAI_LEAD = /[เแโใไ]/;
-function initials(name) {
+export function initials(name) {
     const words = str(name).split(/\s+/).filter(Boolean);
     if (!words.length) return '?';
     const first = w => { const cs = Array.from(w); return cs.find(ch => !THAI_LEAD.test(ch)) || cs[0]; };
@@ -44,51 +40,32 @@ function initials(name) {
     if (/^[A-Za-z]/.test(a) && words[1] && /^[A-Za-z]/.test(words[1])) return (a + first(words[1])).toUpperCase();
     return a.toUpperCase();
 }
-const tone = name => 'c' + (Array.from(str(name)).reduce((s, ch) => s + ch.codePointAt(0), 0) % 5);
+export const tone = name => 'c' + (Array.from(str(name)).reduce((s, ch) => s + ch.codePointAt(0), 0) % 5);
 
-// วันที่แบบสั้น d/m/yy · ค่าที่เป็นเวลาเต็ม (เช่นเวลาที่เสนอชื่อ) แปลงเป็นวันที่ตามเวลาไทยก่อน ไม่งั้นช่วงเช้ามืดจะเป็นวันก่อนหน้า
-function fmtD(d) {
-    const s = str(d);
-    if (!s) return '';
-    let ymd = s.slice(0, 10);
-    if (s.length > 10 && s.includes('T')) {
-        const t = new Date(s).getTime();
-        if (Number.isFinite(t)) ymd = new Date(t + 7 * 3600 * 1000).toISOString().slice(0, 10);
-    }
-    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(ymd);
-    return m ? `${Number(m[3])}/${Number(m[2])}/${m[1].slice(2)}` : '';
+// ช่องทาง Social ของการ์ด (ใช้ทั้งหน้าการ์ด / ค้นหา / รายละเอียด)
+export const cardSocials = card => normalizeSocials(card && (card.socials || (card.talent && card.talent.socials)), card && card.link);
+
+// ป้ายแพลตฟอร์ม + ชื่อบัญชี (กดเปิดลิงก์ในแท็บใหม่ · ไม่มีลิงก์ = ข้อความเฉย ๆ)
+export function SocialLine({ s, full = false }) {
+    const href = httpUrl(s.url);
+    const label = socialLabel(s);
+    return (
+        <>
+            <span className={'tb-soc-pf p-' + (PLATFORM_CLASS[s.platform] || 'ot')} title={s.platform}>
+                {full ? s.platform : (SOCIAL_SHORT[s.platform] || s.platform)}
+            </span>
+            {href
+                ? <a className="tb-acc" href={href} target="_blank" rel="noopener noreferrer" title={href}
+                    onClick={e => e.stopPropagation()}>{label}</a>
+                : <span className="tb-row-v" title={label}>{label}</span>}
+        </>
+    );
 }
 
-// ลิงก์ Account → ข้อความสั้นที่อ่านรู้เรื่อง ("IG @nong_a") แทน URL ยาว ๆ
-// at = แพลตฟอร์มที่ชื่อบัญชีขึ้นต้นด้วย @ ใน URL (ลิงก์คลิป / ลิงก์ย่อของแพลตฟอร์มนั้นจึงไม่ถูกอ่านเป็นชื่อบัญชี)
-const PLATFORMS = [
-    { re: /(^|\.)instagram\.com$/, name: 'IG' },
-    { re: /(^|\.)tiktok\.com$/, name: 'TikTok', at: true },
-    { re: /(^|\.)(facebook|fb)\.com$/, name: 'Facebook' },
-    { re: /(^|\.)(youtube\.com|youtu\.be)$/, name: 'YouTube', at: true },
-    { re: /(^|\.)(x|twitter)\.com$/, name: 'X' },
-    { re: /(^|\.)lemon8-app\.com$/, name: 'Lemon8', at: true }
-];
-// ส่วนแรกของ path ที่ไม่ใช่ชื่อบัญชี (ลิงก์โพสต์ / คลิป / หน้าโปรไฟล์แบบเลข id)
-const NOT_HANDLE = new Set(['p', 'reel', 'reels', 'tv', 'stories', 'explore', 'watch', 'share', 'profile.php', 'people', 'pages', 'groups', 'i', 'home', 'intent', 'search']);
-export function accountOf(raw) {
-    const text = str(raw);
-    if (!text) return null;
-    const href = httpUrl(text);
-    if (!href) return { href: '', label: text };   // พิมพ์เป็นชื่อบัญชีเฉย ๆ (ไม่ใช่ลิงก์) → โชว์ตามที่พิมพ์ กดไม่ได้
-    const u = new URL(href);
-    const host = u.hostname.toLowerCase().replace(/^www\./, '');
-    let seg = u.pathname.split('/').find(Boolean) || '';
-    try { seg = decodeURIComponent(seg); } catch { /* ลิงก์เข้ารหัสไม่ครบ — ใช้ตามที่พิมพ์ */ }
-    const pf = PLATFORMS.find(p => p.re.test(host));
-    if (!pf) return { href, label: host + (seg ? '/' + seg : '') };
-    const isHandle = seg && (pf.at ? seg.startsWith('@') : !NOT_HANDLE.has(seg.toLowerCase()));
-    return { href, label: isHandle ? `${pf.name} @${seg.replace(/^@/, '')}` : pf.name };
-}
-
-// รูปฝั่งซ้าย: รูปที่อัปไว้ (รูปย่อ กดดูใหญ่) · PDF (ปุ่มเปิดไฟล์) · ลิงก์รูป (ปุ่มเปิดแท็บใหม่ — ไม่ดึงรูปจากเว็บคนอื่นมาโชว์) · ไม่มีรูป (ตัวอักษรย่อ)
-// มีคลิป → ป้าย "มีคลิป" ทับมุมรูป (เป็นปุ่มพี่น้องกับรูป ไม่ซ้อนปุ่มในปุ่ม)
-function Photo({ card, onPreview }) {
+// รูปของคน: รูปที่อัปไว้ (โหลดแบบ lazy) · PDF · ลิงก์รูป · ไม่มีรูป (ตัวอักษรย่อ)
+// หน้าการ์ด (onPreview ไม่ส่ง): รูปเป็นแค่ภาพ กดแล้วเปิดรายละเอียดตามการ์ด
+// หน้ารายละเอียด (onPreview): กดรูป = ดูใหญ่ · PDF = เปิดไฟล์ · ลิงก์รูป = เปิดแท็บใหม่ (ไม่ดึงรูปจากเว็บคนอื่นมาโชว์)
+export function Photo({ card, onPreview = null, className = 'tb-photo' }) {
     const name = str(card.name) || 'คนนี้';
     const p = card.photo || null;
     const imgPath = p && p.type === 'image' && okPath(p.path) ? p.path : '';
@@ -97,33 +74,27 @@ function Photo({ card, onPreview }) {
 
     let tile;
     if (imgPath) {
-        tile = (
-            <button type="button" className={'tb-photo-btn' + (img.url ? '' : ' tb-tone ' + tone(name))}
-                onClick={() => onPreview({ path: imgPath, title })} title={`ดู${title}`}>
-                {img.url
-                    ? <img src={img.url} alt={title} draggable="false" />
-                    : <>
-                        <span className="tb-initial" aria-hidden="true">{initials(name)}</span>
-                        <span className="tb-photo-wait">{img.failed ? 'โหลดรูปไม่ได้ — กดเพื่อเปิดดู' : 'กำลังโหลดรูป...'}</span>
-                    </>}
-            </button>
-        );
-    } else if (p && p.type === 'pdf' && okPath(p.path)) {
-        tile = (
-            <button type="button" className="tb-photo-btn tb-photo-file" onClick={() => onPreview({ path: p.path, title })} title={`เปิด${title}`}>
-                <Icon name="file" size={34} />
-                <span>เปิดดูไฟล์</span>
-                <small>คอมการ์ดเป็น PDF</small>
-            </button>
-        );
-    } else if (p && p.type === 'link' && httpUrl(p.url)) {
-        tile = (
-            <a className={'tb-photo-btn tb-photo-link tb-tone ' + tone(name)} href={httpUrl(p.url)} target="_blank" rel="noopener noreferrer"
-                title={`เปิด${title}จากลิงก์ (แท็บใหม่)`}>
+        const inner = img.url
+            ? <img src={img.url} alt={title} draggable="false" />
+            : <>
                 <span className="tb-initial" aria-hidden="true">{initials(name)}</span>
-                <span className="tb-photo-chip"><Icon name="image" size={13} /> ดูรูป</span>
-            </a>
-        );
+                <span className="tb-photo-wait">{img.failed ? 'โหลดรูปไม่ได้' : 'กำลังโหลดรูป...'}</span>
+            </>;
+        tile = onPreview
+            ? <button type="button" className={'tb-photo-btn' + (img.url ? '' : ' tb-tone ' + tone(name))}
+                onClick={() => onPreview({ path: imgPath, title })} title={`ดู${title}`}>{inner}</button>
+            : <div className={'tb-photo-btn' + (img.url ? '' : ' tb-tone ' + tone(name))}>{inner}</div>;
+    } else if (p && p.type === 'pdf' && okPath(p.path)) {
+        const inner = <><Icon name="file" size={34} /><span>{onPreview ? 'เปิดดูไฟล์' : 'คอมการ์ด PDF'}</span><small>คอมการ์ดเป็น PDF</small></>;
+        tile = onPreview
+            ? <button type="button" className="tb-photo-btn tb-photo-file" onClick={() => onPreview({ path: p.path, title })} title={`เปิด${title}`}>{inner}</button>
+            : <div className="tb-photo-btn tb-photo-file">{inner}</div>;
+    } else if (p && p.type === 'link' && httpUrl(p.url)) {
+        const inner = <><span className="tb-initial" aria-hidden="true">{initials(name)}</span><span className="tb-photo-chip"><Icon name="image" size={13} /> ดูรูป</span></>;
+        tile = onPreview
+            ? <a className={'tb-photo-btn tb-photo-link tb-tone ' + tone(name)} href={httpUrl(p.url)} target="_blank" rel="noopener noreferrer"
+                title={`เปิด${title}จากลิงก์ (แท็บใหม่)`}>{inner}</a>
+            : <div className={'tb-photo-btn tb-photo-link tb-tone ' + tone(name)}>{inner}</div>;
     } else {
         tile = (
             <div className={'tb-photo-none tb-tone ' + tone(name)}>
@@ -132,172 +103,69 @@ function Photo({ card, onPreview }) {
             </div>
         );
     }
-
-    const clip = card.clip || null;
-    let clipEl = null;
-    if (clip && clip.type === 'file' && okPath(clip.path)) {
-        clipEl = (
-            <button type="button" className="tb-clip" onClick={() => onPreview({ path: clip.path, title: `คลิปของ ${name}`, kind: 'video' })}>
-                <Icon name="play" size={11} /> มีคลิป
-            </button>
-        );
-    } else if (clip && clip.type === 'link' && httpUrl(clip.url)) {
-        clipEl = (
-            <a className="tb-clip" href={httpUrl(clip.url)} target="_blank" rel="noopener noreferrer" title={`เปิดคลิปของ ${name} (แท็บใหม่)`}>
-                <Icon name="play" size={11} /> มีคลิป
-            </a>
-        );
-    }
-
-    return (
-        <div className="tb-photo" ref={box}>
-            {tile}
-            {clipEl}
-        </div>
-    );
+    return <div className={className} ref={box}>{tile}</div>;
 }
 
-// onPreview({ path, title, kind }) — หน้าแม่เปิดตัวดูไฟล์ในหน้า (FilePreviewModal) ตัวเดียวทั้งแกลเลอรี
-export default function CompCard({ card, onPreview, onEdit }) {
-    const booked = card.group === 'booked';
-    const savedOnly = card.group === 'saved';
+// onOpen(card) — หน้าแม่เปิดหน้ารายละเอียด · onEdit(talentId) — เปิดฟอร์มแก้ไข (เฉพาะคนที่เพิ่มการ์ด / admin)
+export default function CompCard({ card, onOpen, onEdit }) {
     const talent = card.talent || null;
+    const socials = cardSocials(card);
+    const shown = socials.slice(0, SOCIALS_SHOWN);
+    const more = socials.slice(SOCIALS_SHOWN);
     const rate = talent && Number(talent.rate) > 0 ? Number(talent.rate) : 0;
-    const scope = talent ? str(talent.scope) : '';
-    const sub = !booked ? SUB_LABEL[card.sub] || '' : '';
-    // server ส่งมาใหม่สุดก่อน ไม่เกิน 3 บรรทัด และตัด ฿0 ออกแล้ว — กรองซ้ำกันข้อมูลหลุดรูปแบบ
-    // มีเรทที่ใส่เอง = บรรทัดแรก แล้วตามด้วยราคาจากงาน (รวมไม่เกิน FEES_SHOWN บรรทัด)
-    const fees = (Array.isArray(card.fees) ? card.fees : []).filter(f => f && Number(f.fee) > 0).slice(0, FEES_SHOWN - (rate ? 1 : 0));
-    const acc = accountOf(card.link);
-    const contact = str(card.contact);
-    // ช่องทางติดต่อที่ทีมเลือกตอนเพิ่มเอง: ติดต่อเอง = ชื่อผู้ติดต่อคู่กับเบอร์ · ผ่านเอเจนซี่ = คนที่ติดต่อกับเอเจนซี่
-    const viaAgency = card.contact_mode === 'agency';
-    const contactName = str(card.contact_name);
-    const selfName = card.contact_mode === 'self' ? contactName : '';
-    const agencyName = viaAgency ? contactName : '';
-    const team = (card.team_contacts || []).map(str).filter(Boolean);
-    const by = (card.proposed_by || []).map(str).filter(Boolean);
-    const projects = (card.projects || []).filter(p => p && p.id != null);
-    const jobs = Number(card.jobs) || projects.length;
-    const brands = (card.brands || []).filter(Boolean);
-    const last = fmtD(card.last_date);
-    const shownJobs = projects.slice(0, JOBS_SHOWN);
-    const moreJobs = projects.slice(JOBS_SHOWN);
+    // ไม่มีเรทที่ใส่เอง (การ์ดจากงานเก่า) → ราคาล่าสุดจากงาน (server ส่งมาใหม่สุดก่อน ตัด ฿0 แล้ว)
+    const fee = rate ? null : (Array.isArray(card.fees) ? card.fees : []).find(f => f && Number(f.fee) > 0) || null;
+    const jobs = jobsCountOf(card);
+    const open = () => onOpen && onOpen(card);
 
     return (
-        <article className={'tb-card ' + (booked ? 'is-booked' : savedOnly ? 'is-saved' : 'is-casting') + (card.sub === 'dropped' ? ' is-dropped' : '')}>
-            <Photo card={card} onPreview={onPreview} />
+        // กดตรงไหนของการ์ดก็เปิดรายละเอียด (ยกเว้นลิงก์ / ปุ่มในการ์ด) · คีย์บอร์ดใช้ปุ่มชื่อ
+        <article className={'tb-card' + (onOpen ? ' is-open' : '')}
+            onClick={e => { if (!e.target.closest('a, button')) open(); }}>
+            <Photo card={card} />
             <div className="tb-info">
                 <div className="tb-status">
-                    {/* Saved = ทีมเพิ่มเข้า Talent Book เอง ยังไม่เคยอยู่ในงาน */}
-                    <span className={'tb-badge ' + (booked ? 'booked' : savedOnly ? 'saved' : 'casting')}
-                        title={savedOnly ? 'เพิ่มเข้า Talent Book เอง — ยังไม่เคยเสนอเข้างาน' : undefined}>
-                        {booked ? 'Booked' : savedOnly ? 'Saved' : 'Casting'}
-                    </span>
-                    {sub && <span className={'tb-sub s-' + card.sub}>{sub}</span>}
+                    {card.kind && <span className="tb-kind" title={`ประเภทงาน : ${card.kind}`}>{card.kind}</span>}
                     {talent && talent.editable && onEdit && (
                         <button type="button" className="tb-edit" onClick={() => onEdit(talent.id)} title="แก้ข้อมูลที่เพิ่มไว้ใน Talent Book">✎ แก้ไข</button>
                     )}
                 </div>
 
-                <h3 className="tb-name" title={card.name}>{card.name}</h3>
+                <h3 className="tb-name" title={card.name}>
+                    <button type="button" className="tb-name-btn" onClick={open} aria-label={`ดูรายละเอียดของ ${card.name}`}>{card.name}</button>
+                </h3>
 
-                {(card.kind || card.agency || brands.length > 0) && (
-                    <div className="tb-pills">
-                        {card.kind && <span className="tb-pill"><span className="tb-pill-k">ประเภทงาน :</span> {card.kind}</span>}
-                        {/* แบรนด์ (จากงาน + ที่ทีมเลือกตอนเพิ่มเอง) — เดิมอยู่ท้ายบรรทัดล่างสุด ถูกตัดจนมองไม่เห็น */}
-                        {brands.length > 0 && <span className="tb-pill" title={brands.join(', ')}><span className="tb-pill-k">แบรนด์ :</span> {brands.join(', ')}</span>}
-                        {card.agency && <span className="tb-pill"><span className="tb-pill-k">{viaAgency ? 'เอเจนซี่ :' : 'สังกัด :'}</span> {card.agency}</span>}
-                    </div>
-                )}
+                {jobs > 0 && <div className="tb-hired"><Icon name="check" size={12} /> จ้างแล้ว {jobs} งาน</div>}
 
-                {fees.length > 0 || rate > 0 ? (
-                    <ul className="tb-fees">
-                        {rate > 0 && (
-                            <li className="tb-fee rate">
-                                <b className="tb-fee-v">{baht(rate)}</b>
-                                <span className="tb-fee-k">เรท{talent.rate_unit ? ' ' + talent.rate_unit : ''}</span>
-                            </li>
+                {socials.length > 0 ? (
+                    <ul className="tb-socials" aria-label="ช่องทาง Social">
+                        {shown.map((s, i) => <li key={i}><SocialLine s={s} /></li>)}
+                        {more.length > 0 && (
+                            <li className="tb-soc-more" title={more.map(socialLabel).join('\n')}>+{more.length} ช่องทาง</li>
                         )}
-                        {fees.map((f, i) => (
-                            <li key={i} className={'tb-fee ' + (f.kind === 'hired' ? 'hired' : 'proposed')}>
-                                <b className="tb-fee-v">{baht(f.fee)}</b>
-                                <span className="tb-fee-k" title={str(f.project_name)}>
-                                    {f.kind === 'hired' ? 'ค่าตัว' : 'ราคาที่เสนอ'}{str(f.project_name) ? ` · ${str(f.project_name)}` : ''}
-                                </span>
-                            </li>
-                        ))}
                     </ul>
                 ) : (
-                    <div className="tb-fees tb-fee-none">ยังไม่มีราคา</div>
+                    <div className="tb-soc-none">ยังไม่มีช่องทาง Social</div>
                 )}
 
-                {scope && (
-                    <div className="tb-scope" title={scope}><span className="tb-row-k">Scope of work :</span> {scope}</div>
-                )}
-
-                {(acc || contact || selfName || agencyName || team.length > 0 || by.length > 0) && (
-                    <ul className="tb-rows">
-                        {acc && (
-                            <li title="Account / Social">
-                                <Icon name="link" size={15} />
-                                <span className="tb-sr">Account: </span>
-                                {acc.href
-                                    ? <a className="tb-acc" href={acc.href} target="_blank" rel="noopener noreferrer" title={acc.href}>{acc.label}</a>
-                                    : <span className="tb-row-v">{acc.label}</span>}
-                            </li>
-                        )}
-                        {agencyName && (
-                            <li>
-                                <Icon name="users" size={15} />
-                                <span className="tb-row-v" title={agencyName}><span className="tb-row-k">ผู้ติดต่อเอเจนซี่ :</span> {agencyName}</span>
-                            </li>
-                        )}
-                        {(contact || selfName) && (
-                            <li title={T.contact}>
-                                <Icon name="phone" size={15} />
-                                <span className="tb-sr">{T.contact}: </span>
-                                <span className="tb-row-v" title={[selfName, contact].filter(Boolean).join(' · ')}>
-                                    {selfName && <b className="tb-contact-name">{selfName}</b>}
-                                    {selfName && contact ? ' · ' : ''}{contact}
-                                </span>
-                            </li>
-                        )}
-                        {team.length > 0 && (
-                            <li>
-                                <Icon name="team" size={15} />
-                                <span className="tb-row-v" title={team.join(', ')}><span className="tb-row-k">ผู้ติดต่อ :</span> {team.join(', ')}</span>
-                            </li>
-                        )}
-                        {by.length > 0 && (
-                            <li>
-                                <Icon name="search" size={15} />
-                                <span className="tb-row-v" title={by.join(', ')}><span className="tb-row-k">เสนอโดย :</span> {by.join(', ')}</span>
-                            </li>
-                        )}
-                    </ul>
-                )}
+                <div className="tb-fees">
+                    {rate > 0 ? (
+                        <div className="tb-fee rate">
+                            <b className="tb-fee-v">{baht(rate)}</b>
+                            <span className="tb-fee-k">เรท{talent.rate_unit ? ' ' + talent.rate_unit : ''}</span>
+                        </div>
+                    ) : fee ? (
+                        <div className={'tb-fee ' + (fee.kind === 'hired' ? 'hired' : 'proposed')}>
+                            <b className="tb-fee-v">{baht(fee.fee)}</b>
+                            <span className="tb-fee-k">{fee.kind === 'hired' ? 'ค่าตัวล่าสุด' : 'ราคาที่เสนอล่าสุด'}</span>
+                        </div>
+                    ) : (
+                        <div className="tb-fee-none">ยังไม่มีเรทราคา</div>
+                    )}
+                </div>
 
                 <div className="tb-foot">
-                    <div className="tb-foot-line">
-                        {/* ยังไม่เคยอยู่ในงาน = บอกว่าใครเพิ่มไว้ แทน "เคยเสนอให้ 0 งาน" */}
-                        {[jobs > 0 ? `เคยเสนอให้ ${jobs} งาน` : `เพิ่มเข้า Talent Book${talent && talent.added_by ? ' โดย ' + talent.added_by : ''}`,
-                            last ? `ล่าสุด ${last}` : ''].filter(Boolean).join(' · ')}
-                    </div>
-                    {projects.length > 0 && (
-                        <div className="tb-jobs">
-                            {shownJobs.map(p => (
-                                <Link key={p.id} className="tb-job" to={`/projects/${encodeURIComponent(p.id)}`} title={str(p.name)}>
-                                    {str(p.name) || `งาน #${p.id}`}
-                                </Link>
-                            ))}
-                            {moreJobs.length > 0 && (
-                                <span className="tb-job more" title={moreJobs.map(p => str(p.name) || `งาน #${p.id}`).join('\n')}>
-                                    +{moreJobs.length} งาน
-                                </span>
-                            )}
-                        </div>
-                    )}
+                    <span className="tb-open-hint" aria-hidden="true">ดูรายละเอียด{jobs > 0 ? ' / งานที่จ้าง' : ''} ›</span>
                 </div>
             </div>
         </article>

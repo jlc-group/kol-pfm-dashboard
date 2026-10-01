@@ -23,6 +23,7 @@ const { contentExport } = require('./pg/contentExport');
 const { reports } = require('./pg/reports');
 const { hires } = require('./pg/hires');
 const { talents } = require('./pg/talents');
+const { talentJobs } = require('./pg/talentJobs');
 
 module.exports = {
     // helper บริสุทธิ์ที่ route เรียกใช้ตรง ๆ (ใช้ชุดเดียวกับ jsonStore)
@@ -32,7 +33,7 @@ module.exports = {
 
     teams, users, kols, projects, projectKols, dashboard, payments,
     installments, payBatches, budget, activity, submissions,
-    ads, adsSync, contentExport, reports, rateRequests, hires, talents, meta,
+    ads, adsSync, contentExport, reports, rateRequests, hires, talents, talentJobs, meta,
 
     _duplicateError: logic.duplicateError
 };

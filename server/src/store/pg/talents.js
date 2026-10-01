@@ -8,12 +8,13 @@
 const { query, withTransaction, insertRow, updateRow, asJson } = require('./_base');
 
 // ช่องที่แก้ได้จากฟอร์ม — id / ผู้เพิ่ม / เวลา / ไฟล์ ไม่รับจากตรงนี้ (ไฟล์มีเส้นของตัวเอง)
-const EDITABLE = ['name', 'kind', 'link', 'contact_mode', 'contact_name', 'contact', 'agency', 'rate', 'rate_unit', 'scope', 'brands', 'image_link', 'clip_link', 'note'];
+const EDITABLE = ['name', 'kind', 'link', 'socials', 'contact_mode', 'contact_name', 'contact', 'agency', 'rate', 'rate_unit', 'scope', 'brands', 'image_link', 'clip_link', 'note'];
 const pick = fields => {
     const out = {};
     for (const k of EDITABLE) if (fields && fields[k] !== undefined) out[k] = fields[k];
-    // brands เป็น JSONB (array ของชื่อแบรนด์)
+    // brands / socials เป็น JSONB (array) — socials = [{ platform, handle, url }] (data/talentSocials.js · 1 ต.ค. 2026)
     if (out.brands !== undefined) out.brands = asJson(Array.isArray(out.brands) ? out.brands : [], []);
+    if (out.socials !== undefined) out.socials = asJson(Array.isArray(out.socials) ? out.socials : [], []);
     return out;
 };
 // id ของตาราง (SERIAL = int4) — เกินช่วงถือว่าไม่พบ ไม่ส่งไปให้ PostgreSQL ตอบ error 22003 (กลายเป็น 500)
@@ -61,13 +62,20 @@ const talents = {
     },
 
     // ตั้ง / ล้างไฟล์ (field = 'image' | 'clip') — ล็อกแถวในทรานแซกชัน คืน { row, old } (old = ไฟล์เดิมไว้ลบทิ้ง)
-    async setFile(id, field, meta) {
+    // keepUserFile = รูปที่ดึงอัตโนมัติจากลิงก์ (services/talentAvatar.js): ถ้ามีไฟล์ที่ผู้ใช้อัป/วางเองอยู่แล้ว (ไม่ใช่ source 'auto')
+    //   ไม่แทนที่ คืน { row, old: null, kept: true } — เช็คในล็อกเดียวกัน กันผู้ใช้อัปรูประหว่างที่กำลังดึง
+    // stillWanted(cur) = งานดึงรูปที่ช้ากว่ายังควรเขียนไหม (ลิงก์ยังเป็นอันเดิม / รูปยังไม่ถูกเปลี่ยน) — เช็คในล็อกเดียวกัน
+    //   false = ไม่เขียน คืน { row, old: null, kept: true, stale: true } (ตัวดึงลบไฟล์ที่ดึงมาทิ้ง)
+    async setFile(id, field, meta, { keepUserFile = false, stillWanted = null } = {}) {
         if (field !== 'image' && field !== 'clip') throw new Error('bad talent file field');
         const n = intId(id);
         if (n === null) return null;
         return withTransaction(async client => {
-            const cur = (await client.query(`SELECT ${field} FROM talents WHERE id = $1 FOR UPDATE`, [n])).rows[0];
+            const cur = (await client.query(`SELECT * FROM talents WHERE id = $1 FOR UPDATE`, [n])).rows[0];
             if (!cur) return null;
+            const have = cur[field];
+            if (keepUserFile && have && have.source !== 'auto') return { row: cur, old: null, kept: true };
+            if (typeof stillWanted === 'function' && !stillWanted(cur)) return { row: cur, old: null, kept: true, stale: true };
             const row = (await client.query(
                 `UPDATE talents SET ${field} = $1, updated_at = $2 WHERE id = $3 RETURNING *`,
                 [meta ? JSON.stringify(meta) : null, nowIso(), n])).rows[0];

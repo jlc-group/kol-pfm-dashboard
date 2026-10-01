@@ -10,6 +10,8 @@
 const { loadSnapshot } = require('./_snapshot');
 // todayTH = วันนี้ตามเวลาไทย (YYYY-MM-DD) — ใช้เทียบกับกำหนดส่งรายชื่อที่เก็บเป็นวันที่ล้วน
 const { clone, scopeProjects, inScope, hireRemaining, hireRowFee, hireWaiting, hireNeedMore, hireStage, HIRE_JOB_CLOSED, hireBookings, bookingOpen, jobProgress, HIRE_PAYABLE, todayTH } = require('../logic');
+// ช่องทาง Social หลายช่องของคนใน Talent Book (1 ต.ค. 2026) — ข้อมูลเก่ามีแค่ link ช่องเดียว แปลงให้เป็น 1 ช่องทาง
+const { normalizeSocials } = require('../../data/talentSocials');
 
 const isOther = p => (p.campaign_type || 'kol') === 'other';
 const str = v => String(v == null ? '' : v).trim();
@@ -143,8 +145,18 @@ const hires = {
     // ส่งออกเฉพาะช่องที่การ์ดโชว์ — ไม่มีหมายเหตุ / เหตุผลที่ไม่เอา / id ผู้ใช้ · ตัวกรอง/ค้นหาทำฝั่งหน้าเว็บจากข้อมูลชุดนี้
     // userId / isAdmin = ใครกำลังดู — ใช้ตัดสินว่าการ์ดที่เพิ่มเองแก้ได้ไหม (talent.editable) ไม่ส่ง id ผู้ใช้ออกไป
     async book({ scopeBrands = null, userId = null, isAdmin = false } = {}) {
-        const snap = await loadSnapshot(['other_projects', 'talents']);
+        const snap = await loadSnapshot(['other_projects', 'talents', 'talent_jobs']);
         const projs = scopeProjects(snap.other_projects.slice(), scopeBrands).filter(isOther);
+        // งานที่จ้างของคนใน Talent Book (ตาราง talent_jobs) — นับเฉพาะแบรนด์ที่คนดูมีสิทธิ์ (ตัวเลขบนการ์ด = จำนวนงานที่กดเข้าไปแล้วเห็นจริง)
+        const jobsOf = new Map();   // talent_id -> { n, brands }
+        (Array.isArray(snap.talent_jobs) ? snap.talent_jobs : []).forEach(j => {
+            if (!j || j.talent_id == null || !inScope(j, scopeBrands)) return;
+            const k = String(j.talent_id);
+            if (!jobsOf.has(k)) jobsOf.set(k, { n: 0, brands: [] });
+            const x = jobsOf.get(k);
+            x.n += 1;
+            if (str(j.brand) && !x.brands.includes(str(j.brand))) x.brands.push(str(j.brand));
+        });
 
         // แบนเป็น "รายการ" ทีละครั้งที่คนนั้นโผล่ในงาน (แถวคนในงาน / ชื่อที่ถูกเสนอ) แล้วค่อยยุบเป็นการ์ดรายคน
         const entries = [];
@@ -220,6 +232,7 @@ const hires = {
             const fk = fileKind(t.image);
             // ?v= = เวลาอัปไฟล์ — เปลี่ยนไฟล์แล้ว path ต่าง การ์ดจึงโหลดรูปใหม่ (หน้าเว็บจำรูปตาม path) · server ไม่อ่านค่านี้
             const ver = f => { const ms = Date.parse(f && f.uploaded_at); return Number.isFinite(ms) ? `?v=${ms}` : ''; };
+            const hired = jobsOf.get(String(t.id)) || { n: 0, brands: [] };
             entries.push({
                 project_id: null, project_name: null, brand: null, team_contact: null,
                 direct: true, absorbed: false,
@@ -227,7 +240,9 @@ const hires = {
                 agency: str(t.agency) || null, contact: str(t.contact) || null, link: str(t.link) || null,
                 contact_mode: str(t.contact_mode) || null, contact_name: str(t.contact_name) || null,
                 // แบรนด์ที่ทีมเลือกไว้ (หลายแบรนด์) — ไม่ใช่แบรนด์ของงาน (brand ของแถวนี้ยังเป็น null)
-                talent_brands: Array.isArray(t.brands) ? t.brands.map(str).filter(Boolean) : [],
+                // + แบรนด์ของงานที่จ้าง (talent_jobs ที่เห็นได้) — กรอง Brand แล้วเจอคนที่แบรนด์นั้นเคยจ้าง
+                talent_brands: [...(Array.isArray(t.brands) ? t.brands.map(str).filter(Boolean) : []), ...hired.brands],
+                socials: normalizeSocials(t.socials, t.link),
                 date: thDayOf(t.updated_at) || thDayOf(t.created_at), ts: str(t.updated_at),
                 fee: 0, confirmed: false, sub: null,
                 file: fk ? { type: fk, path: `${files}image${ver(t.image)}` } : null,
@@ -242,7 +257,9 @@ const hires = {
                     scope: str(t.scope) || null,
                     note: str(t.note) || null,
                     added_by: str(t.created_by) || null,
-                    editable: !!isAdmin || (userId != null && t.created_by_id != null && String(t.created_by_id) === String(userId))
+                    editable: !!isAdmin || (userId != null && t.created_by_id != null && String(t.created_by_id) === String(userId)),
+                    // จำนวนงานที่จ้าง (ป้าย "จ้างแล้ว N งาน" บนการ์ด) — รายการเต็มอยู่ที่ GET /api/hires/talents/:id
+                    jobs_count: hired.n
                 }
             });
         });
@@ -282,17 +299,23 @@ const hires = {
                 if (e.project_id == null) return;   // คนที่เพิ่มเองไม่ได้มาจากงาน
                 if (!projects.some(x => String(x.id) === String(e.project_id))) projects.push({ id: e.project_id, name: e.project_name });
             });
+            const link = firstMine(e => e.link);
             return {
                 key: head.key, name: head.name, kind: head.kind,
                 group: booked ? 'booked' : onlySaved ? 'saved' : 'casting',
                 sub: booked || onlySaved ? null : subFrom.sub,
                 agency: modeSet ? mine.agency : firstMine(e => e.agency),
                 contact: modeSet ? mine.contact : firstMine(e => e.contact),
-                link: firstMine(e => e.link),
+                link,
+                // ช่องทาง Social (หน้าการ์ด) — ของที่ทีมเพิ่มเองก่อน · การ์ดที่มาจากงานอย่างเดียว / แถวเก่า = แปลงจาก link (Account) เป็น 1 ช่องทาง
+                socials: mine && mine.socials.length ? mine.socials : normalizeSocials([], link),
                 // ช่องทางติดต่อที่ทีมเลือกไว้ตอนเพิ่มเอง (self / agency) + ชื่อผู้ติดต่อ — คนที่มาจากงานอย่างเดียวไม่มี (null)
                 contact_mode: mine ? mine.contact_mode : null, contact_name: mine ? mine.contact_name : null,
                 // รูปจริงก่อน (โชว์เป็นรูปย่อได้) → PDF → ลิงก์รูปภายนอก (หน้าเว็บไม่ดึงรูปจากเว็บคนอื่นมาโชว์ แค่เป็นปุ่มเปิด)
                 photo: fileOf('image') || fileOf('pdf') || (imageLink ? { type: 'link', url: imageLink } : null),
+                // ลิงก์รูป/คอมการ์ดที่ทีมวางไว้ (http/https) — ส่งแยกเสมอ: การ์ดที่มีไฟล์รูป (อัปเอง / ดึงจากลิงก์ Social อัตโนมัติ)
+                // ยังเปิดลิงก์นี้ได้จากหน้ารายละเอียด ไม่หายไปไหน
+                image_link: imageLink || null,
                 clip: clipFile ? { type: 'file', path: clipFile } : clipLink ? { type: 'link', url: clipLink } : null,
                 // ค่าตัว (hired) = งานที่คอนเฟิร์มแล้วเท่านั้น · ที่เหลือเป็นราคาที่เสนอ/ยังคุยอยู่ (proposed) · ฿0 = ยังไม่ได้ใส่ ไม่โชว์
                 fees: own.filter(e => e.fee > 0).slice(0, 3).map(e => ({

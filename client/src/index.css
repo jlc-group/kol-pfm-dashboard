@@ -4824,3 +4824,143 @@ button { color: inherit; }
     .tb-initial { font-size: 34px; }
     .tb-clip { left: 6px; bottom: 6px; padding: 4px 9px; font-size: 11px; }
 }
+
+/* ===== Talent Book รอบการ์ด + งานที่จ้าง (1 ต.ค. 2026) — CompCard / TalentDetail / TalentJobForm / TalentForm ===== */
+/* หน้าการ์ด = ข้อมูล KOL อย่างเดียว (รูป / ชื่อ / ช่องทาง Social / เรท / จ้างแล้ว N งาน) · กดตรงไหนของการ์ดก็เปิดหน้ารายละเอียด */
+/* ชี้แล้วเปลี่ยนแค่ขอบ/เงา (ไม่ขยับการ์ด — ขยับแล้วเมาส์ที่ขอบการ์ดทำให้กระพริบ) */
+.tb-card.is-open { cursor: pointer; transition: border-color .15s, box-shadow .15s; }
+.tb-card.is-open:hover { border-color: #a7f3d0; box-shadow: 0 16px 36px rgba(16, 94, 75, .13); }
+.tb-card.is-open:focus-within { border-color: var(--mint); }
+@media (prefers-reduced-motion: reduce) { .tb-card.is-open { transition: none; } }
+.tb-kind {
+    min-width: 0; max-width: 100%; font-size: 11px; font-weight: 700; color: var(--mint-dark); letter-spacing: .2px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.tb-name-btn {
+    display: inline; max-width: 100%; padding: 0; margin: 0; border: none; background: none; cursor: pointer;
+    font: inherit; color: inherit; text-align: left; letter-spacing: inherit;
+}
+.tb-name-btn:hover { color: var(--mint-dark); }
+.tb-name-btn:focus-visible { outline: 2px solid var(--mint); outline-offset: 2px; border-radius: 4px; }
+.tb-hired {
+    align-self: flex-start; display: inline-flex; align-items: center; gap: 4px; padding: 2px 9px; border-radius: 999px;
+    background: #d1fae5; color: #047857; font-size: 11px; font-weight: 700; flex-shrink: 0;
+}
+.tb-hired svg { flex: none; }
+/* ช่องทาง Social: ป้ายแพลตฟอร์มสี + @ชื่อบัญชี (กดเปิดลิงก์) — ตัดเหลือ 3 บรรทัด ที่เหลือ "+N ช่องทาง" */
+.tb-socials { list-style: none; display: flex; flex-direction: column; gap: 4px; min-width: 0; min-height: 0; overflow: hidden; font-size: 12px; }
+.tb-socials li { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.tb-soc-pf {
+    flex: none; min-width: 0; padding: 1px 6px; border-radius: 6px; font-size: 10px; font-weight: 700; line-height: 1.5;
+    background: #f1f5f9; color: #475569; white-space: nowrap;
+}
+.tb-soc-pf.p-tt { background: #111827; color: #fff; }
+.tb-soc-pf.p-ig { background: #fce7f3; color: #be185d; }
+.tb-soc-pf.p-fb { background: #dbeafe; color: #1d4ed8; }
+.tb-soc-pf.p-yt { background: #fee2e2; color: #b91c1c; }
+.tb-soc-pf.p-x { background: #e5e7eb; color: #111827; }
+.tb-soc-pf.p-l8 { background: #fef9c3; color: #854d0e; }
+.tb-socials .tb-acc, .tb-socials .tb-row-v { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.tb-soc-more { font-size: 11px; color: var(--muted); font-weight: 600; }
+.tb-soc-none { font-size: 11.5px; color: var(--muted); }
+.tb-notice { display: flex; align-items: flex-start; gap: 10px; margin-bottom: 12px; padding: 10px 14px; border-radius: 12px; background: #ecfdf5; color: #065f46; font-size: 13px; font-weight: 600; line-height: 1.5; }
+.tb-notice.warn { background: #fff7ed; color: #9a3412; }
+.tb-notice > span { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.tb-notice-x { flex: none; border: none; background: transparent; color: inherit; font-size: 18px; line-height: 1; cursor: pointer; opacity: .7; }
+.tb-notice-x:hover { opacity: 1; }
+.tb-open-hint { font-size: 11px; font-weight: 700; color: var(--mint-dark); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tb-card.is-open:hover .tb-open-hint { text-decoration: underline; }
+
+/* หน้ารายละเอียด (กล่องกลางจอแบบเดียวกับฟอร์ม) — บน: รูป + ข้อมูลคน · ล่าง: งานที่จ้าง */
+.tbd { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.tbd-hero { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 18px; padding: 16px; background: #fff; border: 1px solid var(--border); border-radius: 16px; }
+.tbd-side { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.tb-photo.tbd-photo { flex: none; max-width: none; width: 100%; aspect-ratio: 3 / 4; border-radius: 14px; overflow: hidden; }
+.tbd-clip { display: inline-flex; align-items: center; justify-content: center; gap: 6px; font-size: 13px; }
+.tbd-clip svg { fill: currentColor; }
+.tbd-imglink svg { fill: none; }
+.tbd-main { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.tbd-kind { align-self: flex-start; padding: 2px 10px; border-radius: 999px; background: var(--bg-soft); color: var(--mint-dark); font-size: 12px; font-weight: 700; }
+.tbd-block { min-width: 0; }
+.tbd-k { margin-bottom: 5px; font-size: 11.5px; font-weight: 700; color: var(--muted); letter-spacing: .2px; }
+.tbd-socials { font-size: 14px; gap: 6px; overflow: visible; }
+.tbd-socials .tb-soc-pf { font-size: 11px; padding: 2px 8px; }
+.tbd-rate { font-size: 13px; color: var(--muted); }
+.tbd-rate b { font-size: 22px; color: #6d28d9; font-variant-numeric: tabular-nums; }
+.tbd-facts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 16px; margin: 0; padding-top: 12px; border-top: 1px dashed var(--border); }
+.tbd-fact { min-width: 0; }
+.tbd-fact dt { font-size: 11.5px; font-weight: 700; color: var(--muted); }
+.tbd-fact dd { margin: 2px 0 0; font-size: 13.5px; color: var(--text); white-space: pre-line; overflow-wrap: anywhere; }
+
+.tbd-jobs { padding: 16px; background: #fff; border: 1px solid var(--border); border-radius: 16px; min-width: 0; }
+.tbd-jobs-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 12px; }
+.tbd-jobs-head h3 { margin: 0; font-size: 16px; }
+.tbd-add-job { display: inline-flex; align-items: center; gap: 6px; padding: 8px 14px; font-size: 13.5px; }
+.tbd-jobs .alert-error { margin-bottom: 10px; }
+.tbd-empty { font-size: 13px; line-height: 1.6; }
+.tbj-list { list-style: none; display: flex; flex-direction: column; gap: 10px; margin: 0; padding: 0; }
+.tbj-item { display: grid; grid-template-columns: 86px minmax(0, 1fr) auto; gap: 12px; align-items: start; padding: 12px; border: 1px solid var(--border); border-radius: 12px; background: #fafdfb; }
+.tbj-item.editing { display: block; padding: 0; border: none; background: none; }
+.tbj-when { padding: 6px 4px; border-radius: 10px; background: var(--bg-soft); color: var(--mint-dark); font-size: 13px; font-weight: 700; text-align: center; white-space: nowrap; }
+.tbj-body { display: flex; flex-direction: column; gap: 4px; min-width: 0; font-size: 13px; }
+.tbj-top { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; }
+.tbj-brand { font-size: 14.5px; font-weight: 700; color: var(--text); }
+.tbj-fee { font-size: 14.5px; font-weight: 700; color: var(--mint-dark); font-variant-numeric: tabular-nums; }
+.tbj-line { white-space: pre-line; overflow-wrap: anywhere; color: var(--text); }
+.tbj-line .tb-acc { display: inline-flex; align-items: center; gap: 4px; }
+.tbj-k { color: var(--muted); font-weight: 600; }
+.tbj-by { font-size: 11.5px; color: var(--muted); }
+.tbj-actions { display: flex; gap: 6px; }
+.tbj-btn { padding: 4px 10px; border: 1px solid var(--border); border-radius: 8px; background: #fff; color: var(--mint-dark); font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; white-space: nowrap; }
+.tbj-btn:hover:not(:disabled) { border-color: var(--mint); }
+.tbj-btn.danger { color: var(--danger); border-color: #fecaca; }
+.tbj-btn:disabled { opacity: .55; cursor: not-allowed; }
+.tbj-form { margin-bottom: 12px; padding: 14px; border: 1px solid #a7f3d0; border-radius: 12px; background: #f6fdf9; }
+.tbj-form-head { margin-bottom: 10px; font-size: 14px; font-weight: 700; color: var(--mint-dark); }
+.tbj-form .alert-error { margin-bottom: 10px; }
+.tbj-form-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.tbd-old { padding: 14px 16px; border: 1px dashed var(--border); border-radius: 14px; font-size: 13px; }
+.tbd-old h3 { margin: 0 0 8px; font-size: 14px; color: var(--muted); }
+.tbd-old ul { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 4px; }
+.tbd-old a { color: var(--mint-dark); font-weight: 600; }
+.tbd-old a:hover { text-decoration: underline; }
+.side-drawer-foot .tbd-edit { margin-right: auto; }
+
+/* ฟอร์ม: ช่องทาง Social หลายแถว (ช่องทาง · ชื่อบัญชี · ลิงก์ · เอาออก) */
+.tfs { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.tfs-row { display: grid; grid-template-columns: 128px minmax(0, 1fr) minmax(0, 1.5fr) 36px; gap: 8px; align-items: center; min-width: 0; }
+.qf .tfs-row input:not([type=file]), .qf .tfs-row select { padding: 9px 10px; font-size: 14px; }
+/* ช่อง "อื่น ๆ" ที่เป็นข้อความ Account เดิมหลายบรรทัด — กล่องหลายบรรทัด (ช่องบรรทัดเดียวจะตัดบรรทัดทิ้ง) */
+.qf .tfs-row textarea { padding: 9px 10px; font-size: 14px; min-height: 40px; resize: vertical; align-self: stretch; }
+.tfs-row.has-err input, .tfs-row.has-err select, .tfs-row.has-err textarea { border-color: var(--danger); }
+/* ช่องรูประหว่างดึงรูปจากลิงก์ — เลือกไฟล์ไม่ได้จนกว่าจะดึงเสร็จ */
+.tf-pick.is-disabled { opacity: .55; cursor: not-allowed; pointer-events: none; }
+.tf-file-x:disabled { opacity: .4; cursor: not-allowed; }
+.tfs-x { width: 36px; height: 36px; border: 1px solid var(--border); border-radius: 10px; background: #fff; color: var(--muted); font-size: 18px; line-height: 1; cursor: pointer; }
+.tfs-x:hover { color: var(--danger); border-color: #fecaca; }
+.tfs-err { grid-column: 1 / -1; margin-top: 0; }
+.tfs-add { align-self: flex-start; padding: 7px 14px; font-size: 13px; }
+/* กล่องรูป: รูปตัวอย่าง + เลือกไฟล์ / วางลิงก์ · โฟกัสกล่องแล้ว Ctrl+V วางรูปได้ */
+.tf-paste { display: flex; gap: 12px; align-items: flex-start; padding: 10px; border: 1.5px dashed var(--border); border-radius: 12px; background: #fafdfb; min-width: 0; }
+.tf-paste:focus, .tf-paste:focus-within { outline: none; border-color: var(--mint); background: #f3fbf7; }
+.tf-thumb { flex: none; width: 72px; height: 96px; border-radius: 10px; overflow: hidden; background: var(--bg-soft); display: grid; place-items: center; }
+.tf-thumb img { display: block; width: 100%; height: 100%; object-fit: cover; object-position: center top; }
+.tf-thumb span { padding: 0 6px; font-size: 10.5px; color: var(--muted); text-align: center; line-height: 1.3; }
+.tf-paste-main { flex: 1; min-width: 0; }
+.tf-paste-hint { margin-top: 8px; font-size: 12px; font-weight: 600; color: var(--mint-dark); }
+.tf-fetch { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 8px; }
+.tf-fetch-btn { padding: 7px 14px; font-size: 13px; }
+.tf-fetch-btn:disabled { opacity: .55; cursor: not-allowed; }
+.tf-fetch-ok { margin-top: 6px; font-size: 13px; font-weight: 600; color: var(--mint-dark); }
+
+@media (max-width: 640px) {
+    .tbd-hero { grid-template-columns: minmax(0, 1fr); }
+    .tbd-side { max-width: 220px; }
+    .tbd-facts { grid-template-columns: minmax(0, 1fr); }
+    .tbj-item { grid-template-columns: minmax(0, 1fr); gap: 8px; }
+    .tbj-when { justify-self: start; padding: 4px 10px; }
+    .tfs-row { grid-template-columns: minmax(0, 1fr) 36px; padding: 8px; border: 1px solid var(--border); border-radius: 12px; background: #fafdfb; }
+    .tfs-row > select { grid-column: 1; }
+    .tfs-row > input, .tfs-row > textarea { grid-column: 1 / -1; }
+    .tfs-row > .tfs-x { grid-column: 2; grid-row: 1; }
+}

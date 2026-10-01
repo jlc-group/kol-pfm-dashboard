@@ -76,6 +76,8 @@ store.talents.setFile = async (id, field, meta) => {
     r.updated_at = iso();
     return { row: { ...r }, old };
 };
+// งานที่จ้าง (talent_jobs · 1 ต.ค. 2026) — ไฟล์นี้ไม่ได้ทดสอบงาน (ดู tests/talent-jobs.test.cjs) แค่ไม่ให้ไปถามฐานจริง
+store.talentJobs.listByTalent = async () => [];
 const logged = [];
 store.activity.log = async entry => { logged.push(entry); return entry; };
 
@@ -424,7 +426,7 @@ test('Talent Book: คนที่เพิ่มเองขึ้นเป็�
     assert.deepEqual(c.fees, [], 'เรทที่ใส่เองไม่ใช่ราคาจากงาน');
     assert.equal(c.photo.type, 'image');
     assert.match(c.photo.path, talentPath(a.id, 'image'), 'path มีเวอร์ชันไฟล์ — เปลี่ยนรูปแล้วการ์ดโหลดใหม่');
-    assert.deepEqual(c.talent, { id: a.id, rate: 5000, rate_unit: 'ต่อวัน', scope: null, note: 'ถนัดงานผิว', added_by: 'แพรว', editable: false });
+    assert.deepEqual(c.talent, { id: a.id, rate: 5000, rate_unit: 'ต่อวัน', scope: null, note: 'ถนัดงานผิว', added_by: 'แพรว', editable: false, jobs_count: 0 });
     assert.equal(forFon.counts.saved, 1);
 
     const forPraew = (await call(2, 'GET', '/hires/book')).body.data;

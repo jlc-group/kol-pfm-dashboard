@@ -436,3 +436,25 @@ ALTER TABLE talents ADD COLUMN IF NOT EXISTS contact_name VARCHAR(200);
 ALTER TABLE talents ADD COLUMN IF NOT EXISTS scope TEXT;
 -- แบรนด์ที่คนนี้เหมาะ/เคยทำให้ (เลือกได้หลายแบรนด์ · บังคับเลือกในฟอร์ม · ไม่ผูกสิทธิ์การเห็น — ทุกคนในทีมยังเห็นการ์ด) 30 ก.ย. 2026
 ALTER TABLE talents ADD COLUMN IF NOT EXISTS brands JSONB NOT NULL DEFAULT '[]'::jsonb;
+-- ช่องทาง Social หลายช่องต่อคน (ผู้ใช้สั่ง 1 ต.ค. 2026): [{ platform, handle, url }] — server/src/data/talentSocials.js
+--   แถวเก่ามีแค่ link (Account) ช่องเดียว: socials ว่าง = เส้น API แปลง link เป็น 1 ช่องทางตอนอ่าน · ตอนบันทึกยังเขียน link = ลิงก์ช่องทางแรก
+ALTER TABLE talents ADD COLUMN IF NOT EXISTS socials JSONB NOT NULL DEFAULT '[]'::jsonb;
+
+-- ===== งานที่จ้างของคนใน Talent Book (ผู้ใช้สั่ง 1 ต.ค. 2026) — คนหนึ่งมีได้หลายงาน =====
+-- แบรนด์ / วันที่จ้าง (หน้าเว็บโชว์เป็นเดือน/ปี) / ค่าตัวที่จ่ายจริง / Scope / ลิงก์ผลงาน / หมายเหตุ
+-- เห็นตามสิทธิ์แบรนด์ · เพิ่ม/แก้/ลบได้เฉพาะคนที่แก้การ์ดนั้นได้ (คนที่เพิ่ม / admin) · ลบคนออกจาก Talent Book = งานหายตาม
+CREATE TABLE IF NOT EXISTS talent_jobs (
+    id             SERIAL PRIMARY KEY,
+    talent_id      INTEGER NOT NULL REFERENCES talents(id) ON DELETE CASCADE,
+    brand          VARCHAR(255) NOT NULL,
+    hired_on       DATE NOT NULL,
+    fee            NUMERIC(18,2),
+    scope          TEXT,
+    work_link      TEXT,
+    note           TEXT,
+    created_by_id  INTEGER,
+    created_by     VARCHAR(255),
+    created_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at     TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_talent_jobs_talent ON talent_jobs(talent_id);
