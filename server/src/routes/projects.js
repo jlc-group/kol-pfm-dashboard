@@ -305,6 +305,42 @@ router.post('/solo', async (req, res, next) => {
     } catch (err) { next(err); }
 });
 
+// PUT /api/projects/:id/solo — แก้ข้อมูลการจ้าง KOL รายคน (ช่วง 3 · 1 ต.ค. 2026)
+// รับฟอร์มเดียวกับตอนเพิ่ม ยกเว้นค่าตัว (แก้ที่ช่องค่าตัวในหน้า KOL → PUT /:id/fees) · กลุ่มสร้างใหม่ที่ server (คงคีย์เดิม)
+router.put('/:id/solo', async (req, res, next) => {
+    try {
+        const check = await canEditProject(req, req.params.id);
+        if (!check.ok) return res.status(check.code).json({ status: 'error', message: check.message });
+        if (!isSoloProject(check.project)) return res.status(400).json({ status: 'error', message: 'รายการนี้ไม่ใช่ KOL รายคน' });
+        const { input, error } = soloInput(req.body, { editing: true });
+        if (error) return res.status(400).json({ status: 'error', message: error });
+        if (!canSeeBrand(req.account || req.user, input.brand)) {
+            return res.status(403).json({ status: 'error', message: 'เลือกได้เฉพาะแบรนด์ที่คุณได้รับสิทธิ์' });
+        }
+        const g0 = (check.project.ad_groups || [])[0] || {};
+        const group = buildSoloGroup(input, g0.key || ('g' + Date.now().toString(36)));
+        const who = actorName(req);
+        const out = await store.projects.updateSolo(req.params.id, {
+            fields: {
+                name: soloName(input), brand: input.brand, objective: input.note, brief_link: input.brief_link,
+                products: input.products, owner: input.owner, start_date: input.hire_date,
+                end_date: input.due_date || input.hire_date, updated_by: req.user.id
+            },
+            group,
+            person: {
+                account_name: input.account_name, platform: input.platform, product: input.products.join(', '),
+                agency: input.agency, link_account: input.link_account, followers: input.followers,
+                tier: input.tier, content_type: input.content_type
+            },
+            clipNames: input.clip_names, codeExpire: input.code_expire
+        }, who);
+        if (out.error) return res.status(out.error.code).json({ status: 'error', message: out.error.message });
+        const extra = [out.added ? `เพิ่ม ${out.added} คลิป` : '', out.removed ? `ลด ${out.removed} คลิป` : ''].filter(Boolean).join(' · ');
+        await record(req, req.params.id, 'update', `แก้ข้อมูล KOL รายคน: @${input.account_name}${extra ? ` (${extra})` : ''}`, out.project.name, out.project.team_id);
+        res.json({ status: 'success', data: out.project });
+    } catch (err) { next(err); }
+});
+
 // PUT /api/projects/:id — แก้ไข Project
 router.put('/:id', async (req, res, next) => {
     try {

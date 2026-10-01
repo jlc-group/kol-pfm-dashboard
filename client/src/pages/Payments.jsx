@@ -472,6 +472,7 @@ function CampaignCard({ row, onOpen }) {
                     <span className={'status ' + (state === 'done' ? 'pay-done' : 'pay-wait')}>
                         {state === 'none' ? 'ยังไม่ตั้งงวด' : state === 'done' ? 'จ่ายครบแล้ว' : 'จ่ายแล้ว ' + pct + '%'}
                     </span>
+                    {row.campaign_type === 'solo' && <span className="solo-badge" title="จ้าง KOL เดี่ยว (ไม่มีแคมเปญ) — ผู้รับเงิน = Agency ที่ระบุ หรือตัว KOL">KOL รายคน</span>}
                     {overPlan && (
                         <span className="status pay-pending" title="ผลรวมของแผนมากกว่างบแคมเปญ — อาจตั้งแผนทั้งแคมเปญซ้อนกับรายกลุ่ม">
                             ⚠ แผนเกินงบ
@@ -497,7 +498,7 @@ function CampaignCard({ row, onOpen }) {
                 <div className="pcard-foot">
                     <div>
                         <div className="pcard-budget-val">{baht(row.budget)}</div>
-                        <div className="pcard-budget-lbl">{row.hire_breakdown ? 'งบงานจ้าง' : 'งบแคมเปญ'}</div>
+                        <div className="pcard-budget-lbl">{row.hire_breakdown ? 'งบงานจ้าง' : row.campaign_type === 'solo' ? 'ค่าตัว KOL' : 'งบแคมเปญ'}</div>
                         {/* งานจ้างอื่น ๆ: งบรวมงบของคนที่ยังไม่ตกลง/ยังหาไม่ได้ — แยกให้เห็นก่อนตั้งงวด */}
                         {row.hire_breakdown && <HireSplit split={row.hire_breakdown} />}
                     </div>
@@ -633,6 +634,7 @@ function PlanModal({ row, onClose, onSaved, onReload }) {
                             <div className="pay-project">{row.project_name}</div>
                             <div className="pay-sub">
                                 {row.brand && <span className="cat-chip">{row.brand}</span>}
+                                {row.campaign_type === 'solo' && <span className="solo-badge" style={{ marginLeft: 6 }}>KOL รายคน</span>}
                                 <span className="muted"> · ฐานคิดยอด {baht(budget)}{curGroup ? " (กลุ่มนี้)" : " (ทั้งแคมเปญ)"}</span>
                             </div>
                             {row.hire_breakdown && (Number(row.hire_breakdown.pending) > 0 || Number(row.hire_breakdown.unfilled) > 0) && (

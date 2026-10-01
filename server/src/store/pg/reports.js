@@ -34,6 +34,7 @@ const reports = {
                 const team = snap.teams.find(t => t.id === p.team_id);
                 return {
                     id: p.id, name: p.name, brand: p.brand || null, status: p.status,
+                    campaign_type: p.campaign_type === 'solo' ? 'solo' : 'kol',
                     start_date: p.start_date || null, end_date: p.end_date || null,
                     team_name: team ? team.name : null,
                     kols, budget: Number(p.budget) || 0, used, post_rate

@@ -41,26 +41,58 @@ function Field({ label, req, hint, err, htmlFor, labelId, children }) {
         </div>
     );
 }
-// ปุ่มเลือก (ตัวเดียว = radio · หลายตัว = checkbox)
-function Chips({ options, value, onPick, multi = false, labelId, render = o => o }) {
+// ปุ่มเลือก (ตัวเดียว = radio · หลายตัว = checkbox) · disabled = ล็อกไว้ (แก้ไม่ได้)
+function Chips({ options, value, onPick, multi = false, labelId, render = o => o, disabled = false }) {
     const on = o => (multi ? (value || []).includes(o) : value === o);
     return (
         <div className="qf-chips" role={multi ? 'group' : 'radiogroup'} aria-labelledby={labelId}>
             {options.map(o => (
-                <button type="button" key={o} role={multi ? 'checkbox' : 'radio'} aria-checked={on(o)}
+                <button type="button" key={o} role={multi ? 'checkbox' : 'radio'} aria-checked={on(o)} disabled={disabled}
                     className={'qf-chip' + (on(o) ? ' on' : '')} onClick={() => onPick(o)}>{render(o)}</button>
             ))}
         </div>
     );
 }
 
-export default function SoloKolForm({ onClose, onSaved }) {
+// ค่าในฟอร์มจากการจ้างที่มีอยู่ (โหมดแก้ไข · ช่วง 3) — อ่านจาก solo_summary + กลุ่มโฆษณา + ชื่อคลิปจริง
+function fromProject(p, clipNames) {
+    const s = p.solo_summary || {};
+    const g = (p.ad_groups || [])[0] || {};
+    const b0 = (g.blocks || [])[0] || {};
+    const a0 = (g.allocations || [])[0] || {};
+    const clips = Math.max(1, Math.min(SOLO_MAX_CLIPS, Number(s.clips) || clipNames.length || 1));
+    const platform = g.platform || s.platform || 'TikTok';
+    const k = {
+        account_name: s.account_name || '', platform, link_account: s.link_account || '',
+        followers: s.followers ? String(s.followers) : '', tier: s.tier || '', tierTouched: true,
+        contact_mode: s.contact_mode || '', agency: s.agency || ''
+    };
+    const j = {
+        brand: p.brand || '', products: [...(g.products || s.products || [])],
+        content_type: g.content_type || a0.content_type || '', campaign: campaignIsCtype(platform) ? '' : (a0.campaign || ''),
+        media_type: g.media_type || '', content_format: g.content_format || '',
+        clips, clip_names: [0, 1, 2, 3, 4].map(i => (clips > 1 ? String(clipNames[i] || '') : '')),
+        fee: '', owner: p.owner || '', hire_date: p.start_date || todayStr(), due_date: s.due_date || '',
+        target: [...((Array.isArray(b0.target) ? b0.target : null) || (Array.isArray(g.target) ? g.target : []))],
+        code_expire: Number(g.code_expire) || 60, no_gencode: g.no_gencode === true,
+        concept: g.concept || '', brief_link: p.brief_link || '', note: p.objective || ''
+    };
+    return { k, j };
+}
+
+// project = แก้การจ้างที่มีอยู่ (PUT /projects/:id/solo) · clipNames = ชื่อคลิปเรียงตามลำดับ
+// locked = มีคลิปลงงาน/ยิงแอดแล้ว — แบรนด์และ Platform แก้ไม่ได้ (server กันซ้ำ)
+export default function SoloKolForm({ onClose, onSaved, project = null, clipNames = [], locked = false }) {
+    const editing = !!project;
     const uid = useId();
     const id = s => `${uid}-${s}`;
     const { user } = useAuth();
-    const brands = visibleBrands(user);
-    const [k, setK] = useState(KOL_EMPTY);
-    const [j, setJ] = useState(() => JOB_EMPTY(brands.length === 1 ? brands[0] : ''));
+    const mine = visibleBrands(user);
+    // แบรนด์เดิมของการจ้างต้องอยู่ในตัวเลือกเสมอ (ไม่งั้นช่องว่าง บันทึกไม่ผ่าน)
+    const brands = editing && project.brand && !mine.includes(project.brand) ? [...mine, project.brand] : mine;
+    const [init] = useState(() => (editing ? fromProject(project, clipNames) : null));
+    const [k, setK] = useState(() => (init ? init.k : KOL_EMPTY));
+    const [j, setJ] = useState(() => (init ? init.j : JOB_EMPTY(brands.length === 1 ? brands[0] : '')));
     const [owners, setOwners] = useState([]);
     const [tried, setTried] = useState(false);
     const [saving, setSaving] = useState(false);
@@ -75,7 +107,7 @@ export default function SoloKolForm({ onClose, onSaved }) {
             .catch(() => { if (alive) setOwners([]); });
         return () => { alive = false; };
     }, []);
-    useEffect(() => { clean.current = JSON.stringify({ k: KOL_EMPTY, j }); }, []);   // eslint-disable-line react-hooks/exhaustive-deps
+    useEffect(() => { clean.current = JSON.stringify({ k, j }); }, []);   // eslint-disable-line react-hooks/exhaustive-deps
 
     const upK = (key, v) => setK(s => ({ ...s, [key]: v }));
     const upJ = (key, v) => setJ(s => ({ ...s, [key]: v }));
@@ -128,7 +160,7 @@ export default function SoloKolForm({ onClose, onSaved }) {
         // ต้องเป็นตัวเลือกของ Platform ตอนนี้ — กันค่าที่ค้างจาก Platform ก่อน (มองไม่เห็นในปุ่ม) หลุดไปบันทึก
         if (!j.content_type || !ctypeOptions.includes(j.content_type)) e.content_type = social ? 'เลือก Campaign' : 'เลือก Content Type';
         if (targetOptions.length && !j.target.length) e.target = 'เลือก Target อย่างน้อย 1 กลุ่ม (หน้า Ads และระบบยิงแอดใช้ค่านี้)';
-        if (!(Number.isFinite(fee) && fee > 0)) e.fee = 'ใส่ค่าตัวต่อคลิป';
+        if (!editing && !(Number.isFinite(fee) && fee > 0)) e.fee = 'ใส่ค่าตัวต่อคลิป';
         if (!j.owner) e.owner = 'เลือกผู้ดูแล';
         if (!j.hire_date) e.hire_date = 'เลือกวันที่จ้าง';
         if (j.due_date && j.hire_date && j.due_date < j.hire_date) e.due_date = 'กำหนดลงงานต้องไม่ก่อนวันที่จ้าง';
@@ -180,8 +212,17 @@ export default function SoloKolForm({ onClose, onSaved }) {
             concept: j.concept.trim(), brief_link: j.brief_link.trim(), note: j.note.trim()
         };
         try {
+            if (editing) {
+                // แก้ไข: ค่าตัวไม่ส่ง (แก้ที่ช่องค่าตัวในหน้า KOL) — server ตัดสินเพิ่ม/ลดคลิป และล็อกแบรนด์/Platform
+                delete body.fee;
+                const res = await api(`/projects/${encodeURIComponent(project.id)}/solo`, { method: 'PUT', body });
+                saveLastOwner(j.owner);
+                onSaved && onSaved(res && res.data, { again: false });
+                return;
+            }
             const res = await api('/projects/solo', { method: 'POST', body });
-            const project = res && res.data && res.data.project;
+            // ห้ามชื่อ project — ซ้ำกับค่าที่ส่งเข้าฟอร์ม (โหมดแก้ไข) แล้วกลายเป็นตัวแปรที่ยังไม่ถูกตั้งค่า (TDZ)
+            const created = res && res.data && res.data.project;
             saveLastOwner(j.owner);
             const who = '@' + body.account_name.replace(/^@+/, '');
             if (again) {
@@ -192,12 +233,12 @@ export default function SoloKolForm({ onClose, onSaved }) {
                 setK(nextK);
                 setTried(false);
                 clean.current = JSON.stringify({ k: nextK, j });
-                onSaved && onSaved(project, { again: true });
+                onSaved && onSaved(created, { again: true });
                 toTop();
                 const first = wrapRef.current && wrapRef.current.querySelector('input');
                 if (first) first.focus({ preventScroll: true });
             } else {
-                onSaved && onSaved(project, { again: false });
+                onSaved && onSaved(created, { again: false });
             }
         } catch (e) {
             // server ยังเป็นรุ่นเก่า (ยังไม่รีสตาร์ตหลัง deploy) = ไม่มีเส้นนี้
@@ -211,13 +252,15 @@ export default function SoloKolForm({ onClose, onSaved }) {
     const footer = (
         <>
             <button type="button" className="btn-ghost" onClick={requestClose} disabled={saving}>ยกเลิก</button>
-            <button type="button" className="btn-ghost" onClick={() => save(true)} disabled={saving}>บันทึกแล้วเพิ่มอีกคน</button>
+            {!editing && <button type="button" className="btn-ghost" onClick={() => save(true)} disabled={saving}>บันทึกแล้วเพิ่มอีกคน</button>}
             <button type="button" className="btn-primary" onClick={() => save(false)} disabled={saving}>{saving ? 'กำลังบันทึก...' : 'บันทึก'}</button>
         </>
     );
 
     return (
-        <SideDrawer title="เพิ่ม KOL รายคน" subtitle="จ้าง KOL เดี่ยว ไม่ต้องสร้างแคมเปญ · ติดตามงาน / Gencode / ยิงแอด / ทำจ่าย ได้เหมือนแคมเปญ"
+        <SideDrawer title={editing ? 'แก้ข้อมูล KOL รายคน' : 'เพิ่ม KOL รายคน'}
+            subtitle={editing ? 'ค่าตัวแก้ที่ช่อง "ค่าตัวต่อคลิป" ในหน้านี้ · ลดจำนวนคลิปได้เฉพาะคลิปที่ยังไม่เริ่มงาน'
+                : 'จ้าง KOL เดี่ยว ไม่ต้องสร้างแคมเปญ · ติดตามงาน / Gencode / ยิงแอด / ทำจ่าย ได้เหมือนแคมเปญ'}
             onClose={requestClose} footer={footer} width={640} busy={saving} className="qf-drawer solo-drawer">
             <div className="qf" ref={wrapRef}>
                 {err && <div className="alert-error" role="alert">{err}</div>}
@@ -235,8 +278,8 @@ export default function SoloKolForm({ onClose, onSaved }) {
                                 onChange={e => upK('link_account', e.target.value)} placeholder="https://www.tiktok.com/@..." />
                         </Field>
                     </div>
-                    <Field label="Platform" req labelId={id('plat')}>
-                        <Chips options={SOLO_PLATFORMS} value={k.platform} onPick={pickPlatform} labelId={id('plat')} />
+                    <Field label="Platform" req labelId={id('plat')} hint={editing && locked ? 'ล็อกแล้ว — มีคลิปที่ลงงาน/ยิงแอดแล้ว' : ''}>
+                        <Chips options={SOLO_PLATFORMS} value={k.platform} onPick={pickPlatform} labelId={id('plat')} disabled={editing && locked} />
                     </Field>
                     <div className="qf-row2">
                         <Field label="ผู้ติดตาม" htmlFor={id('fol')} hint="ใส่แล้ว Tier จะเลือกให้อัตโนมัติ">
@@ -263,8 +306,8 @@ export default function SoloKolForm({ onClose, onSaved }) {
 
                 <section className="qf-sec">
                     <h3 className="qf-sec-head"><span className="qf-num">2</span>งาน</h3>
-                    <Field label="แบรนด์" req err={E.brand} labelId={id('brand')}>
-                        {brands.length ? <Chips options={brands} value={j.brand} onPick={pickBrand} labelId={id('brand')} />
+                    <Field label="แบรนด์" req err={E.brand} labelId={id('brand')} hint={editing && locked ? 'ล็อกแล้ว — มีคลิปที่ลงงาน/ยิงแอดแล้ว' : ''}>
+                        {brands.length ? <Chips options={brands} value={j.brand} onPick={pickBrand} labelId={id('brand')} disabled={editing && locked} />
                             : <p className="muted">บัญชีนี้ยังไม่ได้รับสิทธิ์แบรนด์ไหน — ติดต่อผู้ดูแลระบบ</p>}
                     </Field>
                     {j.brand && (
@@ -295,11 +338,13 @@ export default function SoloKolForm({ onClose, onSaved }) {
                             </div>
                         )}
                     </Field>
-                    <Field label="ค่าตัวต่อคลิป (บาท)" req err={E.fee} htmlFor={id('fee')}
-                        hint={total > 0 ? `${baht(fee)} × ${j.clips} คลิป = ${baht(total)}` : 'ต้องใส่ทุกครั้ง'}>
-                        <input id={id('fee')} inputMode="decimal" value={j.fee} autoComplete="off"
-                            onChange={e => upJ('fee', e.target.value.replace(/[^0-9.,]/g, ''))} placeholder="เช่น 5000" />
-                    </Field>
+                    {!editing && (
+                        <Field label="ค่าตัวต่อคลิป (บาท)" req err={E.fee} htmlFor={id('fee')}
+                            hint={total > 0 ? `${baht(fee)} × ${j.clips} คลิป = ${baht(total)}` : 'ต้องใส่ทุกครั้ง'}>
+                            <input id={id('fee')} inputMode="decimal" value={j.fee} autoComplete="off"
+                                onChange={e => upJ('fee', e.target.value.replace(/[^0-9.,]/g, ''))} placeholder="เช่น 5000" />
+                        </Field>
+                    )}
                     <Field label="ผู้ดูแล" req err={E.owner} htmlFor={id('owner')}>
                         <select id={id('owner')} value={j.owner} onChange={e => upJ('owner', e.target.value)}>
                             <option value="">— เลือก —</option>

@@ -27,7 +27,7 @@ const {
     loadSnapshot, loadAgencyLinks, messageOut, reportOut, linkOut
 } = require('./_snapshot');
 const { now, clone, inScope, scopeProjects, linkGroupPlatforms, hireRowFee, sameInstant, normCampaignType } = require('../logic');
-const { soloSummary } = require('../soloKol');
+const { soloSummary, soloClipLive, soloClipEmpty } = require('../soloKol');
 
 // ช่องของ projects ที่แก้ได้จากฟอร์ม → ค่าที่พร้อมเขียนลงฐาน
 // null = ผู้ใช้ล้างค่าออกจริง ๆ (route ส่งเฉพาะคีย์ที่ client ส่งมา คีย์ที่ไม่ได้แก้จะเป็น undefined)
@@ -219,6 +219,84 @@ const projects = {
                 }, at), c));
             }
             return { project, rows };
+        });
+    },
+
+    // KOL รายคน: แก้ข้อมูลการจ้าง (ช่วง 3 · 1 ต.ค. 2026) — ทั้งหมดในทรานแซกชันเดียว ล็อกรายการและทุกคลิปก่อน
+    //  • แบรนด์ / Platform เปลี่ยนไม่ได้เมื่อมีคลิปเริ่มงานแล้ว (เกณฑ์สแตมป์ / ฟีดยิงแอด / ค่าแอดผูกอยู่)
+    //  • ลดจำนวนคลิป = ลบคลิปท้าย ๆ ได้เฉพาะคลิปที่ยังว่าง · เพิ่ม = คลิปใหม่ (จ้างแล้ว) ค่าตัวเท่าคลิปแรก
+    //  • ข้อมูลคน (ชื่อบัญชี / ลิงก์ / ผู้ติดตาม / Tier / Agency) + สินค้า / Content Type ไล่แก้ทุกคลิป · ชื่อคลิปตามลำดับ
+    //  • อายุ Gencode ใหม่ใช้กับคลิปที่ยังไม่มี Gencode เท่านั้น · งบ = ผลรวมค่าตัวจริงของคลิป
+    // คืน { project } หรือ { error: { code, message } }
+    async updateSolo(id, { fields, group, person, clipNames = [], codeExpire }, decidedBy = null) {
+        const n = intId(id);
+        if (n === null) return { error: { code: 404, message: 'ไม่พบรายการ' } };
+        const { newRow } = require('./submissions');
+        return await withTransaction(async (c) => {
+            const cur = (await c.query('SELECT * FROM projects WHERE id = $1 FOR UPDATE', [n])).rows[0];
+            if (!cur) return { error: { code: 404, message: 'ไม่พบรายการ' } };
+            if (cur.campaign_type !== 'solo') return { error: { code: 400, message: 'รายการนี้ไม่ใช่ KOL รายคน' } };
+            const subs = (await c.query('SELECT * FROM submissions WHERE project_id = $1 ORDER BY clip_no, id FOR UPDATE', [n])).rows;
+            const g0 = (Array.isArray(cur.ad_groups) ? cur.ad_groups[0] : null) || {};
+            const live = subs.some(soloClipLive);
+            if (live && fields.brand !== cur.brand) return { error: { code: 409, message: 'เปลี่ยนแบรนด์ไม่ได้ — มีคลิปที่ลงงาน/ยิงแอดแล้ว' } };
+            if (live && group.platform !== g0.platform) return { error: { code: 409, message: 'เปลี่ยน Platform ไม่ได้ — มีคลิปที่ลงงาน/ยิงแอดแล้ว' } };
+            // ผู้รับเงินเปลี่ยน (แก้ชื่อบัญชี / ชื่อ Agency / สลับติดต่อเอง-ผ่าน Agency) — งวดจ่ายผูกกับชื่อผู้รับเงิน (installments.agency)
+            // งวดที่ยังรอจ่ายย้ายตามชื่อใหม่ · มีงวดที่จ่ายแล้วหรือเข้ารอบทำจ่ายแล้ว = ห้ามเปลี่ยน (สลิป/รอบออกไปแล้วในชื่อเดิม)
+            const s0 = g0.solo || {};
+            const oldPayee = String(s0.payee || s0.account_name || '').trim();
+            const newPayee = String((group.solo && group.solo.payee) || '').trim();
+            if (oldPayee && newPayee && oldPayee !== newPayee) {
+                const its = (await c.query('SELECT id, status, batch_id FROM installments WHERE project_id = $1 AND agency = $2 FOR UPDATE', [n, oldPayee])).rows;
+                if (its.some(it => it.status === 'paid' || it.batch_id != null)) {
+                    return { error: { code: 409, message: `เปลี่ยนผู้รับเงินไม่ได้ — มีงวดจ่ายของ "${oldPayee}" ที่จ่ายแล้วหรืออยู่ในรอบทำจ่ายแล้ว` } };
+                }
+                if (its.length) await c.query('UPDATE installments SET agency = $1 WHERE project_id = $2 AND agency = $3', [newPayee, n, oldPayee]);
+            }
+            const names = Array.isArray(clipNames) ? clipNames : [];
+            const want = names.length < 2 ? 1 : names.length;
+            const keep = subs.filter(s => (Number(s.clip_no) || 1) <= want);
+            const drop = subs.filter(s => (Number(s.clip_no) || 1) > want);
+            const busy = drop.find(s => !soloClipEmpty(s));
+            if (busy) return { error: { code: 409, message: `ลดจำนวนคลิปไม่ได้ — คลิปที่ ${busy.clip_no}${busy.clip_name ? ` (${busy.clip_name})` : ''} มีงานแล้ว` } };
+            for (const s of drop) await c.query('DELETE FROM submissions WHERE id = $1', [s.id]);
+            const at = now();
+            for (const s of keep) {
+                const i = (Number(s.clip_no) || 1) - 1;
+                const patch = {
+                    account_name: person.account_name, link_account: person.link_account || null, followers: asNum(person.followers || 0, 0),
+                    tier: person.tier || null, agency: person.agency || null, platform: person.platform, product: person.product,
+                    content_type: person.content_type, group_key: g0.key || s.group_key,
+                    clip_name: names.length < 2 ? null : names[i], list_updated_at: at
+                };
+                if (!String(s.gencode || '').trim()) patch.code_expire = Number(codeExpire) || 60;
+                await updateRow('submissions', s.id, patch, c);
+            }
+            const first = keep[0] || subs[0] || null;
+            const fee = first ? Number(first.budget) || 0 : 0;
+            const personKey = (first && first.person_key) || ('p' + Math.random().toString(36).slice(2, 10));
+            for (let k = keep.length; k < want; k++) {
+                await insertRow('submissions', newRow({
+                    project_id: n, account_name: person.account_name, followers: person.followers, platform: person.platform,
+                    product: person.product, budget: fee, agency: person.agency, link_account: person.link_account,
+                    group_key: g0.key, tier: person.tier, content_type: person.content_type, code_expire: codeExpire,
+                    person_key: personKey, clip_no: k + 1, clip_name: names.length < 2 ? null : names[k],
+                    status: 'confirmed', decided_by: decidedBy
+                }, at), c);
+            }
+            const s = await c.query("SELECT COALESCE(SUM(budget), 0) AS total FROM submissions WHERE project_id = $1 AND status <> 'rejected'", [n]);
+            const total = Math.round((Number(s.rows[0].total) || 0) * 100) / 100;
+            const g = { ...group, key: g0.key || group.key, budget: total };
+            if (Array.isArray(g.blocks) && g.blocks[0]) g.blocks = g.blocks.map((b, x) => (x === 0 ? { ...b, budget: total } : b));
+            const row = await updateRow('projects', n, {
+                name: fields.name, brand: fields.brand, objective: fields.objective || null, brief_link: fields.brief_link || null,
+                products: asJson(fields.products || [], []), ad_groups: asJson([g], []),
+                owner: fields.owner || null, creator: fields.owner || null,
+                start_date: asDate(fields.start_date || null), end_date: asDate(fields.end_date || null),
+                budget: total, platform_budgets: asJson({ [g.platform]: total }, {}),
+                updated_by: fields.updated_by || null, updated_at: now()
+            }, c);
+            return { project: row, removed: drop.length, added: Math.max(0, want - keep.length) };
         });
     },
 

@@ -12,6 +12,7 @@ import { asTargetArray } from '../data/products.js';
 import { groupNoGencode, conceptOneLine } from '../data/adGroups.js';
 import { SOLO_STEP_LABEL, soloStepOf, baht, followersText } from '../data/soloKol.js';
 import { fmtRange } from '../utils/date.js';
+import SoloKolForm from '../components/SoloKolForm.jsx';
 
 // หน้าของ KOL รายคน 1 การจ้าง (campaign_type 'solo' · ผู้ใช้สั่ง 30 ก.ย. 2026) — ProjectDetail แตกทางมาที่นี่ (URL /projects/:id เดิม)
 // ติดตามงานใช้ตาราง On Process ตัวเดียวกับแคมเปญ (ดราฟ / ลงงาน / Gencode / ID Post / ยอดวิว / ยิงแอด)
@@ -25,11 +26,16 @@ export default function SoloKolDetail({ project, reload }) {
     const [stage, setStage] = useState('all');
     const [busy, setBusy] = useState(false);
     const [openCheckOnly] = useState(() => new URLSearchParams(window.location.search).get('check') === '1');
+    const [showEdit, setShowEdit] = useState(false);
+    // ฟอร์มแก้ไขอ่านชื่อคลิป / สถานะล็อกจากรายการคลิปตอนเปิด — เปิดก่อนโหลดเสร็จ ชื่อคลิปจะกลายเป็น "คลิป 1, 2, ..." ตอนบันทึก
+    const [subsState, setSubsState] = useState('loading');   // loading | ok | error
     const g = (project.ad_groups || [])[0] || null;
     const sum = project.solo_summary || {};
 
     function loadSubs() {
-        api(`/projects/${id}/submissions`).then(res => setSubs(res.data || [])).catch(() => {});
+        api(`/projects/${id}/submissions`)
+            .then(res => { setSubs(res.data || []); setSubsState('ok'); })
+            .catch(() => setSubsState(s => (s === 'ok' ? 'ok' : 'error')));
     }
     useEffect(() => { loadSubs(); }, [id]);   // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -116,6 +122,10 @@ export default function SoloKolDetail({ project, reload }) {
                     {sum.due_date && <> · กำหนดลงงาน {fmtRange(sum.due_date, null)}</>}
                 </div>
                 <div className="solo-hero-actions">
+                    <button type="button" className="btn-ghost" disabled={busy || subsState !== 'ok'} onClick={() => setShowEdit(true)}
+                        title={subsState === 'loading' ? 'กำลังโหลดรายการคลิป…' : subsState === 'error' ? 'โหลดรายการคลิปไม่สำเร็จ — กด F5' : undefined}>
+                        <Icon name="edit" size={15} /> แก้ไขข้อมูล
+                    </button>
                     {project.status === 'Active' && (
                         <button type="button" className="btn-primary" disabled={busy} onClick={() => setStatus('Completed', 'ปิดงานนี้เป็น "เสร็จสิ้น"?')}>
                             <Icon name="check" size={16} /> ปิดงาน
@@ -129,6 +139,7 @@ export default function SoloKolDetail({ project, reload }) {
                     )}
                     <button type="button" className="btn-ghost solo-del" disabled={busy} onClick={remove}><Icon name="trash" size={15} /> ลบ</button>
                 </div>
+                {subsState === 'error' && <div className="alert-error" style={{ marginTop: 12 }}>โหลดรายการคลิปไม่สำเร็จ — กด F5 แล้วลองใหม่</div>}
                 {allAdDone && project.status === 'Active' && (
                     <div className="solo-done-hint">ทุกคลิปลงงานและยิงแอดแล้ว — กด "ปิดงาน" ได้เลย</div>
                 )}
@@ -178,6 +189,14 @@ export default function SoloKolDetail({ project, reload }) {
                     }}
                     stage={stage} onClearStage={() => setStage('all')} />
             </div>
+
+            {showEdit && (
+                <SoloKolForm project={project} clipNames={clips.map(c => c.clip_name || '')}
+                    // คลิปเริ่มงานแล้ว (ลงงาน / ยิงแอด / สแตมป์) = ล็อกแบรนด์และ Platform — เกณฑ์เดียวกับ soloClipLive ฝั่ง server
+                    locked={clips.some(c => !!(c.post_url && String(c.post_url).trim()) || Number(c.ad_spend) > 0 || c.ad_status === 'ยิงแล้ว' || !!c.perf_stamp)}
+                    onClose={() => setShowEdit(false)}
+                    onSaved={() => { setShowEdit(false); reload(); loadSubs(); }} />
+            )}
         </div>
     );
 }

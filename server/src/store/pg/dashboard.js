@@ -199,7 +199,7 @@ const dashboard = {
         campaignScope = scopeProjects(campaignScope, scopeBrands);
         const campaigns = campaignScope
             .sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''))
-            .map(p => ({ id: p.id, name: p.name, brand: p.brand }));
+            .map(p => ({ id: p.id, name: p.name, brand: p.brand, campaign_type: p.campaign_type === 'solo' || p.campaign_type === 'other' ? p.campaign_type : 'kol' }));
 
         // งานจ้างอื่น ๆ — ยังนับรวมใน total_budget / total_campaigns เหมือนเดิม แค่แยกตัวเลขไว้ให้หน้าเว็บติดป้ายได้
         // ตัวกรองช่วงวันของหน้านี้ใช้กับคลิป ไม่ได้ใช้กับแคมเปญ ตัวเลขชุดนี้จึงไม่ขึ้นกับช่วงวันเหมือน total_budget
@@ -209,6 +209,9 @@ const dashboard = {
         const otherHires = otherProjects.reduce((n, p) => n + (Array.isArray(p.hire_items) ? p.hire_items : [])
             .reduce((k, it) => k + (it && it.mode === 'casting' ? hireRemaining(it) : 1), 0), 0);
         const otherBudget = otherProjects.reduce((s, p) => s + (Number(p.budget) || 0), 0);
+        // KOL รายคน (จ้าง KOL เดี่ยว · 1 ต.ค. 2026) — ผู้ใช้เลือกให้นับรวม แต่มีป้ายแยก (ห้ามเอาไปบวกซ้ำ)
+        const soloProjects = projects.filter(p => p.campaign_type === 'solo');
+        const soloBudget = soloProjects.reduce((s, p) => s + (Number(p.budget) || 0), 0);
 
         return {
             total_kols: totalKols,
@@ -219,6 +222,8 @@ const dashboard = {
             other_projects: otherProjects.length,
             other_hires: otherHires,
             other_budget: otherBudget,
+            solo_projects: soloProjects.length,
+            solo_budget: soloBudget,
             total_spent: totalFee,
             fee_missing_clips: feeMissingClips,   // คลิปที่ยังไม่ใส่ค่าตัว (ไม่ได้รวมใน total_spent และไม่ได้คิด CPM)
             total_views: totalViews,

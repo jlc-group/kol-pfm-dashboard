@@ -30,8 +30,10 @@ const text = (v, max) => {
 const isWeb = v => /^https?:\/\/\S+$/i.test(v);
 
 // ตรวจค่าจากฟอร์ม "เพิ่ม KOL รายคน" → { input } | { error } — ข้อความภาษาไทยแสดงตรง ๆ ในฟอร์ม
-function soloInput(body) {
+// opts.editing = แก้การจ้างที่มีอยู่ (PUT /projects/:id/solo) — ไม่รับค่าตัว (fee = null) เพราะแก้ผ่านเส้นค่าตัวที่เดียว
+function soloInput(body, opts = {}) {
     const b = body && typeof body === 'object' ? body : {};
+    const editing = opts.editing === true;
     const err = error => ({ error });
     const t = (k, max, label, req = false) => {
         const v = text(b[k], max);
@@ -88,10 +90,13 @@ function soloInput(body) {
         if (new Set(clip_names).size !== clip_names.length) throw 'ชื่อคลิปซ้ำกัน';
 
         // ค่าตัวบังคับทุกครั้ง (ผู้ใช้เลือก 30 ก.ย.) — ต่อคลิป มากกว่า 0
-        const fee = typeof b.fee === 'number' ? b.fee : Number(String(b.fee == null ? '' : b.fee).replace(/,/g, '').trim());
-        const feePerClip = Number.isFinite(fee) ? Math.round(fee * 100) / 100 : NaN;   // ปัดเป็นสตางค์ก่อนเช็ค (0.004 = 0)
-        if (!Number.isFinite(feePerClip) || feePerClip <= 0) throw 'ใส่ค่าตัวต่อคลิป (มากกว่า 0)';
-        if (feePerClip > SOLO_FEE_MAX) throw 'ค่าตัวสูงเกินไป (ไม่เกิน 10,000,000 บาทต่อคลิป)';
+        let feePerClip = null;
+        if (!editing) {
+            const fee = typeof b.fee === 'number' ? b.fee : Number(String(b.fee == null ? '' : b.fee).replace(/,/g, '').trim());
+            feePerClip = Number.isFinite(fee) ? Math.round(fee * 100) / 100 : NaN;   // ปัดเป็นสตางค์ก่อนเช็ค (0.004 = 0)
+            if (!Number.isFinite(feePerClip) || feePerClip <= 0) throw 'ใส่ค่าตัวต่อคลิป (มากกว่า 0)';
+            if (feePerClip > SOLO_FEE_MAX) throw 'ค่าตัวสูงเกินไป (ไม่เกิน 10,000,000 บาทต่อคลิป)';
+        }
 
         const owner = pick('owner', 200, 'ผู้ดูแล', true);
         const hire_date = pick('hire_date', 10, 'วันที่จ้าง', true);
@@ -135,7 +140,8 @@ function buildSoloGroup(i, key) {
     const product_targets = {};
     if (useTarget) i.products.forEach(c => { product_targets[c] = [...i.target]; });
     const clips = i.clips > 1 ? [...i.clip_names] : [];
-    const budget = Math.round(i.fee * i.clips * 100) / 100;
+    // แก้ไข (fee = null): งบตั้งใหม่หลังบันทึกจากค่าตัวจริงของคลิป (syncSoloBudget) — ที่นี่ใส่ 0 ไว้ก่อน
+    const budget = i.fee == null ? 0 : Math.round(i.fee * i.clips * 100) / 100;
     const set = {
         campaign: i.campaign || '', content_type: i.content_type, media_type: i.media_type || '', content_format: i.content_format || '',
         tiers: [{ tier: i.tier, kols: 1 }]
@@ -209,6 +215,12 @@ function soloSummary(subs, group) {
     };
 }
 
+// คลิปที่ "เริ่มงานแล้ว" — ลงงาน / ยิงแอด / สแตมป์ผล (ล็อกแบรนด์และ Platform: เกณฑ์สแตมป์ ฟีดยิงแอด และค่าแอดผูกกับสองค่านี้)
+const soloClipLive = s => !!s && (filled(s.post_url) || effectiveAdStatus(s) === 'ยิงแล้ว' || !!s.perf_stamp);
+// คลิปที่ลดออกได้ตอนแก้จำนวนคลิป — ยังไม่มีอะไรเกิดขึ้นเลย (ไม่มีดราฟ / โพสต์ / Gencode / ID Post / ค่าแอด / ยอดวิว / สแตมป์)
+const soloClipEmpty = s => !!s && ![s.draft_link, s.draft_link2, s.draft_link3, s.draft_link4, s.draft_link5, s.post_url, s.gencode, s.id_post].some(filled)
+    && !(Number(s.ad_spend) > 0) && !(Number(s.views) > 0) && !s.perf_stamp && s.ad_status !== 'ยิงแล้ว';
+
 // ลบการจ้างได้ไหม — มีงานเกิดขึ้นแล้ว (ลงงาน / ยิงแอด / สแตมป์ผล / ตั้งงวดจ่าย) = ห้ามลบ ให้ตั้งเป็น "ยกเลิก" แทน
 function soloDeleteBlock(subs, installments) {
     const list = subs || [];
@@ -224,5 +236,5 @@ const soloName = i => `KOL รายคน · @${i.account_name} (${i.platform})
 
 module.exports = {
     SOLO_PLATFORMS, SOLO_TIERS, SOLO_CAMPAIGNS, SOLO_MEDIA, SOLO_CODE_EXPIRE, SOLO_MAX_CLIPS, SOLO_STEPS, CONTACT_MODES,
-    soloInput, buildSoloGroup, soloClipStep, soloSummary, soloDeleteBlock, soloName
+    soloInput, buildSoloGroup, soloClipStep, soloSummary, soloDeleteBlock, soloName, soloClipLive, soloClipEmpty
 };

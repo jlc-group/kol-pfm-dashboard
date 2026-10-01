@@ -17,6 +17,8 @@ export default function Budget() {
     const [brand, setBrand] = useState('');
     const [year, setYear] = useState('');
     const [month, setMonth] = useState('');
+    // แคมเปญ | KOL รายคน (ผู้ใช้เลือก 30 ก.ย.: นับรวมแต่แยกดูได้ · เริ่มที่แคมเปญ) — server เก่าไม่ส่งประเภท = แคมเปญ
+    const [kind, setKind] = useState('kol');
     const [rows, setRows] = useState(null);
     const [error, setError] = useState('');
 
@@ -35,10 +37,13 @@ export default function Budget() {
     }, [rows]);
 
     // กรองด้วย "วันเริ่มแคมเปญ" — แคมเปญที่ยังไม่ระบุวันเริ่มจะไม่เข้าเงื่อนไขเมื่อมีการกรอง
-    const shown = (rows || []).filter(r => {
+    const kindOf = r => (r.campaign_type === 'solo' ? 'solo' : 'kol');
+    const byDate = (rows || []).filter(r => {
         const d = r.start_date || '';
         return (!year || d.slice(0, 4) === year) && (!month || d.slice(5, 7) === month);
     });
+    const shown = byDate.filter(r => kindOf(r) === kind);
+    const countKind = k => byDate.filter(r => kindOf(r) === k).length;
     const filtering = !!(brand || year || month);
 
     return (
@@ -75,6 +80,15 @@ export default function Budget() {
                 )}
             </div>
 
+            <div className="brand-filter report-kinds" role="group" aria-label="ประเภท">
+                <button type="button" aria-pressed={kind === 'kol'} className={'brand-chip' + (kind === 'kol' ? ' active' : '')} onClick={() => setKind('kol')}>
+                    แคมเปญ ({countKind('kol')})
+                </button>
+                <button type="button" aria-pressed={kind === 'solo'} className={'brand-chip' + (kind === 'solo' ? ' active' : '')} onClick={() => setKind('solo')}>
+                    KOL รายคน ({countKind('solo')})
+                </button>
+            </div>
+
             {error && <div className="alert-error">{error}</div>}
 
             <h3 className="report-section-title">Select Campaign to Report</h3>
@@ -85,7 +99,7 @@ export default function Budget() {
                 <div className="panel">
                     <div className="empty-illus">
                         <div className="empty-illus-icon"><Icon name="bars" size={28} /></div>
-                        <div className="empty-illus-title">ยังไม่มีแคมเปญให้รายงาน</div>
+                        <div className="empty-illus-title">{kind === 'solo' ? 'ยังไม่มี KOL รายคนให้รายงาน' : 'ยังไม่มีแคมเปญให้รายงาน'}</div>
                         <p className="empty-illus-sub">
                             {filtering ? 'ไม่มีแคมเปญที่ตรงกับตัวกรองที่เลือก ลองล้างตัวกรองดู' : 'เมื่อมีแคมเปญในระบบ จะแสดงการ์ดรายงานที่นี่'}
                         </p>

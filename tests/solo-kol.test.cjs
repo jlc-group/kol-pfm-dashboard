@@ -37,6 +37,12 @@ const fakeClient = {
             return { rows: [row], rowCount: 1 };
         }
         if (/^SELECT campaign_type, ad_groups FROM projects/.test(q)) return { rows: fake.lock ? [fake.lock] : [] };
+        if (/^SELECT \* FROM projects WHERE id = \$1 FOR UPDATE/.test(q)) return { rows: fake.proj ? [structuredClone(fake.proj)] : [] };
+        if (/^SELECT \* FROM submissions WHERE project_id = \$1 ORDER BY clip_no/.test(q)) return { rows: structuredClone(fake.clips || []) };
+        if (/^DELETE FROM submissions WHERE id = \$1/.test(q)) return { rows: [], rowCount: 1 };
+        if (/^UPDATE submissions SET/.test(q)) return { rows: [{ id: vals[vals.length - 1] }] };
+        if (/^SELECT id, status, batch_id FROM installments/.test(q)) return { rows: structuredClone((fake.its || []).filter(i => i.agency === vals[1])) };
+        if (/^UPDATE installments SET agency/.test(q)) return { rows: [], rowCount: 1 };
         if (/SUM\(budget\)/.test(q)) return { rows: [{ total: fake.sums[vals[0]] || 0 }] };
         if (/^UPDATE projects SET/.test(q)) return { rows: [{ id: vals[vals.length - 1], updated: true }] };
         throw new Error('unexpected SQL in fake client: ' + q.slice(0, 80));
@@ -176,6 +182,23 @@ test('soloDeleteBlock: ลงงาน / ยิงแอด / สแตมป์
     assert.match(solo.soloDeleteBlock([{}], [{ id: 1 }]), /งวดจ่าย/);
 });
 
+test('soloInput ตอนแก้ไข: ไม่รับค่าตัว (แก้ที่ช่องค่าตัว) · กลุ่มงบ 0 รอคิดใหม่ · คลิปเริ่มงาน/ว่าง', () => {
+    const e = solo.soloInput({ ...GOOD, fee: '' }, { editing: true });
+    assert.ok(e.input, JSON.stringify(e));
+    assert.equal(e.input.fee, null);
+    assert.equal(solo.soloInput({ ...GOOD, fee: 99 }, { editing: true }).input.fee, null, 'ส่งค่าตัวมาก็ไม่ใช้');
+    assert.equal(solo.buildSoloGroup(e.input, 'g').budget, 0);
+    assert.match(solo.soloInput({ ...GOOD, fee: '' }).error, /ค่าตัว/, 'ตอนเพิ่มยังบังคับ');
+    assert.equal(solo.soloClipLive({ post_url: 'x' }), true);
+    assert.equal(solo.soloClipLive({ ad_spend: 3 }), true);
+    assert.equal(solo.soloClipLive({ perf_stamp: {} }), true);
+    assert.equal(solo.soloClipLive({ draft_link: 'x' }), false);
+    assert.equal(solo.soloClipEmpty({}), true);
+    for (const s of [{ draft_link3: 'x' }, { gencode: '#a' }, { id_post: '1' }, { views: 5 }, { ad_status: 'ยิงแล้ว' }]) {
+        assert.equal(solo.soloClipEmpty(s), false, JSON.stringify(s));
+    }
+});
+
 test('normCampaignType: other / solo / kol · ค่าอื่นถอยเป็น kol', () => {
     for (const [v, want] of [['other', 'other'], ['solo', 'solo'], ['kol', 'kol'], ['SOLO', 'kol'], [undefined, 'kol'], ['', 'kol'], [{}, 'kol']]) {
         assert.equal(logic.normCampaignType(v), want, JSON.stringify(v));
@@ -226,6 +249,85 @@ test('syncSoloBudget: งบ = ผลรวมค่าตัว (ไม่น�
     assert.equal(await realSyncSoloBudget(55), null);
     assert.equal(fake.sql.some(x => x.q.startsWith('UPDATE')), false, 'แคมเปญปกติไม่แตะงบ');
     fake.lock = null;
+});
+
+test('updateSolo: แบรนด์/Platform ล็อกเมื่อมีคลิปลงงาน · ลดคลิปได้เฉพาะคลิปว่าง · เพิ่มคลิปค่าตัวเท่าคลิปแรก · Gencode ใหม่เฉพาะคลิปที่ยังไม่มี · งบใหม่', async () => {
+    const realUpdate = store.projects.updateSolo;
+    const g0 = { key: 'gK', platform: 'TikTok', budget: 10000, blocks: [{ platform: 'TikTok', budget: 10000 }] };
+    fake.proj = { id: 80, campaign_type: 'solo', brand: 'Beauterry', ad_groups: [g0] };
+    const clip = (no, over = {}) => ({ id: 800 + no, project_id: 80, clip_no: no, person_key: 'pX', budget: 5000, status: 'confirmed', group_key: 'gK', ...over });
+    const input = solo.soloInput({ ...GOOD, clips: 3, clip_names: ['A', 'B', 'C'], code_expire: 30 }, { editing: true }).input;
+    const args = (over = {}) => ({
+        fields: { name: 'n', brand: 'Beauterry', products: ['BTA4-01'], owner: 'แพรว', start_date: '2026-10-01', end_date: '2026-10-01', ...over.fields },
+        group: { ...solo.buildSoloGroup(input, 'NEW'), ...(over.group || {}) },
+        person: { account_name: 'flow3rgurrl', platform: 'TikTok', product: 'BTA4-01', agency: null, tier: 'Micro 10k - 100k', content_type: 'Review' },
+        clipNames: over.clipNames || ['A', 'B', 'C'], codeExpire: 30
+    });
+
+    // แบรนด์ / Platform ล็อก
+    fake.clips = [clip(1, { post_url: 'https://p' })];
+    assert.deepEqual((await realUpdate(80, args({ fields: { brand: 'Jdent' } }))).error.code, 409);
+    assert.match((await realUpdate(80, args({ group: { platform: 'Instagram' } }))).error.message, /Platform/);
+
+    // ลดคลิป: คลิปท้ายมีดราฟแล้ว = ห้าม · ว่าง = ลบ
+    fake.clips = [clip(1), clip(2), clip(3, { draft_link: 'https://d' })];
+    const busy = await realUpdate(80, args({ clipNames: ['A', 'B'] }));
+    assert.equal(busy.error.code, 409);
+    assert.match(busy.error.message, /คลิปที่ 3/);
+    fake.sql = [];
+    fake.clips = [clip(1, { gencode: '#keep' }), clip(2), clip(3)];
+    fake.sums['80'] = 10000;
+    const less = await realUpdate(80, args({ clipNames: [] }));
+    assert.ok(less.project, JSON.stringify(less));
+    assert.deepEqual([less.removed, less.added], [2, 0]);
+    assert.equal(fake.sql.filter(x => x.q.startsWith('DELETE FROM submissions')).length, 2);
+    const updSub = fake.sql.find(x => x.q.startsWith('UPDATE submissions'));
+    assert.doesNotMatch(updSub.q, /code_expire/, 'คลิปที่มี Gencode แล้วไม่เปลี่ยนอายุ');
+    assert.match(updSub.q, /clip_name/);
+
+    // เพิ่มคลิป: ค่าตัว / person_key / ชื่อคลิป / confirmed
+    fake.sql = [];
+    fake.rows = {};
+    fake.clips = [clip(1, { budget: 7000 })];
+    fake.sums['80'] = 21000;
+    const more = await realUpdate(80, args(), 'แพรว');
+    assert.deepEqual([more.removed, more.added], [0, 2]);
+    assert.deepEqual(fake.rows.submissions.map(x => [x.clip_no, x.clip_name, x.budget, x.person_key, x.status, x.decided_by, x.code_expire]),
+        [[2, 'B', 7000, 'pX', 'confirmed', 'แพรว', 30], [3, 'C', 7000, 'pX', 'confirmed', 'แพรว', 30]]);
+    const updFirst = fake.sql.find(x => x.q.startsWith('UPDATE submissions'));
+    assert.match(updFirst.q, /code_expire/, 'คลิปที่ยังไม่มี Gencode ได้อายุใหม่');
+    const upd = fake.sql.find(x => x.q.startsWith('UPDATE projects'));
+    const cols = /SET (.+) WHERE/.exec(upd.q)[1].split(', ').map(s => s.split(' = ')[0]);
+    const val = k => upd.vals[cols.indexOf(k)];
+    assert.equal(val('budget'), 21000, 'งบ = ผลรวมค่าตัวจริง');
+    const saved = JSON.parse(val('ad_groups'));
+    assert.equal(saved[0].key, 'gK', 'คงคีย์กลุ่มเดิม (แถวคลิปผูกอยู่)');
+    assert.equal(saved[0].budget, 21000);
+    assert.deepEqual(JSON.parse(val('platform_budgets')), { TikTok: 21000 });
+
+    // ผู้รับเงินเปลี่ยน: งวดที่รอจ่ายย้ายตาม · มีงวดจ่ายแล้ว/เข้ารอบแล้ว = ห้าม
+    fake.proj = { id: 80, campaign_type: 'solo', brand: 'Beauterry', ad_groups: [{ ...g0, solo: { contact_mode: 'agency', payee: 'Old Agency', account_name: 'flow3rgurrl' } }] };
+    fake.clips = [clip(1)];
+    fake.sql = [];
+    fake.its = [{ id: 1, agency: 'Old Agency', status: 'pending', batch_id: null }];
+    const moved = await realUpdate(80, args({ clipNames: [] }));   // input = ติดต่อเอง → ผู้รับเงินใหม่ = flow3rgurrl
+    assert.ok(moved.project, JSON.stringify(moved));
+    const mv = fake.sql.find(x => x.q.startsWith('UPDATE installments SET agency'));
+    assert.deepEqual(mv && mv.vals, ['flow3rgurrl', 80, 'Old Agency']);
+    fake.its = [{ id: 1, agency: 'Old Agency', status: 'paid', batch_id: 3 }];
+    const blocked = await realUpdate(80, args({ clipNames: [] }));
+    assert.equal(blocked.error.code, 409);
+    assert.match(blocked.error.message, /ผู้รับเงิน.*Old Agency/);
+    fake.sql = [];
+    fake.proj.ad_groups = [{ ...g0, solo: { contact_mode: 'self', payee: 'flow3rgurrl', account_name: 'flow3rgurrl' } }];
+    assert.ok((await realUpdate(80, args({ clipNames: [] }))).project);
+    assert.equal(fake.sql.some(x => /installments/.test(x.q)), false, 'ผู้รับเงินเดิม = ไม่แตะงวด');
+    fake.its = [];
+
+    fake.proj = { id: 81, campaign_type: 'kol', ad_groups: [] };
+    assert.equal((await realUpdate(81, args())).error.code, 400, 'ไม่ใช่ KOL รายคน');
+    fake.proj = null;
+    assert.equal((await realUpdate(82, args())).error.code, 404);
 });
 
 // ---------------------------------------------------------------- เส้น API
@@ -365,6 +467,30 @@ test('หน้าเว็บรุ่นเก่า: เปลี่ยนส
     store.submissions.update = async () => ({ id: 710 });
     const kolSt = await call(2, 'PUT', '/projects/71/submissions/710', { status: 'rejected' });
     assert.notEqual(kolSt.status, 400, JSON.stringify(kolSt.body));
+});
+
+test('PUT /api/projects/:id/solo: แก้ข้อมูล (ไม่ใช่ solo 400 · ข้อมูลผิด 400 · แบรนด์นอกสิทธิ์ 403 · ผลจาก store ส่งต่อ) + ประวัติ', async () => {
+    let got = null;
+    store.projects.updateSolo = async (id, a, by) => { got = { id: Number(id), a, by };
+        return a.fields.brand === 'Beauterry' && a.clipNames.length === 3 ? { error: { code: 409, message: 'ลดจำนวนคลิปไม่ได้ — คลิปที่ 3 มีงานแล้ว' } }
+            : { project: { id: 70, name: a.fields.name, team_id: 1 }, removed: 0, added: 1 }; };
+    assert.equal((await call(2, 'PUT', '/projects/71/solo', GOOD)).status, 400, 'แคมเปญปกติ');
+    assert.equal(got, null);
+    const bad = await call(2, 'PUT', '/projects/70/solo', { ...GOOD, account_name: '' });
+    assert.equal(bad.status, 400);
+    assert.equal((await call(2, 'PUT', '/projects/70/solo', { ...GOOD, brand: 'Jdent' })).status, 403);
+    const ok = await call(2, 'PUT', '/projects/70/solo', { ...GOOD, clips: 2, clip_names: ['A', 'B'], fee: 99999 });
+    assert.equal(ok.status, 200, JSON.stringify(ok.body));
+    assert.equal(got.id, 70);
+    assert.equal(got.by, 'แพรว');
+    assert.equal(got.a.group.key, 'g1', 'คงคีย์กลุ่มเดิม');
+    assert.equal(got.a.group.budget, 0, 'งบคิดใหม่จากค่าตัวจริงใน store (ไม่ใช้ค่าตัวที่ส่งมา)');
+    assert.deepEqual(got.a.clipNames, ['A', 'B']);
+    assert.deepEqual([got.a.fields.name, got.a.fields.end_date, got.a.person.product], ['KOL รายคน · @flow3rgurrl (TikTok)', '2026-10-10', 'BTA4-01, BTA4-02']);
+    assert.match(logged.at(-1).summary, /แก้ข้อมูล KOL รายคน: @flow3rgurrl \(เพิ่ม 1 คลิป\)/);
+    const conflict = await call(2, 'PUT', '/projects/70/solo', { ...GOOD, clips: 3, clip_names: ['A', 'B', 'C'] });
+    assert.equal(conflict.status, 409);
+    assert.match(conflict.body.message, /คลิปที่ 3/);
 });
 
 test('เส้นเพิ่มคน / สร้างลิงก์ Agency ใช้กับ KOL รายคนไม่ได้', async () => {

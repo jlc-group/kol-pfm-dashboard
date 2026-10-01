@@ -73,6 +73,11 @@ export default function Dashboard() {
     const otherProjects = Number(data?.other_projects) || 0;
     const otherHires = Number(data?.other_hires) || 0;
     const otherBudget = Number(data?.other_budget) || 0;
+    // KOL รายคน (จ้าง KOL เดี่ยว) — รวมอยู่ในงบ/จำนวนแคมเปญด้านบนแล้ว ผู้ใช้เลือกให้มีป้ายบอกแยก (server เก่าไม่ส่ง = 0)
+    const soloProjects = Number(data?.solo_projects) || 0;
+    const soloBudget = Number(data?.solo_budget) || 0;
+    const campaignList = data?.campaigns || [];
+    const soloCampaigns = campaignList.filter(c => c.campaign_type === 'solo');
     const maxBrandBudget = Math.max(1, ...(data?.brand_summary || []).map(b => b.budget));
 
     return (
@@ -94,7 +99,12 @@ export default function Dashboard() {
                     </div>
                     <select aria-label="เลือกแคมเปญ" className="campaign-select" value={filters.projectId} onChange={e => setF({ projectId: e.target.value })}>
                         <option value="">ทุก Campaign</option>
-                        {(data?.campaigns || []).map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                        {campaignList.filter(c => c.campaign_type !== 'solo').map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                        {soloCampaigns.length > 0 && (
+                            <optgroup label="KOL รายคน">
+                                {soloCampaigns.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                            </optgroup>
+                        )}
                     </select>
                 </div>
 
@@ -126,6 +136,11 @@ export default function Dashboard() {
                         </div>
                     )}
                     {/* งบด้านบนรวมงานจ้างอื่น ๆ ไว้แล้ว — บรรทัดนี้บอกว่ามาจากงานพวกนั้นเท่าไร */}
+                    {soloProjects > 0 && (
+                        <div className="bento-hero-extra">
+                            รวม KOL รายคน {soloProjects} ราย · {fmtMoney(soloBudget)}
+                        </div>
+                    )}
                     {otherProjects > 0 && (
                         <div className="bento-hero-extra">
                             รวมงาน Talent {otherProjects} งาน · {otherHires} คน · {fmtMoney(otherBudget)}
@@ -136,7 +151,10 @@ export default function Dashboard() {
                             {data ? data.total_kols : '—'}
                             {data && data.total_clips > data.total_kols && <span className="bh-sub"> · {data.total_clips} คลิป</span>}
                         </div></div>
-                        <div><div className="bh-k">แคมเปญ</div><div className="bh-v">{data ? data.total_campaigns : '—'}</div></div>
+                        <div><div className="bh-k">แคมเปญ</div><div className="bh-v">
+                            {data ? data.total_campaigns : '—'}
+                            {soloProjects > 0 && <span className="bh-sub"> · รวม KOL รายคน {soloProjects}</span>}
+                        </div></div>
                         <div>
                             <div className="bh-k">ค่าจ้าง KOL ที่ใช้ไป</div>
                             <div className="bh-v">{data ? fmtMoney(data.total_spent) : '—'}</div>
