@@ -1207,9 +1207,13 @@ a { text-decoration: none; color: inherit; }
 .proc-ibtn:disabled { opacity: .6; cursor: default; }
 
 /* หน้า Ads: การ์ดตารางกินเต็มความกว้างหน้า (ผู้ใช้ขอเห็นคอลัมน์เยอะขึ้น) — หน้าอื่นบีบเนื้อหาไว้กลางจอไม่เกิน 1480px
-   ปลดเฉพาะการ์ดตาราง ส่วนหัวข้อ/ตัวกรอง/การ์ดสรุป ยังอยู่กรอบเดิม · หักขอบหน้า (.content padding) ออกด้วย margin ติดลบ */
+   หักขอบหน้า (.content padding) ออกด้วย margin ติดลบ
+   ส่วนหัวข้อ / ตัวกรอง / การ์ดสรุป กว้างเท่าตารางด้วย (ผู้ใช้ขอ 1 ต.ค. 2026 — เดิมค้างกรอบ 1480px กลางจอ แคบกว่าตาราง)
+   ขอบนอกตรงกับแถวในตาราง = เลยขอบหน้าเท่าการ์ดตาราง แล้วเว้นเข้ามาเท่าระยะในของการ์ดตาราง (12px) */
 .content > .ads-page { width: 100%; max-width: none; }
-.ads-page > :not(.ads-tbl-panel) { width: min(100%, 1480px); margin-inline: auto; }
+.ads-page > :not(.ads-tbl-panel) { width: auto; margin-inline: calc((clamp(28px, 3vw, 48px) - 12px) * -1); }
+@media (max-width: 900px) { .ads-page > :not(.ads-tbl-panel) { margin-inline: -12px; } }
+@media (max-width: 600px) { .ads-page > :not(.ads-tbl-panel) { margin-inline: -4px; } }
 .ads-page > .ads-tbl-panel { margin-inline: calc(clamp(28px, 3vw, 48px) * -1); padding-inline: 12px; border-radius: 0; }
 @media (max-width: 900px) { .ads-page > .ads-tbl-panel { margin-inline: -24px; } }
 @media (max-width: 600px) { .ads-page > .ads-tbl-panel { margin-inline: -16px; } }
