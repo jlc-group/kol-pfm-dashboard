@@ -30,6 +30,13 @@ test('identity accepts IG posts and FB compound IDs, not TikTok or profile links
     assert.equal(itemIdFor({ platform: 'Instagram', post_url: 'https://instagram.com/person/' }), null);
     assert.equal(itemIdFor({ platform: 'Instagram', post_url: 'https://instagram.com.attacker.invalid/p/x/' }), null);
 });
+test('Instagram plural reels and username post URLs retain the original link', () => {
+    for (const link of ['https://www.instagram.com/reels/Dd0row-P0Up/',
+        'https://instagram.com/creator/reel/Example/?igsh=abc', 'https://instagram.com/creator/p/Example/']) {
+        assert.equal(itemIdFor({ platform: 'Instagram', post_url: link }), link);
+    }
+    assert.equal(itemIdFor({ platform: 'Instagram', post_url: 'https://instagram.com/reels/Example/extra' }), null);
+});
 test('paid metrics omit organic and paid-engagement fields; null reach stays unknown', () => {
     const row = sanitizeRow(metric({ views: 999, likes: 555, ad_likes: 444, ad_reach: null, ad_launched: true }));
     assert.deepEqual(row, { item_id: igLink, platform: 'instagram', id_post: '123', ad_spend: 10, ad_launched: true });

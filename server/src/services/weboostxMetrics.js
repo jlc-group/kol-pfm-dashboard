@@ -11,7 +11,8 @@ function itemIdFor(row) {
         const url = new URL(link);
         const host = url.hostname.toLowerCase();
         const valid = platform === 'instagram'
-            ? /^(www\.)?instagram\.com$/.test(host) && /^\/(p|reel|tv)\/[^/]+/.test(url.pathname)
+            ? /^(www\.)?instagram\.com$/.test(host)
+                && /^\/(?:[A-Za-z0-9_.]+\/)?(?:p|reels?|tv)\/[A-Za-z0-9_-]+\/?$/.test(url.pathname)
             : /^(www\.|m\.|web\.)?facebook\.com$/.test(host)
                 && (/\/(posts|videos|permalink)\//.test(url.pathname) || url.searchParams.has('story_fbid'));
         if (valid && url.protocol === 'https:' && link.length <= 500) return link;

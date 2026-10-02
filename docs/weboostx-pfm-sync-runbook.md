@@ -22,6 +22,13 @@ Map the response's original `item_id` plus platform back to exact submission IDs
 Fill blank `id_post` only; preserve existing IDs and manually entered ad dates.
 Changed identities are skipped after a row lock. No fuzzy creator matching.
 
+Instagram `/p/`, `/reel/`, `/reels/`, `/tv/` and username-prefixed post links
+are supported. WeBoostX must resolve `source_instagram_media_id` with Meta's
+`id,permalink`; a creative's `instagram_permalink_url` may identify an ad copy
+and must not be used as the creator's original URL. Missing/unreadable original
+media remain unmatched, never guessed by name, date or SKU. Older provider cache
+entries are repaired by its bounded hourly source-permalink job.
+
 `ad_spend` and `ad_reach` are lifetime totals, never increments. Null reach means
 unknown: do not write zero. Do not sum daily reach. Regressing totals are ignored.
 Fired status requires actual spend. Existing performance-stamp rules remain in
