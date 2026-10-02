@@ -2952,6 +2952,23 @@ a.ads-thumb:focus-visible { outline: 2px solid var(--mint-dark); outline-offset:
 .ptgt-kol.need input { border-color: #f87171; background: #fff7f7; }
 .ptgt-kol span { font-size: 11.5px; color: #7d938d; white-space: nowrap; }
 .ptgt-row.need-kol { border-color: #fca5a5; background: #fff7f7; }
+/* ชุดสินค้า (KOL 1 คนรีวิวหลายสินค้ารวมในคลิปเดียว) — ติ๊ก ☐ หน้าแถว/ชิป แล้วกด 🔗 รวมเป็นชุด · แถว/ชิปของชุดโทนม่วง */
+.pbd-bar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: -3px 0 8px; }
+.pbd-make { border: 1px dashed #c4b5fd; background: #faf5ff; color: #6d28d9; border-radius: 999px; padding: 4px 11px; font-size: 11.5px; font-weight: 700; cursor: pointer; }
+.pbd-make:not(:disabled) { border-style: solid; border-color: #a78bfa; background: #f3e8ff; }
+.pbd-make:disabled { opacity: .6; cursor: default; }
+.pbd-hint { font-size: 11px; color: #7d938d; }
+.pbd-pick { flex: 0 0 auto; display: inline-flex; align-items: center; padding-top: 5px; }
+/* .modal input ตั้ง width 100% + padding ให้ทุกช่อง — checkbox ต้องคืนขนาดปกติ */
+.pbd-pick input[type="checkbox"] { width: 14px; height: 14px; margin: 0; padding: 0; cursor: pointer; accent-color: #7c3aed; box-shadow: none; }
+.prodchip .pbd-pick { padding: 0 5px 0 0; }
+.ptgt-row.pbd-row { border-left: 3px solid #a78bfa; }
+.ptgt-row.pbd-row .ptgt-prod { flex-basis: 150px; }
+.ptgt-row.pbd-row .ptgt-prod b { color: #5b21b6; }
+.pbd-split { align-self: flex-start; border: none; background: transparent; color: #6d28d9; font-size: 10.5px; font-weight: 700; padding: 1px 0; cursor: pointer; white-space: nowrap; }
+.pbd-split:hover { text-decoration: underline; }
+.prodchip.pbd-chip { background: #f5f0ff; border-color: #d8c8fb; color: #5b21b6; gap: 4px; }
+.prodchip.pbd-chip .pbd-split { margin-left: 4px; }
 /* ป้ายสถานะหัวรายการสินค้า (Target / งบ / จำนวนคน) เรียงลงมาชิดขวา */
 .tgt-hints { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; margin-left: auto; text-align: right; }
 .tgt-hint.over { color: #b91c1c; }
@@ -2959,6 +2976,8 @@ a.ads-thumb:focus-visible { outline: 2px solid var(--mint-dark); outline-offset:
 .adg-pbud b { font-weight: 800; }
 /* จำนวน KOL ต่อสินค้า ในการ์ดกลุ่มหน้ารายละเอียดแคมเปญ — สีฟ้า แยกจากงบต่อสินค้า (สีส้ม) */
 .adg-pbud.adg-pkol { background: #eef4ff; border-color: #d6e2ff; color: #3b5ba5; }
+/* ชุดสินค้า (รีวิวรวมในคลิปเดียว) ในการ์ดกลุ่ม — โทนม่วงเดียวกับในฟอร์ม */
+.adg-pbud.adg-pbd { background: #f5f0ff; border-color: #d8c8fb; color: #5b21b6; }
 /* จำนวน KOL ต่อสินค้า ที่หัวกลุ่ม (หน้าเอเจนซี่ + แท็บรายชื่อฝั่งทีม) — ต้องการกี่คน · ส่งแล้วกี่คน */
 .ag-pkol { margin-top: 8px; display: flex; flex-direction: column; gap: 5px; }
 .ag-pkol-lbl { font-size: 11.5px; font-weight: 700; color: var(--muted); }

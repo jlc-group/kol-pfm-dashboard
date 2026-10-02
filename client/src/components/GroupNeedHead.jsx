@@ -42,6 +42,7 @@ export default function GroupNeedHead({ group, gi, products = [], platforms = []
                         </div>
                     )}
                     {/* ทีมแยกจำนวน KOL ต่อสินค้า — บอกว่าแต่ละสินค้าต้องการกี่คน ส่งแล้วกี่คน (ไม่นับคนที่ไม่ถูกเลือก)
+                        ชุดสินค้า (รีวิวรวมในคลิปเดียว) = 1 รายการ "L8A + L8B ต้องการ 3 คน · ส่งแล้ว 1" (คนที่มีรหัสไหนของชุดก็นับ 1 ครั้ง)
                         เกินโควตาของสินค้า = ขึ้นสีแดงให้เห็น แต่ไม่ได้ห้ามส่ง · หลาย Platform ในขอบเขต = บอกชื่อ Platform นำหน้า */}
                     {productNeeds.length > 0 && (
                         <div className="ag-pkol">
@@ -51,7 +52,8 @@ export default function GroupNeedHead({ group, gi, products = [], platforms = []
                                     {platforms.length > 1 && <span className="ag-pkol-pf">📱 {p.platform}</span>}
                                     {p.rows.map(r => (
                                         <span className={'ag-pkol-row' + (r.over ? ' over' : r.full ? ' full' : '')} key={r.code}
-                                            title={productLabel(r.code) + (r.over ? ` — ส่งเกินโควตาของสินค้านี้ ${r.sent - r.need} คน` : '')}>
+                                            title={(r.codes || [r.code]).map(productLabel).join(' + ') + (r.codes && r.codes.length > 1 ? ' (รีวิวรวมในคลิปเดียว)' : '')
+                                                + (r.over ? ` — ส่งเกินโควตาของสินค้านี้ ${r.sent - r.need} คน` : '')}>
                                             <b>{r.code}</b> ต้องการ {r.need} คน · ส่งแล้ว {r.sent}{r.over ? ` (เกิน ${r.sent - r.need})` : r.full ? ' ✓' : ''}
                                         </span>
                                     ))}

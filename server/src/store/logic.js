@@ -739,7 +739,7 @@ function carryNoGencode(incoming, stored) {
 }
 
 // Concept แยกต่อสินค้า (ต่อ Platform): แท็บที่เปิดค้างจากก่อน deploy ส่งบล็อกมาโดยไม่มี concept_split (ฟอร์มรุ่นใหม่ส่ง true/false เสมอ)
-// ของในฐานแยกอยู่ + Concept หลักของกลุ่มเท่าเดิม → ยก Concept ต่อสินค้าเดิมมาต่อ (เฉพาะสินค้าที่ยังอยู่ในบล็อก)
+// ของในฐานแยกอยู่ + Concept หลักของกลุ่มเท่าเดิม → ยก Concept ต่อสินค้าเดิมมาต่อ (เฉพาะสินค้าที่ยังอยู่ในบล็อก · ชุด = เฉพาะหัวชุด)
 // ต้องตรงกับ packConcepts ฝั่งหน้าเว็บ
 function carryProductConcepts(incoming, stored) {
     if (!Array.isArray(incoming) || !Array.isArray(stored)) return incoming;
@@ -755,7 +755,7 @@ function carryProductConcepts(incoming, stored) {
             const ob = old.blocks.find(x => x && x.platform === b.platform && x.concept_split === true && isMap(x.product_concepts));
             if (!ob) return b;
             const pc = {};
-            (Array.isArray(b.products) ? b.products : []).forEach(c => {
+            rowHeads(b).forEach(c => {
                 if (Object.prototype.hasOwnProperty.call(ob.product_concepts, c) && text(ob.product_concepts[c])) pc[c] = text(ob.product_concepts[c]);
             });
             changed = true;
@@ -765,9 +765,71 @@ function carryProductConcepts(incoming, stored) {
     });
 }
 
+// ชุดสินค้า (bundles) — สินค้าที่ KOL 1 คนรีวิวรวมในคลิปเดียว [['L8A','L8B'], ...] ต่อ Platform
+// 1 รหัสอยู่ได้ชุดเดียว · เฉพาะรหัสที่อยู่ในบล็อก · ชุดต้องมีอย่างน้อย 2 รหัส · ต้องตรงกับ blockBundles ฝั่งหน้าเว็บ (client/src/data/adGroups.js)
+// งบ / จำนวนคน / Concept ของชุดเก็บที่หัวชุด (รหัสแรก) ตัวเดียว · Target ยังเก็บต่อสินค้า (ทุกรหัสในชุดได้ชุดเดียวกัน)
+function blockBundles(b, products) {
+    const list = (Array.isArray(products) ? products : (b && Array.isArray(b.products) ? b.products : [])).map(String);
+    const used = new Set();
+    const out = [];
+    (b && Array.isArray(b.bundles) ? b.bundles : []).forEach(raw => {
+        if (!Array.isArray(raw)) return;
+        const codes = [];
+        raw.map(String).forEach(c => { if (list.includes(c) && !used.has(c) && !codes.includes(c)) codes.push(c); });
+        if (codes.length < 2) return;
+        codes.forEach(c => used.add(c));
+        out.push(codes);
+    });
+    return out;
+}
+// รหัสที่เก็บค่าของแต่ละแถวสินค้า (สินค้าเดี่ยว = ตัวเอง · ชุด = หัวชุดครั้งเดียว) ตามลำดับสินค้า — เหมือน productRows ฝั่งหน้าเว็บ
+function rowHeads(b) {
+    const products = b && Array.isArray(b.products) ? b.products.map(String) : [];
+    const bundles = blockBundles(b, products);
+    const heads = [];
+    products.forEach(c => {
+        const bd = bundles.find(x => x.includes(c));
+        const h = bd ? bd[0] : c;
+        if (!heads.includes(h)) heads.push(h);
+    });
+    return heads;
+}
+
+// ชุดสินค้า: แท็บที่เปิดค้างจากก่อน deploy ส่งบล็อกมาโดยไม่มี bundles (ฟอร์มรุ่นใหม่ส่งอาเรย์เสมอ ว่าง = ไม่มีชุด)
+// ของในฐานมีชุด + สินค้าของบล็อกเท่าเดิม (ไม่ได้เพิ่ม/เอาสินค้าออก) + แท็บนั้นไม่ได้ใส่งบ / จำนวนคน / Concept ให้รหัสที่ไม่ใช่หัวชุด
+// (= ยังใช้ค่าของชุดตามเดิม) → ยกชุดเดิมมาต่อ · นอกนั้นไม่มีชุดตามที่ส่งมา (ทุกสินค้าเป็นแถวเดี่ยว)
+function carryProductBundles(incoming, stored) {
+    if (!Array.isArray(incoming) || !Array.isArray(stored)) return incoming;
+    const isMap = v => !!v && typeof v === 'object' && !Array.isArray(v);
+    // มีค่าจริง = ไม่ว่างและไม่ใช่ 0 (ฟอร์มรุ่นเก่าเขียนงบ 0 ให้ทุกสินค้าที่ยังไม่ใส่)
+    const filled = v => !!String(v == null ? '' : v).replace(/[0\s,]/g, '');
+    return incoming.map(g => {
+        if (!g || !Array.isArray(g.blocks) || !g.key) return g;
+        const old = stored.find(s => s && s.key === g.key);
+        if (!old || !Array.isArray(old.blocks)) return g;
+        let changed = false;
+        const blocks = g.blocks.map(b => {
+            if (!b || b.bundles !== undefined) return b;
+            const ob = old.blocks.find(x => x && x.platform === b.platform && Array.isArray(x.bundles) && x.bundles.length);
+            if (!ob) return b;
+            const products = Array.isArray(b.products) ? b.products.map(String) : [];
+            const oldProducts = Array.isArray(ob.products) ? ob.products.map(String) : [];
+            if (!products.length || products.length !== oldProducts.length || !products.every(c => oldProducts.includes(c))) return b;
+            const bundles = blockBundles(ob, products);
+            if (!bundles.length) return b;
+            const tail = bundles.flatMap(bd => bd.slice(1));
+            if (['product_budgets', 'product_kols', 'product_concepts'].some(k => isMap(b[k]) && tail.some(c => filled(b[k][c])))) return b;
+            changed = true;
+            return { ...b, bundles };
+        });
+        return changed ? { ...g, blocks } : g;
+    });
+}
+
 // งบแยกต่อสินค้า: แท็บที่เปิดค้างจากก่อน deploy ส่งบล็อกมาโดยไม่มี budget_mode (ฟอร์มรุ่นใหม่ส่ง 'total' / 'split' เสมอ)
 // ของในฐานแยกงบอยู่ + ทุกสินค้าที่ส่งมามีงบเดิม + ผลรวมเท่างบที่ส่งมา (ไม่ได้แตะงบ) → ยกงบรายสินค้าเดิมมาต่อ
 // นอกนั้นเป็นงบก้อนเดียวตามที่ส่งมา (ตัวเลขงบรวมยังถูกเสมอ) · ต้องตรงกับ packBudgets ฝั่งหน้าเว็บ
+// ชุดสินค้า: งบของชุดอยู่ที่หัวชุด → ตรวจ / ยกเฉพาะหัวชุด (ชุดของบล็อกที่ส่งมา — carryProductBundles ยกให้ก่อนแล้ว)
 function carryProductBudgets(incoming, stored) {
     if (!Array.isArray(incoming) || !Array.isArray(stored)) return incoming;
     const isMap = v => !!v && typeof v === 'object' && !Array.isArray(v);
@@ -781,7 +843,7 @@ function carryProductBudgets(incoming, stored) {
             if (!b || b.budget_mode !== undefined) return b;
             const ob = old.blocks.find(x => x && x.platform === b.platform && x.budget_mode === 'split' && isMap(x.product_budgets));
             if (!ob) return b;
-            const products = Array.isArray(b.products) ? b.products : [];
+            const products = rowHeads(b);
             if (!products.length || !products.every(c => Object.prototype.hasOwnProperty.call(ob.product_budgets, c))) return b;
             const pb = {};
             products.forEach(c => { pb[c] = money(ob.product_budgets[c]); });
@@ -797,6 +859,7 @@ function carryProductBudgets(incoming, stored) {
 // จำนวน KOL แยกต่อสินค้า: แท็บที่เปิดค้างจากก่อน deploy ส่งบล็อกมาโดยไม่มี kol_split (ฟอร์มรุ่นใหม่ส่ง true/false เสมอ)
 // ของในฐานแยกอยู่ + ทุกสินค้าที่ส่งมามีจำนวนเดิม (อย่างน้อย 1 คน) + ผลรวมเท่าจำนวน KOL ของ Platform ที่ส่งมา (ไม่ได้แตะสินค้า/แถว Tier) → ยกจำนวนต่อสินค้าเดิมมาต่อ
 // นอกนั้นไม่แยกตามที่ส่งมา (จำนวนคนรวมของ Platform ยังมาจากแถว Tier เสมอ) · ต้องตรงกับ packKols / kolSplitState ฝั่งหน้าเว็บ
+// ชุดสินค้า = 1 แถว จำนวนคนอยู่ที่หัวชุด → ตรวจ / ยกเฉพาะหัวชุด
 function carryProductKols(incoming, stored) {
     if (!Array.isArray(incoming) || !Array.isArray(stored)) return incoming;
     const isMap = v => !!v && typeof v === 'object' && !Array.isArray(v);
@@ -814,7 +877,7 @@ function carryProductKols(incoming, stored) {
             if (!b || b.kol_split !== undefined) return b;
             const ob = old.blocks.find(x => x && x.platform === b.platform && x.kol_split === true && isMap(x.product_kols));
             if (!ob) return b;
-            const products = Array.isArray(b.products) ? b.products : [];
+            const products = rowHeads(b);
             if (!products.length || !products.every(c => count(ob.product_kols[c]) >= 1)) return b;
             const pk = {};
             products.forEach(c => { pk[c] = count(ob.product_kols[c]); });
@@ -1094,6 +1157,7 @@ module.exports = {
     PERSON_FIELDS, personPatch,
     resolveInside, sameInstant, mergeHireItems, mergeBriefFiles, cleanFee, cleanHeadcount, safeId, safeSlug,
     linkGroupPlatforms, resolveGroupClips, resolveGroupTarget, productCodesIn, carryProductTargets, carryProductBudgets, carryProductConcepts, carryProductKols,
+    carryProductBundles, blockBundles,
     groupNoGencode, postNoGencode, carryNoGencode,
     resolveGroupProducts, resolveGroupCtype, resolveGroupMedia, resolveGroupCampaign,
     engagementOf, maybeStamp, stampWaitReason,

@@ -320,13 +320,14 @@ function GroupBar({ group, gi, count, scope, kolNeeds = [] }) {
             {/* กลุ่มที่ตั้ง "-" ในฟอร์มแคมเปญ — บอกไว้ที่หัวกลุ่มว่าช่อง Gencode ว่างได้ ไม่ใช่ลืมกรอก */}
             {groupNoGencode(group) && <span className="grp-concept" title="กลุ่มนี้ไม่ใช้ Gencode — แถวที่ไม่มี Gencode ไม่ต้องกรอก">ไม่ใช้ Gencode</span>}
             <span className="grp-count">{count} คน</span>
-            {/* แยกจำนวน KOL ต่อสินค้า: ส่งแล้ว / ต้องการ ของแต่ละสินค้า (นับคน ไม่นับคนที่ไม่ถูกเลือก) — เกินโควตาขึ้นสีแดงแต่ไม่ได้ห้าม */}
+            {/* แยกจำนวน KOL ต่อสินค้า: ส่งแล้ว / ต้องการ ของแต่ละสินค้า (นับคน ไม่นับคนที่ไม่ถูกเลือก) — เกินโควตาขึ้นสีแดงแต่ไม่ได้ห้าม
+                ชุดสินค้า = ชิปเดียว "L8A + L8B 1/3" */}
             {kolNeeds.length > 0 && (
                 <div className="grp-pkol">
                     <span className="grp-pkol-lbl">👥 คนต่อสินค้า (ส่งแล้ว/ต้องการ)</span>
                     {kolNeeds.map(p => p.rows.map(r => (
                         <span className={'grp-pkol-chip' + (r.over ? ' over' : r.full ? ' full' : '')} key={p.platform + '::' + r.code}
-                            title={`${productLabel(r.code)} · ${p.platform} — ส่งแล้ว ${r.sent} คน / ต้องการ ${r.need} คน${r.over ? ` (เกิน ${r.sent - r.need})` : ''}`}>
+                            title={`${(r.codes || [r.code]).map(productLabel).join(' + ')} · ${p.platform} — ส่งแล้ว ${r.sent} คน / ต้องการ ${r.need} คน${r.over ? ` (เกิน ${r.sent - r.need})` : ''}`}>
                             {multiPlat && <small>{p.platform}</small>}<b>{r.code}</b> {r.sent}/{r.need}
                         </span>
                     )))}

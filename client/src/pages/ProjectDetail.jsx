@@ -17,7 +17,7 @@ import {
     groupPlatforms, kolInScope, contentTypesOf, mediaFor, quotaOf,
     toBlocks, blockKol, blocksKol, blocksBudget, num, needTarget, isSplitBudget, hasOwnConcepts,
     contentCells, cellKeyOf, cellKey, clipCountFor, targetFor, groupNoGencode, productsFor, allocsInScope, conceptOneLine,
-    isKolSplit, productKolOf, productKolProgress
+    isKolSplit, productKolOf, productKolProgress, productRows, blockBundles
 } from '../data/adGroups.js';
 import { collapseByPerson, countPeople } from '../data/clips.js';
 import ProductFilter from '../components/ProductFilter.jsx';
@@ -1163,27 +1163,40 @@ export default function ProjectDetail() {
                                                                 </div>
                                                             )}
                                                             </>)}
-                                                            {/* งบแยกต่อสินค้า (ผลรวม = งบของ Platform ที่หัวบล็อก) */}
-                                                            {isSplitBudget(b) && (b.products || []).length > 0 && (
+                                                            {/* ชุดสินค้า: KOL 1 คนรีวิวหลายสินค้ารวมในคลิปเดียว (งบ / จำนวนคน / Concept / Target ชุดเดียว) */}
+                                                            {blockBundles(b).length > 0 && (
                                                                 <div className="adg-field">
-                                                                    <span className="adg-label">งบต่อสินค้า</span>
+                                                                    <span className="adg-label">ชุดรีวิวรวม (คลิปเดียว)</span>
                                                                     <div className="adg-val">
-                                                                        {b.products.map(c => (
-                                                                            <span className="adg-pbud" key={c} title={productLabel(c)}>
-                                                                                <b>{c}</b> ฿{num((b.product_budgets || {})[c]).toLocaleString('th-TH')}
+                                                                        {blockBundles(b).map(bd => (
+                                                                            <span className="adg-pbud adg-pbd" key={bd[0]} title={bd.map(productLabel).join('\n')}>
+                                                                                🔗 <b>{bd.join(' + ')}</b>
                                                                             </span>
                                                                         ))}
                                                                     </div>
                                                                 </div>
                                                             )}
-                                                            {/* จำนวน KOL แยกต่อสินค้า (ผลรวม = จำนวนคนของ Platform ที่หัวบล็อก) */}
+                                                            {/* งบแยกต่อสินค้า (ผลรวม = งบของ Platform ที่หัวบล็อก) · ชุด = 1 รายการ (งบอยู่ที่หัวชุด) */}
+                                                            {isSplitBudget(b) && (b.products || []).length > 0 && (
+                                                                <div className="adg-field">
+                                                                    <span className="adg-label">งบต่อสินค้า</span>
+                                                                    <div className="adg-val">
+                                                                        {productRows(b).map(r => (
+                                                                            <span className="adg-pbud" key={r.head} title={r.codes.map(productLabel).join('\n')}>
+                                                                                <b>{r.label}</b> ฿{num((b.product_budgets || {})[r.head]).toLocaleString('th-TH')}
+                                                                            </span>
+                                                                        ))}
+                                                                    </div>
+                                                                </div>
+                                                            )}
+                                                            {/* จำนวน KOL แยกต่อสินค้า (ผลรวม = จำนวนคนของ Platform ที่หัวบล็อก) · ชุด = 1 รายการ */}
                                                             {isKolSplit(b) && (b.products || []).length > 0 && (
                                                                 <div className="adg-field">
                                                                     <span className="adg-label">จำนวน KOL ต่อสินค้า</span>
                                                                     <div className="adg-val">
-                                                                        {b.products.map(c => (
-                                                                            <span className="adg-pbud adg-pkol" key={c} title={productLabel(c)}>
-                                                                                <b>{c}</b> {productKolOf(b, c)} คน
+                                                                        {productRows(b).map(r => (
+                                                                            <span className="adg-pbud adg-pkol" key={r.head} title={r.codes.map(productLabel).join('\n')}>
+                                                                                <b>{r.label}</b> {productKolOf(b, r.head)} คน
                                                                             </span>
                                                                         ))}
                                                                     </div>

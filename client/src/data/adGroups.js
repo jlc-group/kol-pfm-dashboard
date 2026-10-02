@@ -88,7 +88,8 @@ export const emptySet = (over = {}) => ({ campaign: '', content_type: '', media_
 // budget_mode = 'total' งบรวมก้อนเดียว (budget) | 'split' แยกงบต่อสินค้า (product_budgets { รหัส: งบ } และ budget = ผลรวม)
 // concept_split / product_concepts = Concept แยกต่อสินค้าของ Platform นี้ (ว่าง = ใช้ Concept หลักของกลุ่ม)
 // kol_split / product_kols = จำนวน KOL แยกต่อสินค้าของ Platform นี้ { รหัส: จำนวนคน } (ผลรวม = จำนวนคนจากแถว Tier พอดี)
-export const emptyBlock = platform => ({ platform, target: [], product_targets: {}, budget: '', budget_mode: 'total', product_budgets: {}, concept_split: false, product_concepts: {}, kol_split: false, product_kols: {}, products: [], clips: [], sets: [emptySet()] });
+// bundles = ชุดสินค้าที่ KOL 1 คนรีวิวรวมในคลิปเดียว [['L8A','L8B'], ...] (ดู blockBundles)
+export const emptyBlock = platform => ({ platform, target: [], product_targets: {}, budget: '', budget_mode: 'total', product_budgets: {}, concept_split: false, product_concepts: {}, kol_split: false, product_kols: {}, bundles: [], products: [], clips: [], sets: [emptySet()] });
 
 export const setKol = s => (s.tiers || []).reduce((n, t) => n + (Number(t.kols) || 0), 0);
 export const blockKol = b => (b.sets || []).reduce((n, s) => n + setKol(s), 0);
@@ -148,6 +149,8 @@ export function toBlocks(g, platformCsv) {
                 // จำนวน KOL แยกต่อสินค้า — ข้อมูลเก่าที่ไม่มีช่องนี้ = ไม่แยก
                 kol_split: b.kol_split === true,
                 product_kols: isMap(b.product_kols) ? { ...b.product_kols } : {},
+                // ชุดสินค้า (รีวิวรวมในคลิปเดียว) — ข้อมูลเก่าที่ไม่มีช่องนี้ = ไม่มีชุด ทุกสินค้าเป็นแถวเดี่ยว
+                bundles: Array.isArray(b.bundles) ? b.bundles.filter(Array.isArray).map(x => x.map(String)) : [],
                 products: [...(b.products || [])],
                 clips: [...(b.clips || [])],
                 sets: (b.sets && b.sets.length ? b.sets : [emptySet()]).map(s => ({
@@ -182,6 +185,7 @@ export function toBlocks(g, platformCsv) {
         product_concepts: {},
         kol_split: false,
         product_kols: {},
+        bundles: [],
         // ของเก่าสินค้า/คลิปเป็นของกลุ่ม = ทุก Platform ใช้ชุดเดียวกันอยู่แล้ว ยกลงให้ครบทุกบล็อก
         products: [...(g.products || [])],
         clips: [...(g.clips || [])],
@@ -277,23 +281,119 @@ export function withProductTargets(b) {
 
 const isMap = v => !!v && typeof v === 'object' && !Array.isArray(v);
 
+// ---------- ชุดสินค้า (Bundle) — สินค้าที่ KOL 1 คนรีวิวรวมในคลิปเดียว เช่น L8A + L8B (ต่อ Platform) ----------
+// b.bundles = [['L8A','L8B'], ...] · 1 รหัสอยู่ได้ชุดเดียว · เฉพาะรหัสที่ยังอยู่ในบล็อก · ชุดต้องมีอย่างน้อย 2 รหัส
+// แถวสินค้า (row) = สินค้าเดี่ยว หรือ ทั้งชุด → งบ / จำนวนคน / Concept ของชุดเก็บที่ "หัวชุด" (รหัสแรกของชุด) ที่เดียว รหัสอื่นในชุดไม่มีค่า
+// Target ยังเก็บต่อสินค้าเหมือนเดิม (ทุกรหัสในชุดได้ Target ชุดเดียวกัน) — targetFor / resolveGroupTarget อ่านต่อสินค้าได้เลย
+// ข้อมูลเก่าไม่มี bundles = ทุกสินค้าเป็นแถวเดี่ยว (ทุกอย่างเหมือนเดิม) · ต้องตรงกับ blockBundles ฝั่ง server (server/src/store/logic.js)
+export function blockBundles(b) {
+    const products = ((b && b.products) || []).map(String);
+    const used = new Set();
+    const out = [];
+    (b && Array.isArray(b.bundles) ? b.bundles : []).forEach(raw => {
+        if (!Array.isArray(raw)) return;
+        const codes = [];
+        raw.map(String).forEach(c => { if (products.includes(c) && !used.has(c) && !codes.includes(c)) codes.push(c); });
+        if (codes.length < 2) return;
+        codes.forEach(c => used.add(c));
+        out.push(codes);
+    });
+    return out;
+}
+
+// แถวสินค้าของบล็อกตามลำดับสินค้า (ชุดอยู่ตรงตำแหน่งรหัสแรกของชุดที่เจอ)
+// → [{ head, codes, label, bundle }] · label ของชุด = "L8A + L8B" · ไม่มีชุด = 1 สินค้า 1 แถวเหมือนเดิม
+export function productRows(b) {
+    const bundles = blockBundles(b);
+    const rows = [];
+    ((b && b.products) || []).forEach(code => {
+        const bd = bundles.find(x => x.includes(code));
+        if (!bd) { rows.push({ head: code, codes: [code], label: code, bundle: false }); return; }
+        if (rows.some(r => r.head === bd[0])) return;
+        rows.push({ head: bd[0], codes: bd, label: bd.join(' + '), bundle: true });
+    });
+    return rows;
+}
+
+// รหัสที่เก็บค่าของแถวที่สินค้านี้อยู่ (อยู่ในชุด = หัวชุด · ไม่อยู่ในชุด = ตัวเอง)
+export const rowHeadOf = (b, code) => { const bd = blockBundles(b).find(x => x.includes(code)); return bd ? bd[0] : code; };
+
+// รวมแถวที่ติ๊กเป็นชุดเดียว (ติ๊กแถวที่เป็นชุดอยู่แล้ว = เอาทั้งชุดมารวมด้วย) — ต้องได้อย่างน้อย 2 แถว ไม่งั้นคืนบล็อกเดิม
+// รหัสในชุดเรียงตามลำดับสินค้าในบล็อก → หัวชุด = ตัวแรก
+// ค่าที่ใส่ไว้ไม่หาย: งบ / จำนวนคน = ผลรวมของแถวที่รวม (ยอดรวมของ Platform เท่าเดิม) · Concept = ทุกคอนเซปต์ที่ใส่ไว้ (ไม่ซ้ำ ต่อบรรทัด)
+// Target = รวมทุก Target ที่เลือกไว้ แล้วให้ทุกรหัสในชุด
+export function makeBundle(b, codes) {
+    const want = (codes || []).map(String);
+    const picked = productRows(b).filter(r => r.codes.some(c => want.includes(c)));
+    if (picked.length < 2) return b;
+    const members = (b.products || []).filter(c => picked.some(r => r.codes.includes(c)));
+    const head = members[0];
+    const heads = picked.map(r => r.head);
+    const pb = { ...(isMap(b.product_budgets) ? b.product_budgets : {}) };
+    const pk = { ...(isMap(b.product_kols) ? b.product_kols : {}) };
+    const pc = { ...(isMap(b.product_concepts) ? b.product_concepts : {}) };
+    const pt = { ...(isMap(b.product_targets) ? b.product_targets : {}) };
+    const bsum = heads.reduce((n, h) => n + num(pb[h]), 0);
+    const ksum = heads.reduce((n, h) => n + num(pk[h]), 0);
+    const cons = [...new Set(heads.flatMap(h => conceptParts(pc[h])))];
+    const tg = [...new Set(members.flatMap(c => asArr(pt[c])))];
+    members.forEach(c => { delete pb[c]; delete pk[c]; delete pc[c]; pt[c] = [...tg]; });
+    if (bsum > 0) pb[head] = String(bsum);
+    if (ksum > 0) pk[head] = String(ksum);
+    if (cons.length) pc[head] = cons.join('\n');
+    const bundles = [...blockBundles(b).filter(x => !x.some(c => members.includes(c))), members];
+    const next = { ...b, bundles, product_budgets: pb, product_kols: pk, product_concepts: pc, product_targets: pt };
+    if (!isSplitBudget(next)) return next;
+    const sum = productBudgetSum(next);
+    return { ...next, budget: sum > 0 ? String(sum) : '' };
+}
+
+// แยกชุดกลับเป็นทีละสินค้า: งบ / จำนวนคน / Concept ของชุดอยู่ที่หัวชุด (ตัวแรก) ตามเดิม · รหัสอื่นเริ่มว่าง (ไม่เดาตัวเลขให้)
+// Target: ทุกรหัสคง Target ของชุดไว้ (เอาออกเองทีละแถวได้) · ยอดรวมงบ / จำนวนคนของ Platform ไม่เปลี่ยน
+export function splitBundle(b, head) {
+    return { ...b, bundles: blockBundles(b).filter(x => !x.includes(head)) };
+}
+
+// เอาสินค้าออกจากบล็อก = หลุดจากชุดด้วย · ถ้าเป็นหัวชุด ค่าของชุด (งบ / จำนวนคน / Concept) ย้ายไปที่รหัสถัดไปในชุด
+// ชุดที่เหลือรหัสเดียว = กลายเป็นแถวปกติ (รหัสที่เหลือได้ค่าของชุดไป) · เรียกได้ทั้งก่อนและหลังเอารหัสออกจาก products
+export function dropFromBundle(b, code) {
+    const has = (b.products || []).includes(code);
+    const bundles = blockBundles(has ? b : { ...b, products: [...(b.products || []), code] });
+    const bd = bundles.find(x => x.includes(code));
+    if (!bd) return b;
+    const rest = bd.filter(c => c !== code);
+    const next = { ...b, bundles: bundles.map(x => (x === bd ? rest : x)).filter(x => x.length >= 2) };
+    if (bd[0] !== code) return next;
+    const move = key => {
+        const m = { ...(isMap(b[key]) ? b[key] : {}) };
+        if (m[code] !== undefined) m[rest[0]] = m[code];
+        delete m[code];
+        return m;
+    };
+    return { ...next, product_budgets: move('product_budgets'), product_kols: move('product_kols'), product_concepts: move('product_concepts') };
+}
+
+// ตอนบันทึก: เขียน bundles เป็นอาเรย์เสมอ (ว่าง = ไม่มีชุด) — server (carryProductBundles) ใช้แยกฟอร์มรุ่นใหม่ออกจากแท็บเก่าที่ไม่รู้จักช่องนี้
+// เก็บเฉพาะชุดที่ถูกต้อง (รหัสยังอยู่ในบล็อก ไม่ซ้ำชุด อย่างน้อย 2 รหัส)
+export const packBundles = b => ({ ...b, bundles: blockBundles(b) });
+
 // งบของ Platform แยกต่อสินค้าไหม (ไม่มีค่า / ข้อมูลเก่า = งบรวมก้อนเดียว)
 export const isSplitBudget = b => !!b && b.budget_mode === 'split';
 
-// ผลรวมงบของสินค้าที่ยังอยู่ในบล็อก
+// ผลรวมงบของสินค้าที่ยังอยู่ในบล็อก — ชุดนับครั้งเดียว (งบอยู่ที่หัวชุด)
 export function productBudgetSum(b) {
     const pb = isMap(b.product_budgets) ? b.product_budgets : {};
-    return (b.products || []).reduce((n, c) => n + num(pb[c]), 0);
+    return productRows(b).reduce((n, r) => n + num(pb[r.head]), 0);
 }
 
-// ตอนบันทึก: แยกต่อสินค้า → เก็บงบเฉพาะสินค้าที่ยังอยู่ และ budget = ผลรวม (งบกลุ่ม/งบแคมเปญ/แบ่งค่าตัวที่อ่าน budget ใช้ต่อได้เหมือนเดิม)
+// ตอนบันทึก: แยกต่อสินค้า → เก็บงบเฉพาะสินค้าที่ยังอยู่ (ชุด = เก็บที่หัวชุดตัวเดียว) และ budget = ผลรวม (งบกลุ่ม/งบแคมเปญ/แบ่งค่าตัวที่อ่าน budget ใช้ต่อได้เหมือนเดิม)
 // ก้อนเดียว → เขียน budget_mode 'total' ไว้ชัด ๆ (server ใช้แยกฟอร์มรุ่นใหม่ออกจากแท็บเก่าที่ไม่รู้จักช่องนี้) และไม่เก็บงบรายสินค้า
 // ต้องตรงกับ carryProductBudgets ฝั่ง server (server/src/store/logic.js)
 export function packBudgets(b) {
     const { budget_before_split, product_budgets, ...rest } = b;
     if (!isSplitBudget(b)) return { ...rest, budget_mode: 'total' };
     const pb = {};
-    (rest.products || []).forEach(c => { pb[c] = num(isMap(product_budgets) ? product_budgets[c] : 0); });
+    productRows(rest).forEach(r => { pb[r.head] = num(isMap(product_budgets) ? product_budgets[r.head] : 0); });
     const sum = Object.values(pb).reduce((n, v) => n + v, 0);
     return { ...rest, budget_mode: 'split', product_budgets: pb, budget: sum > 0 ? String(sum) : '' };
 }
@@ -326,8 +426,11 @@ export function conceptRows(g, only, platforms) {
     g.blocks.forEach(b => {
         if (!b || (platforms && platforms.length && !platforms.includes(b.platform))) return;
         const pc = isBlockSplitConcept(b) && isMap(b.product_concepts) ? b.product_concepts : {};
+        // สินค้าในชุด (รีวิวรวมในคลิปเดียว) ใช้ Concept ของชุด (เก็บที่หัวชุด) — ทุกรหัสในชุดโชว์ Concept เดียวกัน
+        const headOf = {};
+        productRows(b).forEach(r => r.codes.forEach(c => { headOf[c] = r.head; }));
         (b.products || []).filter(c => !only || only.includes(c)).forEach(code => {
-            const own = ctext(pc[code]);
+            const own = ctext(pc[headOf[code] || code]);
             const concept = own || main;
             (conceptsOf[code] = conceptsOf[code] || new Set()).add(concept);
             if (concept) entries.push({ code, platform: b.platform, concept, own: !!own });
@@ -367,13 +470,13 @@ export function conceptText(g, full = false, only, platforms) {
 }
 
 // ตอนบันทึก (ต่อบล็อก): เขียน concept_split ไว้ชัด ๆ เสมอ (server ใช้แยกฟอร์มรุ่นใหม่ออกจากแท็บเก่าที่ไม่รู้จักช่องนี้)
-// แยกอยู่ → เก็บเฉพาะสินค้าที่ยังอยู่ในบล็อกและมีข้อความ · ไม่แยก → ไม่เก็บ product_concepts
+// แยกอยู่ → เก็บเฉพาะสินค้าที่ยังอยู่ในบล็อกและมีข้อความ (ชุด = เก็บที่หัวชุดตัวเดียว) · ไม่แยก → ไม่เก็บ product_concepts
 // ต้องตรงกับ carryProductConcepts ฝั่ง server (server/src/store/logic.js)
 export function packConcepts(b) {
     const { product_concepts, ...rest } = b;
     if (!isBlockSplitConcept(b)) return { ...rest, concept_split: false };
     const pc = {};
-    (rest.products || []).forEach(c => {
+    productRows(rest).forEach(({ head: c }) => {
         const v = conceptParts(isMap(product_concepts) ? product_concepts[c] : '').join('\n');
         if (v) pc[c] = v;
     });
@@ -383,23 +486,25 @@ export function packConcepts(b) {
 // ---------- จำนวน KOL แยกต่อสินค้า (ต่อ Platform — ช่อง "คน" อยู่ในแถวสินค้าที่เดียวกับ Target / งบ / Concept) ----------
 // b.kol_split = Platform นี้แยกจำนวนคนต่อสินค้า · b.product_kols = { รหัส: จำนวนคน }
 // กติกา: ทุกสินค้าในบล็อกใส่อย่างน้อย 1 คน และผลรวมต้องเท่าจำนวน KOL ของ Platform (ผลรวมแถว Tier = blockKol) พอดี
+// ชุดสินค้า (bundles) นับเป็น 1 แถว — จำนวนคนของชุดเก็บที่หัวชุดตัวเดียว (ดู productRows)
 // จำนวนคนรวมยังมาจากแถว Tier ที่เดียวเหมือนเดิม — ตัวเลขต่อสินค้าเป็นแค่การแบ่งยอดนั้น (โควตา / allocations ไม่เปลี่ยน)
 export const isKolSplit = b => !!b && b.kol_split === true;
 export const productKolOf = (b, code) => num(b && isMap(b.product_kols) ? b.product_kols[code] : 0);
-// ผลรวมจำนวนคนของสินค้าที่ยังอยู่ในบล็อก
-export const productKolSum = b => ((b && b.products) || []).reduce((n, c) => n + productKolOf(b, c), 0);
+// ผลรวมจำนวนคนของสินค้าที่ยังอยู่ในบล็อก — ชุดนับครั้งเดียว
+export const productKolSum = b => (b ? productRows(b) : []).reduce((n, r) => n + productKolOf(b, r.head), 0);
 
 // สถานะของบล็อกที่แยกจำนวนคน (null = ไม่ได้แยก) — ฟอร์มใช้ทั้งป้ายหัวรายการสินค้าและตัวตรวจก่อนบันทึก
-// total = จำนวนคนจากแถว Tier · sum = ผลรวมที่ใส่ · filled / count = ใส่แล้วกี่สินค้า / ทั้งหมดกี่สินค้า · missing = สินค้าที่ยังไม่ใส่ (หรือใส่ 0)
+// total = จำนวนคนจากแถว Tier · sum = ผลรวมที่ใส่ · filled / count = ใส่แล้วกี่แถว / ทั้งหมดกี่แถว (ชุด = 1 แถว)
+// missing = แถวที่ยังไม่ใส่ (หรือใส่ 0) — ชื่อแถวของชุดเป็น "L8A + L8B"
 export function kolSplitState(b) {
     if (!isKolSplit(b)) return null;
-    const products = b.products || [];
-    const missing = products.filter(c => productKolOf(b, c) < 1);
+    const rows = productRows(b);
+    const missing = rows.filter(r => productKolOf(b, r.head) < 1).map(r => r.label);
     const sum = productKolSum(b);
     const total = blockKol(b);
     return {
-        total, sum, missing, count: products.length, filled: products.length - missing.length,
-        ok: products.length > 0 && missing.length === 0 && sum === total
+        total, sum, missing, count: rows.length, filled: rows.length - missing.length,
+        ok: rows.length > 0 && missing.length === 0 && sum === total
     };
 }
 
@@ -418,13 +523,13 @@ export function kolSplitProblem(b, label) {
 }
 
 // ตอนบันทึก (ต่อบล็อก): เขียน kol_split ไว้ชัด ๆ เสมอ (server ใช้แยกฟอร์มรุ่นใหม่ออกจากแท็บเก่าที่ไม่รู้จักช่องนี้)
-// แยกอยู่ → เก็บเฉพาะสินค้าที่ยังอยู่ในบล็อกเป็นตัวเลข · ไม่แยก → ไม่ส่ง product_kols (ตัวเลขที่พิมพ์ค้างในฟอร์มไม่ถูกบันทึก)
+// แยกอยู่ → เก็บเฉพาะสินค้าที่ยังอยู่ในบล็อกเป็นตัวเลข (ชุด = เก็บที่หัวชุดตัวเดียว) · ไม่แยก → ไม่ส่ง product_kols (ตัวเลขที่พิมพ์ค้างในฟอร์มไม่ถูกบันทึก)
 // ต้องตรงกับ carryProductKols ฝั่ง server (server/src/store/logic.js)
 export function packKols(b) {
     const { product_kols, ...rest } = b;
     if (!isKolSplit(b)) return { ...rest, kol_split: false };
     const pk = {};
-    (rest.products || []).forEach(c => {
+    productRows(rest).forEach(({ head: c }) => {
         const n = num(isMap(product_kols) ? product_kols[c] : 0);
         if (n > 0) pk[c] = n;
     });
@@ -432,8 +537,9 @@ export function packKols(b) {
 }
 
 // ความคืบหน้าต่อสินค้าของกลุ่ม (เฉพาะบล็อกที่แยกจำนวนคน) — หน้าเอเจนซี่ / แท็บรายชื่อ / On Process ใช้ตัวเดียวกัน
-// คืน [{ platform, rows: [{ code, need, sent, over, full }] }] · ไม่มีบล็อกไหนแยก = []
+// คืน [{ platform, rows: [{ code, need, sent, over, full, codes? }] }] (codes เฉพาะแถวที่เป็นชุด) · ไม่มีบล็อกไหนแยก = []
 // sent = จำนวน "คน" (person_key) ของ Platform นั้นในกลุ่มนี้ที่ยังไม่ถูกปฏิเสธ — 1 คนที่ช่องสินค้ามีหลายรหัส นับให้ทุกรหัสที่มี
+// ชุดสินค้า = 1 แถว (code = "L8A + L8B" · codes = รหัสในชุด) — คนที่ช่องสินค้ามีรหัสไหนของชุดก็ได้ นับให้ชุดนั้น 1 ครั้ง
 // subs = รายชื่อที่ผู้ดูเห็น (เอเจนซี่ = ของลิงก์ตัวเอง) · platforms = Platform ในขอบเขตที่ดูอยู่ (ว่าง = ทุก Platform)
 export function productKolProgress(g, subs, platforms) {
     if (!g || !Array.isArray(g.blocks)) return [];
@@ -449,10 +555,12 @@ export function productKolProgress(g, subs, platforms) {
             });
             return {
                 platform: b.platform,
-                rows: b.products.map(code => {
-                    const need = productKolOf(b, code);
-                    const sent = people[code] ? people[code].size : 0;
-                    return { code, need, sent, over: sent > need, full: need > 0 && sent === need };
+                rows: productRows(b).map(r => {
+                    const need = productKolOf(b, r.head);
+                    const who = new Set(r.codes.flatMap(c => [...(people[c] || [])]));
+                    const sent = who.size;
+                    const row = { code: r.label, need, sent, over: sent > need, full: need > 0 && sent === need };
+                    return r.bundle ? { ...row, codes: r.codes } : row;
                 })
             };
         });
@@ -487,6 +595,11 @@ export function packProductTargets(b) {
     const src = rest.product_targets && typeof rest.product_targets === 'object' ? rest.product_targets : {};
     const pt = {};
     (rest.products || []).forEach(code => { pt[code] = needTarget(rest.platform) ? asArr(src[code]) : []; });
+    // ชุดสินค้า: ทุกรหัสในชุดได้ Target ชุดเดียวกัน (รวมของทุกรหัสในชุด) — หน้าอื่น / server อ่าน Target ต่อสินค้าได้ตรงกัน
+    blockBundles(rest).forEach(bd => {
+        const union = [...new Set(bd.flatMap(c => pt[c] || []))];
+        bd.forEach(c => { pt[c] = [...union]; });
+    });
     return { ...rest, product_targets: pt, target: [...new Set(Object.values(pt).flat())] };
 }
 
