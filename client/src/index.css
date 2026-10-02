@@ -1212,7 +1212,7 @@ a { text-decoration: none; color: inherit; }
    ขอบนอกตรงกับแถวในตาราง = เลยขอบหน้าเท่าการ์ดตาราง แล้วเว้นเข้ามาเท่าระยะในของการ์ดตาราง (12px)
    หน้า KOL Analytics (.kols-page) ใช้กติกาเดียวกัน (ผู้ใช้ขอให้กว้างเท่าหน้า Ads 1 ต.ค. 2026)
    การ์ดตาราง KOL Analytics เป็น .panel.no-pad — ใส่ .panel นำหน้าให้ชนะ ".panel.no-pad { padding: 0 }" ในจอ ≤600px ที่อยู่ท้ายไฟล์ */
-.content > .ads-page, .content > .kols-page { width: 100%; max-width: none; }
+.content > .ads-page, .content > .kols-page { width: 100%; max-width: none; margin-inline: 0; }
 .ads-page > :not(.ads-tbl-panel), .kols-page > :not(.kols-tbl-panel) { width: auto; margin-inline: calc((clamp(28px, 3vw, 48px) - 12px) * -1); }
 @media (max-width: 900px) { .ads-page > :not(.ads-tbl-panel), .kols-page > :not(.kols-tbl-panel) { margin-inline: -12px; } }
 @media (max-width: 600px) { .ads-page > :not(.ads-tbl-panel), .kols-page > :not(.kols-tbl-panel) { margin-inline: -4px; } }
@@ -2239,6 +2239,8 @@ a.ads-thumb:focus-visible { outline: 2px solid var(--mint-dark); outline-offset:
 
     .layout { display: block !important; min-height: 0 !important; }
     .content { padding: 0 !important; }
+    /* บนจอทุกหน้าใช้ margin ติดลบหักขอบ .content — กระดาษไม่มีขอบให้หัก ไม่งั้นเนื้อหาล้นขอบกระดาษ */
+    .content > * { margin-inline: 0 !important; }
 
     /* ห้ามตัดการ์ด/แถวกลางหน้ากระดาษ */
     .panel,
@@ -3095,7 +3097,12 @@ button { color: inherit; }
 .content {
     width: calc(100% - var(--nav-w, 248px)); padding: clamp(28px, 3vw, 48px);
 }
-.content > * { width: min(100%, 1480px); margin-inline: auto; }
+/* ทุกหน้ากว้างเต็มพื้นที่ เท่าส่วนหัว / ตัวกรอง / การ์ดของหน้า Ads (ผู้ใช้ขอ 2 ต.ค. 2026 — เดิมบีบไว้กลางจอไม่เกิน 1480px)
+   ขอบนอกห่างขอบพื้นที่เนื้อหา 12px ทุกขนาดจอ = หักขอบ .content ด้วย margin ติดลบ (สูตรเดียวกับ .ads-page ด้านบน)
+   หน้า Ads / KOL Analytics มีกติกาของตัวเอง (การ์ดตารางชิดขอบจอ) · ตอนพิมพ์ไม่ใช้ margin ติดลบ (ดู @media print) */
+.content > * { width: auto; margin-inline: calc((clamp(28px, 3vw, 48px) - 12px) * -1); }
+@media (max-width: 900px) { .content > * { margin-inline: -12px; } }
+@media (max-width: 600px) { .content > * { margin-inline: -4px; } }
 .page-head { margin-bottom: 24px; padding-left: 18px; }
 .page-head::before { width: 4px; top: 1px; bottom: 1px; }
 .page-head h1 { font-size: clamp(1.65rem, 1.35rem + .75vw, 2.1rem); line-height: 1.22; letter-spacing: -.03em; }
