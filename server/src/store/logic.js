@@ -149,6 +149,11 @@ function adRanBySpend(s) {
 function effectiveAdStatus(s) {
     return ((s && s.ad_status === 'ยิงแล้ว') || adRanBySpend(s)) ? 'ยิงแล้ว' : 'ยังไม่ยิง';
 }
+// TikTok ยิงแอดผ่านระบบ PFM (ผู้ใช้สั่ง 2 ต.ค. 2026) — สถานะยิงแล้วมาจาก PFM อย่างเดียว (ad_launched / ค่าแอด) ห้ามคนกดเอง
+// ต้องตรงกับ adStatusAuto ใน client/src/pages/Ads.jsx (ปุ่มสถานะของแถว TikTok เป็นป้ายอ่านอย่างเดียว)
+function adStatusAuto(s) {
+    return /^\s*tiktok/i.test(String((s && s.platform) || ''));
+}
 
 // ===== งบของงานจ้างอื่น ๆ แยกตามความคืบหน้า (หน้ารอบทำจ่าย) =====
 // งบของงาน = ผลรวมทุกแถว แต่ไม่ใช่ทั้งก้อนที่ "จ่ายได้" — ต้องแยกให้แอดมินเห็นก่อนตั้งงวด
@@ -1137,6 +1142,20 @@ function nextPostCheck(before, after, actor, byName, at) {
     return { post_check: 'pending', post_check_by: byName || null, post_check_at: at, post_check_note: note, post_check_changes: list };
 }
 
+// ===== ป้าย "อัปเดตใหม่" บนการ์ดแคมเปญ (ผู้ใช้สั่ง 2 ต.ค. 2026) =====
+// เวลาล่าสุดของแท็บ "รายชื่อ KOL" (ส่งรายชื่อ / แก้ข้อมูล KOL / คัดเลือก) และ "On Process" (ดราฟ / งานของคนที่คัดเลือกแล้ว)
+// ต้องคิดแบบเดียวกับ listLatest / processLatest ใน client/src/utils/tabUpdates.js ทุกตัวอักษร — หน้าแคมเปญเก็บเวลาที่เปิดดู
+// ด้วยค่าจากฝั่งนั้น การ์ดเทียบด้วยค่าจากฝั่งนี้ ถ้าคิดต่างกันป้ายจะค้าง/ไม่ขึ้น (tests/campaign-updates.test.cjs เทียบสองฝั่งให้)
+// เวลาเป็น ISO string เทียบด้วย > ได้ตรง ๆ · ไม่มีเลย = ''
+function updateLatest(subs) {
+    const maxStr = (a, b) => (a > b ? a : b);
+    const list = subs || [];
+    return {
+        list_latest: list.reduce((mx, s) => [s.submitted_at, s.list_updated_at, s.decided_at].reduce((m, t) => maxStr(m, t || ''), mx), ''),
+        process_latest: list.filter(s => s.status === 'confirmed').reduce((mx, s) => maxStr(mx, s.work_updated_at || ''), '')
+    };
+}
+
 // ทีมตัดสินผลตรวจ: 'ok' ยืนยันถูกต้อง (ขึ้นหน้า Ads) · 'return' ส่งกลับให้เอเจนซี่แก้พร้อมเหตุผล
 function postCheckDecision(action, note, byName, at) {
     if (action === 'ok') return { post_check: 'ok', post_check_by: byName || null, post_check_at: at, post_check_note: null, post_check_changes: null };
@@ -1147,12 +1166,12 @@ function postCheckDecision(action, note, byName, at) {
 module.exports = {
     GOOD_CPM, GOOD_CPE, TARGET_PLATFORMS, CAMPAIGN_PLATFORMS, CAMPAIGN_AS_CTYPE, SOCIAL_CAMPAIGNS,
     AD_STAMP_AT, AD_STAMP_BY_BRAND, stampAtFor, now, todayTH, clone, normCampaignType,
-    POST_CHECK_FIELDS, POST_CHECK_OPEN, postCheckWaiting, nextPostCheck, postCheckDecision,
+    POST_CHECK_FIELDS, POST_CHECK_OPEN, postCheckWaiting, nextPostCheck, postCheckDecision, updateLatest,
     duplicateError, inScope, scopeProjects, hireRemaining, hireRowFee,
     HIRE_JOB_CLOSED, hireWaiting, hireNeedMore, hireStage,
     BOOK_PENDING, BOOK_FEE, BOOK_OK, HIRE_BOOKED, HIRE_AGREED, bookingState, bookingOpen, hireBookings,
     releaseToRequest, bookingConfirm, bookingFeeDecision, bookingUnavailable, hireBreakdown, jobProgress, pfmManagedSpend,
-    adRanBySpend, effectiveAdStatus,
+    adRanBySpend, effectiveAdStatus, adStatusAuto,
     HIRE_PAYABLE, HIRE_DIRECT_STATUS, newHireRow, payableWithoutFee, isDateStr, clipText, HIRE_SCOPE_MAX, hireScope,
     PERSON_FIELDS, personPatch,
     resolveInside, sameInstant, mergeHireItems, mergeBriefFiles, cleanFee, cleanHeadcount, safeId, safeSlug,

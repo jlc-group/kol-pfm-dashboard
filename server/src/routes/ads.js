@@ -5,7 +5,7 @@ const { UPLOAD_DIR } = require('../config/uploads');
 const { thumbPath, createThumbCache } = require('../services/adThumbs');
 const { authenticate } = require('../middleware/auth');
 const { allowedBrands, canSeeBrand, canSeeCostMetrics } = require('../data/roles');
-const { cleanFee, pfmManagedSpend, postCheckWaiting } = require('../store/logic');
+const { cleanFee, pfmManagedSpend, postCheckWaiting, adStatusAuto } = require('../store/logic');
 
 // ค่ายิงแอดเป็นข้อมูลลับ — คนที่ไม่ใช่ admin/manager ไม่ได้รับตัวเลขไปเลย
 // (CPM ถอดกลับเป็นค่าแอดได้ จึงต้องปิดด้วย) แต่ยังเห็นผล Pass/Fail ตามปกติ
@@ -96,6 +96,10 @@ router.put('/:subId', async (req, res, next) => {
         }
         if (ad_status !== undefined && !AD_STATUSES.includes(ad_status)) {
             return res.status(400).json({ status: 'error', message: 'สถานะไม่ถูกต้อง' });
+        }
+        // TikTok: สถานะมาจาก PFM อัตโนมัติ — กดเองไม่ได้ทั้งสองทาง (หน้าเว็บที่เปิดค้างรุ่นก่อน / เรียก API ตรง ก็ไม่ผ่าน)
+        if (ad_status !== undefined && adStatusAuto(ctx.submission)) {
+            return res.status(409).json({ status: 'error', message: 'โพสต์ TikTok ยิงแอดผ่านระบบ PFM — สถานะยิงแล้วขึ้นเองอัตโนมัติ กดเองไม่ได้' });
         }
         // หน้า Ads ที่เปิดค้างไว้: เอเจนซี่เพิ่งแก้ข้อมูลโพสต์ แถวนี้รอทีมตรวจ (ออกจากหน้า Ads แล้ว) — ห้ามกดยิงแล้วด้วยข้อมูลเก่า
         if (ad_status === 'ยิงแล้ว' && postCheckWaiting(ctx.submission)) {

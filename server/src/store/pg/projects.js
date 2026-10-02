@@ -26,7 +26,7 @@ const {
 const {
     loadSnapshot, loadAgencyLinks, messageOut, reportOut, linkOut
 } = require('./_snapshot');
-const { now, clone, inScope, scopeProjects, linkGroupPlatforms, hireRowFee, sameInstant, normCampaignType } = require('../logic');
+const { now, clone, inScope, scopeProjects, linkGroupPlatforms, hireRowFee, sameInstant, normCampaignType, updateLatest } = require('../logic');
 const { soloSummary, soloClipLive, soloClipEmpty, withSoloBudgets } = require('../soloKol');
 
 // KOL รายคน: ผลรวมค่าตัวต่อ Platform ของคลิปที่ไม่ถูกปฏิเสธ (งบของแต่ละบล็อกในกลุ่ม)
@@ -128,7 +128,9 @@ function enrichProject(snap, p) {
         updated_by_name: editor ? (editor.full_name || editor.username) : null,
         kol_count,
         sub_count: subs.length,
-        sub_confirmed
+        sub_confirmed,
+        // เวลาอัปเดตล่าสุดของแท็บรายชื่อ KOL / On Process — ป้าย "อัปเดตใหม่" บนการ์ดแคมเปญ (2 ต.ค. 2026)
+        ...updateLatest(subs)
     };
     // KOL รายคน: สรุปของแถวในแท็บ KOL รายคน (ชื่อบัญชี / ค่าตัว / คลิปลงแล้ว / ขั้นถัดไป) — คิดจาก snapshot ที่โหลดมาแล้ว ไม่ยิง query เพิ่ม
     if (p.campaign_type === 'solo') out.solo_summary = soloSummary(subs, (p.ad_groups || [])[0] || null);

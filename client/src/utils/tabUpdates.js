@@ -34,6 +34,31 @@ export function tabBadges(scope, subs) {
     };
 }
 
+// ===== ป้าย "อัปเดตใหม่" บนการ์ดแคมเปญ (หน้ารายการแคมเปญ · 2 ต.ค. 2026) =====
+// server ส่ง list_latest / process_latest มากับแคมเปญ (คิดแบบเดียวกับ listLatest / processLatest ข้างบน)
+// เทียบกับเวลาที่เปิดดูแท็บนั้นล่าสุดในหน้าแคมเปญ (key ชุดเดียวกัน) → เปิดดูแท็บแล้วป้ายบนการ์ดหายตาม
+// ยังไม่เคยเปิดแคมเปญนี้ในเครื่องนี้ = ถือว่าเห็นของตอนนี้แล้ว (ไม่เด้งย้อนหลังทุกแคมเปญ) แบบเดียวกับ ensureInit
+// localStorage ใช้ไม่ได้ (โหมดส่วนตัว / ถูกปิด) = ไม่มีป้าย ไม่ทำให้หน้าพัง
+export function cardUpdates(scope, listTs, processTs) {
+    // server รุ่นก่อน (หน้าเว็บใหม่ขึ้นก่อน server รีสตาร์ต) ไม่ส่งสองช่องนี้ — ห้ามตั้งค่าเริ่มต้นเป็น ''
+    // ไม่งั้นพอ server ใหม่ขึ้น ทุกการ์ดที่เครื่องนี้ยังไม่เคยเปิดจะขึ้น "อัปเดตใหม่" ค้าง ทั้งที่ไม่มีอะไรใหม่
+    if (listTs === undefined || processTs === undefined) return { list: false, process: false };
+    try {
+        if (localStorage.getItem(K(scope, 'init')) !== '1') {
+            localStorage.setItem(K(scope, 'list'), listTs || '');
+            localStorage.setItem(K(scope, 'process'), processTs || '');
+            localStorage.setItem(K(scope, 'init'), '1');
+            return { list: false, process: false };
+        }
+        return {
+            list: (listTs || '') > (localStorage.getItem(K(scope, 'list')) || ''),
+            process: (processTs || '') > (localStorage.getItem(K(scope, 'process')) || '')
+        };
+    } catch {
+        return { list: false, process: false };
+    }
+}
+
 // ทำเครื่องหมายว่าเปิดดูแท็บนี้แล้ว (เคลียร์ badge)
 export function markSeen(scope, tab, subs) {
     const t = tab === 'process' ? processLatest(subs) : listLatest(subs);

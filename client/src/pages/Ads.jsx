@@ -182,6 +182,10 @@ function CopyCode({ value, empty = '—', none = false, full = false }) {
 // ปุ่มกรองเล็ก ๆ บนหัวคอลัมน์ (แบบเดียวกับตารางใน Excel)
 // เมนูใช้ position:fixed เพราะหัวตารางอยู่ในกรอบที่เลื่อนแนวนอน ถ้าใช้ absolute จะโดนตัด
 
+// TikTok ยิงแอดผ่านระบบ PFM (ผู้ใช้สั่ง 2 ต.ค. 2026) — สถานะยิงแล้วขึ้นเองจาก PFM (มี ad เกาะคลิป / มีค่าแอด) ห้ามกดเอง
+// ต้องตรงกับ adStatusAuto ใน server/src/store/logic.js (server ปฏิเสธการกดของแถว TikTok อยู่แล้ว)
+const adStatusAuto = row => /^\s*tiktok/i.test(String(row.platform || ''));
+
 // แถวตาราง: อัปเดตข้อมูลแอดของโพสต์ 1 อัน (บันทึกเมื่อออกจากช่อง)
 function AdRow({ row, onSaved, canCost }) {
     const [adStatus, setAdStatus] = useState(row.ad_status || 'ยังไม่ยิง');
@@ -266,6 +270,7 @@ function AdRow({ row, onSaved, canCost }) {
     const ranBySpend = (Number(row.ad_spend) || 0) > 0;
     const shownStatus = (adStatus === 'ยิงแล้ว' || ranBySpend) ? 'ยิงแล้ว' : 'ยังไม่ยิง';
     const doneFromSpend = ranBySpend && adStatus !== 'ยิงแล้ว';
+    const autoStatus = adStatusAuto(row);
 
     // ระยะเวลายิง — นับจากวันพร้อมยิง (ข้อมูลครบชิ้นสุดท้าย: ลงคลิป / Gencode / ID Post / ทีมอนุมัติ) → วันยิงแอด (ดู data/adTiming.js)
     // แถวที่รู้จากค่าแอดก็นับได้ถ้า PFM ลงวันยิงแอดมาให้แล้ว
@@ -344,10 +349,22 @@ function AdRow({ row, onSaved, canCost }) {
                     ? <span className="ads-postdate" title="วันที่ยิงแอด (วันแรกที่มีค่าแอดจาก PFM หรือวันที่กดสถานะเป็นยิงแล้ว)">{fmtDate(end)}</span>
                     : doneFromSpend
                         /* ค่าแอดบอกว่ายิงแล้ว แต่ไม่รู้วันไหน — เขียน "ยังไม่ยิง" ตรงนี้จะขัดกับสถานะข้าง ๆ */
-                        ? <span className="muted" title="ยิงไปแล้ว (รู้จากค่าแอด) แต่ยังไม่มีวันยิงแอด — กดปุ่มสถานะเพื่อลงวันที่">—</span>
+                        ? <span className="muted" title={autoStatus
+                            ? 'ยิงไปแล้ว (รู้จากค่าแอด) — PFM ยังไม่ส่งวันยิงแอดมา'
+                            : 'ยิงไปแล้ว (รู้จากค่าแอด) แต่ยังไม่มีวันยิงแอด — กดปุ่มสถานะเพื่อลงวันที่'}>—</span>
                         : <span className="muted">ยังไม่ยิง</span>}
             </div>
             <div className="ads-cell">
+                {autoStatus ? (
+                    /* TikTok: ป้ายอ่านอย่างเดียว — สถานะมาจาก PFM (ไม่ใช่ปุ่ม กดไม่ได้) */
+                    <span className={'ads-status auto ' + (shownStatus === 'ยิงแล้ว' ? 'done' : 'pending') + (doneFromSpend ? ' from-spend' : '')}
+                        title={shownStatus === 'ยิงแล้ว'
+                            ? 'TikTok ยิงแอดผ่านระบบ PFM — ระบบขึ้นยิงแล้วให้เอง (มี ad เกาะคลิป หรือมีค่าแอดแล้ว) · กดเองไม่ได้'
+                            : 'TikTok ยิงแอดผ่านระบบ PFM — พอ PFM มี ad เกาะคลิปนี้ สถานะจะเปลี่ยนเป็นยิงแล้วเอง · กดเองไม่ได้'}>
+                        {shownStatus === 'ยิงแล้ว' ? '✓ ยิงแล้ว' : 'ยังไม่ยิง'}
+                        <em>{doneFromSpend ? 'จากค่าแอด' : 'อัตโนมัติ (PFM)'}</em>
+                    </span>
+                ) : (
                 <button type="button"
                     className={'ads-status ' + (shownStatus === 'ยิงแล้ว' ? 'done' : 'pending') + (doneFromSpend ? ' from-spend' : '')}
                     onClick={toggleStatus} disabled={saving}
@@ -359,6 +376,7 @@ function AdRow({ row, onSaved, canCost }) {
                     {shownStatus === 'ยิงแล้ว' ? '✓ ยิงแล้ว' : 'ยังไม่ยิง'}
                     {doneFromSpend && <em>จากค่าแอด</em>}
                 </button>
+                )}
                 {/* ย้ายตัวบอกสถานะการบันทึกมาจากช่อง CPM ที่เอาออกไป */}
                 {saving ? <span className="proc-status">…</span> : saved ? <span className="proc-status ok">✓</span> : null}
             </div>

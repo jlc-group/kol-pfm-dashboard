@@ -9,6 +9,7 @@ import { groupPlatforms, quotaOf, clipCountFor } from '../data/adGroups.js';
 import SoloKolForm from '../components/SoloKolForm.jsx';
 import SoloKolList from './projects/SoloKolList.jsx';
 import { matchSoloSearch } from '../data/soloKol.js';
+import { cardUpdates } from '../utils/tabUpdates.js';
 
 const STATUS_LABEL = {
     Draft: 'ร่าง', Active: 'กำลังทำ', Completed: 'เสร็จสิ้น', Cancelled: 'ยกเลิก'
@@ -111,6 +112,14 @@ export default function Projects() {
             .finally(() => setLoading(false));
     }
     useEffect(() => { load(); }, []);
+    // โหลดซ้ำเงียบ ๆ ทุก 60 วินาที — ป้าย "อัปเดตใหม่" บนการ์ดขึ้นเองเมื่อเอเจนซี่/ทีมอัปเดตงาน (ไม่ต้องรีเฟรช) · แท็บที่ซ่อนอยู่ไม่โหลด
+    useEffect(() => {
+        const t = setInterval(() => {
+            if (document.visibilityState === 'hidden') return;
+            api('/projects').then(res => setProjects(res.data)).catch(() => {});
+        }, 60000);
+        return () => clearInterval(t);
+    }, []);
 
     function handleCreated(project) {
         setShowForm(false);
@@ -150,12 +159,21 @@ export default function Projects() {
     }
 
     // การ์ด Project 1 ใบ
-    const renderCard = (p) => (
-        <button type="button" className="pcard" key={p.id} onClick={() => navigate(`/projects/${p.id}`)}>
+    // ป้าย "อัปเดตใหม่" (2 ต.ค. 2026): มีอัปเดตในแท็บรายชื่อ KOL / On Process หลังเปิดดูครั้งล่าสุดในเครื่องนี้ — เปิดดูแท็บนั้นแล้วหายเอง
+    const renderCard = (p) => {
+        const upd = cardUpdates(p.id, p.list_latest, p.process_latest);
+        const updWhere = [upd.list && 'รายชื่อ KOL', upd.process && 'On Process'].filter(Boolean);
+        return (
+        <button type="button" className={'pcard' + (updWhere.length ? ' has-update' : '')} key={p.id} onClick={() => navigate(`/projects/${p.id}`)}>
             <div className={`pcard-accent acc-${p.status}`} />
             <div className="pcard-body">
                 <div className="pcard-head">
                     <span className={`status status-${p.status}`}>{STATUS_LABEL[p.status] || p.status}</span>
+                    {updWhere.length > 0 && (
+                        <span className="pcard-new" title={`มีอัปเดตใหม่ที่แท็บ ${updWhere.join(' และ ')} — เปิดดูแล้วป้ายจะหายเอง`}>
+                            <span className="pcard-new-dot" aria-hidden="true" />อัปเดตใหม่
+                        </span>
+                    )}
                     {isAdmin && p.team_name && <span className="team-chip">{p.team_name}</span>}
                 </div>
                 {p.brand && <span className="pcard-brand">{p.brand}</span>}
@@ -181,7 +199,8 @@ export default function Projects() {
                 </div>
             </div>
         </button>
-    );
+        );
+    };
 
     return (
         <div>

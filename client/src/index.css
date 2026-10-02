@@ -1382,6 +1382,10 @@ a.ads-thumb:focus-visible { outline: 2px solid var(--mint-dark); outline-offset:
 .ads-status.done.from-spend { background: #ecfdf5; color: var(--mint-dark); border-color: #a7f3d0; }
 .ads-status.done.from-spend em { display: block; font-style: normal; font-size: 9px; font-weight: 600; opacity: .75; margin-top: 1px; }
 .ads-status:disabled { opacity: .6; cursor: default; }
+/* TikTok (2 ต.ค. 2026): สถานะมาจาก PFM — ป้ายอ่านอย่างเดียว หน้าตาเหมือนปุ่มแต่ไม่มีมือชี้/ไม่เปลี่ยนสีตอนชี้ + บรรทัดเล็กบอกที่มา */
+.ads-status.auto { display: block; text-align: center; cursor: default; }
+.ads-status.auto.pending:hover { border-color: var(--border); color: var(--muted); }
+.ads-status.auto em { display: block; font-style: normal; font-size: 9px; font-weight: 600; opacity: .8; margin-top: 1px; }
 .ads-cpm { display: flex; align-items: center; gap: 6px; font-weight: 700; color: var(--mint-dark); }
 .agency-entry { border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px 4px; margin-bottom: 12px; background: #fafdfb; }
 .agency-entry-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
@@ -1580,6 +1584,15 @@ a.ads-thumb:focus-visible { outline: 2px solid var(--mint-dark); outline-offset:
    ป้ายจะกระจายเต็มความกว้างจนดูเหมือนไม่เกี่ยวกัน */
 .pcard-head { display: flex; align-items: center; gap: 6px; margin-bottom: 14px; }
 .pcard-head .team-chip { margin-left: auto; }
+/* ป้าย "อัปเดตใหม่" (2 ต.ค. 2026): มีอัปเดตในแท็บรายชื่อ KOL / On Process ที่ยังไม่ได้เปิดดู — จุดแดงกระพริบเบา ๆ + ขอบการ์ดแดงอ่อน */
+.pcard.has-update { border-color: #fecaca; }
+.pcard-new {
+    display: inline-flex; align-items: center; gap: 5px; padding: 3px 9px; border-radius: 999px;
+    background: #fef2f2; color: #b91c1c; font-size: 11px; font-weight: 700; white-space: nowrap;
+}
+.pcard-new-dot { width: 7px; height: 7px; border-radius: 50%; background: #ef4444; box-shadow: 0 0 0 0 rgba(239, 68, 68, .5); animation: pcardPulse 1.8s ease-out infinite; }
+@keyframes pcardPulse { 0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, .5); } 70% { box-shadow: 0 0 0 6px rgba(239, 68, 68, 0); } 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); } }
+@media (prefers-reduced-motion: reduce) { .pcard-new-dot { animation: none; } }
 .pcard-brand { font-size: 11.5px; font-weight: 700; color: var(--mint-dark); text-transform: uppercase; letter-spacing: .4px; }
 .pcard-name { font-size: 17.5px; line-height: 1.35; margin: 4px 0 12px; }
 .pcard-sub { display: flex; flex-direction: column; gap: 5px; font-size: 12px; color: var(--muted); margin-bottom: 16px; }
