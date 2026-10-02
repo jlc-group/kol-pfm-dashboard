@@ -4647,11 +4647,13 @@ button { color: inherit; }
 
 /* ===== Talent Book → คอมการ์ดทั้งหมด (tb-) — PeopleTab.jsx + CompCard.jsx ===== */
 /* การ์ดแบบคอมการ์ดตามแบบที่ผู้ใช้เลือก: สี่เหลี่ยมจัตุรัส 1:1 · รูปชิดซ้าย ~45% เต็มความสูง · ข้อมูลขวาแบบกระชับ (ข้อความยาวตัด … ชี้ดูเต็มได้)
-   จอกว้าง 3 ใบต่อแถว · ≤1180px 2 ใบ · ≤640px ใบเดียว
+   จอกว้าง 4 ใบต่อแถว (ผู้ใช้ขอ 2 ต.ค. 2026 หลังขยายทุกหน้าเต็มจอ) · ≤1400px 3 ใบ · ≤1024px 2 ใบ · ≤640px ใบเดียว
+   (≤1400px ถ้ายัง 4 ใบ ฝั่งข้อมูลของการ์ดจัตุรัสแคบเกินจนชื่อ/ช่องทางถูกตัด)
    สี: เขียว = Booked (มีงานตกลงแล้ว) · เทา = Casting · สถานะย่อใช้สีชุดเดียวกับขั้นของใบขอให้หา (.stage-chip) */
 .tb-toolbar { row-gap: 10px; }
-.tb-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
-@media (max-width: 1180px) { .tb-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.tb-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; }
+@media (max-width: 1400px) { .tb-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (max-width: 1024px) { .tb-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 640px) { .tb-grid { grid-template-columns: minmax(0, 1fr); } }
 
 .tb-card {
@@ -4891,8 +4893,11 @@ button { color: inherit; }
     min-width: 0; max-width: 100%; font-size: 11px; font-weight: 700; color: var(--mint-dark); letter-spacing: .2px;
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
+/* ตัด 2 บรรทัดที่ตัวปุ่ม — ปุ่มเป็น inline-block เสมอ (display: inline ไม่มีผล) การตัดบรรทัดของ h3 เลยไม่ถึงชื่อ
+   ชื่อยาวกิน 3+ บรรทัดแล้วดันช่องทาง Social บรรทัดล่างให้หายไปเงียบ ๆ ในการ์ดเล็ก (4 ใบ/แถว) · ชื่อเต็มดูได้ที่ title ของ h3 */
 .tb-name-btn {
-    display: inline; max-width: 100%; padding: 0; margin: 0; border: none; background: none; cursor: pointer;
+    display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden;
+    max-width: 100%; padding: 0; margin: 0; border: none; background: none; cursor: pointer;
     font: inherit; color: inherit; text-align: left; letter-spacing: inherit;
 }
 .tb-name-btn:hover { color: var(--mint-dark); }
