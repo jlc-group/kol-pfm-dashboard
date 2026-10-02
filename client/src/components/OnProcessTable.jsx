@@ -10,6 +10,7 @@ import { productLabel } from '../data/products.js';
 import { ProductSummary } from './ProductChips.jsx';
 import ProductFilter from './ProductFilter.jsx';
 import { knownProductCodes, matchProducts, productFilterOptions } from '../data/productFilter.js';
+import { NO_GROUP, groupKeySet, matchGroup, normalizeGroupSel, groupFilterOptions } from '../data/groupFilter.js';
 import { draftIsNew, markDraftSeen } from '../utils/tabUpdates.js';
 
 // ค่าที่เก็บเป็นสตริงคั่นด้วย , (เช่น content_format) → แยกเป็นรายตัว
@@ -368,16 +369,16 @@ export default function OnProcessTable({ subs = [], groups = [], showAds = false
     const subCtypes = platFilter === 'all' ? [] : ctypesOfPlat(platFilter);
     // ชื่อคลิปที่มีจริงในลิสต์ (กลุ่มที่ 1 คนส่ง 2 คลิปจะมีมากกว่า 1 ชื่อ)
     const clipNames = [...new Set(confirmed.map(s => s.clip_name).filter(Boolean))];
-    // กลุ่มที่มีคนอยู่จริง + คนที่ตกกลุ่ม (group_key ว่าง หรือชี้ไปกลุ่มที่ถูกลบไปแล้ว)
-    const groupKeySet = new Set(groups.map(g => g.key));
-    const isUngrouped = s => !s.group_key || !groupKeySet.has(s.group_key);
-    const groupsInUse = groups.filter(g => confirmed.some(s => s.group_key === g.key));
-    const ungroupedCount = confirmed.filter(isUngrouped).length;
+    // ตัวเลือกกลุ่ม = ทุกกลุ่มของแคมเปญตามลำดับ รวมกลุ่มที่ยังไม่มีคน (เหมือนแท็บรายชื่อ · ผู้ใช้ขอ 2 ต.ค. 2026)
+    // + "ไม่ระบุกลุ่ม" เมื่อมีคนตกกลุ่มจริง · ตัวเลขนับเป็นแถว (คลิป) เหมือนชิปอื่นในแท็บนี้
+    const groupOpts = groupFilterOptions(groups, confirmed);
+    const curGroup = normalizeGroupSel(groupFilter, groupOpts);
+    const gKeys = groupKeySet(groups);
     const view = confirmed
         .filter(s => platFilter === 'all' || (s.platform || '') === platFilter)
         .filter(s => ctypeFilter === 'all' || (s.content_type || '') === ctypeFilter)
         .filter(s => clipFilter === 'all' || (s.clip_name || '') === clipFilter)
-        .filter(s => groupFilter === 'all' || (groupFilter === '__none' ? isUngrouped(s) : s.group_key === groupFilter))
+        .filter(s => matchGroup(s, curGroup, gKeys))
         .filter(s => matchProducts(s, prodFilter, knownCodes))
         .filter(s => !checkOnly || postCheckShown(s))
         .filter(s => stage === 'all' || workStage(s) === stage);   // ตัวกรองจากการ์ดสรุปด้านบน
@@ -400,24 +401,20 @@ export default function OnProcessTable({ subs = [], groups = [], showAds = false
 
     // แถบปุ่มกรองกลุ่มสินค้า — โชว์เมื่อแบ่งเกิน 1 กลุ่ม (นับ "ไม่ระบุกลุ่ม" เป็นหนึ่งกลุ่มด้วย)
     // วางไว้บนสุดเพราะกลุ่มเป็นการแบ่งระดับใหญ่กว่าแพลตฟอร์มและคลิป
-    const groupBar = (groupsInUse.length + (ungroupedCount > 0 ? 1 : 0)) > 1 ? (
+    const groupBar = groupOpts.length > 1 ? (
         <div className="proc-platfilter">
             <span className="proc-platfilter-lbl">กลุ่ม:</span>
-            <button type="button" className={'proc-plat-chip' + (groupFilter === 'all' ? ' on' : '')}
+            <button type="button" className={'proc-plat-chip' + (curGroup === 'all' ? ' on' : '')}
                 onClick={() => setGroupFilter('all')}>ทั้งหมด ({confirmed.length})</button>
-            {groupsInUse.map(g => (
-                <button type="button" key={g.key}
-                    className={'proc-plat-chip' + (groupFilter === g.key ? ' on' : '')}
-                    title={[(g.products || []).join(', '), conceptOneLine(g.concept)].filter(Boolean).join(' · ')}
-                    onClick={() => setGroupFilter(g.key)}>
-                    กลุ่มที่ {groups.indexOf(g) + 1}{g.concept ? ' · ' + conceptOneLine(g.concept) : ''} ({confirmed.filter(s => s.group_key === g.key).length})
+            {groupOpts.map(o => (
+                <button type="button" key={o.key}
+                    className={'proc-plat-chip' + (curGroup === o.key ? ' on' : '')}
+                    title={o.key === NO_GROUP ? 'KOL ที่ยังไม่ได้ถูกจัดเข้ากลุ่มไหน'
+                        : [o.products.join(', '), conceptOneLine(o.concept)].filter(Boolean).join(' · ')}
+                    onClick={() => setGroupFilter(o.key)}>
+                    {o.key === NO_GROUP ? 'ไม่ระบุกลุ่ม' : `กลุ่มที่ ${o.no}${o.concept ? ' · ' + conceptOneLine(o.concept) : ''}`} ({o.count})
                 </button>
             ))}
-            {ungroupedCount > 0 && (
-                <button type="button" className={'proc-plat-chip' + (groupFilter === '__none' ? ' on' : '')}
-                    title="KOL ที่ยังไม่ได้ถูกจัดเข้ากลุ่มไหน"
-                    onClick={() => setGroupFilter('__none')}>ไม่ระบุกลุ่ม ({ungroupedCount})</button>
-            )}
         </div>
     ) : null;
 
