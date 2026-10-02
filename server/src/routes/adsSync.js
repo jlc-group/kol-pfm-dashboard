@@ -2,6 +2,7 @@ const express = require('express');
 const crypto = require('crypto');
 const store = require('../store');
 const beauterryPfm = require('../services/beauterryPfmSync');
+const weboostxPfm = require('../services/weboostxPfmSync');
 
 const router = express.Router();
 
@@ -43,6 +44,16 @@ router.post('/pull-beauterry', checkSyncKey, async (req, res, next) => {
 
 router.get('/beauterry-status', checkSyncKey, (req, res) => {
     res.json({ status: 'success', data: beauterryPfm.getStatus() });
+});
+
+router.post('/pull-weboostx', checkSyncKey, async (req, res, next) => {
+    try {
+        const result = await weboostxPfm.runSync();
+        res.status(result.skipped === true ? 409 : 200).json({ status: 'success', data: result });
+    } catch (err) { next(err); }
+});
+router.get('/weboostx-status', checkSyncKey, (req, res) => {
+    res.json({ status: 'success', data: weboostxPfm.getStatus() });
 });
 
 module.exports = router;

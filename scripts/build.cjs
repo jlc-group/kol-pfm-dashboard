@@ -45,9 +45,10 @@ const testEnv = {
     UPLOAD_DIR: testUploadDir,
     JWT_SECRET: 'isolated-kol-pfm-tests-only-secret',
     BEAUTERRY_PFM_SYNC_ENABLED: 'false',
+    WEBOOSTX_PFM_SYNC_ENABLED: 'false',
     KOL_CONTENT_EXPORT_ENABLED: 'false'
 };
-for (const key of ['DATABASE_URL', 'PGSSLMODE', 'BEAUTERRY_PFM_EXPORT_KEY', 'KOL_CONTENT_EXPORT_KEY']) {
+for (const key of ['DATABASE_URL', 'PGSSLMODE', 'BEAUTERRY_PFM_EXPORT_KEY', 'WEBOOSTX_PFM_EXPORT_KEY', 'KOL_CONTENT_EXPORT_KEY']) {
     delete testEnv[key];
 }
 try {

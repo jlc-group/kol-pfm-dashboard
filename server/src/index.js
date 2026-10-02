@@ -16,9 +16,11 @@ async function start() {
     const port = Number(process.env.PORT || 4000);
     const host = process.env.HOST || '127.0.0.1';
     let stopPfmSync = () => {};
+    let stopWeBoostxSync = () => {};
     const server = app.listen(port, host, () => {
         console.log(`KOL Dashboard listening on http://${host}:${port}`);
         stopPfmSync = require('./services/beauterryPfmSync').startScheduler();
+        stopWeBoostxSync = require('./services/weboostxPfmSync').startScheduler();
         if (process.send) process.send('ready');
     });
     let stopping = false;
@@ -26,6 +28,7 @@ async function start() {
         if (stopping) return;
         stopping = true;
         stopPfmSync();
+        stopWeBoostxSync();
         const deadline = setTimeout(() => process.exit(1), 10000);
         deadline.unref();
         server.close(async () => {
