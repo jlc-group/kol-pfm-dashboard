@@ -382,8 +382,9 @@ const kols = {
                 const engagement = likes + comments + saves + shares + reposts;
                 const totalCost = (Number(s.budget) || 0) + (Number(s.ad_spend) || 0);
                 const feeOnly = Number(s.budget) || 0;     // CPM/CPE คิดจากค่าตัวอย่างเดียว (5 ต.ค. 2026)
-                const cpm = views > 0 ? Number((feeOnly / (views / 1000)).toFixed(2)) : 0;
-                const cpe = engagement > 0 ? Number((feeOnly / engagement).toFixed(2)) : 0;
+                const basis = feeOnly > 0 ? feeOnly : totalCost;   // ได้ฟรี (ค่าตัว 0) = ค่าแอดคือต้นทุนทั้งหมด
+                const cpm = views > 0 ? Number((basis / (views / 1000)).toFixed(2)) : 0;
+                const cpe = engagement > 0 ? Number((basis / engagement).toFixed(2)) : 0;
                 const er = views > 0 ? Number(((engagement / views) * 100).toFixed(2)) : 0;
                 const spendNow = Number(s.ad_spend) || 0;
                 const perf = {
@@ -982,8 +983,9 @@ const dashboard = {
             const fee = Number(s.budget) || 0;
             const adSpend = Number(s.ad_spend) || 0;
             const cost = fee + adSpend;                // ต้นทุนรวม = ค่าตัว + ค่ายิงแอด (ไว้โชว์)
-            const cpm = views > 0 ? Number((fee / (views / 1000)).toFixed(2)) : 0;           // ค่าตัวอย่างเดียว (5 ต.ค. 2026)
-            const cpe = engagementTotal > 0 ? Number((fee / engagementTotal).toFixed(2)) : 0;
+            const basis = fee > 0 ? fee : cost;         // ค่าตัวอย่างเดียว (5 ต.ค. 2026) · ได้ฟรี = ค่าแอดคือต้นทุนทั้งหมด
+            const cpm = views > 0 ? Number((basis / (views / 1000)).toFixed(2)) : 0;
+            const cpe = engagementTotal > 0 ? Number((basis / engagementTotal).toFixed(2)) : 0;
             return {
                 kol_id: s.id, name: s.account_name, platform: s.platform || null,
                 brand: (projById[s.project_id] || {}).brand || null,   // แบรนด์มาจากแคมเปญที่ KOL คนนี้สังกัด
@@ -1324,8 +1326,9 @@ function maybeStamp(s) {
     const engagement = engagementOf(s);
     const totalCost = (Number(s.budget) || 0) + spend;
     const feeOnly = Number(s.budget) || 0;                     // CPM/CPE คิดจากค่าตัวอย่างเดียว (5 ต.ค. 2026)
-    const cpm = Number((feeOnly / (views / 1000)).toFixed(2));
-    const cpe = engagement > 0 ? Number((feeOnly / engagement).toFixed(2)) : 0;
+    const basis = feeOnly > 0 ? feeOnly : totalCost;           // ได้ฟรี = ค่าแอดคือต้นทุนทั้งหมด
+    const cpm = Number((basis / (views / 1000)).toFixed(2));
+    const cpe = engagement > 0 ? Number((basis / engagement).toFixed(2)) : 0;
     s.perf_stamp = {
         at: now(),
         ad_spend: spend,
@@ -1625,8 +1628,9 @@ const ads = {
                         const views = Number(s.views) || 0;
                         const eng = engagementOf(s);
                         const feeOnly = Number(s.budget) || 0;   // CPM/CPE คิดจากค่าตัวอย่างเดียว (5 ต.ค. 2026)
-                        const cCpm = views > 0 ? Number((feeOnly / (views / 1000)).toFixed(2)) : 0;
-                        const cCpe = eng > 0 ? Number((feeOnly / eng).toFixed(2)) : 0;
+                        const cBasis = feeOnly > 0 ? feeOnly : feeOnly + spend;   // ได้ฟรี = ค่าแอดคือต้นทุนทั้งหมด
+                        const cCpm = views > 0 ? Number((cBasis / (views / 1000)).toFixed(2)) : 0;
+                        const cCpe = eng > 0 ? Number((cBasis / eng).toFixed(2)) : 0;
                         return {
                             views, engagement: eng,
                             content_cpm: cCpm, content_cpe: cCpe,
@@ -1642,8 +1646,9 @@ const ads = {
                         const views = Number(s.views) || 0;
                         const eng = engagementOf(s);
                         const feeOnly = Number(s.budget) || 0;   // CPM/CPE คิดจากค่าตัวอย่างเดียว (5 ต.ค. 2026)
-                        const cCpm = views > 0 ? Number((feeOnly / (views / 1000)).toFixed(2)) : 0;
-                        const cCpe = eng > 0 ? Number((feeOnly / eng).toFixed(2)) : 0;
+                        const cBasis = feeOnly > 0 ? feeOnly : feeOnly + spend;   // ได้ฟรี = ค่าแอดคือต้นทุนทั้งหมด
+                        const cCpm = views > 0 ? Number((cBasis / (views / 1000)).toFixed(2)) : 0;
+                        const cCpe = eng > 0 ? Number((cBasis / eng).toFixed(2)) : 0;
                         return {
                             views, engagement: eng,
                             content_cpm: cCpm, content_cpe: cCpe,

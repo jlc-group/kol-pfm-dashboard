@@ -20,30 +20,33 @@ test('feeMissing: 0, empty or negative means no fee yet', () => {
 
 test('clipCostMetrics: no fee gives null CPM/CPE instead of an ad-only bargain', () => {
     assert.deepEqual(clipCostMetrics({ fee: 0, adSpend: 500, views: 300000, engagement: 10000 }),
-        { fee_missing: true, cost: 500, cpm: null, cpe: null });
+        { fee_missing: true, basis: 0, cost: 500, cpm: null, cpe: null });
     // CPM/CPE คิดจากค่าตัวอย่างเดียว (5 ต.ค. 2026): 5000 ÷ 100 = 50 · 5000 ÷ 1200 = 4.17 · cost (ค่าตัว + ค่าแอด) ยังเป็น 17000
     assert.deepEqual(clipCostMetrics({ fee: '5000.00', adSpend: 12000, views: 100000, engagement: 1200 }),
-        { fee_missing: false, cost: 17000, cpm: 50, cpe: 4.17 });
+        { fee_missing: false, basis: 5000, cost: 17000, cpm: 50, cpe: 4.17 });
     assert.deepEqual(clipCostMetrics({ fee: 5000, adSpend: 0, views: 0, engagement: 0 }),
-        { fee_missing: false, cost: 5000, cpm: 0, cpe: 0 });
+        { fee_missing: false, basis: 5000, cost: 5000, cpm: 0, cpe: 0 });
 });
 
-test('KOL รายคน (solo): fee 0 = free, not missing — CPM/CPE come from the fee only, so a free clip is not rated', () => {
+test('KOL รายคน (solo): fee 0 = free, not missing — ad spend is the only cost there, so it is the basis', () => {
     for (const b of [0, '0', '', null, undefined]) {
         assert.equal(feeMissing(b, 'solo'), false, String(b));
         assert.equal(feeMissing(b, 'kol'), true, String(b));
     }
     // ได้ฟรี + ยังไม่ยิงแอด = ไม่มีต้นทุนให้ตัดสิน (null ไม่ใช่ 0 ที่ดูคุ้มสุด)
     assert.deepEqual(clipCostMetrics({ fee: 0, adSpend: 0, views: 300000, engagement: 10000, campaignType: 'solo' }),
-        { fee_missing: false, fee_free: true, cost: 0, cpm: null, cpe: null });
-    // ได้ฟรี + ยิงแอดแล้ว = ยังไม่มีค่าตัวให้คิด (CPM/CPE ไม่รวมค่าแอด · 5 ต.ค. 2026) · cost ยังเป็นค่าแอดที่จ่ายจริง
+        { fee_missing: false, fee_free: true, basis: 0, cost: 0, cpm: null, cpe: null });
+    // ได้ฟรี + ยิงแอดแล้ว = ค่าแอดเป็นฐาน (ข้อยกเว้นเดียวที่ค่าแอดเข้ามาคิด เพราะไม่มีค่าตัวเลย)
     assert.deepEqual(clipCostMetrics({ fee: '0.00', adSpend: 4000, views: 200000, engagement: 4000, campaignType: 'solo' }),
-        { fee_missing: false, fee_free: true, cost: 4000, cpm: null, cpe: null });
+        { fee_missing: false, fee_free: true, basis: 4000, cost: 4000, cpm: 20, cpe: 1 });
     assert.deepEqual(clipCostMetrics({ fee: 5000, adSpend: 0, views: 100000, engagement: 1000, campaignType: 'solo' }),
-        { fee_missing: false, fee_free: false, cost: 5000, cpm: 50, cpe: 5 });
+        { fee_missing: false, fee_free: false, basis: 5000, cost: 5000, cpm: 50, cpe: 5 });
+    // KOL รายคนที่มีค่าตัว: ค่าแอดไม่เข้ามาคิดเหมือนแคมเปญปกติ
+    assert.deepEqual(clipCostMetrics({ fee: 5000, adSpend: 20000, views: 100000, engagement: 1000, campaignType: 'solo' }),
+        { fee_missing: false, fee_free: false, basis: 5000, cost: 25000, cpm: 50, cpe: 5 });
     // แคมเปญอื่นไม่มี fee_free (รูปผลลัพธ์เดิม)
     assert.deepEqual(clipCostMetrics({ fee: 0, adSpend: 500, views: 1, engagement: 1, campaignType: 'kol' }),
-        { fee_missing: true, cost: 500, cpm: null, cpe: null });
+        { fee_missing: true, basis: 0, cost: 500, cpm: null, cpe: null });
     assert.equal(perfVerdict({ fee_missing: false, views: 300000, cpm: null, cpe: null }), null, 'ไม่มี CPM = ยังตัดสินไม่ได้');
     assert.equal(perfVerdict({ fee_missing: false, views: 200000, cpm: 20, cpe: 1 }), 'Good');
     // ค่าเฉลี่ยไม่เอาคลิปที่ไม่มี CPM (null จะถูกนับเป็น 0)
@@ -306,25 +309,28 @@ test('Influencer page lists only people who have posted, and the summary counts 
     }
 });
 
-test('KOL รายคนได้ฟรี: Dashboard / Report / Influencer / Ads ไม่นับเป็นรอค่าตัว · ไม่มีค่าตัวให้คิด = ยังไม่ตัดสิน (แม้ยิงแอดแล้ว)', async () => {
+test('KOL รายคนได้ฟรี: Dashboard / Report / Influencer / Ads ไม่นับเป็นรอค่าตัว · ยังไม่ยิงแอด = ยังไม่ตัดสิน · ยิงแล้ว = ค่าแอดเป็นฐาน', async () => {
     const d = await dashboard.overview({ scopeBrands: ['Beauterry'] });
     assert.deepEqual([d.fee_missing_clips, d.total_spent, d.total_clips, d.total_kols], [0, 3000, 3, 1]);
     const dk = name => d.top_kols.find(k => k.name === name);
     const free = dk('ฟรียังไม่ยิง');
     assert.deepEqual([free.fee_missing, free.cpm, free.cpe, free.cost], [false, null, null, 0]);
     assert.deepEqual(free.score_parts.filter(p => p.key === 'cpm' || p.key === 'cpe').map(p => [p.earned, p.note]),
-        [[0, 'ได้ฟรี ไม่มีค่าตัวให้คิด'], [0, 'ได้ฟรี ไม่มีค่าตัวให้คิด']]);
-    // ได้ฟรีที่ยิงแอดแล้วก็ไม่มี CPM/CPE — สูตรใหม่ไม่เอาค่าแอดมาคิด (5 ต.ค. 2026) · cost ยังเป็นค่าแอดที่จ่ายจริง
-    assert.deepEqual([dk('ฟรียิงแล้ว').fee_missing, dk('ฟรียิงแล้ว').cpm, dk('ฟรียิงแล้ว').cpe, dk('ฟรียิงแล้ว').cost], [false, null, null, 4000]);
+        [[0, 'ได้ฟรี ยังไม่มีต้นทุน'], [0, 'ได้ฟรี ยังไม่มีต้นทุน']]);
+    // ได้ฟรีที่ยิงแอดแล้ว = ค่าแอดเป็นฐาน (ข้อยกเว้นเดียวที่ค่าแอดเข้ามาคิด เพราะไม่มีค่าตัวเลย)
+    const paid = dk('ฟรียิงแล้ว');
+    assert.equal(paid.fee_missing, false);
+    assert.equal(paid.cost, 4000);
+    assert.ok(paid.cpm > 0 && paid.cpe > 0, 'ได้ฟรีที่ยิงแอดแล้วต้องมีตัวเลข: ' + JSON.stringify([paid.cpm, paid.cpe]));
 
     const r = await reports.detail(44, ['Beauterry']);
     const rk = name => r.kols.find(k => k.name === name);
     assert.deepEqual([rk('ฟรียังไม่ยิง').fee_missing, rk('ฟรียังไม่ยิง').cpm, rk('ฟรียังไม่ยิง').performance], [false, null, null]);
-    assert.deepEqual([rk('ฟรียิงแล้ว').cpm, rk('ฟรียิงแล้ว').cpe, rk('ฟรียิงแล้ว').performance], [null, null, null]);
+    assert.deepEqual(r.good_performance, { good: 1, total: 2 }, 'ฟรียิงแล้วตัดสินได้ · ฟรียังไม่ยิงยังไม่นับ');
+    assert.ok(rk('ฟรียิงแล้ว').cpm > 0 && rk('ฟรียิงแล้ว').performance, 'ได้ฟรีที่ยิงแอดแล้วตัดสินได้');
     assert.equal(rk('มีค่าตัว').performance, 'Improve');
-    assert.deepEqual(r.good_performance, { good: 0, total: 1 }, 'ไม่นับคลิปที่ยังตัดสินไม่ได้');
-    // ค่าเฉลี่ยใช้คลิปที่มีค่าตัว + มี reach + มี CPM — ฟรียิงแล้วไม่มี CPM · มีค่าตัวยังไม่มี reach = ไม่มีคลิปให้เฉลี่ย
-    assert.deepEqual([r.cost.fee_missing_clips, r.cost.fee_clips, r.cost.avg_cpm, r.cost.avg_cpe], [0, 0, 0, 0]);
+    // ค่าเฉลี่ยใช้คลิปที่มีค่าตัว + มี reach + มี CPM — ฟรียิงแล้วมี CPM แล้วจึงเข้าเฉลี่ย · มีค่าตัวยังไม่มี reach = ไม่เข้า
+    assert.deepEqual([r.cost.fee_missing_clips, r.cost.fee_clips, r.cost.avg_cpm, r.cost.avg_cpe], [0, 1, 20, 1]);
     // Format ต่อแถวอ่านของ Platform + Content Type ของคลิป (ไม่ใช่ค่าระดับกลุ่มที่เป็นของ Platform แรก)
     assert.deepEqual(r.kols.map(k => [k.name, k.platform, k.format]),
         [['ฟรียังไม่ยิง', 'TikTok', 'Review'], ['ฟรียิงแล้ว', 'TikTok', 'Review'], ['มีค่าตัว', 'Instagram', 'Unbox']]);
@@ -332,12 +338,12 @@ test('KOL รายคนได้ฟรี: Dashboard / Report / Influencer / A
     const { rows: inf } = await kols.analytics(['Beauterry']);
     const ik = name => inf.find(x => x.kol_name === name);
     assert.deepEqual([ik('ฟรียังไม่ยิง').fee_missing, ik('ฟรียังไม่ยิง').cpm, ik('ฟรียังไม่ยิง').performance], [false, null, null]);
-    assert.deepEqual([ik('ฟรียิงแล้ว').fee_missing, ik('ฟรียิงแล้ว').performance, ik('ฟรียิงแล้ว').stamp_wait_reason], [false, null, null]);
+    assert.deepEqual([ik('ฟรียิงแล้ว').fee_missing, ik('ฟรียิงแล้ว').performance, ik('ฟรียิงแล้ว').stamp_wait_reason], [false, 'Good', null]);
 
     const { rows: adRows } = await ads.list({ scopeBrands: ['Beauterry'] });
     const ak = name => adRows.find(x => x.account_name === name);
     assert.deepEqual([ak('ฟรียังไม่ยิง').fee_missing, ak('ฟรียังไม่ยิง').content_cpm, ak('ฟรียังไม่ยิง').performance], [false, null, null]);
-    assert.deepEqual([ak('ฟรียิงแล้ว').content_cpm, ak('ฟรียิงแล้ว').performance, ak('ฟรียิงแล้ว').stamp_wait_reason], [null, null, null]);
+    assert.deepEqual([ak('ฟรียิงแล้ว').content_cpm, ak('ฟรียิงแล้ว').performance, ak('ฟรียิงแล้ว').stamp_wait_reason], [20, 'Good', null]);
 });
 
 test('Ads page: the live verdict waits for the fee too', async () => {
@@ -362,7 +368,7 @@ test('Report (KOL รายคนหลาย Platform): Platform ที่ไ�
     }
 });
 
-test('ScoreModal: KOL รายคนได้ฟรี (ค่าตัว 0) อธิบายว่าไม่มีค่าตัวให้คิด — ไม่นับ CPM/CPE เป็นจุดอ่อน ไม่สรุปเรื่องความคุ้มค่า', async () => {
+test('ScoreModal: ได้ฟรีและยังไม่ยิงแอด อธิบายว่าไม่มีต้นทุน — ไม่นับ CPM/CPE เป็นจุดอ่อน · ยิงแอดแล้วอธิบายปกติ', async () => {
     const fs = require('node:fs');
     const src = fs.readFileSync(path.join(__dirname, '../client/src/components/ScoreModal.jsx'), 'utf8');
     // ส่วนหัวของไฟล์ (ก่อนคอมโพเนนต์) เป็น JS ล้วน — B / N / verdict
@@ -371,10 +377,10 @@ test('ScoreModal: KOL รายคนได้ฟรี (ค่าตัว 0) �
     const free = d.top_kols.find(k => k.name === 'ฟรียังไม่ยิง');
     assert.deepEqual([free.fee_missing, free.cpm, free.cpe], [false, null, null]);
     const lines = verdict(free);
-    assert.equal(lines[0], 'ได้ฟรี (ค่าตัว 0) — CPM/CPE คิดจากค่าตัว จึงไม่มีตัวเลข คะแนนตอนนี้มาจาก Engagement Rate และยอดวิวเท่านั้น (เต็ม 60)');
+    assert.equal(lines[0], 'ได้ฟรี (ค่าตัว 0) และยังไม่ยิงแอด — ยังไม่มีต้นทุนให้คิด CPM/CPE คะแนนตอนนี้มาจาก Engagement Rate และยอดวิวเท่านั้น (เต็ม 60)');
     assert.ok(!lines.slice(1).some(t => /CPM|CPE/.test(t)), 'CPM/CPE ไม่ถูกนับเป็นจุดอ่อน: ' + JSON.stringify(lines));
-    assert.ok(!lines.some(t => /ต้นทุน|คุ้ม/.test(t)), 'ไม่สรุปเรื่องความคุ้มค่า: ' + JSON.stringify(lines));
-    // ได้ฟรีแต่ยิงแอดแล้ว = ก็ยังไม่มีค่าตัวให้คิด (สูตรใหม่ไม่เอาค่าแอดมาคิด) อธิบายแบบเดียวกัน · รอค่าตัวยังใช้ข้อความเดิม
-    assert.match(verdict(d.top_kols.find(k => k.name === 'ฟรียิงแล้ว'))[0], /^ได้ฟรี \(ค่าตัว 0\)/);
+    assert.ok(!lines.slice(1).some(t => /ต้นทุน|คุ้ม/.test(t)), 'ไม่สรุปเรื่องความคุ้มค่า: ' + JSON.stringify(lines));
+    // ได้ฟรีแต่ยิงแอดแล้ว = มีต้นทุน (ค่าแอด) จึงอธิบายแบบปกติ ไม่ขึ้นบรรทัด "ได้ฟรี" · รอค่าตัวยังใช้ข้อความเดิม
+    assert.ok(!verdict(d.top_kols.find(k => k.name === 'ฟรียิงแล้ว')).some(t => /^ได้ฟรี/.test(t)), 'ยิงแอดแล้วไม่ขึ้นบรรทัดได้ฟรี');
     assert.match(verdict({ ...free, fee_missing: true })[0], /^ยังไม่ได้ใส่ค่าตัว/);
 });

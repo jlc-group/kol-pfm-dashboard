@@ -72,7 +72,7 @@ test('fee set later: the stamp locks on that update', () => {
     assert.equal(stampWaitReason(s), null);
 });
 
-test('KOL รายคน (solo): fee 0 means free — never waits for a fee, but has no fee to rate so it is never stamped', () => {
+test('KOL รายคน (solo): fee 0 means free — never waits for a fee, and ad spend is the basis so it does stamp', () => {
     // แคมเปญ KOL (ไม่ส่งประเภท / 'kol') ยังรอค่าตัวเหมือนเดิม
     assert.equal(maybeStamp(clip({ budget: 0 })), null);
     assert.equal(maybeStamp(clip({ budget: 0 }), AD_STAMP_AT, 'kol'), null);
@@ -80,10 +80,14 @@ test('KOL รายคน (solo): fee 0 means free — never waits for a fee, bu
     for (const budget of [0, '0', '', null]) {
         assert.equal(stampWaitReason(clip({ budget }), AD_STAMP_AT, 'solo'), null, String(budget));
     }
-    // ได้ฟรีถึงเกณฑ์ค่าแอดแล้วก็ไม่สแตมป์ — CPM/CPE คิดจากค่าตัว (5 ต.ค. 2026) ไม่มีตัวเลขให้ล็อก
+    // ได้ฟรีถึงเกณฑ์ค่าแอดแล้ว = สแตมป์ · ค่าแอดคือต้นทุนทั้งหมดที่มี จึงเป็นฐานของ CPM/CPE
     const s = clip({ budget: 0 });
-    assert.equal(maybeStamp(s, AD_STAMP_AT, 'solo'), null);
-    assert.equal(s.perf_stamp, null);
+    const st = maybeStamp(s, AD_STAMP_AT, 'solo');
+    assert.ok(st);
+    assert.equal(s.perf_stamp, st);
+    assert.equal(st.total_cost, 12000);          // ค่าตัว 0 + ค่าแอด 12,000
+    assert.equal(st.cpm, 120);                   // 12,000 / (100,000 / 1,000)
+    assert.equal(st.cpe, 10);                    // 12,000 / 1,200
     // ยังรอยอดวิว / ค่าแอดยังไม่ถึงเกณฑ์ = ยังไม่สแตมป์เหมือนเดิม
     assert.equal(maybeStamp(clip({ budget: 0, views: 0 }), AD_STAMP_AT, 'solo'), null);
     assert.equal(stampWaitReason(clip({ budget: 0, views: 0 }), AD_STAMP_AT, 'solo'), 'views');

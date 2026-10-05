@@ -179,25 +179,25 @@ test('setFees() is the path that writes budget', async () => {
     assert.equal(JSON.parse(stamped.set.perf_stamp).total_cost, 15000);
 });
 
-test('KOL รายคน: campaign_type is read with the brand — fee 0 (free) has no fee to rate, so no write path stamps it (5 Oct 2026)', async () => {
-    // setFees: ตั้งเป็นได้ฟรี (0) → ไม่สแตมป์ (CPM/CPE คิดจากค่าตัวอย่างเดียว ไม่มีตัวเลขให้ล็อก)
+test('KOL รายคน: campaign_type is read with the brand — fee 0 (free) stamps with ad spend as the basis on every write path', async () => {
+    // setFees: ตั้งเป็นได้ฟรี (0) → สแตมป์ในคำสั่งเดียวกัน ฐาน = ค่าแอด (ไม่มีค่าตัวเลย)
     reset();
     projectType = 'solo';
     rows.get(7).budget = 4000;
     await submissions.setFees(41, [{ sub_id: 7, budget: 0, from: 4000 }], 'tester');
     const [viaFees] = updates();
-    assert.deepEqual(Object.keys(viaFees.set), ['budget']);
+    assert.deepEqual(Object.keys(viaFees.set).sort(), ['budget', 'perf_stamp']);
     assert.equal(viaFees.set.budget, 0);
     assert.equal(sql.filter(q => q.text === 'SELECT brand, campaign_type FROM projects WHERE id = $1').length, 1, 'หาครั้งเดียวต่อคำขอ');
-    // updatePerson / update: คลิปได้ฟรีที่ค่าแอดถึงเกณฑ์ ก็ไม่สแตมป์ตอนแก้ข้อมูล
+    // updatePerson / update: คลิปได้ฟรีที่ค่าแอดถึงเกณฑ์ สแตมป์ตอนแก้ข้อมูลด้วย
     reset();
     projectType = 'solo';
     await submissions.updatePerson(7, 41, { account_name: 'น้องบี' }, 'tester');
-    assert.equal('perf_stamp' in updates()[0].set, false);
+    assert.equal('perf_stamp' in updates()[0].set, true);
     reset();
     projectType = 'solo';
     await submissions.update(7, 41, { team_note: 'x' }, 'tester');
-    assert.equal('perf_stamp' in updates()[0].set, false);
+    assert.equal('perf_stamp' in updates()[0].set, true);
     // KOL รายคนที่ใส่ค่าตัวแล้ว สแตมป์ตามปกติ — ต้นทุนรวม (ค่าตัว + ค่าแอด) ยังเก็บใน total_cost
     reset();
     projectType = 'solo';

@@ -164,8 +164,9 @@ const dashboard = {
                 const nCpm = costAxisNorm(k, 'cpm', rCpm, hasCpm);
                 const nCpe = costAxisNorm(k, 'cpe', rCpe, hasCpe);
                 const NO_FEE = 'ยังไม่ใส่ค่าตัว';
-                // KOL รายคนได้ฟรี (ค่าตัว 0) — CPM/CPE คิดจากค่าตัว จึงไม่มีตัวเลข (cpm/cpe เป็น null ได้ 0 ในแกนนั้น)
-                const NO_COST = 'ได้ฟรี ไม่มีค่าตัวให้คิด';
+                // KOL รายคนได้ฟรีและยังไม่ยิงแอด — ไม่มีต้นทุนเลยจึงไม่มี CPM/CPE (cpm/cpe เป็น null ได้ 0 ในแกนนั้น)
+                // ได้ฟรีแต่ยิงแอดแล้วจะมีตัวเลขปกติ (ค่าแอดเป็นฐาน) ไม่เข้าเงื่อนไขนี้
+                const NO_COST = 'ได้ฟรี ยังไม่มีต้นทุน';
                 const pct = w => Math.round(w * 100);
                 k.score_parts = [
                     { key: 'er', label: 'Engagement Rate', value: k.engagement || 0, unit: '%', weight: pct(SCORE_W.er), earned: Number((SCORE_W.er * nEr * 100).toFixed(1)), better: 'สูง', note: edge(k.engagement || 0, rEr, false) },

@@ -123,32 +123,32 @@ test('หน้าเว็บ viewsReasonText: ทุกเหตุมีป�
 });
 
 // ---------------------------------------------------------------- A: CPE รวม
-test('pooledCpe: ค่าตัว ÷ engagement รวม (ไม่รวมค่าแอด) · ไม่นับคลิปที่ยังไม่ใส่ค่าตัว / ได้ฟรี / engagement 0 · ไม่มีเลย = null', () => {
+test('pooledCpe: ฐาน ÷ engagement รวม (ค่าตัว · ได้ฟรีใช้ค่าแอด) · ไม่นับคลิปที่ยังไม่ใส่ค่าตัว / ไม่มีต้นทุน / engagement 0', () => {
     assert.deepEqual(pooledCpe([]), { cpe: null, clips: 0, fee: 0, engagement: 0 });
     assert.deepEqual(pooledCpe(null), { cpe: null, clips: 0, fee: 0, engagement: 0 });
     const p = pooledCpe([
         { fee: 5000, adSpend: 1000, engagement: 400, campaignType: 'kol' },   // นับ: ค่าตัว 5000 / 400 (ค่าแอดไม่นับ)
         { fee: 0, adSpend: 500, engagement: 200, campaignType: 'kol' },       // ยังไม่ใส่ค่าตัว → ไม่นับ
         { fee: 3000, adSpend: 0, engagement: 0, campaignType: 'kol' },        // engagement 0 → ไม่นับ
-        { fee: 0, adSpend: 600, engagement: 100, campaignType: 'solo' },      // KOL รายคนได้ฟรี → ไม่มีค่าตัวให้คิด
+        { fee: 0, adSpend: 600, engagement: 100, campaignType: 'solo' },      // KOL รายคนได้ฟรี → ค่าแอด 600 เป็นฐาน
         { fee: 2000, adSpend: 0, engagement: 100, campaignType: 'solo' },     // KOL รายคนมีค่าตัว → นับ
         null
     ]);
-    assert.equal(p.clips, 2);
-    assert.equal(p.fee, 7000);
-    assert.equal(p.engagement, 500);
-    assert.equal(p.cpe, 14);
+    assert.equal(p.clips, 3);
+    assert.equal(p.fee, 7600, 'ค่าตัว 5,000 + 2,000 + ค่าแอดของคนที่ได้ฟรี 600');
+    assert.equal(p.engagement, 600);
+    assert.equal(p.cpe, 12.67);
     assert.equal(pooledCpe([{ fee: 1000, adSpend: 0, engagement: 3 }]).cpe, 333.33, 'ปัด 2 ตำแหน่ง');
 });
 
 test('ads.list summary: cpe จาก engagement จริง + จำนวนโพสต์ที่ใช้คิด · กรองแบรนด์แล้วคิดใหม่ตามแถวที่เหลือ', async () => {
     const { summary } = await ads.list({});
-    assert.equal(summary.cpe, 12.5);          // แถว 1 ค่าตัว 5000 / 400 · แถว 8 ได้ฟรี (ไม่มีค่าตัวให้คิด) · ค่าแอดไม่นับ
-    assert.equal(summary.cpe_clips, 1);
-    assert.equal(summary.eng_posts, 3);       // 1, 2, 8 มี engagement (2 ยังไม่ใส่ค่าตัว · 8 ได้ฟรี)
+    assert.equal(summary.cpe, 11.2);          // แถว 1 ค่าตัว 5,000 / 400 · แถว 8 ได้ฟรี ค่าแอด 600 / 100
+    assert.equal(summary.cpe_clips, 2);
+    assert.equal(summary.eng_posts, 3);       // 1, 2, 8 มี engagement (2 ยังไม่ใส่ค่าตัว)
     const jdent = (await ads.list({ brand: 'Jdent' })).summary;
-    assert.equal(jdent.cpe, null, 'Jdent มีแต่คลิปได้ฟรี = ไม่มีค่าตัวให้คิด');
-    assert.equal(jdent.cpe_clips, 0);
+    assert.equal(jdent.cpe, 6, 'Jdent มีแต่คลิปได้ฟรี = ค่าแอดเป็นฐาน');
+    assert.equal(jdent.cpe_clips, 1);
     FIXTURE.submissions.forEach(s => { s.likes = 0; s.comments = 0; s.saves = 0; s.shares = 0; });
     const none = (await ads.list({})).summary;
     assert.equal(none.cpe, null, 'ไม่มี engagement เลย = null (หน้าเว็บขึ้น —)');
@@ -163,7 +163,7 @@ test('ads.list ไม่ส่งค่าตัว (budget) ออกไปก�
 
 test('dashboard.overview: CPE รวมจาก engagement จริง (เดิม 0 ตายตัว) + Engagement Rate ต่อแพลตฟอร์ม', async () => {
     const d = await dashboard.overview({});
-    assert.equal(d.cpe, 12.5);
+    assert.equal(d.cpe, 11.2);
     const tt = d.platforms.find(p => p.platform === 'TikTok');
     // TikTok ที่มียอดวิว: 1 (20000 / 400) · 2 (10000 / 200) · 8 (5000 / 100) → 700 / 35000 = 2%
     assert.equal(tt.engagement, 2);

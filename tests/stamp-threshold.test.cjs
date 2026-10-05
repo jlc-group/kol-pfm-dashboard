@@ -61,9 +61,11 @@ test('เกณฑ์ต่ำลงแล้ว เงื่อนไขอื�
     assert.equal(stampWaitReason(clip({ ad_spend: at - 1, views: 0 }), at), null);
 });
 
-test('KOL รายคนได้ฟรี (ค่าตัว 0): ถึงเกณฑ์ของแบรนด์แล้วก็ไม่สแตมป์ (ไม่มีค่าตัวให้คิด CPM/CPE) · ไม่มีวันรอค่าตัว', () => {
+test('KOL รายคนได้ฟรี (ค่าตัว 0): ถึงเกณฑ์ของแบรนด์แล้วสแตมป์เลย ฐาน = ค่าแอด · ไม่มีวันรอค่าตัว', () => {
     const at = stampAtFor('Beauterry');
-    assert.equal(maybeStamp(clip({ budget: 0 }), at, 'solo'), null, 'CPM/CPE คิดจากค่าตัวอย่างเดียว (5 ต.ค. 2026)');
+    const free = maybeStamp(clip({ budget: 0 }), at, 'solo');
+    assert.ok(free, 'ได้ฟรีที่ยิงแอดถึงเกณฑ์ต้องสแตมป์ — ค่าแอดคือต้นทุนทั้งหมดที่มี');
+    assert.equal(free.total_cost, 3000);
     // ใส่ค่าตัวแล้วสแตมป์ตามเกณฑ์ของแบรนด์ — total_cost ยังเป็นค่าตัว + ค่าแอด
     const paid = maybeStamp(clip({ budget: 2000 }), at, 'solo');
     assert.equal(paid.total_cost, 5000);

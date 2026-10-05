@@ -104,7 +104,7 @@ test('หน้า Influencers ส่งเกณฑ์ของแบรนด�
     assert.equal(byId(rows, 3).stamp_at, 10000);
 });
 
-test('KOL รายคนได้ฟรี (ค่าตัว 0): ไม่มีค่าตัวให้คิด CPM/CPE — ซิงก์ PFM ไม่สแตมป์ · หน้า Ads / Influencers ไม่ขึ้นรอค่าตัว', async () => {
+test('KOL รายคนได้ฟรี (ค่าตัว 0): ค่าแอดเป็นฐาน — ซิงก์ PFM สแตมป์ · หน้า Ads / Influencers ไม่ขึ้นรอค่าตัว', async () => {
     const saved = { projects: FIXTURE.projects, submissions: FIXTURE.submissions };
     FIXTURE.projects = [...saved.projects, { id: 73, name: 'KOL รายคน · @free (TikTok)', brand: 'Beauterry', team_id: 1, campaign_type: 'solo', ad_groups: [] }];
     FIXTURE.submissions = [...structuredClone(saved.submissions),
@@ -116,7 +116,7 @@ test('KOL รายคนได้ฟรี (ค่าตัว 0): ไม่ม
         const { rows } = await ads.list({});
         const free = byId(rows, 5), idle = byId(rows, 6), kol = byId(rows, 7);
         assert.deepEqual([free.fee_missing, free.stamp_waiting, free.stamp_wait_reason], [false, false, null]);
-        assert.deepEqual([free.content_cpm, free.content_cpe, free.performance], [null, null, null], 'สูตรใหม่ไม่เอาค่าแอดมาคิด CPM/CPE');
+        assert.ok(free.content_cpm > 0 && free.performance, 'ได้ฟรีที่ยิงแอดแล้วมีตัวเลขจากค่าแอด');
         assert.deepEqual([idle.fee_missing, idle.content_cpm, idle.content_cpe, idle.performance], [false, null, null, null]);
         assert.deepEqual([kol.fee_missing, kol.stamp_wait_reason], [true, 'fee'], 'แคมเปญ KOL ยังรอค่าตัวตามเดิม');
         const inf = (await kols.analytics(null)).rows;
@@ -129,8 +129,8 @@ test('KOL รายคนได้ฟรี (ค่าตัว 0): ไม่ม
             { id_post: '900006', ad_spend: 0 },
             { id_post: '900007', ad_spend: 3000 }
         ]);
-        assert.equal(out.stamped, 0, 'ได้ฟรี = ไม่มีค่าตัวให้ล็อก · แคมเปญ KOL ค่าตัว 0 ยังรอค่าตัว');
-        assert.equal('perf_stamp' in ((written.find(w => w.id === 5) || {}).patch || {}), false);
+        assert.equal(out.stamped, 1, 'ได้ฟรีที่ยิงแอดแล้วล็อกได้ · แคมเปญ KOL ค่าตัว 0 ยังรอค่าตัว');
+        assert.equal('perf_stamp' in ((written.find(w => w.id === 5) || {}).patch || {}), true);
         assert.equal('perf_stamp' in ((written.find(w => w.id === 7) || {}).patch || {}), false);
     } finally {
         FIXTURE.projects = saved.projects;

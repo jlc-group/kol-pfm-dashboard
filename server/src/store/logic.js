@@ -994,7 +994,7 @@ function maybeStamp(s, at = AD_STAMP_AT, campaignType) {
     if (feeMissing(s.budget, campaignType)) return null;
     const engagement = engagementOf(s);
     const m = clipCostMetrics({ fee: s.budget, adSpend: spend, views, engagement, campaignType });
-    if (m.cpm == null) return null;                            // ได้ฟรี — ไม่มีค่าตัวให้คิด CPM/CPE
+    if (m.cpm == null) return null;                            // ไม่มีต้นทุนเลย (ได้ฟรี + ยังไม่ยิงแอด) — ยังตัดสินไม่ได้
     const { cpm, cpe } = m;
     s.perf_stamp = {
         at: now(),
@@ -1035,17 +1035,25 @@ function feeMissing(budget, campaignType) {
 //   CPM = ค่าตัว ÷ (ยอดวิว ÷ 1,000) · CPE = ค่าตัว ÷ engagement — ค่าแอดสะสมไม่ทำให้ CPM/CPE แพงขึ้นเองตามเวลาอีก
 // cost = ค่าตัว + ค่าแอด (ยอดเงินที่จ่ายจริง ใช้โชว์ / total_cost) — ไม่ได้ใช้คิด CPM/CPE แล้ว
 // ยังไม่ใส่ค่าตัว = cpm/cpe เป็น null (ห้ามคืน 0 เพราะจะดูคุ้มเกินจริง)
-// KOL รายคน: คืน fee_free ด้วย · ได้ฟรี (ค่าตัว 0) = cpm/cpe เป็น null "ไม่มีค่าตัวให้ตัดสิน" ไม่ใช่ 0 ที่ดูคุ้มสุด
+//
+// KOL รายคนที่ได้ฟรี (solo + ค่าตัว 0): ใช้ "ค่าแอด" เป็นฐานแทน
+// ไม่ใช่กรณีเดียวกับแคมเปญปกติ — ตรงนั้นค่าแอดเป็นส่วนเกินที่มาบวกทับค่าตัว แต่คนกลุ่มนี้
+// ไม่มีค่าตัวเลย ค่าแอดจึงเป็นต้นทุนทั้งหมดที่มีจริง ถ้าไม่คิดก็จะหายไปจากการวัดความคุ้มค่า
+// ทั้งหมดและไม่ถูกสแตมป์ แม้จะยิงแอดไปเท่าไรก็ตาม
+// ไม่มีต้นทุนเลย (ได้ฟรี + ยังไม่ยิงแอด) = cpm/cpe เป็น null "ไม่มีต้นทุนให้ตัดสิน" ไม่ใช่ 0 ที่ดูคุ้มสุด
+//
+// basis = ฐานที่ใช้คิดจริง (ตัวเรียกที่ต้องรวมหลายคลิปใช้ตัวนี้ ไม่ใช่ cost)
 function clipCostMetrics({ fee, adSpend, views, engagement, campaignType }) {
     const f = Number(fee) || 0;
     const cost = f + (Number(adSpend) || 0);
-    if (feeMissing(f, campaignType)) return { fee_missing: true, cost, cpm: null, cpe: null };
+    if (feeMissing(f, campaignType)) return { fee_missing: true, basis: 0, cost, cpm: null, cpe: null };
     const free = campaignType === 'solo' ? { fee_free: f <= 0 } : {};
-    if (f <= 0) return { fee_missing: false, ...free, cost, cpm: null, cpe: null };
+    const basis = f > 0 ? f : cost;
+    if (basis <= 0) return { fee_missing: false, ...free, basis: 0, cost, cpm: null, cpe: null };
     return {
-        fee_missing: false, ...free, cost,
-        cpm: views > 0 ? Number((f / (views / 1000)).toFixed(2)) : 0,
-        cpe: engagement > 0 ? Number((f / engagement).toFixed(2)) : 0
+        fee_missing: false, ...free, basis, cost,
+        cpm: views > 0 ? Number((basis / (views / 1000)).toFixed(2)) : 0,
+        cpe: engagement > 0 ? Number((basis / engagement).toFixed(2)) : 0
     };
 }
 
@@ -1089,7 +1097,7 @@ function pooledCpe(items) {
         if (e <= 0) continue;
         const m = clipCostMetrics({ fee: it.fee, adSpend: it.adSpend, views: 0, engagement: e, campaignType: it.campaignType });
         if (m.fee_missing || m.cpe == null) continue;
-        fee += Number(it.fee) || 0; eng += e; clips += 1;
+        fee += m.basis; eng += e; clips += 1;   // ฐานจริง (ค่าตัว · หรือค่าแอดถ้าได้ฟรี)
     }
     return { cpe: eng > 0 ? Number((fee / eng).toFixed(2)) : null, clips, fee, engagement: eng };
 }
