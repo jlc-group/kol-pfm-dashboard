@@ -9,7 +9,7 @@ import { fmtDate } from '../utils/date.js';
 import { visibleBrands, seesAllBrands } from '../data/brands.js';
 import { useAuth } from '../auth/AuthContext.jsx';
 import { campaignIsCtype } from '../data/adGroups.js';
-import { stampAtOf, stampAtText } from '../data/stamp.js';
+import { stampAtOf, stampAtText, viewsReasonText } from '../data/stamp.js';
 import { matchAdsSearch } from '../data/adsSearch.js';
 import PostThumb from '../components/PostThumb.jsx';
 import { adTiming, timingLevel, timingTip, TIMING_OPTS } from '../data/adTiming.js';
@@ -55,7 +55,12 @@ function StampCell({ row }) {
             if (row.stamp_wait_reason === 'fee') {
                 return <span className="perf-pill wait fee" title="ค่าแอดถึงเกณฑ์และมียอดวิวแล้ว แต่ทีมยังไม่ได้ใส่ค่าตัว KOL — ใส่ที่หน้าแคมเปญแล้วระบบจะล็อกผลให้ทันที">รอค่าตัว</span>;
             }
-            return <span className="perf-pill wait" title="ค่ายิงแอดถึงเกณฑ์แล้ว แต่ยังไม่มียอดวิวเข้ามา — ปกติสองอย่างนี้ควรมาพร้อมกันจากการซิงก์ ถ้าเห็นป้ายนี้ควรเช็คท่อซิงก์ · ระบบจะสแตมป์ให้เองทันทีที่ข้อมูลผลงานเข้ามา">Awaiting data</span>;
+            // เหตุที่ยังไม่มียอดวิว (2 ต.ค. 2026) — บอกใต้ป้าย + ในคำอธิบาย
+            const why = viewsReasonText(row.views_reason, row);
+            return <span className={'perf-pill wait' + (why ? ' with-reason' : '')} title={'ค่ายิงแอดถึงเกณฑ์แล้ว แต่ยังไม่มียอดวิวเข้ามา · ระบบจะสแตมป์ให้เองทันทีที่ข้อมูลผลงานเข้ามา'
+                + (why ? String.fromCharCode(10) + why.long : ' — ปกติสองอย่างนี้ควรมาพร้อมกันจากการซิงก์ ถ้าเห็นป้ายนี้ควรเช็คท่อซิงก์')}>
+                Awaiting data{why && <em>{why.short}</em>}
+            </span>;
         }
         return <span className="perf-pill none" title={`จะสแตมป์อัตโนมัติเมื่อค่ายิงแอดสะสมถึง ${stampAtText(stampAtOf(row))} บาท`}>Not stamped</span>;
     }
@@ -79,9 +84,11 @@ function LiveCell({ row }) {
     if (!row.performance) {
         // มียอดวิวแล้วแต่ไม่มี CPM = KOL รายคนได้ฟรีที่ยังไม่มีค่าแอด (ไม่มีต้นทุนให้คิด) — ไม่ใช่ยังไม่มียอดวิว
         const freeNoCost = Number(row.views) > 0 && row.content_cpm == null;
-        return <span className="perf-pill none" title={freeNoCost
+        // ยังไม่มียอดวิว: บอกเหตุผลจริงใต้ป้าย (ไม่ใช่ TikTok / ไม่มี ID Post / PFM ไม่มีคลิปนี้ ...) — 2 ต.ค. 2026
+        const why = freeNoCost ? null : viewsReasonText(row.views_reason, row);
+        return <span className={'perf-pill none' + (why ? ' with-reason' : '')} title={freeNoCost
             ? 'ได้ฟรี ยังไม่มีค่าแอด — ยังไม่มีต้นทุนให้คิด CPM/CPE จึงยังตัดสินไม่ได้ (ไม่ได้แปลว่าทำได้แย่)'
-            : 'ยังไม่มียอดวิว/engagement ให้ตัดสิน'}>Not rated</span>;
+            : why ? 'ยังไม่มียอดวิวให้ตัดสิน — ' + why.long : 'ยังไม่มียอดวิวให้ตัดสิน'}>Not rated{why && <em>{why.short}</em>}</span>;
     }
     const pass = row.performance === 'Good';
     const st = row.perf_stamp;
@@ -566,7 +573,7 @@ export default function Ads() {
                     <div className="summary-value">{Number(s?.total_reach) > 0 ? fmtNum(s.total_reach) : '—'}</div>
                     <div className="summary-sub">{!s ? '—' : reachRows.length
                         ? `มีข้อมูล ${reachRows.length}/${s.total_posts} โพสต์`
-                        : 'PFM ยังไม่ส่ง Reach แบบไม่ซ้ำ · กรอกในตารางได้'}</div>
+                        : 'ยังไม่มีข้อมูล Reach · กรอกในตารางได้'}</div>
                 </div>
                 <div className="summary-card">
                     <div className="summary-label">ต้นทุนต่อ 1,000 Reach ที่มีข้อมูล</div>
@@ -575,10 +582,15 @@ export default function Ads() {
                         : measuredRows.length ? `คำนวณจาก ${measuredRows.length}/${paidRows.length} โพสต์ที่มีค่าแอด`
                             : 'รอ Reach ของโพสต์ที่มีค่าแอด'}</div>
                 </div>
+                {/* CPE รวม (2 ต.ค. 2026 — เดิมเป็นข้อความตายตัว "PFM ยังไม่ส่ง Engagement") = (ค่าตัว + ค่าแอด) ÷ engagement จริงในฐาน
+                    ของโพสต์ที่แสดงอยู่ · สูตรเดียวกับ CPE รายคลิป · คิดเฉพาะโพสต์ที่ใส่ค่าตัวแล้วและมี engagement */}
                 <div className="summary-card">
-                    <div className="summary-label">CPE แอด (ต้นทุน/1 engagement)</div>
+                    <div className="summary-label">CPE (ค่าตัว+ค่าแอด / 1 engagement)</div>
                     <div className="summary-value">{canSeeSpend && s?.cpe != null ? fmtMoney(s.cpe) : '—'}</div>
-                    <div className="summary-sub">{!s ? '—' : !canSeeSpend ? 'เฉพาะผู้มีสิทธิ์ดูต้นทุน' : 'PFM ยังไม่ส่ง Engagement เฉพาะแอด'}</div>
+                    <div className="summary-sub">{!s ? '—' : !canSeeSpend ? 'เฉพาะผู้มีสิทธิ์ดูต้นทุน'
+                        : s.cpe_clips > 0 ? `คิดจาก ${s.cpe_clips}/${s.eng_posts} โพสต์ที่มี Engagement · เกณฑ์ ≤ ${GOOD_CPE}`
+                            : s.eng_posts > 0 ? `มี Engagement ${s.eng_posts} โพสต์ แต่ยังไม่ใส่ค่าตัว / ยังไม่มีต้นทุน`
+                                : 'ยังไม่มีโพสต์ที่มี Engagement'}</div>
                 </div>
             </div>
 

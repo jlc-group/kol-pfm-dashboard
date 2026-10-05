@@ -92,7 +92,7 @@ async function runSync({ storeImpl = store, fetchImpl = fetch, env = process.env
     try {
         const itemIds = await storeImpl.adsSync.itemIds();
         const result = { requested: itemIds.length, received: 0, source_not_found: [], updated: 0,
-            stale: 0, regressed_metrics: 0, stamped: 0, not_found: [], skipped: 0,
+            stale: 0, stale_raised: 0, regressed_metrics: 0, stamped: 0, not_found: [], skipped: 0,
             started_at: startedAt };
         for (let offset = 0; offset < itemIds.length; offset += MAX_BATCH_SIZE) {
             const batch = itemIds.slice(offset, offset + MAX_BATCH_SIZE);
@@ -100,7 +100,7 @@ async function runSync({ storeImpl = store, fetchImpl = fetch, env = process.env
             result.received += exported.rows.length;
             result.source_not_found.push(...exported.notFound);
             const applied = await storeImpl.adsSync.apply(exported.rows);
-            for (const key of ['updated', 'stale', 'regressed_metrics', 'stamped', 'skipped']) {
+            for (const key of ['updated', 'stale', 'stale_raised', 'regressed_metrics', 'stamped', 'skipped']) {
                 result[key] += applied[key] || 0;
             }
             result.not_found.push(...(applied.not_found || []));
@@ -117,6 +117,17 @@ async function runSync({ storeImpl = store, fetchImpl = fetch, env = process.env
     }
 }
 
+// สรุปผลรอบซิงก์เป็นบรรทัดเดียวสำหรับ log ของ server
+function syncSummaryLine(r) {
+    // รอบที่ถูกข้าม (รอบก่อนยังไม่จบ) — runSync คืน { skipped: true, reason }
+    if (r && r.skipped === true) return `Beauterry PFM sync skipped: ${r.reason || 'unknown'}`;
+    const n = v => (Array.isArray(v) ? v.length : Number(v) || 0);
+    return `Beauterry PFM sync completed: ${n(r.updated)}/${n(r.requested)} updated`
+        + ` · received ${n(r.received)} · PFM ไม่มี ${n(r.source_not_found)} · จับคู่ไม่ได้ ${n(r.not_found)}`
+        + ` · เวลาต้นทางไม่ขยับ ${n(r.stale)} (รับยอดที่สูงขึ้น ${n(r.stale_raised)})`
+        + ` · ยอดต่ำกว่าเดิมไม่รับ ${n(r.regressed_metrics)} · ข้าม ${n(r.skipped)} · สแตมป์ ${n(r.stamped)}`;
+}
+
 function getStatus(env = process.env) {
     const settings = config(env);
     return { enabled: settings.enabled, configured: Boolean(settings.apiKey), running, last_run: lastRun };
@@ -128,8 +139,9 @@ function startScheduler({ logger = console, env = process.env } = {}) {
         logger.warn('Beauterry PFM auto sync is disabled or not configured');
         return () => {};
     }
+    // 2 ต.ค. 2026: บอกด้วยว่ามีข้อมูลถูกทิ้ง/ข้ามกี่แถว — เดิมพิมพ์แค่ updated ดูเหมือนครบทั้งที่ยอดวิวไม่เข้า
     const execute = () => runSync({ env }).then(result => {
-        logger.log(`Beauterry PFM sync completed: ${result.updated}/${result.requested} updated`);
+        logger.log(syncSummaryLine(result));
     }).catch(error => logger.error(`Beauterry PFM sync failed: ${error.message}`));
     const initial = setTimeout(execute, settings.initialDelayMs);
     const interval = setInterval(execute, settings.intervalMs);
@@ -141,4 +153,4 @@ function startScheduler({ logger = console, env = process.env } = {}) {
     };
 }
 
-module.exports = { config, sanitizeRow, fetchBatch, runSync, getStatus, startScheduler };
+module.exports = { config, sanitizeRow, fetchBatch, runSync, getStatus, startScheduler, syncSummaryLine };

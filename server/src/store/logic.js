@@ -1075,6 +1075,60 @@ function perfVerdict({ fee_missing, views, cpm, cpe }) {
     return (views > 0 && cpm > 0 && cpm <= GOOD_CPM && cpe > 0 && cpe <= GOOD_CPE) ? 'Good' : 'Improve';
 }
 
+// ===== CPE รวมของหลายคลิป (การ์ดหน้า Ads / ไทล์หน้า Dashboard · ผู้ใช้สั่ง 2 ต.ค. 2026) =====
+// ต้นทุนรวม ÷ engagement รวม · ต้นทุน = ค่าตัว + ค่าแอด แบบเดียวกับ CPE รายคลิป (clipCostMetrics)
+// นับเฉพาะคลิปที่ใส่ค่าตัวแล้ว มีต้นทุน และมี engagement > 0 — ไม่มีสักคลิป = cpe null (หน้าเว็บขึ้น "—" ไม่ใช่ ฿0)
+// items = [{ fee, adSpend, engagement, campaignType }] → { cpe, clips, cost, engagement }
+function pooledCpe(items) {
+    let cost = 0, eng = 0, clips = 0;
+    for (const it of items || []) {
+        if (!it) continue;
+        const e = Number(it.engagement) || 0;
+        if (e <= 0) continue;
+        const m = clipCostMetrics({ fee: it.fee, adSpend: it.adSpend, views: 0, engagement: e, campaignType: it.campaignType });
+        if (m.fee_missing || m.cpe == null) continue;
+        cost += m.cost; eng += e; clips += 1;
+    }
+    return { cpe: eng > 0 ? Number((cost / eng).toFixed(2)) : null, clips, cost, engagement: eng };
+}
+
+// ===== ทำไมคลิปนี้ยังไม่มียอดวิว (ป้าย Not rated / Awaiting data · ผู้ใช้สั่ง 2 ต.ค. 2026) =====
+// ต้องตรงกับที่ระบบขอข้อมูลจาก PFM: pg/ads.js adsSync.itemIds (platform ILIKE 'tiktok%' + มี id_post)
+// และ services/beauterryPfmSync.js sanitizeRow (id_post ต้องเป็นตัวเลขล้วน)
+//   null           = มียอดวิวแล้ว
+//   'not_tiktok'   = PFM ส่งเฉพาะ TikTok — Platform อื่นกรอกยอดเองที่ปุ่ม 📊
+//   'no_id_post'   = ยังไม่ใส่ ID Post (ระบบยังไม่ได้ถาม PFM)
+//   'bad_id_post'  = ID Post ไม่ใช่ตัวเลข — PFM จับคู่ไม่ได้
+//   'dup_id_post'  = ID Post ซ้ำกับแถวอื่น — ซิงก์ลงยอดแถว id ต่ำสุดแถวเดียว (pg/ads.js adsSync.apply ใช้ .find บน snapshot เรียง id)
+//   'pfm_no_clip'  = ถาม PFM แล้ว แต่ยังไม่เคยได้ข้อมูลคลิปนี้กลับมา (เพิ่งใส่ ID Post / PFM ไม่มีคลิปนี้)
+//   'pfm_no_views' = ซิงก์ได้ข้อมูลคลิปนี้แล้ว (เช่น ค่าแอด) แต่ไม่มียอดวิว
+// firstByPost = Map(id_post → แถว id ต่ำสุดที่ใช้ ID นี้) จาก firstByIdPost(ทุกแถวใน snapshot) — ไม่ส่ง = ไม่เช็คซ้ำ
+const btrim = v => String(v == null ? '' : v).replace(/^ +| +$/g, '');   // ตัดเฉพาะช่องว่าง แบบ btrim() ของ SQL
+function viewsMissingReason(s, firstByPost = null) {
+    if (!s || (Number(s.views) || 0) > 0) return null;
+    if (!/^tiktok/i.test(String(s.platform || ''))) return 'not_tiktok';
+    const idPost = btrim(s.id_post);
+    if (!idPost) return 'no_id_post';
+    if (!/^\d{1,50}$/.test(idPost)) return 'bad_id_post';
+    if (!s.ad_synced_at) {
+        const first = firstByPost && firstByPost.get(idPost);
+        if (first && first.id !== s.id && first.ad_synced_at) return 'dup_id_post';
+        return 'pfm_no_clip';
+    }
+    return 'pfm_no_views';
+}
+// แถวแรก (id ต่ำสุด) ของแต่ละ ID Post — ตัวที่ซิงก์ลงยอดให้จริง
+function firstByIdPost(subs) {
+    const m = new Map();
+    for (const s of subs || []) {
+        const k = btrim(s && s.id_post);
+        if (!k) continue;
+        const cur = m.get(k);
+        if (!cur || Number(s.id) < Number(cur.id)) m.set(k, s);
+    }
+    return m;
+}
+
 // ค่าเฉลี่ย CPM/CPE ต่อคลิปของหน้า Report — เฉพาะคลิปที่มีค่าตัวและมี reach จากแอดแล้ว
 // fee_clips = จำนวนคลิปที่เอามาเฉลี่ยจริง · fee_missing_clips = คลิปที่ยังไม่ใส่ค่าตัว (นับทุกแถวที่รวมอยู่ในยอดค่าจ้าง)
 // คลิปที่ไม่มี CPM (KOL รายคนได้ฟรีและยังไม่มีค่าแอด) ไม่เข้าเฉลี่ย — ไม่งั้น null ถูกนับเป็น 0 ดึงค่าเฉลี่ยลง
@@ -1180,5 +1234,5 @@ module.exports = {
     groupNoGencode, postNoGencode, carryNoGencode,
     resolveGroupProducts, resolveGroupCtype, resolveGroupMedia, resolveGroupCampaign,
     engagementOf, maybeStamp, stampWaitReason,
-    feeMissing, clipCostMetrics, costAxisRange, costAxisNorm, perfVerdict, feeCostAverages
+    feeMissing, clipCostMetrics, costAxisRange, costAxisNorm, perfVerdict, feeCostAverages, pooledCpe, viewsMissingReason, firstByIdPost
 };

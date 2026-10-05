@@ -17,7 +17,7 @@ const {
     resolveGroupTarget, resolveGroupProducts, resolveGroupCtype, resolveGroupMedia, resolveGroupCampaign,
     engagementOf, clipCostMetrics, perfVerdict,
     maybeStamp, stampWaitReason, stampAtFor, pfmManagedSpend, postCheckWaiting,
-    adRanBySpend, effectiveAdStatus, postNoGencode
+    adRanBySpend, effectiveAdStatus, postNoGencode, pooledCpe, viewsMissingReason, firstByIdPost
 } = logic;
 
 // ===== สแตมป์ Performance ตอนค่าแอดถึงเกณฑ์ =====
@@ -44,7 +44,8 @@ const adsSync = {
     },
 
     async apply(rows) {
-        const out = { updated: 0, stale: 0, regressed_metrics: 0,
+        // stale = แถวที่เวลาอัปเดตของต้นทางไม่ใหม่กว่าเดิม · stale_raised = ในนั้นมีกี่แถวที่ยังรับยอดที่สูงขึ้นได้
+        const out = { updated: 0, stale: 0, stale_raised: 0, regressed_metrics: 0,
             stamped: 0, not_found: [], skipped: 0 };
         if (!rows || !rows.length) return out;
 
@@ -84,25 +85,32 @@ const adsSync = {
             const hasOrganicMetrics = METRIC_KEYS.some(k => r[k] !== undefined);
             // แหล่งข้อมูลเดิมที่ยังไม่ส่ง source timestamp ต้องทำงานเหมือนเดิม
             // ส่วน PFM adapter ต้องผ่าน freshness guard ก่อนเขียน organic metrics
-            const acceptOrganic = !hasOrganicMetrics || !r.pfm_source
+            const fresh = !hasOrganicMetrics || !r.pfm_source
                 || shouldApplyOrganicMetrics(r.source_updated_at, s.perf_synced_at);
-            if (acceptOrganic) {
-                for (const k of METRIC_KEYS) {
-                    if (r[k] === undefined) continue;
-                    const next = Number(r[k]) || 0;
-                    if (!shouldApplyCumulativeMetric(next, s[k], Boolean(r.pfm_source))) {
-                        out.regressed_metrics++;
-                        continue;
-                    }
-                    s[k] = next;
-                    mark(s, k);
+            // 2 ต.ค. 2026: เวลาอัปเดตของต้นทางไม่ขยับ (หรือไม่ส่งมา) แต่ยอดสูงขึ้นจริง → รับเฉพาะช่องที่สูงขึ้น
+            // ยอดวิว/engagement เป็นยอดสะสมขึ้นอย่างเดียว ค่าที่สูงกว่าจึงใหม่กว่าแน่นอน (ของเดิมทิ้งทั้งชุด ยอดเลยค้างที่ค่าแรก)
+            // perf_synced_at ไม่ขยับในกรณีนี้ — ยังเป็นเวลาของต้นทางรอบล่าสุดที่ใหม่จริง
+            let raised = false;
+            for (const k of METRIC_KEYS) {
+                if (!hasOrganicMetrics || r[k] === undefined) continue;
+                const next = Number(r[k]) || 0;
+                if (!shouldApplyCumulativeMetric(next, s[k], Boolean(r.pfm_source))) {
+                    out.regressed_metrics++;
+                    continue;
                 }
+                if (!fresh && !(next > (Number(s[k]) || 0))) continue;
+                s[k] = next;
+                mark(s, k);
+                if (!fresh) raised = true;
+            }
+            if (fresh) {
                 if (hasOrganicMetrics && r.source_updated_at) {
                     s.perf_synced_at = new Date(r.source_updated_at).toISOString();
                     mark(s, 'perf_synced_at');
                 }
             } else {
                 out.stale++;
+                if (raised) out.stale_raised++;
             }
             s.ad_synced_at = now();
             s.updated_at = now();
@@ -149,6 +157,10 @@ const ads = {
         const projById = {};
         snap.projects.forEach(p => { projById[p.id] = p; });
 
+        // ต้นทุนของแต่ละแถว (ค่าตัว + ค่าแอด) ไว้คิด CPE รวมของการ์ดบนหน้า — ไม่ส่งค่าตัวออกไปกับแถว (ข้อมูลลับของ member)
+        const costIn = new Map();
+        // ID Post ซ้ำ: ซิงก์ลงยอดแถว id ต่ำสุด — คิดจากทุกแถว (ไม่กรองสิทธิ์/สถานะ) แบบเดียวกับ adsSync.apply
+        const firstByPost = firstByIdPost(snap.submissions);
         let rows = snap.submissions
             // เฉพาะโพสต์ที่มีลิงก์แล้ว และเฉพาะแคมเปญ KOL — งานจ้างอื่น ๆ ไม่เข้าหน้ายิงแอด
             .filter(s => s.post_url && String(s.post_url).trim()
@@ -168,6 +180,7 @@ const ads = {
                 // Content Type ผูกกับคน (1 Platform ในกลุ่มเดียวมีได้หลายอย่าง) แถวเก่าค่อยถอยไปใช้ของกลุ่ม
                 const ct = s.content_type || resolveGroupCtype(grp, s.platform);
                 const media = resolveGroupMedia(grp, s.platform, ct);
+                costIn.set(s.id, { fee: s.budget, adSpend: spend, engagement: engagementOf(s), campaignType });
                 return {
                     sub_id: s.id,
                     account_name: s.account_name,
@@ -214,6 +227,8 @@ const ads = {
                     ad_end: s.ad_end || null,
                     ad_note: s.ad_note || null,
                     cpm: adCpm(spend, reach),
+                    // ทำไมยังไม่มียอดวิว (ป้าย Not rated / Awaiting data) — null = มียอดวิวแล้ว (logic.js viewsMissingReason)
+                    views_reason: viewsMissingReason(s, firstByPost),
                     // Performance ของคอนเทนต์ — ใช้ตัดสินว่าควรยิงต่อหรือหยุด
                     ...(() => {
                         const views = Number(s.views) || 0;
@@ -265,6 +280,8 @@ const ads = {
         const totalReach = rows.reduce((s, r) => s + r.ad_reach, 0);
         // นับตามสถานะที่โชว์ ไม่งั้นการ์ด "ยิงแอดแล้ว" ขึ้น 0 ทั้งที่หลายแถวมีค่าแอดเดินแล้ว
         const doneCount = rows.filter(r => r.ad_status_shown === 'ยิงแล้ว').length;
+        // CPE รวม (การ์ดบนหน้า) = (ค่าตัว + ค่าแอด) ÷ engagement ของโพสต์ที่แสดงอยู่ — คิดเฉพาะโพสต์ที่ใส่ค่าตัวแล้วและมี engagement
+        const pooled = pooledCpe(rows.map(r => costIn.get(r.sub_id)));
 
         // สรุปตามแบรนด์
         const bm = {};
@@ -295,6 +312,9 @@ const ads = {
                 total_spend: totalSpend,
                 total_reach: totalReach,
                 cpm: adCpm(totalSpend, totalReach),
+                cpe: pooled.cpe,                                        // null = ยังไม่มีโพสต์ให้คิด · member ถูกซ่อนที่ routes/ads.js
+                cpe_clips: pooled.clips,                                // จำนวนโพสต์ที่ใช้คิด CPE
+                eng_posts: rows.filter(r => r.engagement > 0).length,   // โพสต์ที่มี engagement แล้ว (รวมที่ยังไม่ใส่ค่าตัว)
                 by_brand: byBrand
             },
             rows

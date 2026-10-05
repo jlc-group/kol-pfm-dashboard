@@ -193,7 +193,7 @@ export default function Dashboard() {
                 </div>
                 <div className="metric-tile">
                     <div className="metric-tile-ico g2"><Icon name="target" size={22} /></div>
-                    <div><div className="metric-tile-val">{data ? fmtMoney(data.cpe) : '—'}</div><div className="metric-tile-label">CPE · ต่อ engagement</div></div>
+                    <div><div className="metric-tile-val">{data && data.cpe != null ? fmtMoney(data.cpe) : '—'}</div><div className="metric-tile-label">CPE · (ค่าตัว+ค่าแอด) ต่อ engagement</div></div>
                 </div>
                 <div className="metric-tile">
                     <div className="metric-tile-ico g4"><Icon name="folder" size={20} /></div>

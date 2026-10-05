@@ -10,7 +10,7 @@
  * ไม่เอามาคิด CPM และแกนคะแนน CPM/CPE — ใช้กฎกลางจาก logic.js ชุดเดียวกับหน้า Report
  */
 const { loadSnapshot } = require('./_snapshot');
-const { scopeProjects, feeMissing, clipCostMetrics, costAxisRange, costAxisNorm, hireRemaining } = require('../logic');
+const { scopeProjects, feeMissing, clipCostMetrics, costAxisRange, costAxisNorm, hireRemaining, pooledCpe, engagementOf } = require('../logic');
 
 // ============================ dashboard (สรุปตามตัวกรอง) ============================
 const dashboard = {
@@ -59,14 +59,18 @@ const dashboard = {
         const byPlatform = {};
         subs.forEach(s => {
             const p = s.platform || 'อื่นๆ';
-            if (!byPlatform[p]) byPlatform[p] = { platform: p, count: 0, people: new Set(), views: 0, feeSum: 0 };
+            if (!byPlatform[p]) byPlatform[p] = { platform: p, count: 0, people: new Set(), views: 0, feeSum: 0, contentViews: 0, eng: 0 };
             const b = byPlatform[p];
             b.count += 1; b.people.add(s.person_key || ('sub:' + s.id));
             b.views += Number(s.ad_reach) || 0; b.feeSum += Number(s.budget) || 0;
+            // Engagement Rate ของแพลตฟอร์ม (2 ต.ค. 2026) = engagement รวม ÷ ยอดวิวคอนเทนต์รวม — เฉพาะคลิปที่มียอดวิวแล้ว
+            const cv = Number(s.views) || 0;
+            if (cv > 0) { b.contentViews += cv; b.eng += engagementOf(s); }
         });
         const platforms = Object.values(byPlatform).map(b => ({
             platform: b.platform, kols_count: b.people.size, clips_count: b.count, views: b.views,
-            engagement: null, avg_cost: b.count ? Math.round(b.feeSum / b.count) : 0
+            engagement: b.contentViews > 0 ? Number(((b.eng / b.contentViews) * 100).toFixed(2)) : null,
+            avg_cost: b.count ? Math.round(b.feeSum / b.count) : 0
         }));
         const platformSet = new Set(subs.map(s => s.platform).filter(Boolean));
 
@@ -76,7 +80,9 @@ const dashboard = {
         const feeSum = feeSubs.reduce((a, s) => a + (Number(s.budget) || 0), 0);
         const feeReach = feeSubs.reduce((a, s) => a + (Number(s.ad_reach) || 0), 0);
         const cpm = feeReach > 0 ? Math.round(feeSum / (feeReach / 1000)) : 0;
-        const cpe = 0; // ยังไม่มีข้อมูล engagement ราย KOL จาก submissions
+        // CPE รวม (2 ต.ค. 2026 — เดิมเป็น 0 ตายตัว) = (ค่าตัว + ค่าแอด) ÷ engagement รวม ของคลิปที่ใส่ค่าตัวแล้วและมี engagement
+        // สูตรเดียวกับ CPE รายคลิปด้านล่าง (clipCostMetrics) · ยังไม่มีคลิปให้คิด = null (หน้าเว็บขึ้น "—")
+        const cpe = pooledCpe(subs.map(s => ({ fee: s.budget, adSpend: s.ad_spend, engagement: engagementOf(s), campaignType: typeOfSub(s) }))).cpe;
 
         // 6) Top KOLs — ส่ง 20 อันดับ (หน้าเว็บโชว์ 5 อันดับแรก ที่เหลือกดดูเพิ่มได้)
         //

@@ -3,7 +3,7 @@ import { api } from '../api/client.js';
 import Icon from '../components/Icon.jsx';
 import ProductChips from '../components/ProductChips.jsx';
 import ProductMultiSelect from '../components/ProductMultiSelect.jsx';
-import { stampAtOf, stampAtText } from '../data/stamp.js';
+import { stampAtOf, stampAtText, viewsReasonText } from '../data/stamp.js';
 
 const splitCodes = v => (v ? String(v).split(',').map(s => s.trim()).filter(Boolean) : []);
 
@@ -46,6 +46,9 @@ function PerfBadge({ row }) {
         if (Number(row.views) > 0 && row.cpm == null) {
             return <span className="perf-pill none" title="ได้ฟรี ยังไม่มีค่าแอด — ยังไม่มีต้นทุนให้คิด CPM/CPE จึงยังตัดสินผ่าน/ไม่ผ่านไม่ได้ (ไม่ได้แปลว่าทำได้แย่)">Not rated</span>;
         }
+        // บอกเหตุผลจริงว่าทำไมยังไม่มียอดวิว (2 ต.ค. 2026) — server รุ่นก่อนไม่ส่ง views_reason = ข้อความเดิม
+        const why = viewsReasonText(row.views_reason, row);
+        if (why) return <span className="perf-pill none with-reason" title={'ยังตัดสินไม่ได้ เพราะยังไม่มียอดวิว\n\n' + why.long}>Not rated<em>{why.short}</em></span>;
         return (
             <span className="perf-pill none" title={`ยังตัดสินไม่ได้ เพราะยังไม่ได้กรอกผลงานคอนเทนต์
 (View / Like / Comment / Save / Share)
@@ -82,8 +85,9 @@ function StampBadge({ row }) {
             if (row.stamp_wait_reason === 'fee') {
                 return <span className="perf-pill wait fee" title="ค่าแอดถึงเกณฑ์และมียอดวิวแล้ว แต่ทีมยังไม่ได้ใส่ค่าตัว KOL — ใส่ที่หน้าแคมเปญแล้วระบบจะล็อกผลให้ทันที">รอค่าตัว</span>;
             }
-            return <span className="perf-pill wait" title={`ค่ายิงแอดถึงเกณฑ์แล้ว แต่ยังไม่มียอดวิวให้ตัดสิน
-ระบบจะสแตมป์ให้เองทันทีที่ข้อมูลผลงานเข้ามา`}>Awaiting data</span>;
+            const why = viewsReasonText(row.views_reason, row);
+            return <span className={'perf-pill wait' + (why ? ' with-reason' : '')} title={`ค่ายิงแอดถึงเกณฑ์แล้ว แต่ยังไม่มียอดวิวให้ตัดสิน
+ระบบจะสแตมป์ให้เองทันทีที่ข้อมูลผลงานเข้ามา` + (why ? '\n\n' + why.long : '')}>Awaiting data{why && <em>{why.short}</em>}</span>;
         }
         // ยังไม่ใส่ค่าตัว = ยังไม่มีผลปัจจุบันให้ดู ขึ้นป้าย "รอค่าตัว" อย่างเดียว ไม่ต้องห่อด้วย "not stamped"
         if (row.fee_missing) return <PerfBadge row={row} />;
