@@ -224,7 +224,7 @@ const kols = {
                     const expire = new Date(s.post_date + 'T00:00:00').getTime() + days * 86400000;
                     day_left = Math.ceil((expire - today.getTime()) / 86400000);
                 }
-                // ผลงานคอนเทนต์ + เกณฑ์ผ่าน/ไม่ผ่าน (ต้นทุน = ค่าตัว + ค่ายิงแอด)
+                // ผลงานคอนเทนต์ + เกณฑ์ผ่าน/ไม่ผ่าน (CPM/CPE คิดจากค่าตัวอย่างเดียว · total_cost = ค่าตัว + ค่ายิงแอด)
                 const views = Number(s.views) || 0;
                 const likes = Number(s.likes) || 0, comments = Number(s.comments) || 0;
                 const saves = Number(s.saves) || 0, shares = Number(s.shares) || 0;

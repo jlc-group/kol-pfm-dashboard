@@ -56,7 +56,7 @@ test('ads.list: แถวส่งครบทุกคลิป (มี no_genc
     assert.equal(summary.total_spend, 1000, 'ค่าแอดของคลิปไม่ต้องยิงไม่รวมในการ์ด');
     assert.equal(summary.total_reach, 5000);
     assert.equal(summary.eng_posts, 1);
-    assert.equal(summary.cpe, 40, '(3000 + 1000) / 100 — ไม่เอาคลิปไม่ต้องยิงมาคิด');
+    assert.equal(summary.cpe, 30, 'ค่าตัว 3000 / 100 (ไม่รวมค่าแอด) — ไม่เอาคลิปไม่ต้องยิงมาคิด');
     assert.deepEqual(summary.by_brand.map(b => [b.brand, b.posts, b.spend]), [['Beauterry', 3, 1000]]);
 });
 

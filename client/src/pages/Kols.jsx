@@ -42,9 +42,9 @@ function PerfBadge({ row }) {
         return <span className="perf-pill wait fee" title="ทีมยังไม่ได้ใส่ค่าตัว KOL คลิปนี้ — ยังคิด CPM/CPE และตัดสินผ่าน/ไม่ผ่านไม่ได้ ใส่ค่าตัวที่หน้าแคมเปญ">รอค่าตัว</span>;
     }
     if (!row.performance) {
-        // มียอดวิวแล้วแต่ไม่มี CPM = KOL รายคนได้ฟรีที่ยังไม่มีค่าแอด (ไม่มีต้นทุนให้คิด) — ไม่ใช่ยังไม่กรอกผลงาน
+        // มียอดวิวแล้วแต่ไม่มี CPM = KOL รายคนได้ฟรี (ค่าตัว 0 — CPM/CPE คิดจากค่าตัว) — ไม่ใช่ยังไม่กรอกผลงาน
         if (Number(row.views) > 0 && row.cpm == null) {
-            return <span className="perf-pill none" title="ได้ฟรี ยังไม่มีค่าแอด — ยังไม่มีต้นทุนให้คิด CPM/CPE จึงยังตัดสินผ่าน/ไม่ผ่านไม่ได้ (ไม่ได้แปลว่าทำได้แย่)">Not rated</span>;
+            return <span className="perf-pill none" title="ได้ฟรี (ค่าตัว 0) — CPM/CPE คิดจากค่าตัว จึงยังตัดสินผ่าน/ไม่ผ่านไม่ได้ (ไม่ได้แปลว่าทำได้แย่)">Not rated</span>;
         }
         // บอกเหตุผลจริงว่าทำไมยังไม่มียอดวิว (2 ต.ค. 2026) — server รุ่นก่อนไม่ส่ง views_reason = ข้อความเดิม
         const why = viewsReasonText(row.views_reason, row);

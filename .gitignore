@@ -13,3 +13,5 @@ dist/
 server/data/
 # ไฟล์ที่อัปโหลด (ใบเสนอราคา/ใบแจ้งหนี้)
 server/uploads/
+# สำเนาผลที่ล็อกก่อนรัน scripts/recompute-perf-stamps.cjs --write (ข้อมูลจริงจาก production — ไม่ commit)
+perf-stamps-backup-*.json

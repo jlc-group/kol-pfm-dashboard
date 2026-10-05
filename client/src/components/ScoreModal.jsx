@@ -6,7 +6,7 @@ function verdict(k) {
     const parts = k.score_parts || [];
     const by = key => parts.find(p => p.key === key) || { earned: 0, weight: 0 };
     // ยังไม่ใส่ค่าตัว = คะแนนด้านต้นทุน (CPM/CPE) ยังคิดไม่ได้ — ไม่นับเป็นจุดอ่อน และไม่สรุปเรื่องความคุ้มค่า
-    // KOL รายคนได้ฟรีที่ยังไม่มีค่าแอด (ไม่ได้รอค่าตัว แต่ cpm เป็น null) = ไม่มีต้นทุนให้คิด — อธิบายแบบเดียวกัน (server ไม่ได้เปลี่ยนวิธีให้คะแนน)
+    // KOL รายคนได้ฟรี (ค่าตัว 0 · ไม่ได้รอค่าตัว แต่ cpm เป็น null) = ไม่มีค่าตัวให้คิด CPM/CPE — อธิบายแบบเดียวกัน (server ไม่ได้เปลี่ยนวิธีให้คะแนน)
     const freeNoCost = !k.fee_missing && k.cpm == null;
     const noCost = k.fee_missing || freeNoCost;
     const scored = noCost ? parts.filter(p => p.key !== 'cpm' && p.key !== 'cpe') : parts;
@@ -17,7 +17,7 @@ function verdict(k) {
 
     const lines = [];
     if (k.fee_missing) lines.push('ยังไม่ได้ใส่ค่าตัว — ยังคิด CPM/CPE ไม่ได้ คะแนนตอนนี้มาจาก Engagement Rate และยอดวิวเท่านั้น (เต็ม 60)');
-    else if (freeNoCost) lines.push('ได้ฟรี ยังไม่มีค่าแอด — ยังคิด CPM/CPE ไม่ได้ คะแนนตอนนี้มาจาก Engagement Rate และยอดวิวเท่านั้น (เต็ม 60)');
+    else if (freeNoCost) lines.push('ได้ฟรี (ค่าตัว 0) — CPM/CPE คิดจากค่าตัว จึงไม่มีตัวเลข คะแนนตอนนี้มาจาก Engagement Rate และยอดวิวเท่านั้น (เต็ม 60)');
     if (strong.length) lines.push(`ได้คะแนนดีจาก ${strong.map(p => p.label).join(' และ ')}`);
     if (weak.length) lines.push(`เสียคะแนนที่ ${weak.map(p => p.label).join(' และ ')}`);
     if (noCost) return lines;
@@ -112,7 +112,7 @@ export default function ScoreModal({ k, onClose }) {
 
                 <div className="sc-formula muted">
                     เกณฑ์ให้น้ำหนัก: Engagement Rate 35% · ยอดวิว 25% · CPM 20% · CPE 20%
-                    <br />ต้นทุนที่ใช้คิด CPM/CPE = ค่าตัว + ค่ายิงแอดรวมกัน
+                    <br />CPM/CPE คิดจากค่าตัว KOL อย่างเดียว (ไม่รวมค่ายิงแอด)
                 </div>
 
                 <div className="modal-actions">

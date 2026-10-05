@@ -80,7 +80,7 @@ const dashboard = {
         const feeSum = feeSubs.reduce((a, s) => a + (Number(s.budget) || 0), 0);
         const feeReach = feeSubs.reduce((a, s) => a + (Number(s.ad_reach) || 0), 0);
         const cpm = feeReach > 0 ? Math.round(feeSum / (feeReach / 1000)) : 0;
-        // CPE รวม (2 ต.ค. 2026 — เดิมเป็น 0 ตายตัว) = (ค่าตัว + ค่าแอด) ÷ engagement รวม ของคลิปที่ใส่ค่าตัวแล้วและมี engagement
+        // CPE รวม (2 ต.ค. 2026 — เดิมเป็น 0 ตายตัว) = ค่าตัว ÷ engagement รวม ของคลิปที่ใส่ค่าตัวแล้วและมี engagement (ไม่รวมค่าแอด · 5 ต.ค.)
         // สูตรเดียวกับ CPE รายคลิปด้านล่าง (clipCostMetrics) · ยังไม่มีคลิปให้คิด = null (หน้าเว็บขึ้น "—")
         const cpe = pooledCpe(subs.map(s => ({ fee: s.budget, adSpend: s.ad_spend, engagement: engagementOf(s), campaignType: typeOfSub(s) }))).cpe;
 
@@ -110,7 +110,7 @@ const dashboard = {
             const engagementTotal = likes + comments + saves + shares + reposts;
             const fee = Number(s.budget) || 0;
             const adSpend = Number(s.ad_spend) || 0;
-            // ต้นทุนรวม = ค่าตัว + ค่ายิงแอด · ยังไม่ใส่ค่าตัว = cpm/cpe เป็น null (ดู clipCostMetrics)
+            // CPM/CPE คิดจากค่าตัวอย่างเดียว (cost = ค่าตัว + ค่าแอด ไว้โชว์) · ยังไม่ใส่ค่าตัว = cpm/cpe เป็น null (ดู clipCostMetrics)
             const { fee_missing, cost, cpm, cpe } = clipCostMetrics({ fee, adSpend, views, engagement: engagementTotal, campaignType: typeOfSub(s) });
             return {
                 kol_id: s.id, name: s.account_name, platform: s.platform || null,
@@ -164,8 +164,8 @@ const dashboard = {
                 const nCpm = costAxisNorm(k, 'cpm', rCpm, hasCpm);
                 const nCpe = costAxisNorm(k, 'cpe', rCpe, hasCpe);
                 const NO_FEE = 'ยังไม่ใส่ค่าตัว';
-                // KOL รายคนได้ฟรีและยังไม่มีค่าแอด — ไม่มีต้นทุนให้คิด CPM/CPE (cpm/cpe เป็น null ได้ 0 ในแกนนั้น)
-                const NO_COST = 'ได้ฟรี ยังไม่มีค่าแอด';
+                // KOL รายคนได้ฟรี (ค่าตัว 0) — CPM/CPE คิดจากค่าตัว จึงไม่มีตัวเลข (cpm/cpe เป็น null ได้ 0 ในแกนนั้น)
+                const NO_COST = 'ได้ฟรี ไม่มีค่าตัวให้คิด';
                 const pct = w => Math.round(w * 100);
                 k.score_parts = [
                     { key: 'er', label: 'Engagement Rate', value: k.engagement || 0, unit: '%', weight: pct(SCORE_W.er), earned: Number((SCORE_W.er * nEr * 100).toFixed(1)), better: 'สูง', note: edge(k.engagement || 0, rEr, false) },

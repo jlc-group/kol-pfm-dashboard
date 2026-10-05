@@ -82,12 +82,12 @@ function LiveCell({ row }) {
         return <span className="perf-pill wait fee" title="ทีมยังไม่ได้ใส่ค่าตัว KOL คลิปนี้ — ยังคิด CPM/CPE และตัดสินผ่าน/ไม่ผ่านไม่ได้ ใส่ค่าตัวที่หน้าแคมเปญ">รอค่าตัว</span>;
     }
     if (!row.performance) {
-        // มียอดวิวแล้วแต่ไม่มี CPM = KOL รายคนได้ฟรีที่ยังไม่มีค่าแอด (ไม่มีต้นทุนให้คิด) — ไม่ใช่ยังไม่มียอดวิว
+        // มียอดวิวแล้วแต่ไม่มี CPM = KOL รายคนได้ฟรี (ค่าตัว 0 — CPM/CPE คิดจากค่าตัว) — ไม่ใช่ยังไม่มียอดวิว
         const freeNoCost = Number(row.views) > 0 && row.content_cpm == null;
         // ยังไม่มียอดวิว: บอกเหตุผลจริงใต้ป้าย (ไม่ใช่ TikTok / ไม่มี ID Post / PFM ไม่มีคลิปนี้ ...) — 2 ต.ค. 2026
         const why = freeNoCost ? null : viewsReasonText(row.views_reason, row);
         return <span className={'perf-pill none' + (why ? ' with-reason' : '')} title={freeNoCost
-            ? 'ได้ฟรี ยังไม่มีค่าแอด — ยังไม่มีต้นทุนให้คิด CPM/CPE จึงยังตัดสินไม่ได้ (ไม่ได้แปลว่าทำได้แย่)'
+            ? 'ได้ฟรี (ค่าตัว 0) — CPM/CPE คิดจากค่าตัว จึงไม่มีตัวเลขให้ตัดสิน (ไม่ได้แปลว่าทำได้แย่)'
             : why ? 'ยังไม่มียอดวิวให้ตัดสิน — ' + why.long : 'ยังไม่มียอดวิวให้ตัดสิน'}>Not rated{why && <em>{why.short}</em>}</span>;
     }
     const pass = row.performance === 'Good';
@@ -631,10 +631,10 @@ export default function Ads() {
                         : measuredRows.length ? `คำนวณจาก ${measuredRows.length}/${paidRows.length} โพสต์ที่มีค่าแอด`
                             : 'รอ Reach ของโพสต์ที่มีค่าแอด'}</div>
                 </div>
-                {/* CPE รวม (2 ต.ค. 2026 — เดิมเป็นข้อความตายตัว "PFM ยังไม่ส่ง Engagement") = (ค่าตัว + ค่าแอด) ÷ engagement จริงในฐาน
+                {/* CPE รวม (2 ต.ค. 2026 — เดิมเป็นข้อความตายตัว "PFM ยังไม่ส่ง Engagement") = ค่าตัว ÷ engagement จริงในฐาน (ไม่รวมค่าแอด · 5 ต.ค.)
                     ของโพสต์ที่แสดงอยู่ · สูตรเดียวกับ CPE รายคลิป · คิดเฉพาะโพสต์ที่ใส่ค่าตัวแล้วและมี engagement */}
                 <div className="summary-card">
-                    <div className="summary-label">CPE (ค่าตัว+ค่าแอด / 1 engagement)</div>
+                    <div className="summary-label">CPE (ค่าตัว / 1 engagement)</div>
                     <div className="summary-value">{canSeeSpend && s?.cpe != null ? fmtMoney(s.cpe) : '—'}</div>
                     <div className="summary-sub">{!s ? '—' : !canSeeSpend ? 'เฉพาะผู้มีสิทธิ์ดูต้นทุน'
                         : s.cpe_clips > 0 ? `คิดจาก ${s.cpe_clips}/${s.eng_posts} โพสต์ที่มี Engagement · เกณฑ์ ≤ ${GOOD_CPE}`

@@ -157,7 +157,7 @@ const ads = {
         const projById = {};
         snap.projects.forEach(p => { projById[p.id] = p; });
 
-        // ต้นทุนของแต่ละแถว (ค่าตัว + ค่าแอด) ไว้คิด CPE รวมของการ์ดบนหน้า — ไม่ส่งค่าตัวออกไปกับแถว (ข้อมูลลับของ member)
+        // ค่าตัวของแต่ละแถว ไว้คิด CPE รวมของการ์ดบนหน้า (ค่าตัว ÷ engagement — pooledCpe) — ไม่ส่งค่าตัวออกไปกับแถว (ข้อมูลลับของ member)
         const costIn = new Map();
         // ID Post ซ้ำ: ซิงก์ลงยอดแถว id ต่ำสุด — คิดจากทุกแถว (ไม่กรองสิทธิ์/สถานะ) แบบเดียวกับ adsSync.apply
         const firstByPost = firstByIdPost(snap.submissions);
@@ -282,7 +282,7 @@ const ads = {
         const totalReach = adRows.reduce((s, r) => s + r.ad_reach, 0);
         // นับตามสถานะที่โชว์ ไม่งั้นการ์ด "ยิงแอดแล้ว" ขึ้น 0 ทั้งที่หลายแถวมีค่าแอดเดินแล้ว
         const doneCount = adRows.filter(r => r.ad_status_shown === 'ยิงแล้ว').length;
-        // CPE รวม (การ์ดบนหน้า) = (ค่าตัว + ค่าแอด) ÷ engagement ของโพสต์ที่ต้องยิง — คิดเฉพาะโพสต์ที่ใส่ค่าตัวแล้วและมี engagement
+        // CPE รวม (การ์ดบนหน้า) = ค่าตัว ÷ engagement ของโพสต์ที่ต้องยิง (ไม่รวมค่าแอด · 5 ต.ค. 2026) — คิดเฉพาะโพสต์ที่ใส่ค่าตัวแล้วและมี engagement
         const pooled = pooledCpe(adRows.map(r => costIn.get(r.sub_id)));
 
         // สรุปตามแบรนด์

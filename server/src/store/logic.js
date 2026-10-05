@@ -980,7 +980,8 @@ function engagementOf(s) {
 
 // คืนค่า stamp ถ้าเพิ่งสแตมป์รอบนี้ / null ถ้ายังไม่ถึงเงื่อนไข
 // at = เกณฑ์ค่าแอดของแบรนด์นั้น (ตัวเรียกหาจาก stampAtFor) — ไม่ส่งมาก็ใช้ค่ากลาง
-// campaignType = projects.campaign_type ของคลิปนี้ — KOL รายคน ('solo') ค่าตัว 0 = ได้ฟรี ไม่ต้องรอค่าตัว (ต้นทุน = ค่าแอด)
+// campaignType = projects.campaign_type ของคลิปนี้ — KOL รายคน ('solo') ค่าตัว 0 = ได้ฟรี ไม่ต้องรอค่าตัว
+// 5 ต.ค. 2026: CPM/CPE ใช้สูตรเดียวกับ clipCostMetrics (ค่าตัวอย่างเดียว) · ได้ฟรี (ค่าตัว 0) = ไม่มีตัวเลขให้ล็อก → ไม่สแตมป์
 function maybeStamp(s, at = AD_STAMP_AT, campaignType) {
     if (!s || s.perf_stamp) return null;                       // สแตมป์แล้วห้ามแตะซ้ำ
     const spend = Number(s.ad_spend) || 0;
@@ -992,15 +993,15 @@ function maybeStamp(s, at = AD_STAMP_AT, campaignType) {
     // (ใส่ค่าตัวเมื่อไหร่ submissions.updateOne เรียกฟังก์ชันนี้ซ้ำ แล้วสแตมป์ตอนนั้นเอง)
     if (feeMissing(s.budget, campaignType)) return null;
     const engagement = engagementOf(s);
-    const totalCost = (Number(s.budget) || 0) + spend;
-    const cpm = Number((totalCost / (views / 1000)).toFixed(2));
-    const cpe = engagement > 0 ? Number((totalCost / engagement).toFixed(2)) : 0;
+    const m = clipCostMetrics({ fee: s.budget, adSpend: spend, views, engagement, campaignType });
+    if (m.cpm == null) return null;                            // ได้ฟรี — ไม่มีค่าตัวให้คิด CPM/CPE
+    const { cpm, cpe } = m;
     s.perf_stamp = {
         at: now(),
         ad_spend: spend,
         views, engagement,
         er: Number(((engagement / views) * 100).toFixed(2)),
-        total_cost: totalCost,
+        total_cost: m.cost,                                    // ค่าตัว + ค่าแอด (ยอดเงินจริง ไม่ได้ใช้คิด CPM/CPE)
         cpm, cpe,
         verdict: (cpm > 0 && cpm <= GOOD_CPM && cpe > 0 && cpe <= GOOD_CPE) ? 'Pass' : 'Fail'
     };
@@ -1030,20 +1031,21 @@ function feeMissing(budget, campaignType) {
     return (Number(budget) || 0) <= 0;
 }
 
-// CPM/CPE ของ 1 คลิป — ต้นทุน = ค่าตัว + ค่ายิงแอด
-// ยังไม่ใส่ค่าตัว = cpm/cpe เป็น null (ห้ามคืน 0 หรือคิดจากค่าแอดอย่างเดียว เพราะจะดูคุ้มเกินจริง)
-// KOL รายคน: คืน fee_free ด้วย (ค่าตัว 0 = ได้ฟรี ต้นทุน = ค่าแอดอย่างเดียว) · ต้นทุนรวมยังเป็น 0 (ได้ฟรี + ยังไม่ยิงแอด)
-// = cpm/cpe เป็น null "ยังไม่มีต้นทุนให้ตัดสิน" ไม่ใช่ 0 ที่ดูคุ้มสุด
+// CPM/CPE ของ 1 คลิป — คิดจากค่าตัว KOL อย่างเดียว ไม่รวมค่ายิงแอด (ผู้ใช้สั่ง 5 ต.ค. 2026 · เดิม = ค่าตัว + ค่าแอด)
+//   CPM = ค่าตัว ÷ (ยอดวิว ÷ 1,000) · CPE = ค่าตัว ÷ engagement — ค่าแอดสะสมไม่ทำให้ CPM/CPE แพงขึ้นเองตามเวลาอีก
+// cost = ค่าตัว + ค่าแอด (ยอดเงินที่จ่ายจริง ใช้โชว์ / total_cost) — ไม่ได้ใช้คิด CPM/CPE แล้ว
+// ยังไม่ใส่ค่าตัว = cpm/cpe เป็น null (ห้ามคืน 0 เพราะจะดูคุ้มเกินจริง)
+// KOL รายคน: คืน fee_free ด้วย · ได้ฟรี (ค่าตัว 0) = cpm/cpe เป็น null "ไม่มีค่าตัวให้ตัดสิน" ไม่ใช่ 0 ที่ดูคุ้มสุด
 function clipCostMetrics({ fee, adSpend, views, engagement, campaignType }) {
     const f = Number(fee) || 0;
     const cost = f + (Number(adSpend) || 0);
     if (feeMissing(f, campaignType)) return { fee_missing: true, cost, cpm: null, cpe: null };
     const free = campaignType === 'solo' ? { fee_free: f <= 0 } : {};
-    if (cost <= 0) return { fee_missing: false, ...free, cost, cpm: null, cpe: null };
+    if (f <= 0) return { fee_missing: false, ...free, cost, cpm: null, cpe: null };
     return {
         fee_missing: false, ...free, cost,
-        cpm: views > 0 ? Number((cost / (views / 1000)).toFixed(2)) : 0,
-        cpe: engagement > 0 ? Number((cost / engagement).toFixed(2)) : 0
+        cpm: views > 0 ? Number((f / (views / 1000)).toFixed(2)) : 0,
+        cpe: engagement > 0 ? Number((f / engagement).toFixed(2)) : 0
     };
 }
 
@@ -1076,20 +1078,20 @@ function perfVerdict({ fee_missing, views, cpm, cpe }) {
 }
 
 // ===== CPE รวมของหลายคลิป (การ์ดหน้า Ads / ไทล์หน้า Dashboard · ผู้ใช้สั่ง 2 ต.ค. 2026) =====
-// ต้นทุนรวม ÷ engagement รวม · ต้นทุน = ค่าตัว + ค่าแอด แบบเดียวกับ CPE รายคลิป (clipCostMetrics)
-// นับเฉพาะคลิปที่ใส่ค่าตัวแล้ว มีต้นทุน และมี engagement > 0 — ไม่มีสักคลิป = cpe null (หน้าเว็บขึ้น "—" ไม่ใช่ ฿0)
-// items = [{ fee, adSpend, engagement, campaignType }] → { cpe, clips, cost, engagement }
+// ค่าตัวรวม ÷ engagement รวม — ค่าตัวอย่างเดียว ไม่รวมค่าแอด แบบเดียวกับ CPE รายคลิป (clipCostMetrics · 5 ต.ค. 2026)
+// นับเฉพาะคลิปที่ใส่ค่าตัวแล้ว (> 0) และมี engagement > 0 — ไม่มีสักคลิป = cpe null (หน้าเว็บขึ้น "—" ไม่ใช่ ฿0)
+// items = [{ fee, adSpend, engagement, campaignType }] → { cpe, clips, fee, engagement }
 function pooledCpe(items) {
-    let cost = 0, eng = 0, clips = 0;
+    let fee = 0, eng = 0, clips = 0;
     for (const it of items || []) {
         if (!it) continue;
         const e = Number(it.engagement) || 0;
         if (e <= 0) continue;
         const m = clipCostMetrics({ fee: it.fee, adSpend: it.adSpend, views: 0, engagement: e, campaignType: it.campaignType });
         if (m.fee_missing || m.cpe == null) continue;
-        cost += m.cost; eng += e; clips += 1;
+        fee += Number(it.fee) || 0; eng += e; clips += 1;
     }
-    return { cpe: eng > 0 ? Number((cost / eng).toFixed(2)) : null, clips, cost, engagement: eng };
+    return { cpe: eng > 0 ? Number((fee / eng).toFixed(2)) : null, clips, fee, engagement: eng };
 }
 
 // ===== ทำไมคลิปนี้ยังไม่มียอดวิว (ป้าย Not rated / Awaiting data · ผู้ใช้สั่ง 2 ต.ค. 2026) =====
@@ -1131,7 +1133,7 @@ function firstByIdPost(subs) {
 
 // ค่าเฉลี่ย CPM/CPE ต่อคลิปของหน้า Report — เฉพาะคลิปที่มีค่าตัวและมี reach จากแอดแล้ว
 // fee_clips = จำนวนคลิปที่เอามาเฉลี่ยจริง · fee_missing_clips = คลิปที่ยังไม่ใส่ค่าตัว (นับทุกแถวที่รวมอยู่ในยอดค่าจ้าง)
-// คลิปที่ไม่มี CPM (KOL รายคนได้ฟรีและยังไม่มีค่าแอด) ไม่เข้าเฉลี่ย — ไม่งั้น null ถูกนับเป็น 0 ดึงค่าเฉลี่ยลง
+// คลิปที่ไม่มี CPM (KOL รายคนได้ฟรี — ไม่มีค่าตัวให้คิด) ไม่เข้าเฉลี่ย — ไม่งั้น null ถูกนับเป็น 0 ดึงค่าเฉลี่ยลง
 function feeCostAverages(rows) {
     const used = rows.filter(r => !r.fee_missing && r.reach > 0 && r.cpm != null);
     const avg = key => (used.length ? Number((used.reduce((a, r) => a + r[key], 0) / used.length).toFixed(2)) : 0);
