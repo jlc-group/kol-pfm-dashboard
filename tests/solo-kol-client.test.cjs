@@ -159,6 +159,13 @@ test('+ Account (หลาย KOL ในฟอร์มเดียว): soloDup
     assert.deepEqual(c.soloDuplicateAccounts([kol({ TikTok: { account_name: 'a' } }), kol({ Instagram: { account_name: 'a' } })], ['TikTok', 'Instagram']), {});
     assert.deepEqual(c.soloDuplicateAccounts(null, ['TikTok']), {});
     assert.deepEqual(c.soloDuplicateAccounts([null, kol({})], ['TikTok']), {});
+    // เลือก Platform ในการ์ดของแต่ละคน: ค่าค้างของ Platform ที่คนนั้นเอาติ๊กออกไม่นับ
+    const perKol = [
+        { platforms: ['TikTok'], acc: { TikTok: { account_name: 'a' } } },
+        { platforms: ['Instagram'], acc: { TikTok: { account_name: 'a' }, Instagram: { account_name: 'a' } } },   // TikTok ค้าง (ไม่ได้เลือก)
+        { platforms: ['TikTok', 'Instagram'], acc: { TikTok: { account_name: '@A' }, Instagram: { account_name: 'b' } } }
+    ];
+    assert.deepEqual(c.soloDuplicateAccounts(perKol, ['TikTok', 'Instagram']), { '2|TikTok': 0 });
 });
 
 test('ฟอร์มไม่มีช่องทางติดต่อแล้ว (5 ต.ค. 2026): ค่าที่ฟอร์มส่ง (self / agency เดิม) server ยังรับ · บรีฟลิงก์ + รายละเอียดเก็บได้', () => {

@@ -63,13 +63,15 @@ export function soloPlatformsOf(p) {
     return g.platform ? [g.platform] : [];
 }
 // ฟอร์ม + Account (หลาย KOL ในฟอร์มเดียว · 5 ต.ค. 2026): ชื่อบัญชีที่ซ้ำกับ KOL ก่อนหน้าใน Platform เดียวกัน
-// kols = [{ acc: { [platform]: { account_name } } }] · คืน { 'ลำดับKOL|Platform': ลำดับ KOL แรกที่ใช้ชื่อนี้ } (นับจาก 0)
+// kols = [{ platforms?, acc: { [platform]: { account_name } } }] · คืน { 'ลำดับKOL|Platform': ลำดับ KOL แรกที่ใช้ชื่อนี้ } (นับจาก 0)
+// KOL ที่มี platforms (เลือก Platform ในการ์ดของตัวเอง) ตรวจเฉพาะ Platform ที่เลือก — ค่าค้างของ Platform ที่เอาติ๊กออกไม่นับ
 // เทียบแบบไม่สน @ นำหน้า / ช่องว่าง / ตัวพิมพ์เล็กใหญ่ — server ตัด @ ออกก่อนเก็บเหมือนกัน
 export function soloDuplicateAccounts(kols, platforms) {
     const out = {};
     (platforms || []).forEach(p => {
         const first = new Map();
         (kols || []).forEach((x, i) => {
+            if (x && Array.isArray(x.platforms) && !x.platforms.includes(p)) return;
             const a = x && x.acc && x.acc[p];
             const n = String((a && a.account_name) || '').trim().replace(/^@+/, '').trim().toLowerCase();
             if (!n) return;

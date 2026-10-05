@@ -42,11 +42,13 @@ const LINK_PH = {
 // ค่าต่อ Platform เก็บเป็น map ตามชื่อ Platform — เอาติ๊กออกแล้วติ๊กกลับ ค่าที่กรอกไว้ยังอยู่ · ตรวจ/ส่งเฉพาะ Platform ที่เลือก
 const ACC_EMPTY = { account_name: '', link_account: '', followers: '', tier: '', tierTouched: false };
 const AD_EMPTY = { content_type: '', campaign: '', media_type: '', content_format: '', target: [] };
-// 1 การ์ด = 1 KOL (บัญชีต่อ Platform เก็บใน acc) · key ไว้ผูกการ์ดกับ React และเอาคนที่บันทึกแล้วออกจากฟอร์ม
+// 1 การ์ด = 1 KOL — เลือก Platform ในการ์ดของตัวเอง (ผู้ใช้สั่ง 5 ต.ค. 2026: เดิมเลือกครั้งเดียวด้านบน + Account แล้วติด TikTok เปลี่ยนไม่ได้)
+// platforms = Platform ของ KOL คนนี้ · acc = บัญชีต่อ Platform (เอาติ๊กออกแล้วติ๊กกลับ ค่าที่กรอกไว้ยังอยู่ · ตรวจ/ส่งเฉพาะที่เลือก)
+// key ไว้ผูกการ์ดกับ React และเอาคนที่บันทึกแล้วออกจากฟอร์ม
 const KOL_MAX = 20;   // + Account ได้สูงสุดต่อการบันทึก 1 ครั้ง
 let kolSeq = 0;
-const newKol = (acc = {}) => ({ key: 'kol' + (++kolSeq), acc });
-const KOL_EMPTY = (platforms = ['TikTok']) => ({ platforms, kols: [newKol()], contact_mode: 'self', agency: '' });
+const newKol = (platforms = ['TikTok'], acc = {}) => ({ key: 'kol' + (++kolSeq), platforms: [...platforms], acc });
+const KOL_EMPTY = (platforms = ['TikTok']) => ({ kols: [newKol(platforms)], contact_mode: 'self', agency: '' });
 const JOB_EMPTY = brand => ({
     brand, products: [], clips: 1, clip_names: ['', '', '', '', ''], fee: {}, owner: readLastOwner(),
     ad: {}, code_expire: 60, no_gencode: false, concept: '', brief_link: '', note: ''
@@ -116,7 +118,7 @@ function fromProject(p, clipNames) {
     });
     // ช่องทางติดต่อไม่อยู่ในฟอร์มแล้ว — เก็บค่าเดิมไว้ส่งกลับ (server เขียนทุกครั้ง · Agency เดิมต้องไม่กลายเป็นติดต่อเอง)
     const k = {
-        platforms: platforms.length ? platforms : ['TikTok'], kols: [newKol(acc)],
+        kols: [newKol(platforms.length ? platforms : ['TikTok'], acc)],
         contact_mode: s.contact_mode === 'agency' ? 'agency' : 'self', agency: s.contact_mode === 'agency' ? (s.agency || s.payee || '') : ''
     };
     const j = {
@@ -162,9 +164,12 @@ export default function SoloKolForm({ onClose, onSaved, project = null, clipName
     }, []);
     useEffect(() => { clean.current = JSON.stringify({ k, j }); }, []);   // eslint-disable-line react-hooks/exhaustive-deps
 
-    const plats = soloPlatformOrder(k.platforms);
+    // Platform ของ KOL แต่ละคน (เลือกในการ์ด) · plats = ทุก Platform ที่มีคนเลือก → ช่องค่าตัว / ข้อมูลยิงแอดต่อ Platform (ใช้ร่วมกันทุกคนที่เลือก Platform นั้น)
+    const platsOf = ki => soloPlatformOrder((k.kols[ki] && k.kols[ki].platforms) || []);
+    const plats = soloPlatformOrder(k.kols.flatMap(x => x.platforms));
     const multi = plats.length > 1;
     const nKol = k.kols.length;
+    const kolsOn = p => k.kols.filter(x => x.platforms.includes(p)).length;   // จำนวน KOL ที่เลือก Platform นี้
     const accOf = (ki, p) => (k.kols[ki] && k.kols[ki].acc[p]) || ACC_EMPTY;
     const adOf = p => j.ad[p] || AD_EMPTY;
     const isLocked = p => editing && lockedPlatforms.includes(p);
@@ -192,7 +197,9 @@ export default function SoloKolForm({ onClose, onSaved, project = null, clipName
     }, 0);
     function addKol() {
         if (nKol >= KOL_MAX) return;
-        const x = newKol();
+        // การ์ดใหม่เริ่มที่ Platform เดียวกับการ์ดล่าสุด (มักจ้างช่องทางเดียวกันทั้งชุด) — เปลี่ยนในการ์ดได้
+        const last = k.kols[k.kols.length - 1];
+        const x = newKol(last && last.platforms.length ? last.platforms : ['TikTok']);
         setK(s => ({ ...s, kols: [...s.kols, x] }));
         focusKol(x.key);
     }
@@ -207,10 +214,14 @@ export default function SoloKolForm({ onClose, onSaved, project = null, clipName
         else setTimeout(() => { const b = wrapRef.current && wrapRef.current.querySelector('.solo-add-kol'); if (b) b.focus(); }, 0);
     }
 
-    function togglePlatform(p) {
-        const on = !k.platforms.includes(p);
+    // เลือก/เอาออก Platform ของ KOL ลำดับ ki (แก้ไข: Platform ที่มีงานแล้วเอาออกไม่ได้)
+    function togglePlatform(ki, p) {
+        const cur = platsOf(ki);
+        const on = !cur.includes(p);
         if (!on && isLocked(p)) return;
-        setK(s => ({ ...s, platforms: SOLO_PLATFORMS.filter(x => (x === p ? on : s.platforms.includes(x))) }));
+        setK(s => ({
+            ...s, kols: s.kols.map((x, i) => (i === ki ? { ...x, platforms: SOLO_PLATFORMS.filter(y => (y === p ? on : x.platforms.includes(y))) } : x))
+        }));
         // Platform ที่ใช้ Target และสินค้ามี Target ให้เลือกตัวเดียว = เลือกให้เลย
         if (on && needTarget(p) && productTargets.length === 1) {
             setJ(s => {
@@ -234,7 +245,7 @@ export default function SoloKolForm({ onClose, onSaved, project = null, clipName
             const opts = targetsForProducts(products);
             // Target ที่ไม่อยู่ในตัวเลือกใหม่ล้างทิ้ง · มีตัวเลือกเดียว = เลือกให้เลย (ทุก Platform ที่ใช้ Target)
             const ad = { ...s.ad };
-            soloPlatformOrder([...Object.keys(s.ad), ...k.platforms]).filter(needTarget).forEach(p => {
+            soloPlatformOrder([...Object.keys(s.ad), ...plats]).filter(needTarget).forEach(p => {
                 const d = s.ad[p] || AD_EMPTY;
                 let target = d.target.filter(t => opts.includes(t));
                 if (!target.length && opts.length === 1) target = [opts[0]];
@@ -261,18 +272,25 @@ export default function SoloKolForm({ onClose, onSaved, project = null, clipName
         if (f === 0) return 'ได้ฟรี (ไม่มีค่าใช้จ่าย)';
         if (Number.isFinite(f) && f > 0) {
             const one = `${baht(f)} × ${j.clips} คลิป = ${baht(feeTotalOf(p))}`;
-            return nKol > 1 ? `${one} ต่อ KOL · ${nKol} KOL รวม ${baht(Math.round(feeTotalOf(p) * nKol * 100) / 100)}` : one;
+            const n = kolsOn(p);
+            return n > 1 ? `${one} ต่อ KOL · ${n} KOL รวม ${baht(Math.round(feeTotalOf(p) * n * 100) / 100)}` : one;
         }
         return 'ได้ฟรีใส่ 0';
     }
 
     function errors() {
         const e = {};
-        if (!plats.length) e.platforms = 'เลือก Platform อย่างน้อย 1 ตัว';
         const dup = soloDuplicateAccounts(k.kols, plats);
         // หลาย KOL — ข้อความบอกเลขการ์ดด้วย (ป้ายช่องเหมือนกันทุกใบ โปรแกรมอ่านหน้าจอต้องรู้ว่าเป็นของคนไหน)
-        const who = (ki, p, m) => (nKol > 1 ? `KOL ${ki + 1} · ${tag(p, m)}` : tag(p, m));
-        k.kols.forEach((x, ki) => plats.forEach(p => {
+        // ชื่อ Platform นำหน้าเมื่อการ์ดนั้นเลือกหลาย Platform
+        const who = (ki, p, m) => {
+            const t = platsOf(ki).length > 1 ? `${p}: ${m}` : m;
+            return nKol > 1 ? `KOL ${ki + 1} · ${t}` : t;
+        };
+        k.kols.forEach((x, ki) => {
+            if (!platsOf(ki).length) e['plat_' + ki] = nKol > 1 ? `KOL ${ki + 1} · เลือก Platform อย่างน้อย 1 ตัว` : 'เลือก Platform อย่างน้อย 1 ตัว';
+        });
+        k.kols.forEach((x, ki) => platsOf(ki).forEach(p => {
             const a = accOf(ki, p);
             const at = `${ki}_${p}`;
             if (!a.account_name.trim().replace(/^@+/, '').trim()) e['acc_' + at] = who(ki, p, 'ใส่ชื่อบัญชี KOL');
@@ -336,7 +354,7 @@ export default function SoloKolForm({ onClose, onSaved, project = null, clipName
         if (free.length && !window.confirm(`ค่าตัว 0 = ได้ฟรี (ไม่มีค่าใช้จ่าย) ใช่ไหม?\n${free.join(', ')}`)) return;
         setSaving(true); setErr('');
         // บัญชีของ KOL ลำดับ ki + ข้อมูลยิงแอด / ค่าตัวต่อ Platform (ชุดเดียวกันทุก KOL)
-        const platformsOf = ki => plats.map(p => {
+        const platformsOf = ki => platsOf(ki).map(p => {
             const a = accOf(ki, p);
             const d = adOf(p);
             const social = campaignIsCtype(p);
@@ -421,7 +439,7 @@ export default function SoloKolForm({ onClose, onSaved, project = null, clipName
         }
         if (again) {
             // เก็บ Platform / งาน / แบรนด์ / ค่าตัว / ผู้ดูแล / ข้อมูลยิงแอด / บรีฟ ไว้ ล้างแค่บัญชี (เหลือการ์ด KOL ว่าง 1 ใบ)
-            const nextK = KOL_EMPTY(k.platforms);
+            const nextK = KOL_EMPTY(platsOf(k.kols.length - 1).length ? platsOf(k.kols.length - 1) : ['TikTok']);
             setK(nextK);
             setTried(false);
             clean.current = JSON.stringify({ k: nextK, j });
@@ -467,67 +485,69 @@ export default function SoloKolForm({ onClose, onSaved, project = null, clipName
                 <fieldset className="solo-fs" disabled={saving}>
                     <section className="qf-sec">
                         <h3 className="qf-sec-head"><span className="qf-num">1</span>KOL</h3>
-                        <Field label="Platform" req err={E.platforms} labelId={id('plat')}
-                            hint={editing && lockedPlatforms.length > 0
-                                ? 'Platform ที่มีงานแล้ว (ดราฟ/Gencode/ID Post/ลงงาน/ยิงแอด) เอาออกไม่ได้'
-                                : (nKol > 1 ? 'ทุก KOL ในฟอร์มนี้ใช้ Platform ชุดเดียวกัน — กรอกบัญชีของแต่ละคนด้านล่าง'
-                                    : 'เลือกได้หลาย Platform — กรอกบัญชีแยกของแต่ละ Platform ด้านล่าง')}>
-                            <Chips options={SOLO_PLATFORMS} value={plats} multi onPick={togglePlatform} labelId={id('plat')}
-                                disabled={p => isLocked(p) && plats.includes(p)} />
-                        </Field>
-                        {k.kols.map((x, ki) => (
-                            <div className="solo-plat solo-kcard" key={x.key} data-kol={x.key} role="group" aria-labelledby={id('kh-' + x.key)}>
-                                <div className="solo-kcard-head">
-                                    <span className="solo-plat-head" id={id('kh-' + x.key)}>
-                                        {editing ? 'บัญชี KOL' : `KOL ${ki + 1}`}{!multi && plats[0] ? ` · ${plats[0]}` : ''}
-                                    </span>
-                                    {nKol > 1 && (
-                                        <button type="button" className="solo-kcard-del" onClick={() => removeKol(ki)} disabled={saving}
-                                            aria-label={`ลบ KOL ${ki + 1}`}>ลบ</button>
-                                    )}
+                        {k.kols.map((x, ki) => {
+                            const kp = platsOf(ki);
+                            const kmulti = kp.length > 1;
+                            return (
+                                <div className="solo-plat solo-kcard" key={x.key} data-kol={x.key} role="group" aria-labelledby={id('kh-' + x.key)}>
+                                    <div className="solo-kcard-head">
+                                        <span className="solo-plat-head" id={id('kh-' + x.key)}>{editing ? 'บัญชี KOL' : `KOL ${ki + 1}`}</span>
+                                        {nKol > 1 && (
+                                            <button type="button" className="solo-kcard-del" onClick={() => removeKol(ki)} disabled={saving}
+                                                aria-label={`ลบ KOL ${ki + 1}`}>ลบ</button>
+                                        )}
+                                    </div>
+                                    {/* Platform ของ KOL คนนี้ (เดิมเลือกครั้งเดียวด้านบนให้ทุกคน — 5 ต.ค. ย้ายมาไว้ในการ์ด) */}
+                                    <Field label="Platform" req err={E['plat_' + ki]} labelId={id('plat-' + x.key)}
+                                        hint={editing && lockedPlatforms.length > 0
+                                            ? 'Platform ที่มีงานแล้ว (ดราฟ/Gencode/ID Post/ลงงาน/ยิงแอด) เอาออกไม่ได้'
+                                            : 'เลือกได้หลาย Platform — กรอกบัญชีแยกของแต่ละ Platform ด้านล่าง'}>
+                                        <Chips options={SOLO_PLATFORMS} value={kp} multi onPick={p => togglePlatform(ki, p)} labelId={id('plat-' + x.key)}
+                                            disabled={p => isLocked(p) && kp.includes(p)} />
+                                    </Field>
+                                    {kp.map(p => {
+                                        const a = accOf(ki, p);
+                                        const at = `${ki}_${p}`;
+                                        const fid = s => id(`${s}-${x.key}-${p}`);
+                                        return (
+                                            <div className="solo-kcard-acc" key={p} role={kmulti ? 'group' : undefined} aria-label={kmulti ? p : undefined}>
+                                                <div className="solo-kcard-plat" aria-hidden="true">{p}</div>
+                                                <div className="qf-row2">
+                                                    <Field label="ชื่อบัญชี" req err={E['acc_' + at]} htmlFor={fid('acc')}>
+                                                        <input id={fid('acc')} value={a.account_name} maxLength={200} autoComplete="off"
+                                                            autoFocus={ki === 0 && p === kp[0]}
+                                                            onChange={e => upAcc(ki, p, { account_name: e.target.value })} placeholder="@ชื่อบัญชี" />
+                                                    </Field>
+                                                    <Field label="ลิงก์ช่อง" err={E['link_' + at]} htmlFor={fid('link')}>
+                                                        <input id={fid('link')} value={a.link_account} maxLength={1000} autoComplete="off"
+                                                            onChange={e => upAcc(ki, p, { link_account: e.target.value })} placeholder={LINK_PH[p] || 'https://...'} />
+                                                    </Field>
+                                                </div>
+                                                <div className="qf-row2">
+                                                    <Field label="ผู้ติดตาม" htmlFor={fid('fol')} hint="ใส่แล้ว Tier จะเลือกให้อัตโนมัติ">
+                                                        <input id={fid('fol')} inputMode="numeric" value={a.followers} autoComplete="off"
+                                                            onChange={e => setFollowers(ki, p, e.target.value)} placeholder="เช่น 85000" />
+                                                    </Field>
+                                                    <Field label="Tier" req err={E['tier_' + at]} htmlFor={fid('tier')}>
+                                                        <select id={fid('tier')} value={a.tier} onChange={e => upAcc(ki, p, { tier: e.target.value, tierTouched: true })}>
+                                                            <option value="">— เลือก —</option>
+                                                            {SOLO_TIERS.map(t => <option key={t} value={t}>{t}</option>)}
+                                                        </select>
+                                                    </Field>
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
                                 </div>
-                                {plats.map(p => {
-                                    const a = accOf(ki, p);
-                                    const at = `${ki}_${p}`;
-                                    const fid = s => id(`${s}-${x.key}-${p}`);
-                                    return (
-                                        <div className="solo-kcard-acc" key={p} role={multi ? 'group' : undefined} aria-label={multi ? p : undefined}>
-                                            {multi && <div className="solo-kcard-plat" aria-hidden="true">{p}</div>}
-                                            <div className="qf-row2">
-                                                <Field label="ชื่อบัญชี" req err={E['acc_' + at]} htmlFor={fid('acc')}>
-                                                    <input id={fid('acc')} value={a.account_name} maxLength={200} autoComplete="off"
-                                                        autoFocus={ki === 0 && p === plats[0]}
-                                                        onChange={e => upAcc(ki, p, { account_name: e.target.value })} placeholder="@ชื่อบัญชี" />
-                                                </Field>
-                                                <Field label="ลิงก์ช่อง" err={E['link_' + at]} htmlFor={fid('link')}>
-                                                    <input id={fid('link')} value={a.link_account} maxLength={1000} autoComplete="off"
-                                                        onChange={e => upAcc(ki, p, { link_account: e.target.value })} placeholder={LINK_PH[p] || 'https://...'} />
-                                                </Field>
-                                            </div>
-                                            <div className="qf-row2">
-                                                <Field label="ผู้ติดตาม" htmlFor={fid('fol')} hint="ใส่แล้ว Tier จะเลือกให้อัตโนมัติ">
-                                                    <input id={fid('fol')} inputMode="numeric" value={a.followers} autoComplete="off"
-                                                        onChange={e => setFollowers(ki, p, e.target.value)} placeholder="เช่น 85000" />
-                                                </Field>
-                                                <Field label="Tier" req err={E['tier_' + at]} htmlFor={fid('tier')}>
-                                                    <select id={fid('tier')} value={a.tier} onChange={e => upAcc(ki, p, { tier: e.target.value, tierTouched: true })}>
-                                                        <option value="">— เลือก —</option>
-                                                        {SOLO_TIERS.map(t => <option key={t} value={t}>{t}</option>)}
-                                                    </select>
-                                                </Field>
-                                            </div>
-                                        </div>
-                                    );
-                                })}
-                            </div>
-                        ))}
+                            );
+                        })}
                         {!editing && (
                             <div className="solo-add-kol-wrap">
                                 <button type="button" className="solo-add-kol" onClick={addKol} disabled={saving || nKol >= KOL_MAX}>+ Account</button>
                                 <div className="qf-hint">
                                     {nKol >= KOL_MAX
                                         ? `ใส่ได้สูงสุด ${KOL_MAX} KOL ต่อการบันทึก 1 ครั้ง`
-                                        : 'เพิ่ม KOL คนอื่นที่ใช้งาน / แบรนด์ / สินค้า / ค่าตัว ชุดเดียวกัน — บันทึกแล้วได้ 1 รายการต่อ 1 KOL'}
+                                        : 'เพิ่ม KOL คนอื่น (เลือก Platform ในการ์ดของแต่ละคน) ที่ใช้งาน / แบรนด์ / สินค้า / ค่าตัว ชุดเดียวกัน — บันทึกแล้วได้ 1 รายการต่อ 1 KOL'}
                                 </div>
                             </div>
                         )}
@@ -558,7 +578,12 @@ export default function SoloKolForm({ onClose, onSaved, project = null, clipName
                         <Field label="จำนวนคลิป" req err={E.clips} labelId={id('clips')}
                             hint={[
                                 clipFloor > 1 && `ลดได้ไม่ต่ำกว่า ${clipFloor} คลิป — คลิปที่ ${clipFloor} มีงานแล้ว (ดราฟ/Gencode/ID Post/ลงงาน/ยิงแอด)`,
-                                multi ? `ทุก Platform ได้จำนวนเท่ากัน — รวม ${j.clips * plats.length} โพสต์ (${j.clips} คลิป × ${plats.length} Platform)` : 'ถ้าเลือกหลาย Platform ทุก Platform ได้จำนวนคลิปเท่ากัน'
+                                (() => {
+                                    // โพสต์ทั้งหมด = จำนวนคลิป × Platform ของแต่ละ KOL รวมกัน
+                                    const posts = k.kols.reduce((n, x, i) => n + j.clips * platsOf(i).length, 0);
+                                    if (nKol > 1) return `ทุก KOL ทุก Platform ได้จำนวนเท่ากัน — รวม ${posts} โพสต์ (${nKol} KOL)`;
+                                    return multi ? `ทุก Platform ได้จำนวนเท่ากัน — รวม ${posts} โพสต์ (${j.clips} คลิป × ${plats.length} Platform)` : 'ถ้าเลือกหลาย Platform ทุก Platform ได้จำนวนคลิปเท่ากัน';
+                                })()
                             ].filter(Boolean).join(' · ')}>
                             <Chips options={Array.from({ length: SOLO_MAX_CLIPS }, (_, i) => i + 1)} value={j.clips}
                                 onPick={v => upJ('clips', v)} labelId={id('clips')} render={v => `${v} คลิป`}
@@ -581,7 +606,7 @@ export default function SoloKolForm({ onClose, onSaved, project = null, clipName
                             <div className="qf-hint solo-fee-note">รวมค่าตัวทุก Platform {feeSum > 0 ? baht(feeSum) : 'ได้ฟรี'}{nKol > 1 && feeSum > 0 ? ' ต่อ KOL' : ''}</div>
                         )}
                         {!editing && nKol > 1 && (
-                            <div className="qf-hint solo-fee-note">ทุก KOL ในฟอร์มนี้ได้ค่าตัวเท่ากัน — ค่าตัวรายคนแก้ทีหลังได้ที่ช่อง "ค่าตัวต่อคลิป" ในหน้า KOL</div>
+                            <div className="qf-hint solo-fee-note">KOL ที่เลือก Platform เดียวกันได้ค่าตัวเท่ากัน — ค่าตัวรายคนแก้ทีหลังได้ที่ช่อง "ค่าตัวต่อคลิป" ในหน้า KOL</div>
                         )}
                         <Field label="ผู้ดูแล" req err={E.owner} htmlFor={id('owner')}>
                             <select id={id('owner')} value={j.owner} onChange={e => upJ('owner', e.target.value)}>
@@ -611,7 +636,7 @@ export default function SoloKolForm({ onClose, onSaved, project = null, clipName
                             const tOpts = targetOptionsOf(p);
                             return (
                                 <div className="solo-plat" key={p}>
-                                    <div className="solo-plat-head">{p}</div>
+                                    <div className="solo-plat-head">{p}{nKol > 1 && <span className="solo-plat-count"> · ใช้กับ {kolsOn(p)} KOL</span>}</div>
                                     <Field label={social ? 'Campaign' : 'Content Type'} req err={E['ct_' + p]} labelId={id('ct-' + p)}>
                                         <Chips options={ctypeOptionsOf(p)} value={d.content_type} onPick={v => upAd(p, { content_type: v })} labelId={id('ct-' + p)} />
                                     </Field>
