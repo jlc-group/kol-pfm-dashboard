@@ -275,17 +275,19 @@ const ads = {
 
         rows.sort((a, b) => (b.post_date || '').localeCompare(a.post_date || ''));
 
-        // สรุปภาพรวม
-        const totalSpend = rows.reduce((s, r) => s + r.ad_spend, 0);
-        const totalReach = rows.reduce((s, r) => s + r.ad_reach, 0);
+        // สรุปภาพรวม — นับเฉพาะคลิปที่ต้องยิงแอด (5 ต.ค. 2026): คลิปในกลุ่มที่ตั้งว่าไม่ใช้ Gencode (no_gencode)
+        // อยู่แท็บ "ไม่ต้องยิงแอด" ของหน้า Ads ไม่เอามาถ่วงการ์ด "ยิงแอดแล้ว x/y" · แถวทั้งหมดยังส่งไปใน rows (หน้าเว็บแยกแท็บเอง)
+        const adRows = rows.filter(r => r.no_gencode !== true);
+        const totalSpend = adRows.reduce((s, r) => s + r.ad_spend, 0);
+        const totalReach = adRows.reduce((s, r) => s + r.ad_reach, 0);
         // นับตามสถานะที่โชว์ ไม่งั้นการ์ด "ยิงแอดแล้ว" ขึ้น 0 ทั้งที่หลายแถวมีค่าแอดเดินแล้ว
-        const doneCount = rows.filter(r => r.ad_status_shown === 'ยิงแล้ว').length;
-        // CPE รวม (การ์ดบนหน้า) = (ค่าตัว + ค่าแอด) ÷ engagement ของโพสต์ที่แสดงอยู่ — คิดเฉพาะโพสต์ที่ใส่ค่าตัวแล้วและมี engagement
-        const pooled = pooledCpe(rows.map(r => costIn.get(r.sub_id)));
+        const doneCount = adRows.filter(r => r.ad_status_shown === 'ยิงแล้ว').length;
+        // CPE รวม (การ์ดบนหน้า) = (ค่าตัว + ค่าแอด) ÷ engagement ของโพสต์ที่ต้องยิง — คิดเฉพาะโพสต์ที่ใส่ค่าตัวแล้วและมี engagement
+        const pooled = pooledCpe(adRows.map(r => costIn.get(r.sub_id)));
 
         // สรุปตามแบรนด์
         const bm = {};
-        rows.forEach(r => {
+        adRows.forEach(r => {
             if (!bm[r.brand]) bm[r.brand] = { brand: r.brand, spend: 0, reach: 0, posts: 0 };
             bm[r.brand].spend += r.ad_spend;
             bm[r.brand].reach += r.ad_reach;
@@ -297,9 +299,10 @@ const ads = {
 
         return {
             summary: {
-                total_posts: rows.length,
+                total_posts: adRows.length,                             // เฉพาะคลิปที่ต้องยิง (ไม่รวมแท็บไม่ต้องยิง)
                 done_count: doneCount,
-                pending_count: rows.length - doneCount,
+                pending_count: adRows.length - doneCount,
+                no_gencode_posts: rows.length - adRows.length,          // คลิปในแท็บ "ไม่ต้องยิงแอด / ไม่ใช้ Gencode"
                 check_waiting: checkWaiting.length,
                 check_pending: checkWaiting.filter(r => r.post_check === 'pending').length,     // รอทีมตรวจ
                 check_returned: checkWaiting.filter(r => r.post_check === 'returned').length,   // รอเอเจนซี่แก้
@@ -314,7 +317,7 @@ const ads = {
                 cpm: adCpm(totalSpend, totalReach),
                 cpe: pooled.cpe,                                        // null = ยังไม่มีโพสต์ให้คิด · member ถูกซ่อนที่ routes/ads.js
                 cpe_clips: pooled.clips,                                // จำนวนโพสต์ที่ใช้คิด CPE
-                eng_posts: rows.filter(r => r.engagement > 0).length,   // โพสต์ที่มี engagement แล้ว (รวมที่ยังไม่ใส่ค่าตัว)
+                eng_posts: adRows.filter(r => r.engagement > 0).length, // โพสต์ที่มี engagement แล้ว (รวมที่ยังไม่ใส่ค่าตัว)
                 by_brand: byBrand
             },
             rows

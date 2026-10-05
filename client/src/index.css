@@ -1389,6 +1389,12 @@ a.ads-thumb:focus-visible { outline: 2px solid var(--mint-dark); outline-offset:
 .ads-status.auto { display: block; text-align: center; cursor: default; }
 .ads-status.auto.pending:hover { border-color: var(--border); color: var(--muted); }
 .ads-status.auto em { display: block; font-style: normal; font-size: 9px; font-weight: 600; opacity: .8; margin-top: 1px; }
+/* แท็บ ต้องยิงแอด / ไม่ต้องยิงแอด (5 ต.ค. 2026) — ใช้หน้าตาแท็บหน้าแคมเปญ · ป้าย "ไม่ต้องยิง" สีเทาอ่านอย่างเดียว */
+.ads-tab-short { display: none; }
+@media (max-width: 600px) { .ads-tabs .ads-tab-long { display: none; } .ads-tabs .ads-tab-short { display: inline; } }
+.ads-other-tab { margin: 6px auto 0; display: block; }
+.ads-noad-note { margin: 0 0 14px; padding: 10px 14px; border-radius: 12px; background: #f1f5f9; color: #475569; font-size: 13px; line-height: 1.6; }
+.ads-status.auto.noad { background: #f8fafc; color: #64748b; border-style: dashed; }
 .ads-cpm { display: flex; align-items: center; gap: 6px; font-weight: 700; color: var(--mint-dark); }
 .agency-entry { border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px 4px; margin-bottom: 12px; background: #fafdfb; }
 .agency-entry-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }

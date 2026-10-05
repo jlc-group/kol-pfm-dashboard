@@ -22,6 +22,7 @@ different brand:
 - `projects.brand = KOL_CONTENT_EXPORT_BRAND`
 - `platform ILIKE 'tiktok%'`
 - `ad_status = 'ยังไม่ยิง'`
+- not a clip whose campaign group is set to "no Gencode" (`ad_groups[].no_gencode = true`) while the clip still has no Gencode — those clips need no ads and sit in the Ads page tab "ไม่ต้องยิงแอด / ไม่ใช้ Gencode" (5 Oct 2026)
 - numeric, non-empty `id_post`
 
 ## Response

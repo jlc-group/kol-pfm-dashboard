@@ -11,7 +11,11 @@ async function listCandidates({ brand, limit = 100, updatedSince = null } = {}) 
         's.ad_status = $2',
         "s.platform ILIKE 'tiktok%'",
         "NULLIF(BTRIM(s.id_post), '') IS NOT NULL",
-        "BTRIM(s.id_post) ~ '^[0-9]+$'"
+        "BTRIM(s.id_post) ~ '^[0-9]+$'",
+        // 5 ต.ค. 2026: ไม่ส่งคลิปในกลุ่มที่ตั้งว่าไม่ใช้ Gencode (ไม่ต้องยิงแอด) — กติกาเดียวกับ logic.js postNoGencode
+        // (กลุ่ม no_gencode === true และคลิปยังไม่มี Gencode) · @> เทียบกับ jsonb array ของกลุ่ม: มีกลุ่ม key ตรงที่ no_gencode เป็น true
+        // ad_groups เป็น JSONB array (NOT NULL DEFAULT '[]') · group_key ว่าง = jsonb null ไม่มีกลุ่มไหนตรง = ไม่ตัด
+        "NOT (NULLIF(BTRIM(s.gencode), '') IS NULL AND p.ad_groups @> jsonb_build_array(jsonb_build_object('key', s.group_key, 'no_gencode', true)))"
     ];
 
     if (updatedSince) {

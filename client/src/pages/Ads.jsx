@@ -193,8 +193,15 @@ function CopyCode({ value, empty = '—', none = false, full = false }) {
 // ต้องตรงกับ adStatusAuto ใน server/src/store/logic.js (server ปฏิเสธการกดของแถว TikTok อยู่แล้ว)
 const adStatusAuto = row => /^\s*tiktok/i.test(String(row.platform || ''));
 
+// แท็บ "ต้องยิงแอด" / "ไม่ต้องยิงแอด / ไม่ใช้ Gencode" (ผู้ใช้สั่ง 5 ต.ค. 2026) — จำแท็บล่าสุดในเครื่องนี้ (อ่าน/เขียนไม่ได้ = แท็บต้องยิง)
+const ADS_TAB_KEY = 'ads:tab';
+const readAdsTab = () => { try { return localStorage.getItem(ADS_TAB_KEY) === 'noads' ? 'noads' : 'ads'; } catch { return 'ads'; } };
+// คลิปไม่ต้องยิงแอด = กลุ่มที่ตั้งว่าไม่ใช้ Gencode และคลิปยังไม่มี Gencode (server คิดให้ใน no_gencode — logic.js postNoGencode)
+const isNoAdRow = r => r.no_gencode === true;
+
 // แถวตาราง: อัปเดตข้อมูลแอดของโพสต์ 1 อัน (บันทึกเมื่อออกจากช่อง)
-function AdRow({ row, onSaved, canCost }) {
+// noAd = คลิปในแท็บไม่ต้องยิงแอด — ช่องสถานะขึ้น "ไม่ต้องยิง" (ถ้ายิงไปแล้วจริงยังขึ้นยิงแล้วตามจริง)
+function AdRow({ row, onSaved, canCost, noAd = false }) {
     const [adStatus, setAdStatus] = useState(row.ad_status || 'ยังไม่ยิง');
     const [end, setEnd] = useState(row.ad_end || '');
     const [note, setNote] = useState(row.ad_note || '');
@@ -278,6 +285,7 @@ function AdRow({ row, onSaved, canCost }) {
     const shownStatus = (adStatus === 'ยิงแล้ว' || ranBySpend) ? 'ยิงแล้ว' : 'ยังไม่ยิง';
     const doneFromSpend = ranBySpend && adStatus !== 'ยิงแล้ว';
     const autoStatus = adStatusAuto(row);
+    const noAdLabel = noAd && shownStatus !== 'ยิงแล้ว';
 
     // ระยะเวลายิง — นับจากวันพร้อมยิง (ข้อมูลครบชิ้นสุดท้าย: ลงคลิป / Gencode / ID Post / ทีมอนุมัติ) → วันยิงแอด (ดู data/adTiming.js)
     // แถวที่รู้จากค่าแอดก็นับได้ถ้า PFM ลงวันยิงแอดมาให้แล้ว
@@ -354,6 +362,7 @@ function AdRow({ row, onSaved, canCost }) {
             <div className="ads-cell">
                 {end
                     ? <span className="ads-postdate" title="วันที่ยิงแอด (วันแรกที่มีค่าแอดจาก PFM หรือวันที่กดสถานะเป็นยิงแล้ว)">{fmtDate(end)}</span>
+                    : noAdLabel ? <span className="muted" title="คลิปนี้ไม่ต้องยิงแอด (กลุ่มที่ตั้งว่าไม่ใช้ Gencode)">—</span>
                     : doneFromSpend
                         /* ค่าแอดบอกว่ายิงแล้ว แต่ไม่รู้วันไหน — เขียน "ยังไม่ยิง" ตรงนี้จะขัดกับสถานะข้าง ๆ */
                         ? <span className="muted" title={autoStatus
@@ -362,7 +371,12 @@ function AdRow({ row, onSaved, canCost }) {
                         : <span className="muted">ยังไม่ยิง</span>}
             </div>
             <div className="ads-cell">
-                {autoStatus ? (
+                {noAdLabel ? (
+                    /* แท็บไม่ต้องยิงแอด: ป้ายอ่านอย่างเดียว — คลิปในกลุ่มที่ตั้งว่าไม่ใช้ Gencode ไม่ต้องยิง (และไม่ส่งให้ PFM) */
+                    <span className="ads-status auto pending noad" title="คลิปในกลุ่มที่ตั้งว่าไม่ใช้ Gencode — ไม่ต้องยิงแอด และไม่ได้ส่งให้ PFM · ถ้าต้องยิง ให้ใส่ Gencode หรือเปลี่ยนตั้งค่ากลุ่มในหน้าแคมเปญ">
+                        ไม่ต้องยิง<em>ไม่ใช้ Gencode</em>
+                    </span>
+                ) : autoStatus ? (
                     /* TikTok: ป้ายอ่านอย่างเดียว — สถานะมาจาก PFM (ไม่ใช่ปุ่ม กดไม่ได้) */
                     <span className={'ads-status auto ' + (shownStatus === 'ยิงแล้ว' ? 'done' : 'pending') + (doneFromSpend ? ' from-spend' : '')}
                         title={shownStatus === 'ยิงแล้ว'
@@ -431,6 +445,14 @@ export default function Ads() {
     const [late, setLate] = useState('');   // '' | ontime | warn | bad
     // ค้นหาชื่อ KOL / แคมเปญ / สินค้า / Gencode / ID Post — กรองฝั่งหน้าเว็บเหมือนตัวกรองอื่น (ดู data/adsSearch.js)
     const [search, setSearch] = useState('');
+    // แท็บ ต้องยิงแอด / ไม่ต้องยิงแอด (5 ต.ค. 2026)
+    const [tab, setTabState] = useState(readAdsTab);
+    // เปลี่ยนแท็บ = ล้างตัวกรอง Platform / สถานะ / ระยะเวลายิง (คำค้นหาคงไว้) — ตัวกรองของอีกแท็บที่ปุ่มหายไปจะไม่ค้างจนตารางว่าง
+    const setTab = t => {
+        if (t !== tab) { setPlatform(''); setStatus(''); setLate(''); }
+        setTabState(t);
+        try { localStorage.setItem(ADS_TAB_KEY, t); } catch { /* จำไม่ได้ก็ไม่เป็นไร */ }
+    };
     const [data, setData] = useState(null);
     const [error, setError] = useState('');
     // หัวตารางอยู่คนละกรอบกับแถว (เพื่อให้ล็อกไว้บนจอได้) — เลื่อนซ้ายขวากรอบไหน อีกกรอบตามไปตำแหน่งเดียวกัน
@@ -456,6 +478,13 @@ export default function Ads() {
 
     const s = data?.summary;
     const allRows = data?.rows || [];
+    // แยกแท็บ: คลิปในกลุ่มที่ไม่ใช้ Gencode ไปแท็บ "ไม่ต้องยิงแอด" · ตัวกรอง/ค้นหา/ตัวเลขบนปุ่ม คิดจากแท็บที่เปิดอยู่
+    // การ์ดสรุปคิดจากคลิปที่ต้องยิงเสมอ (server นับให้แบบเดียวกัน)
+    const adRowsAll = allRows.filter(r => !isNoAdRow(r));
+    const noAdRows = allRows.filter(isNoAdRow);
+    const tabRows = tab === 'noads' ? noAdRows : adRowsAll;
+    // ค้นหาไม่เจอในแท็บนี้ แต่เจอในอีกแท็บ — บอกให้รู้ (ไม่งั้นนึกว่าคลิปหาย)
+    const otherTabHits = search.trim() ? (tab === 'noads' ? adRowsAll : noAdRows).filter(r => matchAdsSearch(r, search)).length : 0;
 
     // จัดกลุ่มความช้า — นับเฉพาะโพสต์ที่ยิงแล้วและมีวันครบทั้งสองฝั่ง
     // เขียว = ช้าไม่เกิน 3 วัน (รวมยิงตรงวัน) · เหลือง = 4-5 วัน · แดง = 6 วันขึ้นไป
@@ -479,17 +508,17 @@ export default function Ads() {
     // ลำดับแถวตามที่ server ส่งมา (วันลงงานใหม่สุดก่อน แล้วตาม id) — ไม่เรียงตามสถานะแล้ว
     // กดเปลี่ยนเป็น "ยิงแล้ว" แถวต้องอยู่ที่เดิม เปลี่ยนแค่ป้ายสถานะ (เดิมเด้งลงไปท้ายตาราง ทีมหาแถวที่เพิ่งกดไม่เจอ)
     // อยากดูเฉพาะที่ยังไม่ยิง ใช้ปุ่มกรอง ▾ ที่หัวคอลัมน์สถานะแทน
-    const rows = allRows.filter(r => matches(r));
-    const reachRows = allRows.filter(r => Number(r.ad_reach) > 0);
-    const paidRows = allRows.filter(r => Number(r.ad_spend) > 0);
+    const rows = tabRows.filter(r => matches(r));
+    const reachRows = adRowsAll.filter(r => Number(r.ad_reach) > 0);
+    const paidRows = adRowsAll.filter(r => Number(r.ad_spend) > 0);
     const measuredRows = paidRows.filter(r => Number(r.ad_reach) > 0);
     const measuredReach = measuredRows.reduce((sum, r) => sum + Number(r.ad_reach), 0);
     const measuredSpend = measuredRows.reduce((sum, r) => sum + Number(r.ad_spend), 0);
     const costPerThousandReach = measuredReach > 0 ? Math.round(measuredSpend / (measuredReach / 1000)) : null;
     const canSeeSpend = s?.total_spend != null;
 
-    const countIf = (skip, pred) => allRows.filter(r => matches(r, skip) && pred(r)).length;
-    const platformOptions = [...new Set(allRows.map(r => r.platform).filter(Boolean))].sort();
+    const countIf = (skip, pred) => tabRows.filter(r => matches(r, skip) && pred(r)).length;
+    const platformOptions = [...new Set(tabRows.map(r => r.platform).filter(Boolean))].sort();
     const hasFilter = !!(platform || status || late || search.trim());
     const clearFilters = () => { setPlatform(''); setStatus(''); setLate(''); setSearch(''); };
     // ค่า insight เพิ่มเติม (คำนวณจากข้อมูลที่มี)
@@ -523,6 +552,18 @@ export default function Ads() {
                 {BRANDS.map(b => (
                     <button key={b} className={'brand-chip' + (brand === b ? ' active' : '')} onClick={() => setBrand(b)}>{b}</button>
                 ))}
+            </div>
+
+            {/* แท็บ ต้องยิงแอด / ไม่ต้องยิงแอด (5 ต.ค. 2026) — หน้าตาเดียวกับแท็บหน้าแคมเปญ · อยู่เหนือแถบ Platform เพราะเลขบนปุ่ม Platform นับตามแท็บ */}
+            <div className="agency-tabs hub-tabs proj-type-tabs ads-tabs" role="tablist" aria-label="แยกคลิปที่ต้องยิงแอด">
+                <button type="button" role="tab" aria-selected={tab === 'ads'} className={tab === 'ads' ? 'active' : ''} onClick={() => setTab('ads')}>
+                    ต้องยิงแอด <span className="agency-tab-count">{data ? adRowsAll.length : '…'}</span>
+                </button>
+                <button type="button" role="tab" aria-selected={tab === 'noads'} className={tab === 'noads' ? 'active' : ''} onClick={() => setTab('noads')}
+                    title="คลิปในกลุ่มที่ตั้งว่าไม่ใช้ Gencode — ไม่ต้องยิงแอด">
+                    <span className="ads-tab-long">ไม่ต้องยิงแอด / ไม่ใช้ Gencode</span><span className="ads-tab-short">ไม่ต้องยิงแอด</span>
+                    {' '}<span className="agency-tab-count">{data ? noAdRows.length : '…'}</span>
+                </button>
             </div>
 
             {/* กรอง Platform — เดิมซ่อนอยู่ในหัวคอลัมน์ KOL มองไม่เห็น
@@ -559,7 +600,15 @@ export default function Ads() {
                 </div>
             )}
 
-            {/* การ์ดสรุปค่าแอด */}
+            {tab === 'noads' && (
+                <div className="ads-noad-note">
+                    คลิปในกลุ่มที่ตั้งว่า <b>ไม่ใช้ Gencode</b> (ขีด -) และยังไม่มี Gencode — ไม่ต้องยิงแอด · ไม่นับในการ์ดสรุปของแท็บต้องยิง และไม่ได้ส่งให้ PFM
+                    · ถ้าคลิปไหนต้องยิง ให้ใส่ Gencode หรือเปลี่ยนตั้งค่ากลุ่มในหน้าแคมเปญ แล้วคลิปจะย้ายไปแท็บต้องยิงเอง
+                </div>
+            )}
+
+            {/* การ์ดสรุปค่าแอด — นับเฉพาะคลิปที่ต้องยิง (แสดงเฉพาะแท็บต้องยิง) */}
+            {tab === 'ads' && (
             <div className="summary-grid">
                 <div className="summary-card">
                     <div className="summary-label">ยิงแอดแล้ว</div>
@@ -593,12 +642,13 @@ export default function Ads() {
                                 : 'ยังไม่มีโพสต์ที่มี Engagement'}</div>
                 </div>
             </div>
+            )}
 
             {/* ตารางติดตามการยิงแอดรายโพสต์ — การ์ดนี้กินเต็มความกว้างหน้า (.ads-tbl-panel) ให้เห็นคอลัมน์ได้มากที่สุด */}
             <div className="panel ads-tbl-panel">
                 <div className="dash-section-head ads-tbl-bar">
                     <h3>ติดตามการยิงแอดรายโพสต์ <span className="dash-section-sub">
-                        {data ? `แสดง ${rows.length} จาก ${allRows.length} โพสต์ · ` : ''}
+                        {data ? `แสดง ${rows.length} จาก ${tabRows.length} โพสต์ · ` : ''}
                         กดปุ่ม ▾ ที่หัวคอลัมน์เพื่อกรอง
                     </span></h3>
                     {/* ค้นหา — หน้าตาเดียวกับช่องค้นหาหน้า KOL Analytics (.ka-search) */}
@@ -627,11 +677,18 @@ export default function Ads() {
                 ) : rows.length === 0 ? (
                     <div className="empty-illus">
                         <div className="empty-illus-icon"><Icon name="target" size={30} /></div>
-                        <div className="empty-illus-title">{!hasFilter ? 'ยังไม่มีโพสต์ที่ยิงแอด'
-                            : search.trim() ? `ไม่เจอโพสต์ที่ตรงกับ "${search.trim()}"` : 'ไม่มีโพสต์ตรงกับตัวกรอง'}</div>
+                        <div className="empty-illus-title">{hasFilter
+                            ? (search.trim() ? `ไม่เจอโพสต์ที่ตรงกับ "${search.trim()}"` : 'ไม่มีโพสต์ตรงกับตัวกรอง')
+                            : tab === 'noads' ? 'ไม่มีคลิปในกลุ่มที่ไม่ใช้ Gencode' : 'ยังไม่มีโพสต์ที่ยิงแอด'}</div>
+                        {otherTabHits > 0 && (
+                            <button type="button" className="btn-ghost ads-other-tab" onClick={() => setTab(tab === 'noads' ? 'ads' : 'noads')}>
+                                เจอ {otherTabHits} โพสต์ในแท็บ{tab === 'noads' ? 'ต้องยิงแอด' : 'ไม่ต้องยิงแอด'} — ไปดู
+                            </button>
+                        )}
                         <p className="empty-illus-sub">
                             {hasFilter
                                 ? 'ลองกด "ล้างตัวกรอง" หรือเลือกเงื่อนไขอื่นดู'
+                                : tab === 'noads' ? 'คลิปที่อยู่ในกลุ่มที่ตั้งว่าไม่ใช้ Gencode (ขีด -) จะมาอยู่แท็บนี้เอง'
                                 : 'เมื่อ KOL ลงงานและทีมใส่ลิงก์โพสต์ในแท็บ On Process แล้ว โพสต์จะขึ้นมาที่นี่ให้ติดตามค่าแอดอัตโนมัติ'}
                         </p>
                     </div>
@@ -668,7 +725,7 @@ export default function Ads() {
                     </div>
                     <div className="ads-tbl-scroll" ref={bodyRef} onScroll={() => syncX(bodyRef, headRef)}>
                         <div className="ads-tbl">
-                            {rows.map(r => <AdRow key={r.sub_id} row={r} onSaved={load} canCost={seesAllBrands(user)} />)}
+                            {rows.map(r => <AdRow key={r.sub_id} row={r} onSaved={load} canCost={seesAllBrands(user)} noAd={isNoAdRow(r)} />)}
                         </div>
                     </div>
                     </>
