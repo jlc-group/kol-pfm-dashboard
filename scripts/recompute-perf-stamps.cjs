@@ -19,24 +19,14 @@ const path = require('path');
 
 const ROOT = path.resolve(__dirname, '..');
 const SERVER = path.join(ROOT, 'server');
-const { GOOD_CPM, GOOD_CPE } = require(path.join(SERVER, 'src/store/logic'));
+// สูตรเดียวกับที่ server ใช้คิดผลที่ล็อกใหม่ตอนส่งไปหน้าเว็บ (logic.stampFeeOnly / normalizeStamp)
+const { stampFeeOnly } = require(path.join(SERVER, 'src/store/logic'));
 
 const num = v => (Number.isFinite(Number(v)) ? Number(v) : 0);
-const r2 = v => Number(v.toFixed(2));
 
 // คิดใหม่ 1 ผล — คืน null ถ้าคิดไม่ได้ (ไม่ใช่ object / ค่าตัว ณ วันล็อก ≤ 0 / ไม่มียอดวิว)
 // คืน { cpm, cpe, verdict, fee } (fee = ค่าตัว ณ วันล็อก ไว้รายงาน ไม่ได้เขียนลง stamp)
-function recomputeStamp(stamp) {
-    if (!stamp || typeof stamp !== 'object') return null;
-    const fee = num(stamp.total_cost) - num(stamp.ad_spend);
-    const views = num(stamp.views);
-    const engagement = num(stamp.engagement);
-    if (fee <= 0 || views <= 0) return null;
-    const cpm = r2(fee / (views / 1000));
-    const cpe = engagement > 0 ? r2(fee / engagement) : 0;
-    const verdict = (cpm > 0 && cpm <= GOOD_CPM && cpe > 0 && cpe <= GOOD_CPE) ? 'Pass' : 'Fail';
-    return { cpm, cpe, verdict, fee: r2(fee) };
-}
+const recomputeStamp = stampFeeOnly;
 
 // แผนของทั้งชุด: [{ id, before, after, change }] + แถวที่ข้าม
 function planAll(rows) {

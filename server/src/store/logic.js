@@ -1008,6 +1008,36 @@ function maybeStamp(s, at = AD_STAMP_AT, campaignType) {
     return s.perf_stamp;
 }
 
+// ===== ผลที่ล็อกไว้ (perf_stamp 🔒) ก่อนเปลี่ยนสูตร 5 ต.ค. 2026 =====
+// ผลที่ล็อกก่อนหน้านั้นคิด CPM/CPE ด้วย (ค่าตัว + ค่าแอด) แต่ตัวเลขสดคิดจากค่าตัวอย่างเดียว → ลูกศร ↑↓ / ผ่าน-ไม่ผ่าน เทียบข้ามสูตร
+// stampFeeOnly = คิด CPM / CPE / ผลตัดสินของผลที่ล็อกใหม่ด้วยสูตรค่าตัวอย่างเดียว จากตัวเลขในผลนั้นเอง
+//   ค่าตัว ณ วันล็อก = total_cost − ad_spend (ไม่ใช่ค่าตัววันนี้ — ผลที่ล็อกยังเป็นภาพ ณ วันนั้น)
+//   คืน { cpm, cpe, verdict, fee } · null = คิดไม่ได้ (ไม่ใช่ object / ค่าตัว ณ วันล็อก ≤ 0 = ได้ฟรี / ไม่มียอดวิว)
+// ใช้ทั้งตอนส่งไปหน้าเว็บ (normalizeStamp) และสคริปต์แก้ในฐาน (scripts/recompute-perf-stamps.cjs) — สูตรเดียวกับ clipCostMetrics
+function stampFeeOnly(stamp) {
+    if (!stamp || typeof stamp !== 'object') return null;
+    const n = v => (Number.isFinite(Number(v)) ? Number(v) : 0);
+    const fee = Number((n(stamp.total_cost) - n(stamp.ad_spend)).toFixed(2));   // ตัดเศษทศนิยมจากการลบ (ค่าตัวเป็นบาท/สตางค์)
+    const views = n(stamp.views);
+    const engagement = n(stamp.engagement);
+    if (fee <= 0 || views <= 0) return null;
+    const cpm = Number((fee / (views / 1000)).toFixed(2));
+    const cpe = engagement > 0 ? Number((fee / engagement).toFixed(2)) : 0;
+    const verdict = (cpm > 0 && cpm <= GOOD_CPM && cpe > 0 && cpe <= GOOD_CPE) ? 'Pass' : 'Fail';
+    return { cpm, cpe, verdict, fee };
+}
+// ผลที่ล็อกพร้อมส่งไปหน้าเว็บ (รายการหน้า Ads / Influencer List — 2 หน้าที่แสดงผลที่ล็อก) — CPM / CPE / ผลตัดสิน เป็นสูตรค่าตัวอย่างเดียวเสมอ
+// (เส้นเอเจนซี่ / PUT แถวเดียว / รายการคลิปของแคมเปญ ยังส่งค่าดิบ แต่ไม่มีหน้าไหนเอาผลที่ล็อกจากเส้นพวกนั้นไปแสดง)
+// ทำตอนอ่าน ไม่เขียนลงฐาน: ผลที่ยังเป็นสูตรเดิม (สคริปต์แก้ในฐานยังไม่ได้รัน) ก็เทียบกับตัวเลขสดได้ตรงสูตรทันที
+// ตรงสูตรอยู่แล้ว / คิดไม่ได้ (ได้ฟรี / ข้อมูลไม่ครบ) = คืนตัวเดิม · ช่องอื่น (at / ad_spend / views / engagement / er / total_cost) ไม่แตะ
+// ไม่แก้ object ที่ส่งเข้ามา
+function normalizeStamp(stamp) {
+    const next = stampFeeOnly(stamp);
+    if (!next) return stamp;
+    if (Number(stamp.cpm) === next.cpm && Number(stamp.cpe) === next.cpe && stamp.verdict === next.verdict) return stamp;
+    return { ...stamp, cpm: next.cpm, cpe: next.cpe, verdict: next.verdict };
+}
+
 // ค่าแอดถึงเกณฑ์แล้วแต่ยังสแตมป์ไม่ได้เพราะรออะไรอยู่ — ให้หน้าเว็บบอกได้ว่าต้องไปกรอกช่องไหน
 // 'views' = ยังไม่มียอดวิว · 'fee' = ยังไม่ได้ใส่ค่าตัว
 // null = ไม่ได้รออะไร (สแตมป์แล้ว / ค่าแอดยังไม่ถึงเกณฑ์ / ครบแล้วรอสแตมป์รอบถัดไป)
@@ -1235,6 +1265,6 @@ module.exports = {
     carryProductBundles, blockBundles,
     groupNoGencode, postNoGencode, carryNoGencode,
     resolveGroupProducts, resolveGroupCtype, resolveGroupMedia, resolveGroupCampaign,
-    engagementOf, maybeStamp, stampWaitReason,
+    engagementOf, maybeStamp, stampWaitReason, stampFeeOnly, normalizeStamp,
     feeMissing, clipCostMetrics, costAxisRange, costAxisNorm, perfVerdict, feeCostAverages, pooledCpe, viewsMissingReason, firstByIdPost
 };

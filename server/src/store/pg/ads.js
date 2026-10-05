@@ -16,7 +16,7 @@ const {
     now, clone, scopeProjects,
     resolveGroupTarget, resolveGroupProducts, resolveGroupCtype, resolveGroupMedia, resolveGroupCampaign,
     engagementOf, clipCostMetrics, perfVerdict,
-    maybeStamp, stampWaitReason, stampAtFor, pfmManagedSpend, postCheckWaiting,
+    maybeStamp, stampWaitReason, normalizeStamp, stampAtFor, pfmManagedSpend, postCheckWaiting,
     adRanBySpend, effectiveAdStatus, postNoGencode, pooledCpe, viewsMissingReason, firstByIdPost
 } = logic;
 
@@ -239,7 +239,7 @@ const ads = {
                             views, engagement: eng, fee_missing,
                             content_cpm: cCpm, content_cpe: cCpe,
                             performance: views > 0 ? perfVerdict({ fee_missing, views, cpm: cCpm, cpe: cCpe }) : null,
-                            perf_stamp: s.perf_stamp ? clone(s.perf_stamp) : null,
+                            perf_stamp: s.perf_stamp ? normalizeStamp(clone(s.perf_stamp)) : null,
                             stamp_waiting: waitReason !== null,
                             stamp_wait_reason: waitReason
                         };
@@ -255,7 +255,7 @@ const ads = {
                             views, engagement: eng, fee_missing,
                             content_cpm: cCpm, content_cpe: cCpe,
                             performance: views > 0 ? perfVerdict({ fee_missing, views, cpm: cCpm, cpe: cCpe }) : null,
-                            perf_stamp: s.perf_stamp ? clone(s.perf_stamp) : null,
+                            perf_stamp: s.perf_stamp ? normalizeStamp(clone(s.perf_stamp)) : null,
                             stamp_waiting: waitReason !== null,
                             stamp_wait_reason: waitReason
                         };

@@ -170,3 +170,26 @@ test('ซิงก์ PFM ตั้งสถานะยิงแล้วเม
     assert.equal('ad_status' in patchOf(2), false, 'ยิงแล้วอยู่แล้ว ไม่ต้องเขียนซ้ำ');
     assert.equal('ad_status' in patchOf(3), false, 'ไม่มี ad_launched ก็ไม่แตะสถานะ');
 });
+
+test('ผลที่ล็อกสูตรเดิม (ค่าตัว + ค่าแอด): หน้า Ads / Influencers ได้ CPM/CPE/ผลตัดสินสูตรค่าตัว · ข้อมูลในฐานไม่ถูกแก้', async () => {
+    const saved = FIXTURE.submissions;
+    // แถว 1: ค่าตัว 5,000 · ค่าแอด 3,000 · วิว 100,000 · engagement 1,020 — ล็อกไว้ก่อน 5 ต.ค. ด้วย (5,000 + 3,000) → CPM 80
+    const OLD = { at: '2026-09-25T10:00:00.000Z', ad_spend: 3000, views: 100000, engagement: 1020, er: 1.02,
+        total_cost: 8000, cpm: 80, cpe: 7.84, verdict: 'Fail' };
+    // แถว 4: ล็อกด้วยสูตรใหม่แล้ว (ค่าตัว 5,000 · วิว 100,000) — ต้องคงเดิมทุกช่อง
+    const NEW = { at: '2026-10-05T09:00:00.000Z', ad_spend: 10000, views: 100000, engagement: 1020, er: 1.02,
+        total_cost: 15000, cpm: 50, cpe: 4.9, verdict: 'Fail' };
+    FIXTURE.submissions = structuredClone(saved).map(s => (s.id === 1 ? { ...s, perf_stamp: OLD } : s.id === 4 ? { ...s, perf_stamp: NEW } : s));
+    try {
+        for (const rows of [(await ads.list({})).rows, (await kols.analytics(null)).rows]) {
+            const one = byId(rows, 1);
+            assert.deepEqual(one.perf_stamp, { ...OLD, cpm: 50, cpe: 4.9, verdict: 'Fail' });
+            // ตัวเลขสดคิดสูตรเดียวกัน — ลูกศรเทียบได้ (ค่าตัวเท่าเดิม ยอดเท่าเดิม = ไม่ขยับ)
+            assert.equal(one.perf_stamp.cpm, one.content_cpm ?? one.cpm);
+            assert.deepEqual(byId(rows, 4).perf_stamp, NEW);
+        }
+        assert.equal(FIXTURE.submissions.find(s => s.id === 1).perf_stamp.cpm, 80, 'ข้อมูลต้นทางไม่ถูกแก้ (แก้ในฐานใช้สคริปต์แยก)');
+    } finally {
+        FIXTURE.submissions = saved;
+    }
+});

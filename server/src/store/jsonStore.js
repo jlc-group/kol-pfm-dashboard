@@ -6,7 +6,7 @@
  */
 const fs = require('fs');
 const path = require('path');
-const { nextPostCheck, postCheckDecision, postCheckWaiting, POST_CHECK_OPEN, sameInstant: sameInstantPC, postNoGencode } = require('./logic');
+const { nextPostCheck, postCheckDecision, postCheckWaiting, POST_CHECK_OPEN, sameInstant: sameInstantPC, postNoGencode, normalizeStamp } = require('./logic');
 
 const DATA_DIR = path.join(__dirname, '..', '..', 'data');
 const DATA_FILE = path.join(DATA_DIR, 'db.json');
@@ -393,7 +393,7 @@ const kols = {
                         ? ((cpm > 0 && cpm <= GOOD_CPM && cpe > 0 && cpe <= GOOD_CPE) ? 'Good' : 'Improve')
                         : null,  // ยังไม่กรอกผลงาน = ยังตัดสินไม่ได้
                     // ผลที่ล็อกไว้ตอนค่าแอดถึงเกณฑ์ (ถ้ายังไม่ถึงจะเป็น null)
-                    perf_stamp: s.perf_stamp ? clone(s.perf_stamp) : null,
+                    perf_stamp: s.perf_stamp ? normalizeStamp(clone(s.perf_stamp)) : null,
                     // ถึงเกณฑ์แล้วแต่ยังไม่มีผลงานให้ตัดสิน — รอสแตมป์อยู่
                     stamp_waiting: !s.perf_stamp && spendNow >= AD_STAMP_AT && views <= 0
                 };
@@ -1633,7 +1633,7 @@ const ads = {
                             performance: views > 0
                                 ? ((cCpm > 0 && cCpm <= GOOD_CPM && cCpe > 0 && cCpe <= GOOD_CPE) ? 'Good' : 'Improve')
                                 : null,
-                            perf_stamp: s.perf_stamp ? clone(s.perf_stamp) : null,
+                            perf_stamp: s.perf_stamp ? normalizeStamp(clone(s.perf_stamp)) : null,
                             stamp_waiting: !s.perf_stamp && spend >= AD_STAMP_AT && views <= 0
                         };
                     })(),
@@ -1650,7 +1650,7 @@ const ads = {
                             performance: views > 0
                                 ? ((cCpm > 0 && cCpm <= GOOD_CPM && cCpe > 0 && cCpe <= GOOD_CPE) ? 'Good' : 'Improve')
                                 : null,
-                            perf_stamp: s.perf_stamp ? clone(s.perf_stamp) : null,
+                            perf_stamp: s.perf_stamp ? normalizeStamp(clone(s.perf_stamp)) : null,
                             stamp_waiting: !s.perf_stamp && spend >= AD_STAMP_AT && views <= 0
                         };
                     })()

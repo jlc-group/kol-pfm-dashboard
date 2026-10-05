@@ -9,7 +9,7 @@
  */
 const { query, insertRow, updateRow, asNum, asNumOrNull, asJson } = require('./_base');
 const { loadSnapshot } = require('./_snapshot');
-const { now, clone, duplicateError, scopeProjects, stampWaitReason, stampAtFor, clipCostMetrics, perfVerdict, postNoGencode, viewsMissingReason, firstByIdPost } = require('../logic');
+const { now, clone, duplicateError, scopeProjects, stampWaitReason, normalizeStamp, stampAtFor, clipCostMetrics, perfVerdict, postNoGencode, viewsMissingReason, firstByIdPost } = require('../logic');
 
 // id ที่ส่งมาเป็นสตริงจาก URL — jsonStore ใช้ Number(id) เทียบตรง ๆ
 // ค่าที่แปลงไม่ได้ (NaN) จะหาไม่เจอเสมอ ต้องดักไว้ก่อนยิง SQL ไม่งั้น Postgres จะ error แทนที่จะคืน null
@@ -244,7 +244,7 @@ const kols = {
                     // ยังไม่กรอกผลงาน หรือยังไม่ใส่ค่าตัว = ยังตัดสินไม่ได้ (null) · หน้าเว็บเช็ค fee_missing ก่อนเพื่อขึ้น "รอค่าตัว"
                     performance: views > 0 ? perfVerdict({ fee_missing, views, cpm, cpe }) : null,
                     // ผลที่ล็อกไว้ตอนค่าแอดถึงเกณฑ์ (ถ้ายังไม่ถึงจะเป็น null)
-                    perf_stamp: s.perf_stamp ? clone(s.perf_stamp) : null,
+                    perf_stamp: s.perf_stamp ? normalizeStamp(clone(s.perf_stamp)) : null,
                     // ค่าแอดถึงเกณฑ์แล้วแต่ยังสแตมป์ไม่ได้ — รอสแตมป์อยู่
                     // stamp_wait_reason บอกว่ารออะไร: 'views' ยอดวิว / 'fee' ค่าตัว (ไม่ได้รอ = null)
                     stamp_waiting: waitReason !== null,
