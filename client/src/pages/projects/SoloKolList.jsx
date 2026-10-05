@@ -28,7 +28,8 @@ function Row({ p, onOpen, fresh }) {
                         @{name || '—'}{more > 0 && <small> +{more}</small>}
                     </b>
                     <span className="solo-meta">{[soloPlatformsOf(p).join(', '), fol, tierShort(primary.tier || s.tier)].filter(Boolean).join(' · ')}</span>
-                    <span className="solo-meta">{s.contact_mode === 'agency' ? `Agency: ${s.agency || s.payee || '—'}` : 'ติดต่อเอง'}</span>
+                    {/* ฟอร์มไม่ถามช่องทางติดต่อแล้ว (5 ต.ค. 2026) — ป้ายเฉพาะการจ้างเก่าที่ผ่าน Agency */}
+                    {s.contact_mode === 'agency' && <span className="solo-meta">Agency: {s.agency || s.payee || '—'}</span>}
                 </span>
             </span>
             <span className="solo-brand">

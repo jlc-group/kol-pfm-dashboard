@@ -4814,6 +4814,21 @@ button { color: inherit; }
 .solo-plat > .qf-field:last-child { margin-bottom: 14px; }
 .solo-plat-head { margin-bottom: 10px; font-size: 13.5px; font-weight: 700; color: var(--mint-dark); }
 .solo-fee-note { margin: -4px 0 14px; }
+/* + Account (5 ต.ค. 2026): หลาย KOL ในฟอร์มเดียว — การ์ดต่อ KOL (บัญชีต่อ Platform อยู่ข้างใน) · ปุ่มเพิ่มเส้นประเต็มความกว้าง */
+.solo-kcard-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
+.solo-kcard-head .solo-plat-head { margin-bottom: 0; }
+.solo-kcard-del { min-height: 32px; padding: 4px 12px; border: 1px solid #fecaca; border-radius: 8px; background: #fff; color: #b91c1c; font: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer; }
+.solo-kcard-del:hover:not(:disabled) { background: #fef2f2; }
+.solo-kcard-plat { margin: 2px 0 8px; font-size: 12px; font-weight: 700; color: var(--muted); }
+.solo-kcard-acc + .solo-kcard-acc { padding-top: 10px; border-top: 1px dashed var(--border); }
+.solo-add-kol-wrap { margin-bottom: 4px; }
+.solo-add-kol { width: 100%; min-height: 44px; border: 1.5px dashed var(--mint); border-radius: 12px; background: #fff; color: var(--mint-dark); font: inherit; font-size: 14px; font-weight: 700; cursor: pointer; }
+.solo-add-kol:hover:not(:disabled) { background: #ecfdf5; }
+.solo-add-kol:disabled { opacity: .55; cursor: not-allowed; }
+.solo-add-kol-wrap .qf-hint { margin-top: 6px; }
+.solo-fs { border: 0; padding: 0; margin: 0; min-width: 0; }   /* ห่อทุกช่องไว้ล็อกระหว่างบันทึก — ไม่ให้มีกรอบ/ระยะของ fieldset */
+.solo-brief { font-size: 13px; color: var(--text); }
+.solo-brief p { margin: 4px 0 0; white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.55; }
 .solo-acc small { font-size: 11.5px; font-weight: 600; color: var(--muted); }
 .solo-fee-row + .solo-fee-row { margin-top: 10px; }
 .solo-fee-plat { display: block; margin-top: 8px; font-size: 12px; font-weight: 700; color: var(--mint-dark); }

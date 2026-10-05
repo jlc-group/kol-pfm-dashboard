@@ -120,9 +120,9 @@ export default function SoloKolDetail({ project, reload }) {
     const platInfo = plats.map(p => ({ p, items: infoOf(p) })).filter(x => x.items.length > 0);
     const shared = [
         g && ['Gencode', groupNoGencode(g) ? 'ไม่ใช้ Gencode' : `อายุ ${Number(g.code_expire) || 60} วัน`],
-        g && g.concept && ['Concept', conceptOneLine(g.concept)],
-        project.objective && ['หมายเหตุ', project.objective]
+        g && g.concept && ['Concept', conceptOneLine(g.concept)]
     ].filter(Boolean);
+    // รายละเอียดบรีฟ (projects.objective — ฟอร์มเพิ่มกลับ 5 ต.ค. 2026) ยาวได้หลายบรรทัด → แสดงเป็นย่อหน้า ไม่ใส่ในป้าย
     // ชื่อคลิปตามลำดับคลิป (clip_no) — ทุก Platform ใช้ชื่อชุดเดียวกัน
     const clipNames = [];
     clips.forEach(c => { const i = Math.max(0, (Number(c.clip_no) || 1) - 1); if (!clipNames[i]) clipNames[i] = c.clip_name || ''; });
@@ -152,8 +152,9 @@ export default function SoloKolDetail({ project, reload }) {
                     </div>
                 ))}
                 <div className="solo-hero-meta">
-                    {sum.contact_mode === 'agency' ? `ผ่าน Agency: ${sum.agency || sum.payee || '—'}` : 'ติดต่อ KOL เอง'}
-                    {' · '}ผู้รับเงิน: {sum.payee || '—'} · ผู้ดูแล: {project.owner || '—'}
+                    {/* ฟอร์มไม่ถามช่องทางติดต่อแล้ว (5 ต.ค. 2026) — บอกเฉพาะการจ้างเก่าที่ผ่าน Agency */}
+                    {sum.contact_mode === 'agency' && <>ผ่าน Agency: {sum.agency || sum.payee || '—'} · </>}
+                    ผู้รับเงิน: {sum.payee || '—'} · ผู้ดูแล: {project.owner || '—'}
                     {project.start_date && <> · เพิ่มเมื่อ {fmtDate(project.start_date)}</>}
                 </div>
                 <div className="solo-hero-actions">
@@ -211,7 +212,7 @@ export default function SoloKolDetail({ project, reload }) {
                 </div>
             </div>
 
-            {(platInfo.length > 0 || shared.length > 0 || project.brief_link) && (
+            {(platInfo.length > 0 || shared.length > 0 || project.brief_link || project.objective) && (
                 <div className="panel solo-info">
                     {platInfo.map(({ p, items }) => (
                         <div className="solo-info-row" key={p}>
@@ -224,6 +225,9 @@ export default function SoloKolDetail({ project, reload }) {
                             {shared.map(([k, v]) => <span key={k} className="solo-info-chip"><b>{k}:</b> {v}</span>)}
                             {project.brief_link && <a className="solo-info-chip" href={project.brief_link} target="_blank" rel="noopener noreferrer">บรีฟ ↗</a>}
                         </div>
+                    )}
+                    {project.objective && (
+                        <div className="solo-brief"><b>รายละเอียดบรีฟ</b><p>{project.objective}</p></div>
                     )}
                 </div>
             )}

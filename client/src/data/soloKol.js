@@ -62,6 +62,23 @@ export function soloPlatformsOf(p) {
     if (blocks.length) return soloPlatformOrder(blocks);
     return g.platform ? [g.platform] : [];
 }
+// ฟอร์ม + Account (หลาย KOL ในฟอร์มเดียว · 5 ต.ค. 2026): ชื่อบัญชีที่ซ้ำกับ KOL ก่อนหน้าใน Platform เดียวกัน
+// kols = [{ acc: { [platform]: { account_name } } }] · คืน { 'ลำดับKOL|Platform': ลำดับ KOL แรกที่ใช้ชื่อนี้ } (นับจาก 0)
+// เทียบแบบไม่สน @ นำหน้า / ช่องว่าง / ตัวพิมพ์เล็กใหญ่ — server ตัด @ ออกก่อนเก็บเหมือนกัน
+export function soloDuplicateAccounts(kols, platforms) {
+    const out = {};
+    (platforms || []).forEach(p => {
+        const first = new Map();
+        (kols || []).forEach((x, i) => {
+            const a = x && x.acc && x.acc[p];
+            const n = String((a && a.account_name) || '').trim().replace(/^@+/, '').trim().toLowerCase();
+            if (!n) return;
+            if (first.has(n)) out[`${i}|${p}`] = first.get(n);
+            else first.set(n, i);
+        });
+    });
+    return out;
+}
 // ข้อจำกัดของฟอร์มแก้ไข (เกณฑ์เดียวกับ updateSolo ฝั่ง server ซึ่งดูทุกแถวคลิป) จากคลิปที่ไม่ว่าง (clipEmpty)
 // lockedPlatforms = Platform ที่เอาออกไม่ได้ · minClips = จำนวนคลิปต่ำสุดที่เลือกได้ (ลำดับคลิปที่ไม่ว่างสูงสุด)
 export function soloEditLimits(subs) {

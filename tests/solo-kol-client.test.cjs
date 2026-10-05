@@ -143,3 +143,36 @@ test('server รุ่นเก่า: 404 นับเป็น "ยังไ�
         }
     }
 });
+
+test('+ Account (หลาย KOL ในฟอร์มเดียว): soloDuplicateAccounts จับชื่อบัญชีซ้ำใน Platform เดียวกัน · ไม่สน @ / ช่องว่าง / ตัวพิมพ์', () => {
+    const kol = acc => ({ acc });
+    const kols = [
+        kol({ TikTok: { account_name: '@Mintty' }, Instagram: { account_name: 'mint.ig' } }),
+        kol({ TikTok: { account_name: ' mintty ' }, Instagram: { account_name: 'other' } }),   // TikTok ซ้ำกับคนแรก
+        kol({ TikTok: { account_name: '' }, Instagram: { account_name: '@@MINT.IG' } }),         // ว่างไม่นับ · IG ซ้ำกับคนแรก
+        kol({ TikTok: { account_name: 'MINTTY' } })                                              // ซ้ำคนแรก (ไม่ใช่คนที่ 2)
+    ];
+    assert.deepEqual(c.soloDuplicateAccounts(kols, ['TikTok', 'Instagram']), { '1|TikTok': 0, '2|Instagram': 0, '3|TikTok': 0 });
+    // Platform ที่ไม่ได้เลือกไม่ตรวจ (ค่าค้างในการ์ดตอนเอาติ๊กออก)
+    assert.deepEqual(c.soloDuplicateAccounts(kols, ['Instagram']), { '2|Instagram': 0 });
+    // ชื่อเดียวกันคนละ Platform ไม่ถือว่าซ้ำ
+    assert.deepEqual(c.soloDuplicateAccounts([kol({ TikTok: { account_name: 'a' } }), kol({ Instagram: { account_name: 'a' } })], ['TikTok', 'Instagram']), {});
+    assert.deepEqual(c.soloDuplicateAccounts(null, ['TikTok']), {});
+    assert.deepEqual(c.soloDuplicateAccounts([null, kol({})], ['TikTok']), {});
+});
+
+test('ฟอร์มไม่มีช่องทางติดต่อแล้ว (5 ต.ค. 2026): ค่าที่ฟอร์มส่ง (self / agency เดิม) server ยังรับ · บรีฟลิงก์ + รายละเอียดเก็บได้', () => {
+    const base = {
+        platforms: [{ platform: 'TikTok', account_name: '@a', tier: 'Nano 1k - 10k', fee: 1000, content_type: ad.contentTypesFor('TikTok')[0] }],
+        brand: 'B', products: ['P1'], clips: 1, owner: 'o', code_expire: 60
+    };
+    const self = server.soloInput({ ...base, contact_mode: 'self', agency: '', brief_link: 'https://drive.google.com/x', note: 'บรรทัด 1\nบรรทัด 2' });
+    assert.equal(self.error, undefined, self.error);
+    assert.equal(self.input.contact_mode, 'self');
+    assert.equal(self.input.brief_link, 'https://drive.google.com/x');
+    assert.equal(self.input.note, 'บรรทัด 1\nบรรทัด 2');
+    const ag = server.soloInput({ ...base, contact_mode: 'agency', agency: 'Ag Co' }, { editing: true });
+    assert.equal(ag.error, undefined, ag.error);
+    assert.equal(ag.input.agency, 'Ag Co');
+    assert.match(server.soloInput({ ...base, contact_mode: 'self', brief_link: 'drive.google.com/x' }).error, /ลิงก์บรีฟ/);
+});

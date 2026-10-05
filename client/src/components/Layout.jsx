@@ -15,7 +15,7 @@ const MAIN_NAV = [
     { to: '/projects', label: 'Campaigns', icon: 'folder' },
     { to: '/ads', label: 'Ads', icon: 'target' },
     { to: '/budget', label: 'Campaign Reports', icon: 'bars' },
-    { to: '/kols', label: 'Influencers', icon: 'star' },
+    { to: '/kols', label: 'Influencer List', icon: 'star' },   // เดิม Influencers (ผู้ใช้สั่งเปลี่ยน 5 ต.ค. 2026)
     // Talent = Talent Book อย่างเดียว (คอมการ์ด + เรทราคา นางแบบ / นักแสดง / Live / พิธีกร) — ไม่มีใบขอให้หา/ขอเรทราคาแล้ว จึงไม่มีเลขแดงบนเมนูนี้
     { to: '/hires', label: 'Talent', icon: 'team' }
 ];

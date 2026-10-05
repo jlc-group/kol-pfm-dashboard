@@ -8,14 +8,19 @@ import { contentTypesFor, CAMPAIGN_TYPES, SOCIAL_CAMPAIGNS, campaignIsCtype, nee
 import { CONTENT_FORMATS } from '../data/contentFormats.js';
 import {
     SOLO_PLATFORMS, SOLO_TIERS, SOLO_MEDIA, SOLO_CODE_EXPIRE, SOLO_MAX_CLIPS,
-    tierFromFollowers, baht, soloPlatformOrder, soloAccountsOf, soloPlatformsOf, isOldServerError, OLD_SERVER_TEXT
+    tierFromFollowers, baht, soloPlatformOrder, soloAccountsOf, soloPlatformsOf, soloDuplicateAccounts, isOldServerError, OLD_SERVER_TEXT
 } from '../data/soloKol.js';
 
 // ฟอร์ม "เพิ่ม KOL รายคน" — จ้าง KOL เดี่ยวโดยไม่ต้องสร้างแคมเปญ (ผู้ใช้สั่ง 30 ก.ย. 2026)
 // ส่งไป POST /api/projects/solo — server สร้างรายการ + กลุ่มโฆษณา + แถวคลิปให้เอง (ตรวจค่าซ้ำฝั่ง server: server/src/store/soloKol.js)
 // รอบ 4 (1 ต.ค. 2026): เลือกได้หลาย Platform — บัญชี / ค่าตัว / ข้อมูลยิงแอด แยกต่อ Platform · จำนวนคลิปเท่ากันทุก Platform
 // ค่าตัวบังคับทุก Platform (ได้ฟรีใส่ 0) · ไม่มีวันที่จ้าง / กำหนดลงงานแล้ว (server ตั้งวันที่เพิ่มให้เอง)
-// "บันทึกแล้วเพิ่มอีกคน" จำ Platform / แบรนด์ / สินค้า / งาน / ค่าตัว / ผู้ดูแล / ข้อมูลยิงแอด ไว้ ล้างแค่บัญชีกับช่องทางติดต่อ
+// "บันทึกแล้วเพิ่มอีกคน" จำ Platform / แบรนด์ / สินค้า / งาน / ค่าตัว / ผู้ดูแล / ข้อมูลยิงแอด / บรีฟ ไว้ ล้างแค่บัญชี
+// 5 ต.ค. 2026 (ผู้ใช้สั่ง):
+// - ปุ่ม "+ Account" = ใส่หลาย KOL ในฟอร์มเดียว — ทุก KOL ใช้ Platform / งาน / ค่าตัว / ข้อมูลยิงแอด / บรีฟ ชุดเดียวกัน
+//   บันทึกแล้วได้ 1 รายการต่อ 1 KOL (ยิง POST /projects/solo ทีละคน — server ไม่ต้องแก้) · ค่าตัวรายคนแก้ทีหลังในหน้า KOL
+// - เอาช่อง "ช่องทางติดต่อ" ออก — เพิ่มใหม่ = ติดต่อเอง (ผู้รับเงิน = บัญชี KOL) · แก้ไขส่งค่าเดิมของการจ้างกลับ (Agency เดิมไม่หาย)
+// - ลิงก์บรีฟ + รายละเอียดบรีฟ กลับมา (เก็บที่ brief_link / objective เหมือนเดิม · ไม่บังคับ)
 const LAST_OWNER = 'solo.lastOwner';
 const readLastOwner = () => { try { return localStorage.getItem(LAST_OWNER) || ''; } catch { return ''; } };
 const saveLastOwner = v => { try { localStorage.setItem(LAST_OWNER, v); } catch { /* โหมดส่วนตัว — ไม่จำก็ได้ */ } };
@@ -37,7 +42,11 @@ const LINK_PH = {
 // ค่าต่อ Platform เก็บเป็น map ตามชื่อ Platform — เอาติ๊กออกแล้วติ๊กกลับ ค่าที่กรอกไว้ยังอยู่ · ตรวจ/ส่งเฉพาะ Platform ที่เลือก
 const ACC_EMPTY = { account_name: '', link_account: '', followers: '', tier: '', tierTouched: false };
 const AD_EMPTY = { content_type: '', campaign: '', media_type: '', content_format: '', target: [] };
-const KOL_EMPTY = { platforms: ['TikTok'], acc: {}, contact_mode: '', agency: '' };
+// 1 การ์ด = 1 KOL (บัญชีต่อ Platform เก็บใน acc) · key ไว้ผูกการ์ดกับ React และเอาคนที่บันทึกแล้วออกจากฟอร์ม
+const KOL_MAX = 20;   // + Account ได้สูงสุดต่อการบันทึก 1 ครั้ง
+let kolSeq = 0;
+const newKol = (acc = {}) => ({ key: 'kol' + (++kolSeq), acc });
+const KOL_EMPTY = (platforms = ['TikTok']) => ({ platforms, kols: [newKol()], contact_mode: 'self', agency: '' });
 const JOB_EMPTY = brand => ({
     brand, products: [], clips: 1, clip_names: ['', '', '', '', ''], fee: {}, owner: readLastOwner(),
     ad: {}, code_expire: 60, no_gencode: false, concept: '', brief_link: '', note: ''
@@ -105,7 +114,11 @@ function fromProject(p, clipNames) {
             target: needTarget(pl) && Array.isArray(b.target) ? [...b.target] : []
         };
     });
-    const k = { platforms: platforms.length ? platforms : ['TikTok'], acc, contact_mode: s.contact_mode || '', agency: s.agency || '' };
+    // ช่องทางติดต่อไม่อยู่ในฟอร์มแล้ว — เก็บค่าเดิมไว้ส่งกลับ (server เขียนทุกครั้ง · Agency เดิมต้องไม่กลายเป็นติดต่อเอง)
+    const k = {
+        platforms: platforms.length ? platforms : ['TikTok'], kols: [newKol(acc)],
+        contact_mode: s.contact_mode === 'agency' ? 'agency' : 'self', agency: s.contact_mode === 'agency' ? (s.agency || s.payee || '') : ''
+    };
     const j = {
         brand: p.brand || '', products: [...(g.products || s.products || [])],
         clips, clip_names: [0, 1, 2, 3, 4].map(i => (clips > 1 ? String(clipNames[i] || '') : '')),
@@ -130,13 +143,14 @@ export default function SoloKolForm({ onClose, onSaved, project = null, clipName
     const brands = editing && project.brand && !mine.includes(project.brand) ? [...mine, project.brand] : mine;
     const [init] = useState(() => (editing ? fromProject(project, clipNames) : null));
     const existing = init ? init.existing : [];
-    const [k, setK] = useState(() => (init ? init.k : KOL_EMPTY));
+    const [k, setK] = useState(() => (init ? init.k : KOL_EMPTY()));
     const [j, setJ] = useState(() => (init ? init.j : JOB_EMPTY(brands.length === 1 ? brands[0] : '')));
     const [owners, setOwners] = useState([]);
     const [tried, setTried] = useState(false);
     const [saving, setSaving] = useState(false);
     const [err, setErr] = useState('');
-    const [done, setDone] = useState([]);   // ชื่อที่เพิ่มไปแล้วในรอบนี้ (บันทึกแล้วเพิ่มอีกคน)
+    const [done, setDone] = useState([]);   // ชื่อที่เพิ่มไปแล้วในรอบนี้ (บันทึกแล้วเพิ่มอีกคน / + Account)
+    const [progress, setProgress] = useState('');   // หลาย KOL: "2/3" ระหว่างบันทึกทีละคน
     const wrapRef = useRef(null);
     const clean = useRef(null);
     useEffect(() => {
@@ -150,7 +164,8 @@ export default function SoloKolForm({ onClose, onSaved, project = null, clipName
 
     const plats = soloPlatformOrder(k.platforms);
     const multi = plats.length > 1;
-    const accOf = p => k.acc[p] || ACC_EMPTY;
+    const nKol = k.kols.length;
+    const accOf = (ki, p) => (k.kols[ki] && k.kols[ki].acc[p]) || ACC_EMPTY;
     const adOf = p => j.ad[p] || AD_EMPTY;
     const isLocked = p => editing && lockedPlatforms.includes(p);
     // แก้ไข: ลดจำนวนคลิปได้ไม่ต่ำกว่าคลิปที่มีงานแล้วลำดับสูงสุด (เพิ่มใหม่ = เลือกได้ทุกตัว)
@@ -164,10 +179,33 @@ export default function SoloKolForm({ onClose, onSaved, project = null, clipName
     const ownerOptions = j.owner && !owners.includes(j.owner) ? [...owners, j.owner] : owners;
     const tag = (p, m) => (multi ? `${p}: ${m}` : m);   // หลาย Platform — บอกว่าช่องของ Platform ไหน
 
-    const upK = (key, v) => setK(s => ({ ...s, [key]: v }));
     const upJ = (key, v) => setJ(s => ({ ...s, [key]: v }));
-    const upAcc = (p, patch) => setK(s => ({ ...s, acc: { ...s.acc, [p]: { ...(s.acc[p] || ACC_EMPTY), ...patch } } }));
+    // แก้บัญชีของ KOL ลำดับ ki ใน Platform p
+    const upKolAcc = (ki, p, fn) => setK(s => ({
+        ...s, kols: s.kols.map((x, i) => (i === ki ? { ...x, acc: { ...x.acc, [p]: fn(x.acc[p] || ACC_EMPTY) } } : x))
+    }));
+    const upAcc = (ki, p, patch) => upKolAcc(ki, p, a => ({ ...a, ...patch }));
     const upAd = (p, patch) => setJ(s => ({ ...s, ad: { ...s.ad, [p]: { ...(s.ad[p] || AD_EMPTY), ...patch } } }));
+    const focusKol = key => setTimeout(() => {
+        const el = wrapRef.current && wrapRef.current.querySelector(`[data-kol="${key}"] input`);
+        if (el) { el.scrollIntoView({ block: 'center', behavior: 'smooth' }); el.focus({ preventScroll: true }); }
+    }, 0);
+    function addKol() {
+        if (nKol >= KOL_MAX) return;
+        const x = newKol();
+        setK(s => ({ ...s, kols: [...s.kols, x] }));
+        focusKol(x.key);
+    }
+    function removeKol(ki) {
+        const x = k.kols[ki];
+        const typed = x && Object.values(x.acc).some(a => a && (a.account_name.trim() || a.link_account.trim() || a.followers));
+        if (typed && !window.confirm(`เอา KOL ${ki + 1} ออกจากฟอร์มนี้ไหม?`)) return;
+        setK(s => ({ ...s, kols: s.kols.filter((_, i) => i !== ki) }));
+        // ปุ่มที่กดหายไปกับการ์ด — ย้ายโฟกัสไปการ์ดถัดไป (ไม่มี = ปุ่ม + Account) ไม่ให้หลุดไปที่ body
+        const next = k.kols[ki + 1];
+        if (next) focusKol(next.key);
+        else setTimeout(() => { const b = wrapRef.current && wrapRef.current.querySelector('.solo-add-kol'); if (b) b.focus(); }, 0);
+    }
 
     function togglePlatform(p) {
         const on = !k.platforms.includes(p);
@@ -209,12 +247,9 @@ export default function SoloKolForm({ onClose, onSaved, project = null, clipName
         const cur = adOf(p).target;
         upAd(p, { target: cur.includes(t) ? cur.filter(x => x !== t) : [...cur, t] });
     }
-    function setFollowers(p, v) {
+    function setFollowers(ki, p, v) {
         const digits = v.replace(/[^0-9]/g, '');
-        setK(s => {
-            const a = s.acc[p] || ACC_EMPTY;
-            return { ...s, acc: { ...s.acc, [p]: { ...a, followers: digits, tier: a.tierTouched ? a.tier : tierFromFollowers(digits) } } };
-        });
+        upKolAcc(ki, p, a => ({ ...a, followers: digits, tier: a.tierTouched ? a.tier : tierFromFollowers(digits) }));
     }
 
     const feeTotalOf = p => {
@@ -224,21 +259,27 @@ export default function SoloKolForm({ onClose, onSaved, project = null, clipName
     function feeHint(p) {
         const f = feeVal(j.fee[p]);
         if (f === 0) return 'ได้ฟรี (ไม่มีค่าใช้จ่าย)';
-        if (Number.isFinite(f) && f > 0) return `${baht(f)} × ${j.clips} คลิป = ${baht(feeTotalOf(p))}`;
+        if (Number.isFinite(f) && f > 0) {
+            const one = `${baht(f)} × ${j.clips} คลิป = ${baht(feeTotalOf(p))}`;
+            return nKol > 1 ? `${one} ต่อ KOL · ${nKol} KOL รวม ${baht(Math.round(feeTotalOf(p) * nKol * 100) / 100)}` : one;
+        }
         return 'ได้ฟรีใส่ 0';
     }
 
     function errors() {
         const e = {};
         if (!plats.length) e.platforms = 'เลือก Platform อย่างน้อย 1 ตัว';
-        plats.forEach(p => {
-            const a = accOf(p);
-            if (!a.account_name.trim().replace(/^@+/, '').trim()) e['acc_' + p] = tag(p, 'ใส่ชื่อบัญชี KOL');
-            if (a.link_account.trim() && !isWeb(a.link_account.trim())) e['link_' + p] = tag(p, 'ลิงก์ต้องขึ้นต้นด้วย http:// หรือ https://');
-            if (!a.tier) e['tier_' + p] = tag(p, 'เลือก Tier');
-        });
-        if (!k.contact_mode) e.contact_mode = 'เลือกช่องทางติดต่อ';
-        if (k.contact_mode === 'agency' && !k.agency.trim()) e.agency = 'ใส่ชื่อ Agency (ผู้รับเงิน)';
+        const dup = soloDuplicateAccounts(k.kols, plats);
+        // หลาย KOL — ข้อความบอกเลขการ์ดด้วย (ป้ายช่องเหมือนกันทุกใบ โปรแกรมอ่านหน้าจอต้องรู้ว่าเป็นของคนไหน)
+        const who = (ki, p, m) => (nKol > 1 ? `KOL ${ki + 1} · ${tag(p, m)}` : tag(p, m));
+        k.kols.forEach((x, ki) => plats.forEach(p => {
+            const a = accOf(ki, p);
+            const at = `${ki}_${p}`;
+            if (!a.account_name.trim().replace(/^@+/, '').trim()) e['acc_' + at] = who(ki, p, 'ใส่ชื่อบัญชี KOL');
+            else if (dup[`${ki}|${p}`] !== undefined) e['acc_' + at] = who(ki, p, `ชื่อบัญชีซ้ำกับ KOL ${dup[`${ki}|${p}`] + 1}`);
+            if (a.link_account.trim() && !isWeb(a.link_account.trim())) e['link_' + at] = who(ki, p, 'ลิงก์ต้องขึ้นต้นด้วย http:// หรือ https://');
+            if (!a.tier) e['tier_' + at] = who(ki, p, 'เลือก Tier');
+        }));
         if (!j.brand) e.brand = 'เลือกแบรนด์';
         if (!j.products.length) e.products = 'เลือกสินค้าอย่างน้อย 1 ตัว';
         if (j.clips > 1) {
@@ -253,6 +294,7 @@ export default function SoloKolForm({ onClose, onSaved, project = null, clipName
             else if (f > MAX_FEE) e['fee_' + p] = tag(p, 'ค่าตัวสูงเกินไป (ไม่เกิน 10,000,000 บาทต่อคลิป)');
         });
         if (!j.owner) e.owner = 'เลือกผู้ดูแล';
+        if (j.brief_link.trim() && !isWeb(j.brief_link.trim())) e.brief_link = 'ลิงก์บรีฟต้องขึ้นต้นด้วย http:// หรือ https://';
         plats.forEach(p => {
             const d = adOf(p);
             // ต้องเป็นตัวเลือกของ Platform นี้ — กันค่าแปลกที่มองไม่เห็นในปุ่มหลุดไปบันทึก
@@ -293,68 +335,101 @@ export default function SoloKolForm({ onClose, onSaved, project = null, clipName
         const free = feePlats.filter(p => feeVal(j.fee[p]) === 0);
         if (free.length && !window.confirm(`ค่าตัว 0 = ได้ฟรี (ไม่มีค่าใช้จ่าย) ใช่ไหม?\n${free.join(', ')}`)) return;
         setSaving(true); setErr('');
-        const body = {
-            platforms: plats.map(p => {
-                const a = accOf(p);
-                const d = adOf(p);
-                const social = campaignIsCtype(p);
-                const item = {
-                    platform: p, account_name: a.account_name.trim(), link_account: a.link_account.trim(),
-                    followers: a.followers ? Number(a.followers) : 0, tier: a.tier
-                };
-                // แก้ไข: ส่งค่าตัวเฉพาะ Platform ที่เพิ่มใหม่ — Platform เดิมแก้ที่ช่องค่าตัวในหน้า KOL (เส้นค่าตัวที่เดียว)
-                if (feeNeeded(p)) item.fee = feeVal(j.fee[p]);
-                return {
-                    ...item, content_type: d.content_type,
-                    // Facebook/Instagram: Campaign = Content Type · TikTok: Campaign แยกช่อง (ไม่บังคับ) · Platform อื่นไม่มี Campaign
-                    campaign: social ? d.content_type : (needCampaign(p) ? d.campaign : ''),
-                    media_type: d.media_type, content_format: d.content_format,
-                    target: needTarget(p) ? d.target : []
-                };
-            }),
-            contact_mode: k.contact_mode, agency: k.contact_mode === 'agency' ? k.agency.trim() : '',
+        // บัญชีของ KOL ลำดับ ki + ข้อมูลยิงแอด / ค่าตัวต่อ Platform (ชุดเดียวกันทุก KOL)
+        const platformsOf = ki => plats.map(p => {
+            const a = accOf(ki, p);
+            const d = adOf(p);
+            const social = campaignIsCtype(p);
+            const item = {
+                platform: p, account_name: a.account_name.trim(), link_account: a.link_account.trim(),
+                followers: a.followers ? Number(a.followers) : 0, tier: a.tier
+            };
+            // แก้ไข: ส่งค่าตัวเฉพาะ Platform ที่เพิ่มใหม่ — Platform เดิมแก้ที่ช่องค่าตัวในหน้า KOL (เส้นค่าตัวที่เดียว)
+            if (feeNeeded(p)) item.fee = feeVal(j.fee[p]);
+            return {
+                ...item, content_type: d.content_type,
+                // Facebook/Instagram: Campaign = Content Type · TikTok: Campaign แยกช่อง (ไม่บังคับ) · Platform อื่นไม่มี Campaign
+                campaign: social ? d.content_type : (needCampaign(p) ? d.campaign : ''),
+                media_type: d.media_type, content_format: d.content_format,
+                target: needTarget(p) ? d.target : []
+            };
+        });
+        const shared = {
+            // ไม่มีช่องทางติดต่อในฟอร์มแล้ว: เพิ่มใหม่ = ติดต่อเอง · แก้ไข = ค่าเดิมของการจ้าง (server เขียนทุกครั้ง ไม่ส่ง = 400)
+            contact_mode: k.contact_mode === 'agency' && k.agency.trim() ? 'agency' : 'self',
+            agency: k.contact_mode === 'agency' ? k.agency.trim() : '',
             brand: j.brand, products: j.products,
             clips: j.clips, clip_names: j.clip_names.slice(0, j.clips).map(n => n.trim()),
             owner: j.owner, code_expire: j.code_expire, no_gencode: j.no_gencode,
             concept: j.concept.trim(),
-            // ช่องลิงก์บรีฟ / หมายเหตุ เอาออกจากฟอร์มแล้ว (ผู้ใช้สั่ง 1 ต.ค. 2026) — ตอนแก้ไขส่งค่าเดิมของการจ้างกลับไปตามเดิม
-            // (server เขียนสองช่องนี้ทุกครั้งที่บันทึก ไม่ส่ง = ค่าเดิมหาย) · เพิ่มใหม่ = ว่าง
+            // ลิงก์บรีฟ / รายละเอียดบรีฟ (เก็บที่ projects.brief_link / objective) — server เขียนทุกครั้งที่บันทึก
             brief_link: j.brief_link.trim(), note: j.note.trim()
         };
-        try {
-            if (editing) {
+        const whoOf = body => [...new Set(body.platforms.map(x => '@' + x.account_name.replace(/^@+/, '')))].join(' / ');
+        if (editing) {
+            try {
                 // server ตัดสินเพิ่ม/ลดคลิปและ Platform เอง และล็อกแบรนด์/Platform ที่เริ่มงานแล้ว
-                const res = await api(`/projects/${encodeURIComponent(project.id)}/solo`, { method: 'PUT', body });
+                const res = await api(`/projects/${encodeURIComponent(project.id)}/solo`, { method: 'PUT', body: { platforms: platformsOf(0), ...shared } });
                 saveLastOwner(j.owner);
                 onSaved && onSaved(res && res.data, { again: false });
-                return;
-            }
-            const res = await api('/projects/solo', { method: 'POST', body });
-            // ห้ามชื่อ project — ซ้ำกับค่าที่ส่งเข้าฟอร์ม (โหมดแก้ไข) แล้วกลายเป็นตัวแปรที่ยังไม่ถูกตั้งค่า (TDZ)
-            const created = res && res.data && res.data.project;
-            saveLastOwner(j.owner);
-            const who = [...new Set(body.platforms.map(x => '@' + x.account_name.replace(/^@+/, '')))].join(' / ');
-            if (again) {
-                // เก็บ Platform / งาน / แบรนด์ / ค่าตัว / ผู้ดูแล / ข้อมูลยิงแอด ไว้ ล้างแค่บัญชีทุก Platform กับช่องทางติดต่อ
-                setDone(d => [...d, who]);
-                const nextK = { ...KOL_EMPTY, platforms: k.platforms };
-                setK(nextK);
-                setTried(false);
-                clean.current = JSON.stringify({ k: nextK, j });
-                onSaved && onSaved(created, { again: true });
+            } catch (e) {
+                // server ยังเป็นรุ่นเก่า: ไม่มีเส้นนี้ (404 "API route not found" เท่านั้น) หรือยังรับแบบ Platform เดียว (ดู OLD_SERVER_MSGS)
+                // 404 อื่น (เช่นรายการถูกลบไปแล้ว) / 409 (หน้าเว็บรุ่นเก่า มีงานแล้ว) โชว์ข้อความของ server ตามจริง
+                setErr(isOldServerError(e) ? OLD_SERVER_TEXT : (e.message || 'บันทึกไม่สำเร็จ'));
                 toTop();
-                const first = wrapRef.current && wrapRef.current.querySelector('input');
-                if (first) first.focus({ preventScroll: true });
-            } else {
-                onSaved && onSaved(created, { again: false });
+            } finally {
+                setSaving(false);
             }
-        } catch (e) {
-            // server ยังเป็นรุ่นเก่า: ไม่มีเส้นนี้ (404 "API route not found" เท่านั้น) หรือยังรับแบบ Platform เดียว (ดู OLD_SERVER_MSGS)
-            // 404 อื่น (เช่นรายการถูกลบไปแล้ว) / 409 (หน้าเว็บรุ่นเก่า มีงานแล้ว) โชว์ข้อความของ server ตามจริง
-            setErr(isOldServerError(e) ? OLD_SERVER_TEXT : (e.message || 'บันทึกไม่สำเร็จ'));
+            return;
+        }
+
+        // เพิ่มใหม่: 1 KOL = 1 รายการ — บันทึกทีละคนตามลำดับการ์ด · คนที่บันทึกแล้วเอาออกจากฟอร์มทันที
+        // พลาดกลางทาง = หยุดตรงนั้น คนที่เหลือ (รวมคนที่พลาด) ยังอยู่ในฟอร์มให้แก้แล้วกดบันทึกต่อ (ไม่บันทึกซ้ำคนที่ผ่านแล้ว)
+        const queue = k.kols.map((x, ki) => ({ key: x.key, body: { platforms: platformsOf(ki), ...shared } }));
+        const saved = [];
+        let created = null;
+        let fail = null;
+        for (let i = 0; i < queue.length; i++) {
+            if (queue.length > 1) setProgress(`${i + 1}/${queue.length}`);
+            try {
+                const res = await api('/projects/solo', { method: 'POST', body: queue[i].body });
+                // ห้ามชื่อ project — ซ้ำกับค่าที่ส่งเข้าฟอร์ม (โหมดแก้ไข) แล้วกลายเป็นตัวแปรที่ยังไม่ถูกตั้งค่า (TDZ)
+                created = (res && res.data && res.data.project) || created;
+                saved.push(queue[i]);
+            } catch (e) {
+                fail = { e, who: whoOf(queue[i].body) };
+                break;
+            }
+        }
+        setProgress('');
+        setSaving(false);
+        if (saved.length) {
+            saveLastOwner(j.owner);
+            setDone(d => [...d, ...saved.map(q => whoOf(q.body))]);
+        }
+        if (fail) {
+            const keys = new Set(saved.map(q => q.key));
+            if (keys.size) setK(s => ({ ...s, kols: s.kols.filter(x => !keys.has(x.key)) }));
+            const msg = isOldServerError(fail.e) ? OLD_SERVER_TEXT : (fail.e.message || 'บันทึกไม่สำเร็จ');
+            setErr(queue.length > 1
+                ? `${fail.who}: ${msg}${saved.length ? ` — เพิ่มสำเร็จแล้ว ${saved.length} คน (เอาออกจากฟอร์มแล้ว) ที่เหลือยังไม่ได้บันทึก` : ''}`
+                : msg);
+            // มีคนที่บันทึกแล้ว — ให้หน้ารายการโหลดใหม่ แต่ฟอร์มยังเปิดอยู่
+            if (saved.length) onSaved && onSaved(created, { again: true });
             toTop();
-        } finally {
-            setSaving(false);
+            return;
+        }
+        if (again) {
+            // เก็บ Platform / งาน / แบรนด์ / ค่าตัว / ผู้ดูแล / ข้อมูลยิงแอด / บรีฟ ไว้ ล้างแค่บัญชี (เหลือการ์ด KOL ว่าง 1 ใบ)
+            const nextK = KOL_EMPTY(k.platforms);
+            setK(nextK);
+            setTried(false);
+            clean.current = JSON.stringify({ k: nextK, j });
+            onSaved && onSaved(created, { again: true });
+            toTop();
+            focusKol(nextK.kols[0].key);
+        } else {
+            onSaved && onSaved(created, { again: false });
         }
     }
 
@@ -362,7 +437,9 @@ export default function SoloKolForm({ onClose, onSaved, project = null, clipName
         <>
             <button type="button" className="btn-ghost" onClick={requestClose} disabled={saving}>ยกเลิก</button>
             {!editing && <button type="button" className="btn-ghost" onClick={() => save(true)} disabled={saving}>บันทึกแล้วเพิ่มอีกคน</button>}
-            <button type="button" className="btn-primary" onClick={() => save(false)} disabled={saving}>{saving ? 'กำลังบันทึก...' : 'บันทึก'}</button>
+            <button type="button" className="btn-primary" onClick={() => save(false)} disabled={saving}>
+                {saving ? `กำลังบันทึก${progress ? ` ${progress}` : ''}...` : (!editing && nKol > 1 ? `บันทึก ${nKol} KOL` : 'บันทึก')}
+            </button>
         </>
     );
 
@@ -386,165 +463,200 @@ export default function SoloKolForm({ onClose, onSaved, project = null, clipName
                 {err && <div className="alert-error" role="alert">{err}</div>}
                 {done.length > 0 && <div className="solo-added" role="status">เพิ่มแล้ว {done.length} คน: {done.join(', ')}</div>}
 
-                <section className="qf-sec">
-                    <h3 className="qf-sec-head"><span className="qf-num">1</span>KOL</h3>
-                    <Field label="Platform" req err={E.platforms} labelId={id('plat')}
-                        hint={editing && lockedPlatforms.length > 0
-                            ? 'Platform ที่มีงานแล้ว (ดราฟ/Gencode/ID Post/ลงงาน/ยิงแอด) เอาออกไม่ได้'
-                            : 'เลือกได้หลาย Platform — กรอกบัญชีแยกของแต่ละ Platform ด้านล่าง'}>
-                        <Chips options={SOLO_PLATFORMS} value={plats} multi onPick={togglePlatform} labelId={id('plat')}
-                            disabled={p => isLocked(p) && plats.includes(p)} />
-                    </Field>
-                    {plats.map((p, i) => {
-                        const a = accOf(p);
-                        return (
-                            <div className="solo-plat" key={p}>
-                                <div className="solo-plat-head">{p}</div>
-                                <div className="qf-row2">
-                                    <Field label="ชื่อบัญชี" req err={E['acc_' + p]} htmlFor={id('acc-' + p)}>
-                                        <input id={id('acc-' + p)} value={a.account_name} maxLength={200} autoComplete="off" autoFocus={i === 0}
-                                            onChange={e => upAcc(p, { account_name: e.target.value })} placeholder="@ชื่อบัญชี" />
-                                    </Field>
-                                    <Field label="ลิงก์ช่อง" err={E['link_' + p]} htmlFor={id('link-' + p)}>
-                                        <input id={id('link-' + p)} value={a.link_account} maxLength={1000} autoComplete="off"
-                                            onChange={e => upAcc(p, { link_account: e.target.value })} placeholder={LINK_PH[p] || 'https://...'} />
-                                    </Field>
-                                </div>
-                                <div className="qf-row2">
-                                    <Field label="ผู้ติดตาม" htmlFor={id('fol-' + p)} hint="ใส่แล้ว Tier จะเลือกให้อัตโนมัติ">
-                                        <input id={id('fol-' + p)} inputMode="numeric" value={a.followers} autoComplete="off"
-                                            onChange={e => setFollowers(p, e.target.value)} placeholder="เช่น 85000" />
-                                    </Field>
-                                    <Field label="Tier" req err={E['tier_' + p]} htmlFor={id('tier-' + p)}>
-                                        <select id={id('tier-' + p)} value={a.tier} onChange={e => upAcc(p, { tier: e.target.value, tierTouched: true })}>
-                                            <option value="">— เลือก —</option>
-                                            {SOLO_TIERS.map(t => <option key={t} value={t}>{t}</option>)}
-                                        </select>
-                                    </Field>
-                                </div>
-                            </div>
-                        );
-                    })}
-                    <Field label="ช่องทางติดต่อ" req err={E.contact_mode} labelId={id('mode')}>
-                        <Chips options={['self', 'agency']} value={k.contact_mode} onPick={v => upK('contact_mode', v)} labelId={id('mode')}
-                            render={v => (v === 'self' ? 'ติดต่อ KOL เอง' : 'ผ่าน Agency')} />
-                    </Field>
-                    {k.contact_mode === 'agency' && (
-                        <Field label="ชื่อ Agency" req err={E.agency} htmlFor={id('ag')} hint="Agency นี้คือผู้รับเงิน (ถ้าติดต่อเอง ผู้รับเงินคือตัว KOL)">
-                            <input id={id('ag')} value={k.agency} maxLength={200} autoComplete="off" onChange={e => upK('agency', e.target.value)} />
+                {/* ระหว่างบันทึก (หลาย KOL = ทีละคน) ล็อกทุกช่อง — ค่าที่ส่งคือค่าตอนกดบันทึก แก้ระหว่างนั้นจะไม่ถูกส่ง */}
+                <fieldset className="solo-fs" disabled={saving}>
+                    <section className="qf-sec">
+                        <h3 className="qf-sec-head"><span className="qf-num">1</span>KOL</h3>
+                        <Field label="Platform" req err={E.platforms} labelId={id('plat')}
+                            hint={editing && lockedPlatforms.length > 0
+                                ? 'Platform ที่มีงานแล้ว (ดราฟ/Gencode/ID Post/ลงงาน/ยิงแอด) เอาออกไม่ได้'
+                                : (nKol > 1 ? 'ทุก KOL ในฟอร์มนี้ใช้ Platform ชุดเดียวกัน — กรอกบัญชีของแต่ละคนด้านล่าง'
+                                    : 'เลือกได้หลาย Platform — กรอกบัญชีแยกของแต่ละ Platform ด้านล่าง')}>
+                            <Chips options={SOLO_PLATFORMS} value={plats} multi onPick={togglePlatform} labelId={id('plat')}
+                                disabled={p => isLocked(p) && plats.includes(p)} />
                         </Field>
-                    )}
-                </section>
-
-                <section className="qf-sec">
-                    <h3 className="qf-sec-head"><span className="qf-num">2</span>งาน</h3>
-                    <Field label="แบรนด์" req err={E.brand} htmlFor={id('brand')} hint={editing && brandLocked ? 'ล็อกแล้ว — มีคลิปที่ลงงาน/ยิงแอดแล้ว' : ''}>
-                        {brands.length ? (
-                            <select id={id('brand')} value={j.brand} disabled={editing && brandLocked} onChange={e => pickBrand(e.target.value)}>
-                                <option value="">— เลือก —</option>
-                                {brands.map(b => <option key={b} value={b}>{b}</option>)}
-                            </select>
-                        ) : <p className="muted">บัญชีนี้ยังไม่ได้รับสิทธิ์แบรนด์ไหน — ติดต่อผู้ดูแลระบบ</p>}
-                    </Field>
-                    {j.brand && (
-                        <Field label="สินค้า" req err={E.products} labelId={id('prod')} hint="เลือกได้หลายตัว">
-                            <div className="qf-chips solo-products" role="group" aria-labelledby={id('prod')}>
-                                {productOptions.map(p => (
-                                    <button type="button" key={p.code} role="checkbox" aria-checked={j.products.includes(p.code)} title={p.name}
-                                        className={'qf-chip' + (j.products.includes(p.code) ? ' on' : '')} onClick={() => toggleProduct(p.code)}>
-                                        {p.code}<span className="solo-prod-name"> {p.name}</span>
-                                    </button>
-                                ))}
+                        {k.kols.map((x, ki) => (
+                            <div className="solo-plat solo-kcard" key={x.key} data-kol={x.key} role="group" aria-labelledby={id('kh-' + x.key)}>
+                                <div className="solo-kcard-head">
+                                    <span className="solo-plat-head" id={id('kh-' + x.key)}>
+                                        {editing ? 'บัญชี KOL' : `KOL ${ki + 1}`}{!multi && plats[0] ? ` · ${plats[0]}` : ''}
+                                    </span>
+                                    {nKol > 1 && (
+                                        <button type="button" className="solo-kcard-del" onClick={() => removeKol(ki)} disabled={saving}
+                                            aria-label={`ลบ KOL ${ki + 1}`}>ลบ</button>
+                                    )}
+                                </div>
+                                {plats.map(p => {
+                                    const a = accOf(ki, p);
+                                    const at = `${ki}_${p}`;
+                                    const fid = s => id(`${s}-${x.key}-${p}`);
+                                    return (
+                                        <div className="solo-kcard-acc" key={p} role={multi ? 'group' : undefined} aria-label={multi ? p : undefined}>
+                                            {multi && <div className="solo-kcard-plat" aria-hidden="true">{p}</div>}
+                                            <div className="qf-row2">
+                                                <Field label="ชื่อบัญชี" req err={E['acc_' + at]} htmlFor={fid('acc')}>
+                                                    <input id={fid('acc')} value={a.account_name} maxLength={200} autoComplete="off"
+                                                        autoFocus={ki === 0 && p === plats[0]}
+                                                        onChange={e => upAcc(ki, p, { account_name: e.target.value })} placeholder="@ชื่อบัญชี" />
+                                                </Field>
+                                                <Field label="ลิงก์ช่อง" err={E['link_' + at]} htmlFor={fid('link')}>
+                                                    <input id={fid('link')} value={a.link_account} maxLength={1000} autoComplete="off"
+                                                        onChange={e => upAcc(ki, p, { link_account: e.target.value })} placeholder={LINK_PH[p] || 'https://...'} />
+                                                </Field>
+                                            </div>
+                                            <div className="qf-row2">
+                                                <Field label="ผู้ติดตาม" htmlFor={fid('fol')} hint="ใส่แล้ว Tier จะเลือกให้อัตโนมัติ">
+                                                    <input id={fid('fol')} inputMode="numeric" value={a.followers} autoComplete="off"
+                                                        onChange={e => setFollowers(ki, p, e.target.value)} placeholder="เช่น 85000" />
+                                                </Field>
+                                                <Field label="Tier" req err={E['tier_' + at]} htmlFor={fid('tier')}>
+                                                    <select id={fid('tier')} value={a.tier} onChange={e => upAcc(ki, p, { tier: e.target.value, tierTouched: true })}>
+                                                        <option value="">— เลือก —</option>
+                                                        {SOLO_TIERS.map(t => <option key={t} value={t}>{t}</option>)}
+                                                    </select>
+                                                </Field>
+                                            </div>
+                                        </div>
+                                    );
+                                })}
                             </div>
-                        </Field>
-                    )}
-                    <Field label="จำนวนคลิป" req err={E.clips} labelId={id('clips')}
-                        hint={[
-                            clipFloor > 1 && `ลดได้ไม่ต่ำกว่า ${clipFloor} คลิป — คลิปที่ ${clipFloor} มีงานแล้ว (ดราฟ/Gencode/ID Post/ลงงาน/ยิงแอด)`,
-                            multi ? `ทุก Platform ได้จำนวนเท่ากัน — รวม ${j.clips * plats.length} โพสต์ (${j.clips} คลิป × ${plats.length} Platform)` : 'ถ้าเลือกหลาย Platform ทุก Platform ได้จำนวนคลิปเท่ากัน'
-                        ].filter(Boolean).join(' · ')}>
-                        <Chips options={Array.from({ length: SOLO_MAX_CLIPS }, (_, i) => i + 1)} value={j.clips}
-                            onPick={v => upJ('clips', v)} labelId={id('clips')} render={v => `${v} คลิป`}
-                            disabled={v => v < clipFloor} />
-                        {j.clips > 1 && (
-                            <div className="solo-clip-names">
-                                {Array.from({ length: j.clips }, (_, i) => (
-                                    <input key={i} value={j.clip_names[i]} maxLength={100} aria-label={`ชื่อคลิป ${i + 1}`}
-                                        placeholder={`คลิป ${i + 1}`}
-                                        onChange={e => setJ(s => ({ ...s, clip_names: s.clip_names.map((n, x) => (x === i ? e.target.value : n)) }))} />
-                                ))}
+                        ))}
+                        {!editing && (
+                            <div className="solo-add-kol-wrap">
+                                <button type="button" className="solo-add-kol" onClick={addKol} disabled={saving || nKol >= KOL_MAX}>+ Account</button>
+                                <div className="qf-hint">
+                                    {nKol >= KOL_MAX
+                                        ? `ใส่ได้สูงสุด ${KOL_MAX} KOL ต่อการบันทึก 1 ครั้ง`
+                                        : 'เพิ่ม KOL คนอื่นที่ใช้งาน / แบรนด์ / สินค้า / ค่าตัว ชุดเดียวกัน — บันทึกแล้วได้ 1 รายการต่อ 1 KOL'}
+                                </div>
                             </div>
                         )}
-                    </Field>
-                    {editing && feePlats.length > 0 && (
-                        <div className="qf-hint solo-fee-note">Platform ที่เพิ่มใหม่ต้องใส่ค่าตัว · Platform เดิมแก้ค่าตัวที่ช่อง "ค่าตัวต่อคลิป" ในหน้า KOL</div>
-                    )}
-                    {feeFields.length > 1 ? <div className="qf-row2">{feeFields}</div> : feeFields}
-                    {feePlats.length > 1 && <div className="qf-hint solo-fee-note">รวมค่าตัวทุก Platform {feeSum > 0 ? baht(feeSum) : 'ได้ฟรี'}</div>}
-                    <Field label="ผู้ดูแล" req err={E.owner} htmlFor={id('owner')}>
-                        <select id={id('owner')} value={j.owner} onChange={e => upJ('owner', e.target.value)}>
-                            <option value="">— เลือก —</option>
-                            {ownerOptions.map(n => <option key={n} value={n}>{n}</option>)}
-                        </select>
-                    </Field>
-                </section>
+                    </section>
 
-                <section className="qf-sec">
-                    <h3 className="qf-sec-head"><span className="qf-num">3</span>ข้อมูลยิงแอด
-                        <span className="qf-sec-sub">
-                            {anyTarget ? 'Content Type / Campaign และ Target บังคับ (ระบบยิงแอดใช้)' : 'Content Type / Campaign บังคับ'} · ที่เหลือไม่บังคับ
-                        </span></h3>
-                    {plats.map(p => {
-                        const d = adOf(p);
-                        const social = campaignIsCtype(p);
-                        const tOpts = targetOptionsOf(p);
-                        return (
-                            <div className="solo-plat" key={p}>
-                                <div className="solo-plat-head">{p}</div>
-                                <Field label={social ? 'Campaign' : 'Content Type'} req err={E['ct_' + p]} labelId={id('ct-' + p)}>
-                                    <Chips options={ctypeOptionsOf(p)} value={d.content_type} onPick={v => upAd(p, { content_type: v })} labelId={id('ct-' + p)} />
-                                </Field>
-                                {needTarget(p) && (
-                                    <Field label="Target" req={tOpts.length > 0} err={E['tg_' + p]} labelId={id('tg-' + p)}
-                                        hint={j.products.length ? (tOpts.length ? '' : 'สินค้าที่เลือกไม่มี Target ให้เลือก') : 'เลือกสินค้าก่อน'}>
-                                        {tOpts.length > 0 && <Chips options={tOpts} value={d.target} onPick={t => toggleTarget(p, t)} multi labelId={id('tg-' + p)} />}
-                                    </Field>
-                                )}
-                                {needCampaign(p) && !social && (
-                                    <Field label="Campaign" opt="ไม่บังคับ" labelId={id('cp-' + p)}>
-                                        <Chips options={CAMPAIGN_TYPES} value={d.campaign} onPick={v => upAd(p, { campaign: d.campaign === v ? '' : v })} labelId={id('cp-' + p)} />
-                                    </Field>
-                                )}
-                                <div className="qf-row2">
-                                    <Field label="Photo / VDO" labelId={id('mt-' + p)}>
-                                        <Chips options={SOLO_MEDIA} value={d.media_type} onPick={v => upAd(p, { media_type: d.media_type === v ? '' : v })} labelId={id('mt-' + p)} />
-                                    </Field>
-                                    <Field label="Format / Style" htmlFor={id('cf-' + p)}>
-                                        <select id={id('cf-' + p)} value={d.content_format} onChange={e => upAd(p, { content_format: e.target.value })}>
-                                            <option value="">— ไม่ระบุ —</option>
-                                            {CONTENT_FORMATS.map(c => <option key={c} value={c}>{c}</option>)}
-                                        </select>
-                                    </Field>
+                    <section className="qf-sec">
+                        <h3 className="qf-sec-head"><span className="qf-num">2</span>งาน</h3>
+                        <Field label="แบรนด์" req err={E.brand} htmlFor={id('brand')} hint={editing && brandLocked ? 'ล็อกแล้ว — มีคลิปที่ลงงาน/ยิงแอดแล้ว' : ''}>
+                            {brands.length ? (
+                                <select id={id('brand')} value={j.brand} disabled={editing && brandLocked} onChange={e => pickBrand(e.target.value)}>
+                                    <option value="">— เลือก —</option>
+                                    {brands.map(b => <option key={b} value={b}>{b}</option>)}
+                                </select>
+                            ) : <p className="muted">บัญชีนี้ยังไม่ได้รับสิทธิ์แบรนด์ไหน — ติดต่อผู้ดูแลระบบ</p>}
+                        </Field>
+                        {j.brand && (
+                            <Field label="สินค้า" req err={E.products} labelId={id('prod')} hint="เลือกได้หลายตัว">
+                                <div className="qf-chips solo-products" role="group" aria-labelledby={id('prod')}>
+                                    {productOptions.map(p => (
+                                        <button type="button" key={p.code} role="checkbox" aria-checked={j.products.includes(p.code)} title={p.name}
+                                            className={'qf-chip' + (j.products.includes(p.code) ? ' on' : '')} onClick={() => toggleProduct(p.code)}>
+                                            {p.code}<span className="solo-prod-name"> {p.name}</span>
+                                        </button>
+                                    ))}
                                 </div>
-                            </div>
-                        );
-                    })}
-                    <div className="qf-row2">
-                        <Field label="อายุ Gencode" htmlFor={id('ce')}>
-                            <select id={id('ce')} value={j.code_expire} disabled={j.no_gencode} onChange={e => upJ('code_expire', Number(e.target.value))}>
-                                {SOLO_CODE_EXPIRE.map(n => <option key={n} value={n}>{n} วัน</option>)}
+                            </Field>
+                        )}
+                        <Field label="จำนวนคลิป" req err={E.clips} labelId={id('clips')}
+                            hint={[
+                                clipFloor > 1 && `ลดได้ไม่ต่ำกว่า ${clipFloor} คลิป — คลิปที่ ${clipFloor} มีงานแล้ว (ดราฟ/Gencode/ID Post/ลงงาน/ยิงแอด)`,
+                                multi ? `ทุก Platform ได้จำนวนเท่ากัน — รวม ${j.clips * plats.length} โพสต์ (${j.clips} คลิป × ${plats.length} Platform)` : 'ถ้าเลือกหลาย Platform ทุก Platform ได้จำนวนคลิปเท่ากัน'
+                            ].filter(Boolean).join(' · ')}>
+                            <Chips options={Array.from({ length: SOLO_MAX_CLIPS }, (_, i) => i + 1)} value={j.clips}
+                                onPick={v => upJ('clips', v)} labelId={id('clips')} render={v => `${v} คลิป`}
+                                disabled={v => v < clipFloor} />
+                            {j.clips > 1 && (
+                                <div className="solo-clip-names">
+                                    {Array.from({ length: j.clips }, (_, i) => (
+                                        <input key={i} value={j.clip_names[i]} maxLength={100} aria-label={`ชื่อคลิป ${i + 1}`}
+                                            placeholder={`คลิป ${i + 1}`}
+                                            onChange={e => setJ(s => ({ ...s, clip_names: s.clip_names.map((n, x) => (x === i ? e.target.value : n)) }))} />
+                                    ))}
+                                </div>
+                            )}
+                        </Field>
+                        {editing && feePlats.length > 0 && (
+                            <div className="qf-hint solo-fee-note">Platform ที่เพิ่มใหม่ต้องใส่ค่าตัว · Platform เดิมแก้ค่าตัวที่ช่อง "ค่าตัวต่อคลิป" ในหน้า KOL</div>
+                        )}
+                        {feeFields.length > 1 ? <div className="qf-row2">{feeFields}</div> : feeFields}
+                        {feePlats.length > 1 && (
+                            <div className="qf-hint solo-fee-note">รวมค่าตัวทุก Platform {feeSum > 0 ? baht(feeSum) : 'ได้ฟรี'}{nKol > 1 && feeSum > 0 ? ' ต่อ KOL' : ''}</div>
+                        )}
+                        {!editing && nKol > 1 && (
+                            <div className="qf-hint solo-fee-note">ทุก KOL ในฟอร์มนี้ได้ค่าตัวเท่ากัน — ค่าตัวรายคนแก้ทีหลังได้ที่ช่อง "ค่าตัวต่อคลิป" ในหน้า KOL</div>
+                        )}
+                        <Field label="ผู้ดูแล" req err={E.owner} htmlFor={id('owner')}>
+                            <select id={id('owner')} value={j.owner} onChange={e => upJ('owner', e.target.value)}>
+                                <option value="">— เลือก —</option>
+                                {ownerOptions.map(n => <option key={n} value={n}>{n}</option>)}
                             </select>
                         </Field>
-                        <Field label=" " labelId={id('ng')}>
-                            <label className="solo-check">
-                                <input type="checkbox" checked={j.no_gencode} onChange={e => upJ('no_gencode', e.target.checked)} /> ไม่ใช้ Gencode
-                            </label>
+                        <Field label="ลิงก์บรีฟ" opt="ไม่บังคับ" err={E.brief_link} htmlFor={id('bl')}>
+                            <input id={id('bl')} value={j.brief_link} maxLength={1000} autoComplete="off" inputMode="url"
+                                onChange={e => upJ('brief_link', e.target.value)} placeholder="https://drive.google.com/..." />
                         </Field>
-                    </div>
-                    <Field label="Concept" opt="ไม่บังคับ" htmlFor={id('cc')}>
-                        <textarea id={id('cc')} rows={2} value={j.concept} maxLength={1000} onChange={e => upJ('concept', e.target.value)} />
-                    </Field>
-                </section>
+                        <Field label="รายละเอียดบรีฟ" opt="ไม่บังคับ" htmlFor={id('bd')}
+                            hint={j.note.length >= 800 ? `${j.note.length.toLocaleString('th-TH')}/1,000 ตัวอักษร` : ''}>
+                            <textarea id={id('bd')} rows={4} value={j.note} maxLength={1000} onChange={e => upJ('note', e.target.value)}
+                                placeholder="สิ่งที่ต้องการให้ KOL ทำ / จุดที่ต้องพูดถึง / ข้อห้าม" />
+                        </Field>
+                    </section>
+
+                    <section className="qf-sec">
+                        <h3 className="qf-sec-head"><span className="qf-num">3</span>ข้อมูลยิงแอด
+                            <span className="qf-sec-sub">
+                                {anyTarget ? 'Content Type / Campaign และ Target บังคับ (ระบบยิงแอดใช้)' : 'Content Type / Campaign บังคับ'} · ที่เหลือไม่บังคับ
+                            </span></h3>
+                        {plats.map(p => {
+                            const d = adOf(p);
+                            const social = campaignIsCtype(p);
+                            const tOpts = targetOptionsOf(p);
+                            return (
+                                <div className="solo-plat" key={p}>
+                                    <div className="solo-plat-head">{p}</div>
+                                    <Field label={social ? 'Campaign' : 'Content Type'} req err={E['ct_' + p]} labelId={id('ct-' + p)}>
+                                        <Chips options={ctypeOptionsOf(p)} value={d.content_type} onPick={v => upAd(p, { content_type: v })} labelId={id('ct-' + p)} />
+                                    </Field>
+                                    {needTarget(p) && (
+                                        <Field label="Target" req={tOpts.length > 0} err={E['tg_' + p]} labelId={id('tg-' + p)}
+                                            hint={j.products.length ? (tOpts.length ? '' : 'สินค้าที่เลือกไม่มี Target ให้เลือก') : 'เลือกสินค้าก่อน'}>
+                                            {tOpts.length > 0 && <Chips options={tOpts} value={d.target} onPick={t => toggleTarget(p, t)} multi labelId={id('tg-' + p)} />}
+                                        </Field>
+                                    )}
+                                    {needCampaign(p) && !social && (
+                                        <Field label="Campaign" opt="ไม่บังคับ" labelId={id('cp-' + p)}>
+                                            <Chips options={CAMPAIGN_TYPES} value={d.campaign} onPick={v => upAd(p, { campaign: d.campaign === v ? '' : v })} labelId={id('cp-' + p)} />
+                                        </Field>
+                                    )}
+                                    <div className="qf-row2">
+                                        <Field label="Photo / VDO" labelId={id('mt-' + p)}>
+                                            <Chips options={SOLO_MEDIA} value={d.media_type} onPick={v => upAd(p, { media_type: d.media_type === v ? '' : v })} labelId={id('mt-' + p)} />
+                                        </Field>
+                                        <Field label="Format / Style" htmlFor={id('cf-' + p)}>
+                                            <select id={id('cf-' + p)} value={d.content_format} onChange={e => upAd(p, { content_format: e.target.value })}>
+                                                <option value="">— ไม่ระบุ —</option>
+                                                {CONTENT_FORMATS.map(c => <option key={c} value={c}>{c}</option>)}
+                                            </select>
+                                        </Field>
+                                    </div>
+                                </div>
+                            );
+                        })}
+                        <div className="qf-row2">
+                            <Field label="อายุ Gencode" htmlFor={id('ce')}>
+                                <select id={id('ce')} value={j.code_expire} disabled={j.no_gencode} onChange={e => upJ('code_expire', Number(e.target.value))}>
+                                    {SOLO_CODE_EXPIRE.map(n => <option key={n} value={n}>{n} วัน</option>)}
+                                </select>
+                            </Field>
+                            <Field label=" " labelId={id('ng')}>
+                                <label className="solo-check">
+                                    <input type="checkbox" checked={j.no_gencode} onChange={e => upJ('no_gencode', e.target.checked)} /> ไม่ใช้ Gencode
+                                </label>
+                            </Field>
+                        </div>
+                        <Field label="Concept" opt="ไม่บังคับ" htmlFor={id('cc')}>
+                            <textarea id={id('cc')} rows={2} value={j.concept} maxLength={1000} onChange={e => upJ('concept', e.target.value)} />
+                        </Field>
+                    </section>
+                </fieldset>
             </div>
         </SideDrawer>
     );
