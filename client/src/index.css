@@ -2604,36 +2604,29 @@ a.ads-thumb:focus-visible { outline: 2px solid var(--mint-dark); outline-offset:
 .bh-sub { font-size: 12px; font-weight: 600; opacity: .8; }
 
 /* ===== แถบแบ่งกลุ่มให้เห็นชัด =====
-   เดิมเป็นแถบจาง ๆ กลืนกับแถวข้อมูล เลื่อนยาว ๆ แล้วแยกไม่ออกว่าจบกลุ่มไหน
-   เปลี่ยนเป็นแถบมินต์ทึบ ตัวหนังสือขาว + เว้นระยะเหนือแถบให้ห่างชัด */
+   เดิมเป็นแถบจาง ๆ กลืนกับแถวข้อมูล เลื่อนยาว ๆ แล้วแยกไม่ออกว่าจบกลุ่มไหน → เว้นระยะเหนือแถบให้ห่างชัด + ขอบซ้ายมินต์หนา
+   6 ต.ค. 2026 ผู้ใช้สั่งเลิกพื้นเขียวเข้ม (มินต์ทึบ ตัวหนังสือขาว) → พื้นมินต์อ่อน ตัวหนังสือเข้ม */
 .grp-bar {
-    padding: 13px 16px;
+    padding: 12px 16px;
     margin: 38px 0 12px;
-    background: linear-gradient(90deg, var(--mint-dark), var(--mint));
-    border: 0;
+    background: #effaf5;
+    border: 1px solid #cfeee0; border-left: 5px solid var(--mint);
     border-radius: 13px;
-    box-shadow: 0 6px 18px rgba(16, 185, 129, .22);
-    color: #fff;
+    box-shadow: 0 2px 8px rgba(16, 185, 129, .08);
+    color: var(--text);
 }
 .kol-group-card:first-child .grp-bar, .proc-group:first-child .grp-bar { margin-top: 6px; }
 .grp-bar .grp-no {
     background: #fff; color: var(--mint-dark);
     font-size: 14px; font-weight: 900; letter-spacing: .2px;
-    padding: 5px 15px; border: 0; box-shadow: 0 2px 6px rgba(0, 0, 0, .12);
+    padding: 4px 15px; border: 1.5px solid var(--mint); box-shadow: none;
 }
-.grp-bar .grp-no.muted-bar { color: #6b7280; }
-.grp-bar .grp-concept { color: #fff; opacity: .95; font-weight: 600; }
-.grp-bar .grp-count {
-    background: rgba(255, 255, 255, .24); color: #fff;
-    border: 1px solid rgba(255, 255, 255, .45); font-size: 12px;
-}
-.grp-bar .grp-count-clip { color: #eef2ff; }
-/* รหัสสินค้า/ชิป บนพื้นมินต์ ต้องเป็นสีขาว ไม่งั้นสีน้ำเงินเดิมอ่านไม่ออก */
-.grp-bar .prod-codes { color: #fff; }
-.grp-bar .prod-codes-more { color: #fff; border-color: rgba(255, 255, 255, .65); }
-.grp-bar .prod-codes-more:hover { background: rgba(255, 255, 255, .18); }
-.grp-bar .prodchip, .grp-bar .prodchip-more { background: #fff; border-color: transparent; color: var(--mint-dark); }
-.grp-bar .prodchip:hover { background: #fff; }
+.grp-bar .grp-no.muted-bar { color: #6b7280; border-color: var(--border); }
+.grp-bar .grp-concept { color: var(--text); opacity: .85; font-weight: 600; }
+.grp-bar .grp-count { background: #fff; color: var(--mint-dark); border: 1px solid #cfeee0; font-size: 12px; }
+.grp-bar .grp-count-clip { color: #4338ca; }
+/* ชิปสินค้าบนพื้นมินต์อ่อน — พื้นขาวให้แยกจากแถบ (รหัสสินค้าแบบตัวหนังสือใช้สีเดิม) */
+.grp-bar .prodchip, .grp-bar .prodchip-more { background: #fff; }
 
 /* งบที่รีเควสเพิ่มทีหลัง (แจกแจงใต้ยอดงบ) */
 .bento-hero-extra { margin-top: 8px; font-size: 12px; font-weight: 600; color: rgba(255, 255, 255, .92); }
@@ -3043,7 +3036,7 @@ a.ads-thumb:focus-visible { outline: 2px solid var(--mint-dark); outline-offset:
 /* แถบหัวกลุ่ม On Process: ส่งแล้ว/ต้องการ ต่อสินค้า — ขึ้นบรรทัดใหม่ใต้แถวหลักของแถบ */
 .grp-pkol { flex-basis: 100%; display: flex; flex-wrap: wrap; align-items: center; gap: 5px; }
 .grp-pkol-lbl { font-size: 11.5px; font-weight: 700; opacity: .95; }
-.grp-pkol-chip { display: inline-flex; align-items: center; gap: 4px; padding: 2px 9px; border-radius: 8px; background: #fff; color: var(--mint-dark); font-size: 11.5px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.grp-pkol-chip { display: inline-flex; align-items: center; gap: 4px; padding: 2px 9px; border-radius: 8px; background: #fff; color: var(--mint-dark); font-size: 11.5px; font-weight: 700; font-variant-numeric: tabular-nums; box-shadow: inset 0 0 0 1px #cfeee0; }
 .grp-pkol-chip small { font-size: 10px; font-weight: 600; opacity: .8; }
 .grp-pkol-chip b { font-weight: 900; }
 .grp-pkol-chip.over { background: #fee2e2; color: #b91c1c; box-shadow: inset 0 0 0 1.5px #f87171; }
