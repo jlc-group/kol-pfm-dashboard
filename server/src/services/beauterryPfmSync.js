@@ -1,4 +1,5 @@
 const store = require('../store');
+const { pfmSourceBrands } = require('../store/logic');
 
 const SOURCE = 'beauterry-pfm';
 const DEFAULT_BASE_URL = 'http://127.0.0.1:8202';
@@ -90,9 +91,10 @@ async function runSync({ storeImpl = store, fetchImpl = fetch, env = process.env
     running = true;
     const startedAt = new Date().toISOString();
     try {
-        const itemIds = await storeImpl.adsSync.itemIds();
+        // ถามเฉพาะคลิปของแบรนด์ที่ PFM ตัวนี้ดูแล (logic.js PFM_SOURCES · ตอนนี้ Beauterry) — แบรนด์อื่นไม่ถูกส่งมาถาม (6 ต.ค. 2026)
+        const itemIds = await storeImpl.adsSync.itemIds(pfmSourceBrands(SOURCE));
         const result = { requested: itemIds.length, received: 0, source_not_found: [], updated: 0,
-            stale: 0, stale_raised: 0, regressed_metrics: 0, stamped: 0, not_found: [], skipped: 0,
+            stale: 0, stale_raised: 0, regressed_metrics: 0, stamped: 0, not_found: [], skipped: 0, other_brand: 0,
             started_at: startedAt };
         for (let offset = 0; offset < itemIds.length; offset += MAX_BATCH_SIZE) {
             const batch = itemIds.slice(offset, offset + MAX_BATCH_SIZE);
@@ -100,7 +102,7 @@ async function runSync({ storeImpl = store, fetchImpl = fetch, env = process.env
             result.received += exported.rows.length;
             result.source_not_found.push(...exported.notFound);
             const applied = await storeImpl.adsSync.apply(exported.rows);
-            for (const key of ['updated', 'stale', 'stale_raised', 'regressed_metrics', 'stamped', 'skipped']) {
+            for (const key of ['updated', 'stale', 'stale_raised', 'regressed_metrics', 'stamped', 'skipped', 'other_brand']) {
                 result[key] += applied[key] || 0;
             }
             result.not_found.push(...(applied.not_found || []));
@@ -125,7 +127,8 @@ function syncSummaryLine(r) {
     return `Beauterry PFM sync completed: ${n(r.updated)}/${n(r.requested)} updated`
         + ` · received ${n(r.received)} · PFM ไม่มี ${n(r.source_not_found)} · จับคู่ไม่ได้ ${n(r.not_found)}`
         + ` · เวลาต้นทางไม่ขยับ ${n(r.stale)} (รับยอดที่สูงขึ้น ${n(r.stale_raised)})`
-        + ` · ยอดต่ำกว่าเดิมไม่รับ ${n(r.regressed_metrics)} · ข้าม ${n(r.skipped)} · สแตมป์ ${n(r.stamped)}`;
+        + ` · ยอดต่ำกว่าเดิมไม่รับ ${n(r.regressed_metrics)} · ข้าม ${n(r.skipped)} · สแตมป์ ${n(r.stamped)}`
+        + (n(r.other_brand) ? ` · คลิปแบรนด์อื่นไม่รับ ${n(r.other_brand)}` : '');
 }
 
 function getStatus(env = process.env) {

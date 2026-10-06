@@ -190,8 +190,10 @@ function CopyCode({ value, empty = '—', none = false, full = false }) {
 // เมนูใช้ position:fixed เพราะหัวตารางอยู่ในกรอบที่เลื่อนแนวนอน ถ้าใช้ absolute จะโดนตัด
 
 // TikTok ยิงแอดผ่านระบบ PFM (ผู้ใช้สั่ง 2 ต.ค. 2026) — สถานะยิงแล้วขึ้นเองจาก PFM (มี ad เกาะคลิป / มีค่าแอด) ห้ามกดเอง
-// ต้องตรงกับ adStatusAuto ใน server/src/store/logic.js (server ปฏิเสธการกดของแถว TikTok อยู่แล้ว)
-const adStatusAuto = row => /^\s*tiktok/i.test(String(row.platform || ''));
+// 6 ต.ค. 2026: เฉพาะแบรนด์ที่ต่อ PFM แล้ว (ตอนนี้ Beauterry) — server ตัดสินให้ต่อแถว (status_auto · logic.js adStatusAuto)
+// TikTok ของแบรนด์อื่น (เช่น Jula's Herb) กดยิงแล้วเองได้แบบ Facebook / Instagram
+// server รุ่นก่อน (ยังไม่รีสตาร์ต) ไม่ส่ง status_auto → ถือว่า TikTok ทุกแถวเป็นของ PFM แบบเดิม (server รุ่นนั้นก็ปฏิเสธการกดอยู่แล้ว)
+const adStatusAuto = row => (typeof row.status_auto === 'boolean' ? row.status_auto : /^\s*tiktok/i.test(String(row.platform || '')));
 
 // แท็บ "ต้องยิงแอด" / "ไม่ต้องยิงแอด / ไม่ใช้ Gencode" (ผู้ใช้สั่ง 5 ต.ค. 2026) — จำแท็บล่าสุดในเครื่องนี้ (อ่าน/เขียนไม่ได้ = แท็บต้องยิง)
 const ADS_TAB_KEY = 'ads:tab';
@@ -391,8 +393,8 @@ function AdRow({ row, onSaved, canCost, noAd = false }) {
                     onClick={toggleStatus} disabled={saving}
                     title={doneFromSpend
                         ? (end
-                            ? 'รู้ว่ายิงแล้วจากค่าแอดที่ PFM ซิงก์เข้ามา แต่ยังไม่มีใครกดยืนยัน — กดเพื่อยืนยัน (ใช้วันยิงแอดเดิม)'
-                            : 'รู้ว่ายิงแล้วจากค่าแอดที่ PFM ซิงก์เข้ามา แต่ยังไม่มีใครกดยืนยัน — กดเพื่อยืนยันและลงวันยิงแอดเป็นวันนี้')
+                            ? 'รู้ว่ายิงแล้วจากค่าแอด (ค่าแอดเดินแล้ว) แต่ยังไม่มีใครกดยืนยัน — กดเพื่อยืนยัน (ใช้วันยิงแอดเดิม)'
+                            : 'รู้ว่ายิงแล้วจากค่าแอด (ค่าแอดเดินแล้ว) แต่ยังไม่มีใครกดยืนยัน — กดเพื่อยืนยันและลงวันยิงแอดเป็นวันนี้')
                         : (shownStatus === 'ยิงแล้ว' ? 'กดเพื่อกลับเป็นยังไม่ยิง' : 'กดเมื่อยิงแอดคลิปนี้แล้ว')}>
                     {shownStatus === 'ยิงแล้ว' ? '✓ ยิงแล้ว' : 'ยังไม่ยิง'}
                     {doneFromSpend && <em>จากค่าแอด</em>}

@@ -17,7 +17,8 @@ const {
     resolveGroupTarget, resolveGroupProducts, resolveGroupCtype, resolveGroupMedia, resolveGroupCampaign,
     engagementOf, clipCostMetrics, perfVerdict,
     maybeStamp, stampWaitReason, normalizeStamp, stampAtFor, pfmManagedSpend, postCheckWaiting,
-    adRanBySpend, effectiveAdStatus, postNoGencode, pooledCpe, viewsMissingReason, firstByIdPost
+    adRanBySpend, effectiveAdStatus, postNoGencode, pooledCpe, viewsMissingReason, firstByIdPost,
+    adStatusAuto, pfmSourceBrands, isPfmBrand
 } = logic;
 
 // ===== สแตมป์ Performance ตอนค่าแอดถึงเกณฑ์ =====
@@ -31,22 +32,33 @@ const {
 // ค่าแอดไม่ถูกแสดงที่ไหนในหน้าเว็บ ใช้เป็นตัวจุดชนวนสแตมป์อย่างเดียว
 const METRIC_KEYS = ['views', 'likes', 'comments', 'saves', 'shares', 'reposts'];
 
+const lowerTrim = v => String(v == null ? '' : v).trim().toLowerCase();
+
 const adsSync = {
-    async itemIds() {
+    // ID Post ที่จะส่งไปถาม PFM — เฉพาะ TikTok ของแบรนด์ที่ PFM ตัวนั้นดูแล (ผู้ใช้สั่ง 6 ต.ค. 2026)
+    // เดิมถามทุกแบรนด์ (Jula's Herb ก็ถูกส่งไปถาม PFM ของ Beauterry) · brands = แบรนด์ของ PFM ตัวนั้น (logic.js pfmSourceBrands)
+    // ต้องตรงกับ logic.js viewsMissingReason
+    async itemIds(brands = pfmSourceBrands('beauterry-pfm')) {
+        const keys = [...new Set((brands || []).map(lowerTrim).filter(Boolean))];
+        if (!keys.length) return [];
         const result = await query(
-            `SELECT DISTINCT btrim(id_post) AS id_post
-             FROM submissions
-             WHERE platform ILIKE 'tiktok%'
-               AND nullif(btrim(id_post), '') IS NOT NULL
-             ORDER BY id_post`
+            `SELECT DISTINCT btrim(s.id_post) AS id_post
+             FROM submissions s
+             JOIN projects p ON p.id = s.project_id
+             WHERE s.platform ILIKE 'tiktok%'
+               AND nullif(btrim(s.id_post), '') IS NOT NULL
+               AND lower(btrim(p.brand)) = ANY($1::text[])
+             ORDER BY id_post`,
+            [keys]
         );
         return result.rows.map(row => String(row.id_post));
     },
 
     async apply(rows) {
         // stale = แถวที่เวลาอัปเดตของต้นทางไม่ใหม่กว่าเดิม · stale_raised = ในนั้นมีกี่แถวที่ยังรับยอดที่สูงขึ้นได้
+        // other_brand = แถวจาก PFM ที่ตรงกับคลิปของแบรนด์อื่น (ไม่ใช่แบรนด์ของ PFM ตัวนั้น) — ไม่รับ (6 ต.ค. 2026)
         const out = { updated: 0, stale: 0, stale_raised: 0, regressed_metrics: 0,
-            stamped: 0, not_found: [], skipped: 0 };
+            stamped: 0, not_found: [], skipped: 0, other_brand: 0 };
         if (!rows || !rows.length) return out;
 
         // ต้องมี projects ด้วย เพราะเกณฑ์สแตมป์แยกตามแบรนด์ และแบรนด์อยู่ที่ projects.brand
@@ -54,6 +66,21 @@ const adsSync = {
         const snap = await loadSnapshot(['projects', 'submissions']);
         const brandOf = {}, typeOf = {};
         snap.projects.forEach(p => { brandOf[p.id] = p.brand; typeOf[p.id] = p.campaign_type; });
+        // แถวที่มาจาก PFM ของแบรนด์ (pfm_source ที่รู้จัก) จับคู่ได้เฉพาะคลิปของแบรนด์นั้น — แหล่งอื่น (ไม่มี pfm_source) เหมือนเดิม
+        const poolBySource = new Map();
+        const poolFor = source => {
+            const brands = source ? pfmSourceBrands(source) : null;
+            if (!brands) return snap.submissions;
+            if (!poolBySource.has(source)) {
+                const keys = new Set(brands.map(lowerTrim));
+                poolBySource.set(source, snap.submissions.filter(x => keys.has(lowerTrim(brandOf[x.project_id]))));
+            }
+            return poolBySource.get(source);
+        };
+        const matches = r => x =>
+            (r.submission_id && x.id === Number(r.submission_id))
+            || (r.gencode && String(x.gencode || '').trim() === String(r.gencode).trim())
+            || (r.id_post && String(x.id_post || '').trim() === String(r.id_post).trim());
         // เก็บ "คอลัมน์ที่ถูกแตะ" ต่อ submission เพื่อไม่เขียนทับฟิลด์ที่ไม่เกี่ยวข้อง
         const touched = new Map();   // subId -> { sub, cols:Set }
         const mark = (s, col) => {
@@ -65,11 +92,13 @@ const adsSync = {
         for (const r of rows) {
             const key = String(r.gencode || r.id_post || r.submission_id || '').trim();
             if (!key) { out.skipped++; continue; }
-            const s = snap.submissions.find(x =>
-                (r.submission_id && x.id === Number(r.submission_id))
-                || (r.gencode && String(x.gencode || '').trim() === String(r.gencode).trim())
-                || (r.id_post && String(x.id_post || '').trim() === String(r.id_post).trim()));
-            if (!s) { out.not_found.push(key); continue; }
+            const s = poolFor(r.pfm_source).find(matches(r));
+            if (!s) {
+                // มีคลิปที่ตรง แต่เป็นของแบรนด์อื่น = ไม่ใช่งานของ PFM ตัวนี้ — ไม่เขียนอะไรลงไป
+                if (r.pfm_source && snap.submissions.some(matches(r))) out.other_brand++;
+                else out.not_found.push(key);
+                continue;
+            }
             // ค่าแอดเดินหน้าอย่างเดียว กันข้อมูลย้อนหลังมาลบยอดสะสม
             if (r.ad_spend !== undefined) {
                 const next = Number(r.ad_spend) || 0;
@@ -159,8 +188,9 @@ const ads = {
 
         // ค่าตัวของแต่ละแถว ไว้คิด CPE รวมของการ์ดบนหน้า (ค่าตัว ÷ engagement — pooledCpe) — ไม่ส่งค่าตัวออกไปกับแถว (ข้อมูลลับของ member)
         const costIn = new Map();
-        // ID Post ซ้ำ: ซิงก์ลงยอดแถว id ต่ำสุด — คิดจากทุกแถว (ไม่กรองสิทธิ์/สถานะ) แบบเดียวกับ adsSync.apply
-        const firstByPost = firstByIdPost(snap.submissions);
+        // ID Post ซ้ำ: ซิงก์ลงยอดแถว id ต่ำสุด — คิดจากแถวของแบรนด์ที่ต่อ PFM เท่านั้น แบบเดียวกับ adsSync.apply (แบรนด์อื่นไม่ถูกซิงก์ · 6 ต.ค. 2026) · ไม่กรองสิทธิ์/สถานะ
+        const pfmProjIds = new Set(snap.projects.filter(p => isPfmBrand(p.brand)).map(p => p.id));
+        const firstByPost = firstByIdPost(snap.submissions.filter(s => pfmProjIds.has(s.project_id)));
         let rows = snap.submissions
             // เฉพาะโพสต์ที่มีลิงก์แล้ว และเฉพาะแคมเปญ KOL — งานจ้างอื่น ๆ ไม่เข้าหน้ายิงแอด
             .filter(s => s.post_url && String(s.post_url).trim()
@@ -221,14 +251,16 @@ const ads = {
                     ad_done_from_spend: adRanBySpend(s) && s.ad_status !== 'ยิงแล้ว',
                     ad_spend: spend,
                     ad_reach: reach,
-                    // ค่าแอดมาจาก PFM อัตโนมัติ (หน้าโฆษณาไม่ให้กรอกทับ)
-                    spend_from_pfm: pfmManagedSpend(s),
+                    // ค่าแอดมาจาก PFM อัตโนมัติ (หน้าโฆษณาไม่ให้กรอกทับ) — TikTok ของแบรนด์ที่ยังไม่ต่อ PFM กรอกเองได้
+                    spend_from_pfm: pfmManagedSpend(s, p && p.brand),
+                    // สถานะยิงแล้วมาจาก PFM (ปุ่มสถานะเป็นป้ายอ่านอย่างเดียว) — TikTok ของแบรนด์ที่ต่อ PFM แล้วเท่านั้น (6 ต.ค. 2026)
+                    status_auto: adStatusAuto(s, p && p.brand),
                     ad_start: s.ad_start || null,
                     ad_end: s.ad_end || null,
                     ad_note: s.ad_note || null,
                     cpm: adCpm(spend, reach),
                     // ทำไมยังไม่มียอดวิว (ป้าย Not rated / Awaiting data) — null = มียอดวิวแล้ว (logic.js viewsMissingReason)
-                    views_reason: viewsMissingReason(s, firstByPost),
+                    views_reason: viewsMissingReason(s, firstByPost, p && p.brand),
                     // Performance ของคอนเทนต์ — ใช้ตัดสินว่าควรยิงต่อหรือหยุด
                     ...(() => {
                         const views = Number(s.views) || 0;

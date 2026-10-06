@@ -84,7 +84,8 @@ router.put('/:subId', async (req, res, next) => {
             if (!canSeeCostMetrics(viewer)) {
                 return res.status(403).json({ status: 'error', message: 'ไม่มีสิทธิ์แก้ค่าแอด (ดูและแก้ได้เฉพาะผู้ดูแลระบบและ Manager)' });
             }
-            if (pfmManagedSpend(ctx.submission)) {
+            // TikTok ของแบรนด์ที่ยังไม่ต่อ PFM กรอกค่าแอดเองได้ (6 ต.ค. 2026 — ctx.brand = แบรนด์ของแคมเปญ)
+            if (pfmManagedSpend(ctx.submission, ctx.brand)) {
                 return res.status(409).json({ status: 'error', message: 'ค่าแอดของโพสต์นี้ซิงก์จากระบบ PFM อัตโนมัติ — แก้เองไม่ได้' });
             }
         }
@@ -98,7 +99,8 @@ router.put('/:subId', async (req, res, next) => {
             return res.status(400).json({ status: 'error', message: 'สถานะไม่ถูกต้อง' });
         }
         // TikTok: สถานะมาจาก PFM อัตโนมัติ — กดเองไม่ได้ทั้งสองทาง (หน้าเว็บที่เปิดค้างรุ่นก่อน / เรียก API ตรง ก็ไม่ผ่าน)
-        if (ad_status !== undefined && adStatusAuto(ctx.submission)) {
+        // เฉพาะแบรนด์ที่ต่อ PFM แล้ว — TikTok ของแบรนด์อื่นกดเองได้ (6 ต.ค. 2026)
+        if (ad_status !== undefined && adStatusAuto(ctx.submission, ctx.brand)) {
             return res.status(409).json({ status: 'error', message: 'โพสต์ TikTok ยิงแอดผ่านระบบ PFM — สถานะยิงแล้วขึ้นเองอัตโนมัติ กดเองไม่ได้' });
         }
         // หน้า Ads ที่เปิดค้างไว้: เอเจนซี่เพิ่งแก้ข้อมูลโพสต์ แถวนี้รอทีมตรวจ (ออกจากหน้า Ads แล้ว) — ห้ามกดยิงแล้วด้วยข้อมูลเก่า

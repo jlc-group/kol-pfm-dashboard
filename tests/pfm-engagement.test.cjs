@@ -80,7 +80,8 @@ const byId = (rows, id) => rows.find(r => r.sub_id === id);
 
 // ---------------------------------------------------------------- D: เหตุที่ยังไม่มียอดวิว
 test('viewsMissingReason: แยกเหตุตามที่ระบบขอข้อมูลจาก PFM จริง · มียอดวิวแล้ว = null', () => {
-    const r = s => viewsMissingReason(SUB(s));
+    // แคมเปญ Beauterry (ต่อ PFM แล้ว) — แบรนด์อื่นดู tests/pfm-brand-scope.test.cjs
+    const r = s => viewsMissingReason(SUB(s), null, 'Beauterry');
     assert.equal(r({ views: 10 }), null);
     assert.equal(r({ platform: 'Instagram' }), 'not_tiktok');
     assert.equal(r({ platform: null }), 'not_tiktok');
@@ -90,15 +91,15 @@ test('viewsMissingReason: แยกเหตุตามที่ระบบข
     assert.equal(r({ id_post: '7690488609664748807?lang=th' }), 'bad_id_post');
     assert.equal(r({ id_post: ' 7690488609664748807 ' }), 'pfm_no_clip', 'ตัดช่องว่างหัวท้ายแบบเดียวกับ btrim');
     assert.equal(r({ id_post: '7690488609664748807', ad_synced_at: '2026-10-01T00:00:00Z' }), 'pfm_no_views');
-    assert.equal(viewsMissingReason(null), null);
+    assert.equal(viewsMissingReason(null, null, 'Beauterry'), null);
     // ID Post ซ้ำ: แถวที่ไม่ใช่แถวแรก + แถวแรกซิงก์ได้แล้ว = dup_id_post · แถวแรกยังไม่ได้ = pfm_no_clip · ไม่ส่ง Map = ไม่เช็คซ้ำ
     const subs = [SUB({ id: 1, id_post: '9', ad_synced_at: 'x' }), SUB({ id: 2, id_post: '9 ' }), SUB({ id: 3, id_post: '8' }), SUB({ id: 4, id_post: '8' })];
     const first = firstByIdPost(subs);
     assert.equal(first.get('9').id, 1);
-    assert.equal(viewsMissingReason(subs[1], first), 'dup_id_post');
-    assert.equal(viewsMissingReason(subs[3], first), 'pfm_no_clip');
-    assert.equal(viewsMissingReason(subs[1]), 'pfm_no_clip');
-    assert.equal(viewsMissingReason(SUB({ id_post: '\t9' })), 'bad_id_post', 'btrim ตัดเฉพาะช่องว่าง (tab ไม่ตัด แบบเดียวกับ SQL)');
+    assert.equal(viewsMissingReason(subs[1], first, 'Beauterry'), 'dup_id_post');
+    assert.equal(viewsMissingReason(subs[3], first, 'Beauterry'), 'pfm_no_clip');
+    assert.equal(viewsMissingReason(subs[1], null, 'Beauterry'), 'pfm_no_clip');
+    assert.equal(viewsMissingReason(SUB({ id_post: '\t9' }), null, 'Beauterry'), 'bad_id_post', 'btrim ตัดเฉพาะช่องว่าง (tab ไม่ตัด แบบเดียวกับ SQL)');
 });
 
 test('ads.list / kols.analytics ส่ง views_reason ต่อแถว', async () => {

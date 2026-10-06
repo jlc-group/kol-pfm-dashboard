@@ -9,7 +9,7 @@
  */
 const { query, insertRow, updateRow, asNum, asNumOrNull, asJson } = require('./_base');
 const { loadSnapshot } = require('./_snapshot');
-const { now, clone, duplicateError, scopeProjects, stampWaitReason, normalizeStamp, stampAtFor, clipCostMetrics, perfVerdict, postNoGencode, viewsMissingReason, firstByIdPost } = require('../logic');
+const { now, clone, duplicateError, scopeProjects, stampWaitReason, normalizeStamp, stampAtFor, clipCostMetrics, perfVerdict, postNoGencode, viewsMissingReason, firstByIdPost, isPfmBrand } = require('../logic');
 
 // id ที่ส่งมาเป็นสตริงจาก URL — jsonStore ใช้ Number(id) เทียบตรง ๆ
 // ค่าที่แปลงไม่ได้ (NaN) จะหาไม่เจอเสมอ ต้องดักไว้ก่อนยิง SQL ไม่งั้น Postgres จะ error แทนที่จะคืน null
@@ -202,8 +202,9 @@ const kols = {
 
         // เฉพาะคนที่ลงงานแล้ว (มีลิงก์โพสต์ — เกณฑ์เดียวกับหน้า Ads) · คนที่ยังไม่ลงงานไม่ขึ้นหน้านี้ และไม่นับในตัวเลขสรุป
         const posted = s => String(s.post_url == null ? '' : s.post_url).trim() !== '';
-        // ID Post ซ้ำ: ซิงก์ลงยอดแถว id ต่ำสุด — คิดจากทุกแถว แบบเดียวกับ adsSync.apply (ป้าย Not rated บอก "ID Post ซ้ำ")
-        const firstByPost = firstByIdPost(snap.submissions);
+        // ID Post ซ้ำ: ซิงก์ลงยอดแถว id ต่ำสุด — คิดจากแถวของแบรนด์ที่ต่อ PFM เท่านั้น แบบเดียวกับ adsSync.apply (แบรนด์อื่นไม่ถูกซิงก์ · 6 ต.ค. 2026) · ป้าย Not rated บอก "ID Post ซ้ำ"
+        const pfmProjIds = new Set(snap.projects.filter(p => isPfmBrand(p.brand)).map(p => p.id));
+        const firstByPost = firstByIdPost(snap.submissions.filter(s => pfmProjIds.has(s.project_id)));
         const rows = snap.submissions
             .filter(s => s.status === 'confirmed' && projIds.has(s.project_id) && posted(s))
             .map(s => {
@@ -252,7 +253,7 @@ const kols = {
                     // เกณฑ์ค่าแอดที่จะสแตมป์ของแบรนด์นี้ (หน้าเว็บเอาไปบอกตัวเลขในคำอธิบาย)
                     stamp_at: stampAt,
                     // ทำไมยังไม่มียอดวิว (ป้าย Not rated) — null = มียอดวิวแล้ว (logic.js viewsMissingReason)
-                    views_reason: viewsMissingReason(s, firstByPost)
+                    views_reason: viewsMissingReason(s, firstByPost, p && p.brand)
                 };
                 return {
                     sub_id: s.id, project_id: s.project_id, project_name: p ? p.name : null,

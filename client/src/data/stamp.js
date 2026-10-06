@@ -20,6 +20,8 @@ export function viewsReasonText(reason, row = {}) {
     switch (reason) {
         // Facebook / Instagram: WeBoostX ส่งแค่ค่าแอด / Reach (ไม่ส่งยอดวิว organic) — ยอดวิวยังต้องกรอกเอง
         case 'not_tiktok': return { short: plat + ' · กรอกเอง', long: `ยอดวิว/engagement ของคลิป ${plat} ไม่มีระบบส่งมาให้ (PFM ส่งเฉพาะ TikTok · WeBoostX ส่งแค่ค่าแอด/Reach ของ Facebook/Instagram) — กรอกยอดเองที่ปุ่ม 📊 ในหน้า On Process ของแคมเปญ` };
+        // TikTok ของแบรนด์ที่ยังไม่ต่อ PFM (ตอนนี้ต่อแค่ Beauterry · 6 ต.ค. 2026) — ระบบไม่ส่งไปถามยอด
+        case 'no_pfm_brand': return { short: 'แบรนด์นี้ยังไม่มี PFM · กรอกเอง', long: `แบรนด์ ${String((row && row.brand) || '').trim() || 'นี้'} ยังไม่ได้ต่อระบบ PFM (ตอนนี้ต่อแค่ Beauterry) — ระบบจึงไม่ดึงยอดวิว/ค่าแอดให้ กรอกยอดเองที่ปุ่ม 📊 ในหน้า On Process ของแคมเปญ · สถานะยิงแล้วกดเองได้ที่หน้า Ads (ค่าแอดกรอกได้เฉพาะ Admin / Manager) · พอแบรนด์นี้ต่อ PFM ของตัวเองแล้ว ยอดจะเข้ามาเอง` };
         case 'no_id_post': return { short: 'ยังไม่มี ID Post', long: 'ยังไม่ได้ใส่ ID Post ของคลิปนี้ ระบบเลยยังไม่ได้ถามยอดจาก PFM — ใส่ ID Post แล้ว ถ้า PFM มีคลิปนี้ ยอดจะเข้ามาในรอบซิงก์ถัดไป (ปกติทุกชั่วโมง)' };
         case 'bad_id_post': return { short: 'ID Post ผิดรูปแบบ', long: `ID Post "${idPost}" ไม่ใช่ตัวเลขล้วน PFM จึงจับคู่คลิปไม่ได้ — แก้เป็นเลข ID ของคลิป (ตัวเลขท้ายลิงก์ TikTok)` };
         case 'dup_id_post': return { short: 'ID Post ซ้ำ', long: 'ID Post นี้ซ้ำกับโพสต์อื่น — ยอดจาก PFM ลงที่โพสต์แรกที่ใช้ ID นี้โพสต์เดียว · แก้ ID Post ให้ตรงกับคลิปของโพสต์นี้ หรือกรอกยอดเองที่ปุ่ม 📊' };

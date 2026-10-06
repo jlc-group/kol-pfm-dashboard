@@ -127,11 +127,29 @@ function hireStage(it, jobStatus, items) {
     return 'finding';
 }
 
+// ===== แบรนด์ที่ต่อระบบ PFM แล้ว (ผู้ใช้สั่ง 6 ต.ค. 2026) =====
+// แต่ละแบรนด์จะมีระบบ PFM ของตัวเอง (ต่อทีหลัง) — ตอนนี้ต่อแค่ Beauterry (services/beauterryPfmSync.js · source 'beauterry-pfm')
+// แบรนด์อื่น (เช่น Jula's Herb) ห้ามถูกส่งไปถาม / ห้ามรับข้อมูลจาก PFM ของ Beauterry
+// TikTok ของแบรนด์ที่ยังไม่ต่อ PFM = กรอกเองทั้งหมด (สถานะยิงแล้ว / ค่าแอด / ยอดวิว) แบบ Facebook / Instagram
+// ต่อ PFM ของแบรนด์ใหม่: เพิ่ม source → [แบรนด์] ที่นี่ แล้วทำตัวซิงก์ของแบรนด์นั้น (แบบ beauterryPfmSync.js ส่ง pfm_source ของตัวเอง)
+const PFM_SOURCES = { 'beauterry-pfm': ['Beauterry'] };
+const brandKey = b => String(b == null ? '' : b).trim().toLowerCase();
+const PFM_BRAND_KEYS = new Set(Object.values(PFM_SOURCES).flat().map(brandKey));
+// แบรนด์นี้ต่อ PFM แล้วไหม (ไม่สนตัวพิมพ์ / ช่องว่างหัวท้าย)
+const isPfmBrand = brand => PFM_BRAND_KEYS.has(brandKey(brand));
+// แบรนด์ของ PFM ตัวนั้น (null = ไม่ใช่ source ของ PFM ที่รู้จัก — ข้อมูลจากแหล่งอื่น ไม่จำกัดแบรนด์)
+const pfmSourceBrands = source => (Object.prototype.hasOwnProperty.call(PFM_SOURCES, source) ? [...PFM_SOURCES[source]] : null);
+const isTikTokPost = s => /^\s*tiktok/i.test(String((s && s.platform) || ''));
+
 // ===== ค่าแอดของโพสต์มาจากระบบ PFM อัตโนมัติไหม =====
 // PFM ซิงก์ค่าแอดให้โพสต์ที่มี ID Post เป็นตัวเลข (TikTok) และซิงก์ได้ทางเดียว (ขึ้นอย่างเดียว)
 // ถ้าให้กรอกทับ ยอดที่กรอกเกินจริงจะค้างถาวร และถ้ากรอกต่ำกว่า ซิงก์รอบหน้าจะเขียนทับกลับ — โพสต์พวกนี้จึงให้ PFM ดูแลอย่างเดียว
-function pfmManagedSpend(s) {
-    return !!(s && (s.ad_synced_at || /^\d{1,50}$/.test(String(s.id_post || '').trim())));
+// brand = แบรนด์ของแคมเปญ (projects.brand) — TikTok ของแบรนด์ที่ยังไม่ต่อ PFM กรอกค่าแอดเองได้ (6 ต.ค. 2026)
+// Platform อื่น (Facebook / Instagram ที่ WeBoostX ซิงก์ให้ ตั้ง ad_synced_at) เหมือนเดิม
+function pfmManagedSpend(s, brand) {
+    if (!s) return false;
+    if (isTikTokPost(s) && !isPfmBrand(brand)) return false;
+    return !!(s.ad_synced_at || /^\d{1,50}$/.test(String(s.id_post || '').trim()));
 }
 
 // ===== สถานะ "ยิงแล้ว" ที่ใช้แสดงผล =====
@@ -150,9 +168,10 @@ function effectiveAdStatus(s) {
     return ((s && s.ad_status === 'ยิงแล้ว') || adRanBySpend(s)) ? 'ยิงแล้ว' : 'ยังไม่ยิง';
 }
 // TikTok ยิงแอดผ่านระบบ PFM (ผู้ใช้สั่ง 2 ต.ค. 2026) — สถานะยิงแล้วมาจาก PFM อย่างเดียว (ad_launched / ค่าแอด) ห้ามคนกดเอง
-// ต้องตรงกับ adStatusAuto ใน client/src/pages/Ads.jsx (ปุ่มสถานะของแถว TikTok เป็นป้ายอ่านอย่างเดียว)
-function adStatusAuto(s) {
-    return /^\s*tiktok/i.test(String((s && s.platform) || ''));
+// 6 ต.ค. 2026: เฉพาะแบรนด์ที่ต่อ PFM แล้ว (isPfmBrand) — TikTok ของแบรนด์อื่นกดเองได้แบบ Facebook / Instagram
+// หน้าเว็บอ่านผลจาก status_auto ที่ ads.list ส่งไปต่อแถว (client/src/pages/Ads.jsx) — ไม่ต้องรู้รายชื่อแบรนด์เอง
+function adStatusAuto(s, brand) {
+    return isTikTokPost(s) && isPfmBrand(brand);
 }
 
 // ===== งบของงานจ้างอื่น ๆ แยกตามความคืบหน้า (หน้ารอบทำจ่าย) =====
@@ -1125,10 +1144,11 @@ function pooledCpe(items) {
 }
 
 // ===== ทำไมคลิปนี้ยังไม่มียอดวิว (ป้าย Not rated / Awaiting data · ผู้ใช้สั่ง 2 ต.ค. 2026) =====
-// ต้องตรงกับที่ระบบขอข้อมูลจาก PFM: pg/ads.js adsSync.itemIds (platform ILIKE 'tiktok%' + มี id_post)
+// ต้องตรงกับที่ระบบขอข้อมูลจาก PFM: pg/ads.js adsSync.itemIds (platform ILIKE 'tiktok%' + มี id_post + แบรนด์ที่ต่อ PFM)
 // และ services/beauterryPfmSync.js sanitizeRow (id_post ต้องเป็นตัวเลขล้วน)
 //   null           = มียอดวิวแล้ว
 //   'not_tiktok'   = PFM ส่งเฉพาะ TikTok — Platform อื่นกรอกยอดเองที่ปุ่ม 📊
+//   'no_pfm_brand' = TikTok ของแบรนด์ที่ยังไม่ต่อ PFM — ระบบไม่ถามยอด กรอกเองที่ปุ่ม 📊
 //   'no_id_post'   = ยังไม่ใส่ ID Post (ระบบยังไม่ได้ถาม PFM)
 //   'bad_id_post'  = ID Post ไม่ใช่ตัวเลข — PFM จับคู่ไม่ได้
 //   'dup_id_post'  = ID Post ซ้ำกับแถวอื่น — ซิงก์ลงยอดแถว id ต่ำสุดแถวเดียว (pg/ads.js adsSync.apply ใช้ .find บน snapshot เรียง id)
@@ -1136,9 +1156,11 @@ function pooledCpe(items) {
 //   'pfm_no_views' = ซิงก์ได้ข้อมูลคลิปนี้แล้ว (เช่น ค่าแอด) แต่ไม่มียอดวิว
 // firstByPost = Map(id_post → แถว id ต่ำสุดที่ใช้ ID นี้) จาก firstByIdPost(ทุกแถวใน snapshot) — ไม่ส่ง = ไม่เช็คซ้ำ
 const btrim = v => String(v == null ? '' : v).replace(/^ +| +$/g, '');   // ตัดเฉพาะช่องว่าง แบบ btrim() ของ SQL
-function viewsMissingReason(s, firstByPost = null) {
+// brand = แบรนด์ของแคมเปญ — 'no_pfm_brand' = TikTok ของแบรนด์ที่ยังไม่ต่อ PFM (ระบบไม่ถามยอด กรอกเองที่ปุ่ม 📊 · 6 ต.ค. 2026)
+function viewsMissingReason(s, firstByPost = null, brand) {
     if (!s || (Number(s.views) || 0) > 0) return null;
     if (!/^tiktok/i.test(String(s.platform || ''))) return 'not_tiktok';
+    if (!isPfmBrand(brand)) return 'no_pfm_brand';
     const idPost = btrim(s.id_post);
     if (!idPost) return 'no_id_post';
     if (!/^\d{1,50}$/.test(idPost)) return 'bad_id_post';
@@ -1257,7 +1279,7 @@ module.exports = {
     HIRE_JOB_CLOSED, hireWaiting, hireNeedMore, hireStage,
     BOOK_PENDING, BOOK_FEE, BOOK_OK, HIRE_BOOKED, HIRE_AGREED, bookingState, bookingOpen, hireBookings,
     releaseToRequest, bookingConfirm, bookingFeeDecision, bookingUnavailable, hireBreakdown, jobProgress, pfmManagedSpend,
-    adRanBySpend, effectiveAdStatus, adStatusAuto,
+    adRanBySpend, effectiveAdStatus, adStatusAuto, PFM_SOURCES, isPfmBrand, pfmSourceBrands,
     HIRE_PAYABLE, HIRE_DIRECT_STATUS, newHireRow, payableWithoutFee, isDateStr, clipText, HIRE_SCOPE_MAX, hireScope,
     PERSON_FIELDS, personPatch,
     resolveInside, sameInstant, mergeHireItems, mergeBriefFiles, cleanFee, cleanHeadcount, safeId, safeSlug,

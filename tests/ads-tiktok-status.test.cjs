@@ -32,11 +32,14 @@ const SUBS = {
     1: { id: 1, platform: 'TikTok', ad_status: 'ยังไม่ยิง', account_name: 'tt_girl', post_url: 'https://www.tiktok.com/@tt_girl/video/1' },
     2: { id: 2, platform: 'Instagram', ad_status: 'ยังไม่ยิง', account_name: 'ig_girl', post_url: 'https://www.instagram.com/reel/abc/' },
     3: { id: 3, platform: 'Facebook', ad_status: 'ยิงแล้ว', account_name: 'fb_girl', post_url: 'https://www.facebook.com/x' },
-    4: { id: 4, platform: 'TikTok', ad_status: 'ยิงแล้ว', account_name: 'tt_old', post_url: 'https://www.tiktok.com/@tt_old/video/2' }
+    4: { id: 4, platform: 'TikTok', ad_status: 'ยิงแล้ว', account_name: 'tt_old', post_url: 'https://www.tiktok.com/@tt_old/video/2' },
+    // 6 ต.ค. 2026: TikTok ของแบรนด์ที่ยังไม่ต่อ PFM (Jula's Herb) กดสถานะ / กรอกค่าแอดเองได้
+    5: { id: 5, platform: 'TikTok', ad_status: 'ยังไม่ยิง', account_name: 'luvjennerr', post_url: 'https://www.tiktok.com/@luvjennerr/video/3', id_post: '7693136943999175988', ad_spend: 0, brand: "Jula's Herb" },
+    6: { id: 6, platform: 'TikTok', ad_status: 'ยังไม่ยิง', account_name: 'tt_spend', post_url: 'https://www.tiktok.com/@tt_spend/video/4', id_post: '7600000000000000006', ad_spend: 0 }
 };
 store.ads.subContext = async id => {
     const s = SUBS[Number(id)];
-    return s ? { submission: { ...s }, project_id: 5, team_id: 1, brand: 'Beauterry', project_name: 'KOL Oct', account_name: s.account_name } : null;
+    return s ? { submission: { ...s }, project_id: 5, team_id: 1, brand: s.brand || 'Beauterry', project_name: 'KOL Oct', account_name: s.account_name } : null;
 };
 const writes = [];
 store.submissions.update = async (id, _p, fields) => { writes.push({ id: Number(id), fields }); Object.assign(SUBS[Number(id)], fields); return { ...SUBS[Number(id)], sub_id: Number(id) }; };
@@ -55,10 +58,13 @@ const put = async (id, body) => {
     return { status: res.status, body: await res.json() };
 };
 
-test('adStatusAuto: TikTok (ทุกแบบตัวพิมพ์) = สถานะอัตโนมัติ · Platform อื่น / ว่าง = กดเองได้', () => {
-    for (const p of ['TikTok', 'tiktok', ' TIKTOK', 'TikTok Shop']) assert.equal(adStatusAuto({ platform: p }), true, p);
-    for (const p of ['Instagram', 'Facebook', 'Lemon8', 'YouTube', '', null]) assert.equal(adStatusAuto({ platform: p }), false, String(p));
-    assert.equal(adStatusAuto(null), false);
+test('adStatusAuto: TikTok (ทุกแบบตัวพิมพ์) ของแบรนด์ที่ต่อ PFM = สถานะอัตโนมัติ · Platform อื่น / ว่าง / แบรนด์อื่น = กดเองได้', () => {
+    for (const p of ['TikTok', 'tiktok', ' TIKTOK', 'TikTok Shop']) assert.equal(adStatusAuto({ platform: p }, 'Beauterry'), true, p);
+    for (const p of ['Instagram', 'Facebook', 'Lemon8', 'YouTube', '', null]) assert.equal(adStatusAuto({ platform: p }, 'Beauterry'), false, String(p));
+    assert.equal(adStatusAuto(null, 'Beauterry'), false);
+    // 6 ต.ค. 2026: แบรนด์ที่ยังไม่ต่อ PFM (Jula's Herb) / ไม่รู้แบรนด์ = กดเองได้
+    assert.equal(adStatusAuto({ platform: 'TikTok' }, "Jula's Herb"), false);
+    assert.equal(adStatusAuto({ platform: 'TikTok' }), false);
 });
 
 test('PUT /api/ads/:id — TikTok กดยิงแล้ว / กลับเป็นยังไม่ยิง ไม่ได้ (409) · ไม่เขียนอะไรลงฐาน', async () => {
@@ -86,9 +92,23 @@ test('PUT /api/ads/:id — TikTok ยังแก้ช่องอื่นไ�
     assert.equal(SUBS[3].ad_status, 'ยังไม่ยิง');
 });
 
-test('หน้าเว็บ (Ads.jsx) ตัดสินแถว TikTok แบบเดียวกับ server', () => {
+test('หน้าเว็บ (Ads.jsx) ใช้ status_auto ที่ server ตัดสินต่อแถว · server รุ่นก่อน (ไม่ส่ง) ใช้ regex เดียวกับ server', () => {
     const RE = '/^\\s*tiktok/i.test(';
     const src = fs.readFileSync(path.join(__dirname, '../client/src/pages/Ads.jsx'), 'utf8');
-    assert.ok(src.includes('const adStatusAuto = row => ' + RE + "String(row.platform || ''));"), 'Ads.jsx ต้องใช้ regex เดียวกับ server');
-    assert.ok(fs.readFileSync(path.join(SRC, 'store/logic.js'), 'utf8').includes('return ' + RE + "String((s && s.platform) || ''));"));
+    assert.ok(src.includes("const adStatusAuto = row => (typeof row.status_auto === 'boolean' ? row.status_auto : " + RE + "String(row.platform || '')));"), 'Ads.jsx');
+    const logic = fs.readFileSync(path.join(SRC, 'store/logic.js'), 'utf8');
+    assert.ok(logic.includes('const isTikTokPost = s => ' + RE + "String((s && s.platform) || ''));"));
+    assert.ok(logic.includes('return isTikTokPost(s) && isPfmBrand(brand);'));
+});
+
+test("PUT /api/ads/:id — TikTok ของแบรนด์ที่ยังไม่ต่อ PFM (Jula's Herb) กดยิงแล้ว + กรอกค่าแอดเองได้ · Beauterry ที่มี ID Post กรอกค่าแอดไม่ได้ (409) (6 ต.ค. 2026)", async () => {
+    const a = await put(5, { ad_status: 'ยิงแล้ว', ad_end: '2026-10-06' });
+    assert.equal(a.status, 200, JSON.stringify(a.body));
+    assert.equal(SUBS[5].ad_status, 'ยิงแล้ว');
+    const b = await put(5, { ad_spend: 1500, ad_spend_from: 0 });
+    assert.equal(b.status, 200, JSON.stringify(b.body));
+    assert.equal(Number(SUBS[5].ad_spend), 1500);
+    const c = await put(6, { ad_spend: 900, ad_spend_from: 0 });
+    assert.equal(c.status, 409);
+    assert.match(c.body.message, /ซิงก์จากระบบ PFM/);
 });
