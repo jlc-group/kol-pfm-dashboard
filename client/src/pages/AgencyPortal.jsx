@@ -654,8 +654,7 @@ export default function AgencyPortal() {
     const noGroupShown = subs.filter(s => matchProducts(s, prodFilter, knownCodes));
 
     return (
-        // wide = เต็มความกว้างจอเหมือนฝั่ง dashboard (ผู้ใช้สั่ง 6 ต.ค. 2026)
-        <div className="agency-page wide">
+        <div className="agency-page">
             {/* แจ้งเตือนเด้งอัตโนมัติ (มุมขวาบน) */}
             {toasts.length > 0 && (
                 <div className="ag-toasts">

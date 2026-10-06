@@ -399,9 +399,8 @@ a { text-decoration: none; color: inherit; }
 
 .agency-page { min-height: 100vh; background: linear-gradient(160deg, #e3f7ee 0%, #eef7f4 100%); padding: 30px 20px; }
 .agency-wrap { max-width: 620px; margin: 0 auto; display: flex; flex-direction: column; gap: 18px; }
-/* หน้าเอเจนซี่เต็มความกว้างจอเหมือนฝั่ง dashboard (ผู้ใช้สั่ง 6 ต.ค. 2026) — เลิกบีบ 1120px · ขอบห่างจอ 12px เท่าหน้า Ads */
-.agency-page.wide { padding-inline: 12px; }
-.agency-wrap.wide { max-width: none; }
+/* หน้าเอเจนซี่กว้างสุด 1120px กลางจอ — 6 ต.ค. 2026 เคยลองเต็มจอ (b0e37be) แล้วผู้ใช้สั่งย้อนกลับขนาดเดิม */
+.agency-wrap.wide { max-width: 1120px; }
 .agency-tabs { display: flex; gap: 26px; border-bottom: 2px solid var(--border); padding: 0 4px; }
 .agency-tabs button {
     border: none; background: transparent; padding: 12px 2px; font-size: 14.5px; font-weight: 700; color: var(--muted);
@@ -1019,12 +1018,14 @@ a { text-decoration: none; color: inherit; }
 
 /* ตาราง On Process (แถวแนวนอน) */
 .proc-tbl-scroll { overflow-x: auto; }
-.proc-tbl { min-width: 1160px; }
+/* 1060px = พอดีกรอบหน้าเอเจนซี่ (กว้างสุด 1120px เหลือที่ให้ตาราง ~1072px) — ไม่ต้องเลื่อนแนวนอนไปหาปุ่ม ✓ · ID Post ยังได้ 170px */
+.proc-tbl { min-width: 1060px; }
 .proc-tbl-head, .proc-row {
     display: grid;
     /* KOL PRODUCT C_TYPE C_FORMAT PLATFORM DRAFT POST POSTDATE GENCODE IDPOST EXPIRE จัดการ
        IDPOST กว้างอย่างน้อย 170px — เลข TikTok 19 หลักต้องเห็นครบ (ผู้ใช้สั่ง 6 ต.ค. 2026 · เดิมถูกตัดเหลือ ~17 หลัก) */
-    grid-template-columns: 0.95fr 0.62fr 0.6fr 0.85fr 0.55fr 1.05fr 1.4fr 1.1fr 0.85fr minmax(170px, 0.8fr) 0.5fr 0.6fr;
+    /* EXPIRE อย่างน้อย 62px — ตัวเลือก "60" ต้องไม่ถูกตัดเหลือ "6" ตอนตารางแคบ */
+    grid-template-columns: 0.95fr 0.62fr 0.6fr 0.85fr 0.55fr 1.05fr 1.4fr 1.1fr 0.85fr minmax(170px, 0.8fr) minmax(62px, 0.5fr) 0.6fr;
     gap: 7px; align-items: center;
 }
 .proc-tbl-head { font-size: 10px; font-weight: 700; color: var(--muted); letter-spacing: .3px; padding: 0 4px 9px; }
@@ -1085,7 +1086,7 @@ a { text-decoration: none; color: inherit; }
 .proc-tbl.with-ads .proc-tbl-head, .proc-tbl.with-ads .proc-row {
     /* KOL PRODUCT TARGET C_TYPE C_FORMAT PLATFORM DRAFT POST POSTDATE GENCODE IDPOST EXPIRE จัดการ
        6 คอลัมน์แรกเป็นชิปสั้น ๆ บีบให้ชิดกัน แล้วเอาที่ว่างไปเพิ่มให้ช่องลิงก์โพสต์ · IDPOST อย่างน้อย 170px (เลข 19 หลักเห็นครบ) */
-    grid-template-columns: 0.94fr 0.66fr 0.77fr 0.54fr 0.86fr 0.52fr 1fr 1.64fr 0.98fr 0.75fr minmax(170px, 0.73fr) 0.5fr 0.62fr;
+    grid-template-columns: 0.94fr 0.66fr 0.77fr 0.54fr 0.86fr 0.52fr 1fr 1.64fr 0.98fr 0.75fr minmax(170px, 0.73fr) minmax(62px, 0.5fr) 0.62fr;
 }
 .proc-ads-tgt { display: inline-block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; background: #fff4ed; color: #c2591b; font-size: 10.5px; font-weight: 800; padding: 4px 8px; border-radius: 8px; }
 .proc-ctype-chip { display: inline-block; background: #f3ecff; color: #6d3fc0; font-size: 11px; font-weight: 800; padding: 4px 9px; border-radius: 8px; }
