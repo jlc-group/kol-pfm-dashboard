@@ -15,7 +15,7 @@ import {
     isSplitConcept, isBlockSplitConcept, packConcepts, conceptParts,
     isKolSplit, productKolOf, productKolSum, kolSplitState, kolSplitProblem, packKols, kolAutoTier, syncAutoKols, seedKolSplit,
     blockTierNames, unifyTiers, setSetKols, setKol, settleKols,
-    productRows, makeBundle, splitBundle, dropFromBundle, packBundles
+    productRows, makeBundle, splitBundle, dropFromBundle, packBundles, copyProductSet, sameProductSet
 } from '../data/adGroups.js';
 
 // รายชื่อทีมงานที่รับเป็น Owner ของแคมเปญ — แก้/เพิ่มชื่อตรงนี้ได้เลย
@@ -264,14 +264,18 @@ export default function ProjectForm({ editing, onClose, onSaved }) {
     };
     // สินค้า / คลิปต่อคน ย้ายมาอยู่ระดับ Platform แล้ว
     // เลือก/เอาสินค้าออก — แถว Target ของสินค้านั้นเกิด/หายตามไปด้วย
-    const toggleBlockProduct = (i, bi, code) => mapBlock(i, bi, b => {
-        const on = (b.products || []).includes(code);
-        const pt = { ...(b.product_targets || {}) };
+    // Target เริ่มต้นของสินค้าที่เพิ่งเข้ามาในบล็อก (ติ๊กเพิ่มทีละตัว / ใช้สินค้าเหมือน Platform อื่น)
+    const seedTargetOf = (b, code) => {
         // สินค้าที่มี Target ให้เลือกตัวเดียว (เช่น Beauterry) ติ๊กให้เลย ไม่ต้องเปิดเลือกทีละแถว — กด × เอาออกได้
         const only = needTarget(b.platform) && targetsForProduct(code).length === 1 ? targetsForProduct(code) : [];
         // Target เดิมที่ค้างอยู่ (แคมเปญเก่า) และเป็นของสินค้าที่เพิ่งเพิ่ม → ติ๊กคืนให้ตามที่คำเตือนบอกไว้
         const back = asTargetArray(b.legacy_orphans).filter(t => targetsForProduct(code).includes(t));
-        if (on) delete pt[code]; else pt[code] = pt[code] || [...new Set([...only, ...back])];
+        return [...new Set([...only, ...back])];
+    };
+    const toggleBlockProduct = (i, bi, code) => mapBlock(i, bi, b => {
+        const on = (b.products || []).includes(code);
+        const pt = { ...(b.product_targets || {}) };
+        if (on) delete pt[code]; else pt[code] = pt[code] || seedTargetOf(b, code);
         const next = { ...b, products: on ? b.products.filter(c => c !== code) : [...(b.products || []), code], product_targets: pt };
         return on ? dropProductExtras(next, code) : next;
     });
@@ -330,6 +334,18 @@ export default function ProjectForm({ editing, onClose, onSaved }) {
         setBundlePick(m => ({ ...m, [key]: [] }));
     };
     const unbundle = (i, bi, head) => mapBlock(i, bi, b => splitBundle(b, head));
+    // ใช้สินค้าเหมือน Platform อื่นในกลุ่มเดียวกัน (ผู้ใช้สั่ง 6 ต.ค. 2026) — สินค้า + ชุดรวม + จำนวนคน แทนที่ของเดิมทั้งหมด
+    // มีสินค้าเลือกไว้แล้ว = ถามยืนยันก่อน · งบ / Concept / Target ไม่คัดลอก (ดู copyProductSet ใน adGroups.js)
+    const copyProductsFrom = (i, bi, srcPlatform) => {
+        const g = adGroups[i];
+        const dst = g && (g.blocks || [])[bi];
+        const src = g && (g.blocks || []).find(x => x.platform === srcPlatform);
+        if (!dst || !src || !(src.products || []).length) return;
+        const n = (dst.products || []).length;
+        if (n > 0 && !window.confirm(`ใช้สินค้าเหมือน ${srcPlatform}?\nสินค้าเดิมของ ${dst.platform} ${n} ตัว (รวมชุดและจำนวนคน) จะถูกแทนที่ทั้งหมด`)) return;
+        mapBlock(i, bi, b => copyProductSet(b, src, code => seedTargetOf(b, code)));
+        setBundlePick(m => ({ ...m, [pickKeyOf(g, i, dst)]: [] }));
+    };
     // บล็อกที่แยกจำนวนคนแล้วยอดไม่ตรงจำนวน KOL ของ Platform — ตรวจทั้งตอนสร้างและตอนแก้ไข (ข้อความบอกว่าขาด/เกินกี่คน)
     // มีหลายกลุ่ม = บอกเลขกลุ่มด้วย จะได้รู้ว่าต้องไปแก้ที่กลุ่มไหน
     const kolProblems = () => adGroups.flatMap((g, gi) => {
@@ -723,6 +739,23 @@ export default function ProjectForm({ editing, onClose, onSaved }) {
                                                 selected={b.products || []}
                                                 onToggle={code => toggleBlockProduct(i, bi, code)}
                                             />
+                                            {/* ใช้สินค้าเหมือน Platform อื่นในกลุ่มนี้ (6 ต.ค. 2026) — 1 ปุ่มต่อ Platform ที่เลือกสินค้าไว้แล้ว
+                                                คัดลอก สินค้า + ชุดรวม + จำนวนคน · เหมือนกันอยู่แล้ว = ปุ่มขึ้น ✓ กดไม่ได้ */}
+                                            {(g.blocks || []).some((o, oj) => oj !== bi && (o.products || []).length > 0) && (
+                                                <div className="pcopy">
+                                                    {(g.blocks || []).filter((o, oj) => oj !== bi && (o.products || []).length > 0).map(o => {
+                                                        const same = sameProductSet(b, o);
+                                                        return (
+                                                            <button type="button" key={o.platform} className={'pcopy-btn' + (same ? ' same' : '')} disabled={same}
+                                                                title={same ? `สินค้า ชุดรวม และจำนวนคน เหมือน ${o.platform} แล้ว`
+                                                                    : `ใช้สินค้า + ชุดรวม + จำนวนคน ชุดเดียวกับ ${o.platform} (${(o.products || []).length} สินค้า) — งบ / Concept / Target ของ ${b.platform} ไม่คัดลอก`}
+                                                                onClick={() => copyProductsFrom(i, bi, o.platform)}>
+                                                                {same ? `✓ สินค้าเหมือน ${o.platform}` : `📋 ใช้สินค้าเหมือน ${o.platform}`}
+                                                            </button>
+                                                        );
+                                                    })}
+                                                </div>
+                                            )}
                                             {/* อยู่ใต้ช่องเลือกสินค้า (เลือกสินค้าก่อน แล้วค่อยเลือกว่าจะแยกงบ/Concept ไหม)
                                                 ปกติ = งบรวมก้อนเดียว (ช่องงบที่หัวบล็อก) · กดปุ่มนี้ = แยกงบต่อสินค้า (ใส่งบในแถวของแต่ละสินค้า) กดอีกครั้งเพื่อกลับ */}
                                             <div className="bmode">

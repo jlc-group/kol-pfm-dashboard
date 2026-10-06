@@ -602,6 +602,40 @@ export function seedKolSplit(b) {
     return { ...b, kol_split: true, product_kols };
 }
 
+// ---------- ใช้สินค้าเหมือน Platform อื่นในกลุ่มเดียวกัน (ผู้ใช้สั่ง 6 ต.ค. 2026) ----------
+// คัดลอก สินค้า + ชุดรวม + จำนวนคนต่อแถว ของต้นทาง (src) มาแทนที่ของปลายทาง (dst) ทั้งหมด — ลำดับสินค้าตามต้นทาง
+// ไม่คัดลอก งบ / Concept / Target (ของใคร Platform มัน):
+//   งบ / Concept ของปลายทาง เก็บไว้เฉพาะแถวที่ยังเป็นแถวเดียวกับเดิม (สินค้าเดี่ยวเดิม / ชุดเดิมครบทุกตัว) · แถวที่เปลี่ยนรูปเริ่มว่าง
+//   Target ของปลายทาง เก็บไว้ต่อรหัสที่ยังอยู่ · รหัสที่เพิ่งเข้ามาได้ seedTarget(code) (ฟอร์มส่งกติกาเดียวกับตอนติ๊กสินค้า) · ทุกรหัสในชุดได้ Target ชุดเดียวกัน
+export function copyProductSet(dst, src, seedTarget = () => []) {
+    const products = [...new Set(((src && src.products) || []).map(String))];
+    const bundles = blockBundles({ products, bundles: src && src.bundles }).map(x => [...x]);
+    const rows = productRows({ products, bundles });
+    const pk = {};
+    rows.forEach(r => { const n = productKolOf(src, r.head); if (n > 0) pk[r.head] = String(n); });
+    // แถวเดิมของปลายทางที่มีรหัสชุดเดียวกัน — ไม่ดูหัวชุด (ชุดเดียวกันแต่ละ Platform อาจมีหัวคนละตัว ตามลำดับที่ติ๊กสินค้า)
+    const oldRows = productRows(dst);
+    const oldOf = r => oldRows.find(o => o.codes.length === r.codes.length && o.codes.every(c => r.codes.includes(c)));
+    const keep = key => {
+        const m = isMap(dst[key]) ? dst[key] : {};
+        const out = {};
+        rows.forEach(r => { const o = oldOf(r); if (o && m[o.head] !== undefined) out[r.head] = m[o.head]; });
+        return out;
+    };
+    const oldPt = isMap(dst.product_targets) ? dst.product_targets : {};
+    const pt = {};
+    products.forEach(c => { pt[c] = Object.prototype.hasOwnProperty.call(oldPt, c) ? asArr(oldPt[c]) : asArr(seedTarget(c)); });
+    bundles.forEach(bd => { const tg = [...new Set(bd.flatMap(c => pt[c]))]; bd.forEach(c => { pt[c] = [...tg]; }); });
+    const next = { ...dst, products, bundles, kol_split: true, product_kols: pk,
+        product_budgets: keep('product_budgets'), product_concepts: keep('product_concepts'), product_targets: pt };
+    if (!isSplitBudget(next)) return next;
+    const sum = productBudgetSum(next);
+    return { ...next, budget: sum > 0 ? String(sum) : '' };
+}
+// สินค้า + ชุดรวม + จำนวนคน เหมือนกันแล้วไหม (ไม่สนลำดับ) — ปุ่มคัดลอกขึ้น "✓ เหมือนแล้ว"
+const productSetSig = b => productRows(b).map(r => [...r.codes].sort().join('+') + '=' + productKolOf(b, r.head)).sort().join('|');
+export const sameProductSet = (a, b) => !!a && !!b && (a.products || []).length > 0 && productSetSig(a) === productSetSig(b);
+
 // ความคืบหน้าต่อสินค้าของกลุ่ม (เฉพาะบล็อกที่แยกจำนวนคน) — หน้าเอเจนซี่ / แท็บรายชื่อ / On Process ใช้ตัวเดียวกัน
 // คืน [{ platform, rows: [{ code, need, sent, over, full, codes? }] }] (codes เฉพาะแถวที่เป็นชุด) · ไม่มีบล็อกไหนแยก = []
 // sent = จำนวน "คน" (person_key) ของ Platform นั้นในกลุ่มนี้ที่ยังไม่ถูกปฏิเสธ — 1 คนที่ช่องสินค้ามีหลายรหัส นับให้ทุกรหัสที่มี
