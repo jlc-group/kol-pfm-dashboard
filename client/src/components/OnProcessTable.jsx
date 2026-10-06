@@ -112,6 +112,24 @@ function ProcessRow({ sub, putSubmission, reload, showAds = false, group = null,
         idPost !== (sub.id_post || '') ||
         Number(codeExpire) !== (Number(sub.code_expire) || 60);
 
+    // ฝั่งเอเจนซี่ (directEdit): ต้องกรอกครบก่อนกดบันทึก — ลิงก์โพสต์ / วันที่โพสต์ / Gencode / Code Expire (ผู้ใช้สั่ง 6 ต.ค. 2026)
+    // ID Post ไม่บังคับ · กลุ่มไม่ใช้ Gencode = ไม่ถาม Gencode / Code Expire
+    // ช่องที่ล็อกเพราะยิงแอดแล้ว (แก้ไม่ได้) ไม่นับ — ไม่งั้นแถวที่ขาดค่าตั้งแต่ก่อนยิงจะกดบันทึกช่องอื่นไม่ได้เลย
+    // ฝั่งทีมไม่บังคับ (แก้ทีละช่องได้ตามเดิม)
+    const missing = (() => {
+        if (!directEdit) return [];
+        const miss = [];
+        const url = String(postUrl || '').trim();
+        if (canEditPost && !url) miss.push('ลิงก์โพสต์');
+        else if (canEditPost && !openablePostUrl) miss.push('ลิงก์โพสต์ (ต้องขึ้นต้นด้วย http:// หรือ https://)');
+        if (!postDate) miss.push('วันที่โพสต์');
+        if (!noGencode && canEditPost && !String(gencode || '').trim()) miss.push('Gencode');
+        if (!noGencode && !(Number(codeExpire) > 0)) miss.push('Code Expire');
+        return miss;
+    })();
+    // กรอบแดงที่ช่องที่ยังขาด — ขึ้นเมื่อเริ่มแก้แถวนี้แล้ว (แถวที่ยังไม่แตะไม่ต้องแดงทั้งตาราง)
+    const need = label => (dirty && missing.some(m => m.startsWith(label)) ? ' need' : '');
+
     // ยกเลิกการแก้ไข — คืนค่ากลับเป็นค่าที่บันทึกไว้ล่าสุด แล้วล็อก
     function cancelEdit() {
         setPostUrl(sub.post_url || '');
@@ -125,6 +143,7 @@ function ProcessRow({ sub, putSubmission, reload, showAds = false, group = null,
     // บันทึกเฉพาะฟิลด์ในตาราง (โพสต์/วันที่/gencode/id/หมดอายุ) — ต้องกดบันทึกเอง ข้อมูลถึงจะขึ้นฝั่ง Dashboard
     async function save() {
         if (!dirty) { setEditing(false); return; }
+        if (missing.length) return;   // ปุ่มปิดอยู่แล้ว — กันกดผ่านทางอื่น
         setSaving(true); setSaved(false);
         try {
             await putSubmission(sub.id, {
@@ -187,15 +206,15 @@ function ProcessRow({ sub, putSubmission, reload, showAds = false, group = null,
                     📊 {hasPerf ? `${Number(sub.views).toLocaleString()} วิว` : 'Perf'}
                 </button>
             </div>
-            <div className="proc-cell" title={adLocked ? lockTip : undefined}>
+            <div className={'proc-cell' + need('ลิงก์โพสต์')} title={adLocked ? lockTip : undefined}>
                 <input type="url" value={postUrl} onChange={e => setPostUrl(e.target.value)} placeholder="ลิงก์โพสต์" disabled={!canEditPost} />
                 {/* กดดูคลิปได้แม้แถวถูกล็อก — ล็อกแค่ห้ามแก้ ไม่ได้ห้ามดู */}
                 {openablePostUrl
                     ? <a className="proc-openpost" href={openablePostUrl} target="_blank" rel="noreferrer" title="เปิดลิงก์คลิปในแท็บใหม่"><Icon name="eye" size={14} /></a>
                     : <span className="proc-openpost off" title={postUrl.trim() ? 'ลิงก์ไม่ถูกต้อง — ต้องขึ้นต้นด้วย http:// หรือ https://' : 'ยังไม่มีลิงก์โพสต์'}><Icon name="eye" size={14} /></span>}
             </div>
-            <div className="proc-cell"><DatePicker value={postDate} onChange={setPostDate} disabled={!unlocked} placeholder="เลือกวัน" /></div>
-            <div className="proc-cell" title={adLocked && !noGencode ? lockTip : undefined}>{noGencode
+            <div className={'proc-cell' + need('วันที่โพสต์')}><DatePicker value={postDate} onChange={setPostDate} disabled={!unlocked} placeholder="เลือกวัน" /></div>
+            <div className={'proc-cell' + need('Gencode')} title={adLocked && !noGencode ? lockTip : undefined}>{noGencode
                 ? <span className="muted" title="กลุ่มนี้ไม่ใช้ Gencode">—</span>
                 : <input value={gencode} onChange={e => setGencode(e.target.value)} placeholder="Gencode" disabled={!canEditPost} />}</div>
             <div className="proc-cell" title={adLocked && !noIdPost ? lockTip : undefined}>{noIdPost
@@ -211,7 +230,9 @@ function ProcessRow({ sub, putSubmission, reload, showAds = false, group = null,
                     saved ? (
                         <button type="button" className="proc-ibtn done" disabled title="บันทึกแล้ว"><Icon name="check" size={16} /></button>
                     ) : (
-                        <button type="button" className="proc-ibtn ok" onClick={save} disabled={saving || !dirty} title="บันทึก"><Icon name="check" size={16} /></button>
+                        // กรอกไม่ครบ = กดไม่ได้ · tooltip บอกว่าขาดช่องไหน (ช่องที่ขาดมีกรอบแดง)
+                        <button type="button" className="proc-ibtn ok" onClick={save} disabled={saving || !dirty || missing.length > 0}
+                            title={dirty && missing.length ? 'ยังกรอกไม่ครบ ขาด: ' + missing.join(', ') : 'บันทึก'}><Icon name="check" size={16} /></button>
                     )
                 ) : editing ? (
                     <>

@@ -256,14 +256,16 @@ function TypeBox({ token, group, platform, contentType, saved, total, quota, age
     const addRow = () => setRows(rs => [...rs, blank()]);
     const removeRow = i => setRows(rs => rs.filter((_, idx) => idx !== i));
     // ช่องที่ยังไม่ได้กรอกในแถวนี้ — ใช้ทั้งปิดปุ่ม ✓ และบอกใน tooltip ว่าขาดอะไร
-    // บังคับทุกช่องที่กล่องนี้เปิดให้กรอก ยกเว้น Product ที่เอเจนซี่มักยังไม่รู้ตอนส่งรายชื่อ ค่อยมาเติมทีหลังได้
-    // เช็คเฉพาะช่องที่แสดงจริง — Tier ที่มีตัวเลือกเดียวถูกล็อกไว้แล้ว และ Contact โผล่เฉพาะลิงก์ที่ยังไม่ผูกเอเจนซี่
+    // บังคับทุกช่องที่กล่องนี้เปิดให้กรอก รวม Product (ผู้ใช้สั่ง 6 ต.ค. 2026 · เดิมเว้น Product ไว้เติมทีหลัง)
+    // เช็คเฉพาะช่องที่แสดงจริง — Tier ที่มีตัวเลือกเดียวถูกล็อกไว้แล้ว · Contact โผล่เฉพาะลิงก์ที่ยังไม่ผูกเอเจนซี่
+    // · Product บังคับเมื่อกลุ่มมีสินค้าให้เลือก (ไม่มีตัวเลือก = กรอกไม่ได้ ห้ามล็อกปุ่มค้าง)
     const filled = v => String(v ?? '').trim() !== '';
     const missingOf = en => {
         const miss = [];
         if (!filled(en.account_name)) miss.push('ชื่อ Account');
         if (tierOpts.length > 1 && !filled(en.tier)) miss.push('Tier');
         if (!filled(en.followers)) miss.push('ยอดฟอล');
+        if (prodOpts.length > 0 && !filled(en.product)) miss.push('Product');
         if (!agencyName && !filled(en.agency)) miss.push('Contact');
         if (!filled(en.link_account)) miss.push('Link Account');
         return miss;
@@ -574,7 +576,7 @@ export default function AgencyPortal() {
     function addEntry() { setEntries(es => [...es, emptyEntry()]); }
     function removeEntry(i) { setEntries(es => es.filter((_, idx) => idx !== i)); }
     // ช่องที่ยังไม่ได้กรอก — ใช้ทั้งปิดปุ่ม ✓ และบอกใน tooltip ว่าขาดอะไร
-    // บังคับทุกช่องยกเว้น Product ที่มาเติมทีหลังได้ (กติกาเดียวกับฟอร์มแบบกล่อง)
+    // บังคับทุกช่อง รวม Product (ผู้ใช้สั่ง 6 ต.ค. 2026 · กติกาเดียวกับฟอร์มแบบกล่อง)
     // Agency ข้ามเมื่อลิงก์ผูกชื่อเอเจนซี่ไว้แล้ว เพราะช่องนั้นล็อกเป็นอ่านอย่างเดียว
     const entryFilled = v => String(v ?? '').trim() !== '';
     function missingEntry(en) {
@@ -582,6 +584,8 @@ export default function AgencyPortal() {
         if (!entryFilled(en.account_name)) miss.push('ชื่อ Account');
         if (!entryFilled(en.platform)) miss.push('Platform');
         if (!entryFilled(en.tier)) miss.push('Tier');
+        // ไม่มีคลังสินค้าก็ยังมีช่องพิมพ์เอง — บังคับได้เสมอ
+        if (!entryFilled(en.product)) miss.push('Product');
         if (!info.agency_name && !entryFilled(en.agency)) miss.push('Agency');
         if (!entryFilled(en.link_account)) miss.push('Link Account');
         return miss;
@@ -846,7 +850,7 @@ export default function AgencyPortal() {
                                                     : <input value={en.agency} onChange={e => updateEntry(i, 'agency', e.target.value)} placeholder="KOL Contact" />}
                                                 <input type="url" value={en.link_account} onChange={e => updateEntry(i, 'link_account', e.target.value)} placeholder="https://..." />
                                                 <div className="atr-action">
-                                                    {/* กดบันทึกไม่ได้จนกว่าจะกรอกครบ (ยกเว้น Product) — tooltip บอกว่าเหลือช่องไหน */}
+                                                    {/* กดบันทึกไม่ได้จนกว่าจะกรอกครบทุกช่อง — tooltip บอกว่าเหลือช่องไหน */}
                                                     <button type="button" className="atr-ok"
                                                         title={miss.length ? 'ยังกรอกไม่ครบ ขาด: ' + miss.join(', ') : 'บันทึกรายชื่อนี้'}
                                                         disabled={en.saving || miss.length > 0} onClick={() => saveRow(i)}>✓</button>

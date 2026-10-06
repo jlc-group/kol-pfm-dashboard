@@ -1208,6 +1208,8 @@ a { text-decoration: none; color: inherit; }
 .proc-ibtn.x:hover:not(:disabled) { background: #fbd5dc; }
 .proc-ibtn.done { color: var(--mint-dark); background: #d1fae5; border-color: transparent; cursor: default; }
 .proc-ibtn:disabled { opacity: .6; cursor: default; }
+/* ฝั่งเอเจนซี่: ช่องบังคับที่ยังว่าง (ลิงก์โพสต์ / วันที่โพสต์ / Gencode) — กรอบแดงตอนเริ่มแก้แถว ปุ่ม ✓ กดไม่ได้จนครบ (6 ต.ค. 2026) */
+.proc-cell.need input, .proc-cell.need .dp-trigger { border-color: #f87171; background: #fff5f5; }
 
 /* หน้า Ads: การ์ดตารางกินเต็มความกว้างหน้า (ผู้ใช้ขอเห็นคอลัมน์เยอะขึ้น) — หน้าอื่นบีบเนื้อหาไว้กลางจอไม่เกิน 1480px
    หักขอบหน้า (.content padding) ออกด้วย margin ติดลบ
