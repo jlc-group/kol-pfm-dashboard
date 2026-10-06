@@ -13,7 +13,8 @@ import {
     num, blocksBudget, platformBudgets, blocksProducts, withProductTargets, packProductTargets,
     needCampaign, campaignIsCtype, withCampaignFromCtype, packCampaigns, setTypeOk, isSplitBudget, productBudgetSum, packBudgets,
     isSplitConcept, isBlockSplitConcept, packConcepts, conceptParts,
-    isKolSplit, productKolOf, kolSplitState, kolSplitProblem, packKols,
+    isKolSplit, productKolOf, productKolSum, kolSplitState, kolSplitProblem, packKols, kolAutoTier, syncAutoKols, seedKolSplit,
+    blockTierNames, unifyTiers, setSetKols, setKol, settleKols,
     productRows, makeBundle, splitBundle, dropFromBundle, packBundles
 } from '../data/adGroups.js';
 
@@ -127,7 +128,7 @@ function initGroups(editing) {
         return editing.ad_groups.map(g => {
             const plat = migPlatform(g);
             const seededBudget = (g.budget != null && g.budget !== '') ? g.budget : ((groupsPerPlat[plat] === 1 && Number(pb[plat]) > 0) ? pb[plat] : '');
-            return newGroup({ key: g.key || genKey(), platform: plat, concept: g.concept || '', clips: [...(g.clips || [])], target: asTargetArray(g.target), content_type: g.content_type || '', media_type: g.media_type || '', content_format: g.content_format || '', brief: g.brief || '', products: [...(g.products || [])], allocations: migAllocations(g), blocks: toBlocks(g, plat).map(withProductTargets).map(withCampaignFromCtype), budget: seededBudget, code_expire: Number(g.code_expire) || 60, no_gencode: g.no_gencode === true });
+            return newGroup({ key: g.key || genKey(), platform: plat, concept: g.concept || '', clips: [...(g.clips || [])], target: asTargetArray(g.target), content_type: g.content_type || '', media_type: g.media_type || '', content_format: g.content_format || '', brief: g.brief || '', products: [...(g.products || [])], allocations: migAllocations(g), blocks: toBlocks(g, plat).map(withProductTargets).map(withCampaignFromCtype).map(seedKolSplit).map(unifyTiers), budget: seededBudget, code_expire: Number(g.code_expire) || 60, no_gencode: g.no_gencode === true });
         });
     }
     const prods = editing?.products || [];
@@ -200,12 +201,14 @@ export default function ProjectForm({ editing, onClose, onSaved }) {
         setAdGroups(gs => gs.map((x, idx) => {
             if (idx !== i) return x;
             const plats = splitCsv(csv);
-            const blocks = plats.map(p => (x.blocks || []).find(b => b.platform === p) || emptyBlock(p));
+            // บล็อกใหม่แยกจำนวนคนต่อสินค้าเสมอ (6 ต.ค. 2026 — จำนวนคนใส่ที่สินค้า)
+            const blocks = plats.map(p => (x.blocks || []).find(b => b.platform === p) || seedKolSplit(emptyBlock(p)));
             return { ...x, platform: csv, blocks };
         }));
     }
+    // ทุกการแก้บล็อกผ่านตรงนี้ — Platform ที่มี Content Type เดียว + Tier เดียว เขียนจำนวนรวมจากสินค้าลงแถว Tier ให้ทุกครั้ง (syncAutoKols)
     const mapBlock = (i, bi, fn) => setAdGroups(gs => gs.map((x, idx) =>
-        idx !== i ? x : ({ ...x, blocks: (x.blocks || []).map((b, j) => j !== bi ? b : fn(b)) })));
+        idx !== i ? x : ({ ...x, blocks: (x.blocks || []).map((b, j) => j !== bi ? b : syncAutoKols(settleKols(fn(b)))) })));
     // Target ของแถวสินค้าในบล็อก (1 แถว = 1 สินค้า หรือ 1 ชุด) — Target รวมของบล็อกคิดใหม่ตอนบันทึก
     // ชุดสินค้า: ติ๊กทีเดียวได้ทุกรหัสในชุด (Target ยังเก็บต่อสินค้า หน้าอื่นอ่านได้เหมือนเดิม)
     const toggleRowTarget = (i, bi, codes, t) => mapBlock(i, bi, b => {
@@ -220,7 +223,9 @@ export default function ProjectForm({ editing, onClose, onSaved }) {
     const addSet = (i, bi) => mapBlock(i, bi, b => {
         const last = b.sets[b.sets.length - 1] || {};
         const copyCampaign = needCampaign(b.platform) && !campaignIsCtype(b.platform);
-        return { ...b, sets: [...b.sets, emptySet({ campaign: copyCampaign ? (last.campaign || '') : '', media_type: last.media_type || '', content_format: last.content_format || '' })] };
+        // Tier ใช้ร่วมทุกชุด — ชุดใหม่ได้ Tier ของ Platform ไปด้วย (จำนวนคนของชุดใหม่เริ่มว่าง)
+        return { ...b, sets: [...b.sets, emptySet({ campaign: copyCampaign ? (last.campaign || '') : '', media_type: last.media_type || '', content_format: last.content_format || '',
+            tiers: blockTierNames(b).map(tier => ({ tier, kols: '' })) })] };
     });
     const removeSet = (i, bi, si) => mapBlock(i, bi, b => ({ ...b, sets: b.sets.length > 1 ? b.sets.filter((_, j) => j !== si) : b.sets }));
     const setBlockBudget = (i, bi, v) => mapBlock(i, bi, b => ({ ...b, budget: v.replace(/[^0-9]/g, '') }));
@@ -281,27 +286,33 @@ export default function ProjectForm({ editing, onClose, onSaved }) {
     const setSetField = (i, bi, si, k, v) => mapBlock(i, bi, b => ({
         ...b, sets: b.sets.map((s, j) => j !== si ? s : ({ ...s, [k]: v }))
     }));
-    // เพิ่มแถว Tier — เติม Tier ของแถวก่อนหน้ามาให้ (กลุ่มเดียวมักใช้ Tier เดิม)
-    const addTier = (i, bi, si) => mapBlock(i, bi, b => ({
-        ...b, sets: b.sets.map((s, j) => {
-            if (j !== si) return s;
-            const last = s.tiers[s.tiers.length - 1] || {};
-            return { ...s, tiers: [...s.tiers, { tier: last.tier || '', kols: '' }] };
+    // Tier ระดับ Platform — ใช้ร่วมทุก Content Type ไม่มีจำนวนคน (ผู้ใช้สั่ง 6 ต.ค. 2026) · แก้ / เพิ่ม / ลบ พร้อมกันทุกชุด
+    // (ข้อมูลยังเก็บรูปเดิม sets[].tiers — ดู unifyTiers / setSetKols ใน adGroups.js)
+    const setBlockTier = (i, bi, ti, v) => mapBlock(i, bi, b => ({
+        ...b, sets: b.sets.map(s => ({ ...s, tiers: s.tiers.map((t, k) => (k === ti ? { ...t, tier: v } : t)) }))
+    }));
+    // เพิ่ม Tier — เติม Tier ของแถวก่อนหน้ามาให้ (กลุ่มเดียวมักใช้ Tier เดิม)
+    const addBlockTier = (i, bi) => mapBlock(i, bi, b => {
+        const names = blockTierNames(b);
+        const last = names[names.length - 1] || '';
+        return { ...b, sets: b.sets.map(s => ({ ...s, tiers: [...s.tiers, { tier: last, kols: '' }] })) };
+    });
+    // ลบ Tier — จำนวนคนของชุดเก็บที่ Tier ตัวแรก ลบตัวไหนก็ย้ายยอดไปตัวแรกที่เหลือ
+    const removeBlockTier = (i, bi, ti) => mapBlock(i, bi, b => ({
+        ...b, sets: b.sets.map(s => {
+            if (s.tiers.length <= 1) return s;
+            const total = setKol(s);
+            return { ...s, tiers: s.tiers.filter((_, k) => k !== ti).map((t, k) => ({ ...t, kols: k === 0 && total > 0 ? String(total) : '' })) };
         })
     }));
-    const removeTier = (i, bi, si, ti) => mapBlock(i, bi, b => ({
-        ...b, sets: b.sets.map((s, j) => j !== si ? s : ({ ...s, tiers: s.tiers.length > 1 ? s.tiers.filter((_, k) => k !== ti) : s.tiers }))
-    }));
-    const setTierField = (i, bi, si, ti, k, v) => mapBlock(i, bi, b => ({
-        ...b, sets: b.sets.map((s, j) => j !== si ? s : ({ ...s, tiers: s.tiers.map((t, k2) => k2 !== ti ? t : ({ ...t, [k]: v })) }))
-    }));
+    // จำนวนคนของ Content Type (มีช่องเฉพาะตอนมีมากกว่า 1 Content Type) — รับเฉพาะตัวเลขจำนวนเต็ม
+    const setSetCount = (i, bi, si, v) => mapBlock(i, bi, b => setSetKols(b, si, String(v).replace(/[^0-9]/g, '').replace(/^0+(?=\d)/, '')));
 
     const setGroupField = (i, k, v) => setAdGroups(g => g.map((x, idx) => idx === i ? { ...x, [k]: v } : x));
     // Concept แยกต่อสินค้า (ต่อ Platform) — ปิดแล้วข้อความที่พิมพ์ไว้ยังอยู่ในฟอร์ม (เปิดใหม่ได้คืน) แต่ไม่ถูกบันทึก
     const toggleConceptSplit = (i, bi) => mapBlock(i, bi, b => ({ ...b, concept_split: !b.concept_split }));
     const setProductConcept = (i, bi, code, v) => mapBlock(i, bi, b => ({ ...b, product_concepts: { ...(b.product_concepts || {}), [code]: v } }));
-    // จำนวน KOL แยกต่อสินค้า (ต่อ Platform) — เปิดแล้วช่องเริ่มว่าง (ไม่เดาตัวเลขให้) · ปิดแล้วตัวเลขที่ใส่ไว้ยังอยู่ในฟอร์ม (เปิดใหม่ได้คืน) แต่ไม่ถูกบันทึก
-    const toggleKolSplit = (i, bi) => mapBlock(i, bi, b => ({ ...b, kol_split: !b.kol_split }));
+    // จำนวน KOL ต่อสินค้า (ต่อ Platform) — ใส่ที่แถวสินค้าเสมอ (6 ต.ค. 2026 เอาปุ่มเปิด/ปิดออก)
     // รับเฉพาะตัวเลขจำนวนเต็ม (ตัด 0 นำหน้า) — 0 / ว่าง = ยังไม่ใส่ (แถวขึ้นแดง)
     const setProductKol = (i, bi, code, v) => mapBlock(i, bi, b => ({
         ...b, product_kols: { ...(b.product_kols || {}), [code]: String(v).replace(/[^0-9]/g, '').replace(/^0+(?=\d)/, '') }
@@ -351,10 +362,11 @@ export default function ProjectForm({ editing, onClose, onSaved }) {
                 // ยกเว้นกลุ่มที่ไม่ใช้ Gencode (ไม่ได้ยิงแอด) ที่สองช่องนี้ถูกปิดไว้ — ดู setTypeOk
                 return b.sets.every(s => setTypeOk(g, b.platform, s)
                     && (s.tiers || []).length > 0
-                    && s.tiers.every(t => t.tier && (Number(t.kols) || 0) > 0));
+                    // Tier ทุกแถวต้องเลือก · หลาย Content Type ต้องใส่จำนวนคนทุก Content Type (Content Type เดียว = จำนวนจากสินค้า ตรวจที่ kolSplitProblem)
+                    && s.tiers.every(t => t.tier) && (kolAutoTier(b) || setKol(s) > 0));
             });
         });
-        if (!groupsOk) m.push('กลุ่มสินค้า (Platform/สินค้า/Target ของทุกสินค้าใน TikTok/Content Type (Facebook/Instagram: Campaign — กลุ่มที่ไม่ใช้ Gencode ไม่ต้องใส่) + ทุกแถว Tier กับจำนวน KOL ให้ครบ)');
+        if (!groupsOk) m.push('กลุ่มสินค้า (Platform/สินค้า/Target ของทุกสินค้าใน TikTok/Content Type (Facebook/Instagram: Campaign — กลุ่มที่ไม่ใช้ Gencode ไม่ต้องใส่) + Tier ให้ครบ · หลาย Content Type ใส่จำนวนคนของแต่ละ Content Type ด้วย)');
         if (!form.owner) m.push('Project Owner');
         // งบกรอกที่ชั้น Platform — ต้องมีทุกบล็อก
         // แยกงบต่อสินค้า = ทุกแถวสินค้าในบล็อกต้องใส่งบ (ชุด = งบเดียวที่หัวชุด) · ก้อนเดียว = งบของ Platform ต้องมากกว่า 0
@@ -392,7 +404,8 @@ export default function ProjectForm({ editing, onClose, onSaved }) {
                 // จำนวน KOL แยกต่อสินค้า: ส่ง kol_split เสมอ + จำนวนเฉพาะสินค้าที่ยังอยู่ (packKols — server carryProductKols ใช้แยกแท็บเก่า)
                 // ชุดสินค้า: ส่ง bundles เป็นอาเรย์เสมอ (packBundles — server carryProductBundles ใช้แยกแท็บเก่า) · งบ / คน / Concept ของชุดเก็บที่หัวชุด
                 // ไม่ใช้ Gencode: ส่ง no_gencode เป็น boolean เสมอ — server (carryNoGencode) ใช้แยกฟอร์มรุ่นใหม่ออกจากแท็บเก่าที่ไม่ส่งคีย์นี้
-                const blocks = (g.blocks || []).filter(b => plats.includes(b.platform)).map(b => packCampaigns(packProductTargets(packBudgets(packConcepts(packKols(packBundles(b)))))));
+                // syncAutoKols ซ้ำอีกรอบกันพลาด — Content Type เดียว + Tier เดียว จำนวนคนของ Tier = ผลรวมจากสินค้า
+                const blocks = (g.blocks || []).filter(b => plats.includes(b.platform)).map(b => packCampaigns(packProductTargets(packBudgets(packConcepts(packKols(packBundles(syncAutoKols(settleKols(b)))))))));
                 // แบนโครง 3 ชั้นออกเป็น allocations — 1 แถว = Platform + Content Type + Tier
                 // หน้าอื่นที่ยังอ่านแบบเดิมจะยังทำงานได้ และมีข้อมูลพอให้แยกตาม Platform ได้ด้วย
                 const allocations = flattenBlocks(blocks);
@@ -578,7 +591,8 @@ export default function ProjectForm({ editing, onClose, onSaved }) {
                                     </div>
 
                                     {/* แบ่งงานในกลุ่ม: Platform -> Content Type -> Tier
-                                        จำนวน KOL กรอกที่ชั้น Tier ที่เดียว ยอดรวมคิดขึ้นมาให้เอง */}
+                                        จำนวน KOL ใส่ที่แถวสินค้า (6 ต.ค. 2026) · Content Type เดียว + Tier เดียว = จำนวนของ Tier รวมจากสินค้าเอง
+                                        หลายชุด / หลาย Tier ใส่จำนวนที่ Tier ด้วยเพื่อแบ่งเป้า (ผลรวมสินค้าต้องเท่ากัน) */}
                                     {(g.blocks || []).length === 0 ? (
                                         <p className="blk-empty">เลือก Platform ด้านบนก่อน แล้วช่องแบ่งงานจะขึ้นตรงนี้</p>
                                     ) : (g.blocks || []).map((b, bi) => {
@@ -649,7 +663,12 @@ export default function ProjectForm({ editing, onClose, onSaved }) {
                                         const kst = kolSplitState(b);
                                         const kOf = code => productKolOf(b, code);
                                         const kolDiff = kst ? kst.total - kst.sum : 0;
-                                        const kolHint = kst && (kst.ok
+                                        // Content Type เดียว + Tier เดียว: จำนวนรวม = ผลรวมจากสินค้า (ไม่มีเป้าให้ขาด/เกิน) · แคมเปญเก่าที่ยังไม่แบ่งบอกยอดเดิมไว้
+                                        const auto = kolAutoTier(b);
+                                        const kolHint = kst && auto ? (kst.ok
+                                            ? <span className="tgt-ok">✓ ใส่จำนวนครบ {kst.count} สินค้า · รวม {kst.sum} คน</span>
+                                            : <span className="tgt-hint">ใส่จำนวนแล้ว {kst.filled} / {kst.count} สินค้า{kst.sum > 0 ? ` · รวม ${kst.sum} คน` : kst.total > 0 ? ` · เดิม ${kst.total} คน` : ''}</span>)
+                                            : kst && (kst.ok
                                             ? <span className="tgt-ok">✓ ใส่จำนวนครบ {kst.count} สินค้า · รวม {kst.sum} / {kst.total} คน</span>
                                             : <span className={'tgt-hint' + (kolDiff < 0 ? ' over' : '')}>
                                                 ใส่จำนวนแล้ว {kst.filled} / {kst.count} สินค้า · รวม {kst.sum} / {kst.total} คน
@@ -718,12 +737,7 @@ export default function ProjectForm({ editing, onClose, onSaved }) {
                                                     onClick={() => toggleConceptSplit(i, bi)}>
                                                     {cSplit ? '☑' : '☐'} 📝 แยก Concept ต่อสินค้า
                                                 </button>
-                                                {/* กดแล้วแถวสินค้าได้ช่อง "คน" — แบ่งจำนวน KOL ของ Platform นี้ให้แต่ละสินค้า (รวมต้องเท่าจำนวนจากแถว Tier) */}
-                                                <button type="button" className={kSplit ? 'on' : ''} aria-pressed={kSplit}
-                                                    title={kSplit ? 'กดอีกครั้งเพื่อกลับไปใช้จำนวน KOL รวมของ Platform' : 'ใส่จำนวน KOL ของแต่ละสินค้า — รวมแล้วต้องเท่าจำนวน KOL ของ Platform นี้'}
-                                                    onClick={() => toggleKolSplit(i, bi)}>
-                                                    {kSplit ? '☑' : '☐'} 👥 แยกจำนวน KOL ต่อสินค้า
-                                                </button>
+                                                {/* ปุ่ม 👥 แยกจำนวน KOL ต่อสินค้า เอาออกแล้ว (6 ต.ค. 2026) — ช่อง "คน" อยู่ในแถวสินค้าเสมอ */}
                                             </div>
                                             {/* ชุดสินค้า: ติ๊ก ☐ หน้าสินค้าที่ KOL 1 คนรีวิวรวมในคลิปเดียว (อย่างน้อย 2 แถว) แล้วกดรวม
                                                 ชุด = 1 แถว มีงบ / จำนวนคน / Concept / Target ชุดเดียว · แยกกลับได้ที่ปุ่ม ✂ แยกชุด ในแถวของชุด */}
@@ -843,6 +857,42 @@ export default function ProjectForm({ editing, onClose, onSaved }) {
                                                     (ถ้ายังต้องใช้ ให้เลือกสินค้าที่ใช้ Target นี้เพิ่ม ระบบจะติ๊กคืนให้ หรือติ๊กในแถวของสินค้านั้นเอง)
                                                 </div>
                                             )}
+                                            {/* Tier ของ Platform — แยกออกจาก Content Type ใช้ร่วมทุกชุด ไม่มีจำนวนคน (ผู้ใช้สั่ง 6 ต.ค. 2026) */}
+                                            {(() => {
+                                                const names = blockTierNames(b);
+                                                const total = (b.sets || []).reduce((n, s) => n + setKol(s), 0);
+                                                return (
+                                                    <div className="blk-tiers">
+                                                        <div className="blk-tiers-head">
+                                                            <span className="blk-tiers-title">Tier</span>
+                                                            {kolAutoTier(b) ? (
+                                                                <span className="tier-auto" title="รวมจากจำนวนคนที่ใส่ในแถวสินค้าด้านบน">
+                                                                    {productKolSum(b) > 0 ? <><b>{productKolSum(b)}</b> คน · รวมจากสินค้า</> : 'ใส่จำนวนคนที่สินค้าด้านบน'}
+                                                                </span>
+                                                            ) : (
+                                                                <span className="tier-auto" title="รวมจากจำนวนคนของแต่ละ Content Type ด้านล่าง">
+                                                                    <b>{total}</b> คน · แบ่งตาม Content Type ด้านล่าง
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                        {names.map((name, ti) => (
+                                                            <div className="tier-row" key={ti}>
+                                                                <select value={name} aria-label={`Tier ที่ ${ti + 1}`} onChange={e => setBlockTier(i, bi, ti, e.target.value)}>
+                                                                    <option value="">— Tier —</option>
+                                                                    {TIERS.map(x => <option key={x} value={x}>{x}</option>)}
+                                                                </select>
+                                                                {names.length > 1 && (
+                                                                    <button type="button" className="alloc-rm" title="ลบ Tier นี้"
+                                                                        onClick={() => removeBlockTier(i, bi, ti)}>×</button>
+                                                                )}
+                                                            </div>
+                                                        ))}
+                                                        <button type="button" className="tier-add" onClick={() => addBlockTier(i, bi)}>
+                                                            <Icon name="plus" size={13} /> เพิ่ม Tier
+                                                        </button>
+                                                    </div>
+                                                );
+                                            })()}
                                             {(b.sets || []).map((s, si) => (
                                                 <div className="ctype-set" key={si}>
                                                     <div className="ctype-set-row">
@@ -897,26 +947,18 @@ export default function ProjectForm({ editing, onClose, onSaved }) {
                                                                 onClick={() => removeSet(i, bi, si)}>×</button>
                                                         )}
                                                     </div>
-                                                    <div className="tier-rows">
-                                                        {(s.tiers || []).map((t, ti) => (
-                                                            <div className="tier-row" key={ti}>
-                                                                <select value={t.tier} onChange={e => setTierField(i, bi, si, ti, 'tier', e.target.value)}>
-                                                                    <option value="">— Tier —</option>
-                                                                    {TIERS.map(x => <option key={x} value={x}>{x}</option>)}
-                                                                </select>
-                                                                <input type="number" min="0" placeholder="0" value={t.kols}
-                                                                    onChange={e => setTierField(i, bi, si, ti, 'kols', e.target.value)} />
-                                                                <span className="tier-unit">คน</span>
-                                                                {(s.tiers || []).length > 1 && (
-                                                                    <button type="button" className="alloc-rm" title="ลบแถว Tier"
-                                                                        onClick={() => removeTier(i, bi, si, ti)}>×</button>
-                                                                )}
-                                                            </div>
-                                                        ))}
-                                                        <button type="button" className="tier-add" onClick={() => addTier(i, bi, si)}>
-                                                            <Icon name="plus" size={13} /> เพิ่ม Tier
-                                                        </button>
-                                                    </div>
+                                                    {/* จำนวนคนของ Content Type — ขึ้นเฉพาะตอนมีมากกว่า 1 Content Type (ผลรวมต้องเท่าผลรวมจากสินค้า)
+                                                        Content Type เดียว = จำนวนมาจากสินค้าเอง ไม่มีช่องนี้ (6 ต.ค. 2026) */}
+                                                    {(b.sets || []).length > 1 && (
+                                                        <div className="tier-row set-kol-row">
+                                                            <span className="set-kol-label">จำนวนคน</span>
+                                                            <input type="text" inputMode="numeric" placeholder="0"
+                                                                aria-label={`จำนวนคนของ ${s.content_type || s.campaign || 'ชุดที่ ' + (si + 1)}`}
+                                                                value={setKol(s) > 0 ? String(setKol(s)) : ''}
+                                                                onChange={e => setSetCount(i, bi, si, e.target.value)} />
+                                                            <span className="tier-unit">คน</span>
+                                                        </div>
+                                                    )}
                                                 </div>
                                             ))}
                                             <button type="button" className="alloc-add" onClick={() => addSet(i, bi)}>

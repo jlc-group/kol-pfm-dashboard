@@ -35,6 +35,24 @@ const platformOfHost = host => {
     const hit = HOSTS.find(p => p.re.test(h));
     return hit ? hit.platform : '';
 };
+// แพลตฟอร์มที่รู้จักโดเมน — ใช้เช็คว่าลิงก์โพสต์ตรงกับ Platform ของแถวไหม (ตาราง On Process)
+export const KNOWN_LINK_PLATFORMS = HOSTS.map(p => p.platform);
+// โดเมนทางการที่มีแต่ลิงก์โพสต์ (ไม่ใช่หน้าโปรไฟล์ — จึงไม่ใส่ใน HOSTS ที่หน้า Talent ใช้แยกบัญชี) · รีวิว 6 ต.ค. 2026
+// X ย่อลิงก์เป็น t.co · TikTok แชร์คลิปผ่าน tiktokv.com
+const POST_ONLY_HOSTS = [
+    { platform: 'TikTok', re: /(^|\.)tiktokv\.com$/ },
+    { platform: 'X', re: /(^|\.)t\.co$/ }
+];
+// ลิงก์โพสต์ http/https → ชื่อแพลตฟอร์มจากโดเมน ('' = ไม่ใช่ลิงก์ / โดเมนที่ไม่รู้จัก) · ตาราง On Process ใช้เช็คลิงก์ผิด Platform
+export function platformOfUrl(raw) {
+    try {
+        const u = new URL(str(raw));
+        if (u.protocol !== 'http:' && u.protocol !== 'https:') return '';
+        const h = u.hostname.toLowerCase().replace(/\.$/, '');   // www.tiktok.com. (ลงท้ายจุด) = โดเมนเดียวกัน
+        const extra = POST_ONLY_HOSTS.find(p => p.re.test(h));
+        return platformOfHost(h) || (extra ? extra.platform : '');
+    } catch { return ''; }
+}
 // ส่วนแรกของ path ที่ไม่ใช่ชื่อบัญชี (หน้าโพสต์ / หน้าระบบของแพลตฟอร์มนั้น)
 const RESERVED = {
     Instagram: ['p', 'reel', 'reels', 'tv', 'stories', 'explore', 'accounts', 'direct', 'about', 'legal', 'developer', 'web', 's'],

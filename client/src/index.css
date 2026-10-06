@@ -1210,6 +1210,10 @@ a { text-decoration: none; color: inherit; }
 .proc-ibtn:disabled { opacity: .6; cursor: default; }
 /* ฝั่งเอเจนซี่: ช่องบังคับที่ยังว่าง (ลิงก์โพสต์ / วันที่โพสต์ / Gencode) — กรอบแดงตอนเริ่มแก้แถว ปุ่ม ✓ กดไม่ได้จนครบ (6 ต.ค. 2026) */
 .proc-cell.need input, .proc-cell.need .dp-trigger { border-color: #f87171; background: #fff5f5; }
+/* ลิงก์โพสต์ไม่ตรง Platform ของแถว (6 ต.ค. 2026) — กรอบแดง + ข้อความเตือนใต้ช่อง (ทั้งฝั่งทีมและเอเจนซี่) */
+.proc-cell.link-bad { flex-wrap: wrap; }
+.proc-cell.link-bad > input { flex: 1 1 0; width: auto; min-width: 0; border-color: #f87171; background: #fff5f5; }   /* ช่องลิงก์ + ปุ่มดูอยู่บรรทัดเดียว ข้อความเตือนลงบรรทัดล่าง */
+.proc-link-warn { flex-basis: 100%; font-size: 10.5px; font-weight: 700; line-height: 1.3; color: #dc2626; }
 
 /* หน้า Ads: การ์ดตารางกินเต็มความกว้างหน้า (ผู้ใช้ขอเห็นคอลัมน์เยอะขึ้น) — หน้าอื่นบีบเนื้อหาไว้กลางจอไม่เกิน 1480px
    หักขอบหน้า (.content padding) ออกด้วย margin ติดลบ
@@ -2942,6 +2946,16 @@ a.ads-thumb:focus-visible { outline: 2px solid var(--mint-dark); outline-offset:
 .tier-row { display: flex; align-items: center; gap: 8px; }
 .tier-row select { flex: 1; min-width: 150px; margin: 0; }
 .tier-row input { width: 84px; margin: 0; }
+/* Content Type เดียว + Tier เดียว: ไม่มีช่องจำนวน — โชว์ผลรวมจากจำนวนคนที่ใส่ในแถวสินค้า (6 ต.ค. 2026) */
+.tier-auto { flex: none; min-width: 84px; font-size: 12.5px; color: var(--muted); white-space: nowrap; }
+.tier-auto b { font-size: 14px; color: var(--mint-dark); }
+/* Tier ระดับ Platform (แยกจาก Content Type · ใช้ร่วมทุกชุด · ไม่มีจำนวนคน) + ช่องจำนวนคนต่อ Content Type ตอนมีหลายชุด (6 ต.ค. 2026) */
+.blk-tiers { margin: 10px 0 8px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 12px; background: #fafdfb; display: flex; flex-direction: column; gap: 8px; }
+.blk-tiers-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.blk-tiers-title { font-size: 12.5px; font-weight: 800; color: var(--text); }
+.blk-tiers .tier-add { align-self: flex-start; }
+.set-kol-row { margin-top: 8px; }
+.set-kol-label { flex: 1; font-size: 12.5px; font-weight: 700; color: var(--text); }
 .tier-unit { font-size: 11.5px; color: #7d938d; }
 .tier-add {
     align-self: flex-start; background: none; border: 1px dashed var(--mint); color: #0f766e;
@@ -3002,8 +3016,11 @@ a.ads-thumb:focus-visible { outline: 2px solid var(--mint-dark); outline-offset:
 .adg-pbud b { font-weight: 800; }
 /* จำนวน KOL ต่อสินค้า ในการ์ดกลุ่มหน้ารายละเอียดแคมเปญ — สีฟ้า แยกจากงบต่อสินค้า (สีส้ม) */
 .adg-pbud.adg-pkol { background: #eef4ff; border-color: #d6e2ff; color: #3b5ba5; }
+/* สินค้าในการ์ดกลุ่ม (แคมเปญเก่าที่ยังไม่แยกจำนวนคนต่อสินค้า) — ชื่ออย่างเดียว */
+.adg-prow { display: inline-flex; align-items: center; gap: 4px; padding: 3px 9px; border-radius: 8px; background: #f6f8f7; border: 1px solid #e3e8e6; color: #33413d; font-size: 11.5px; }
+.adg-prow b { font-weight: 800; }
 /* ชุดสินค้า (รีวิวรวมในคลิปเดียว) ในการ์ดกลุ่ม — โทนม่วงเดียวกับในฟอร์ม */
-.adg-pbud.adg-pbd { background: #f5f0ff; border-color: #d8c8fb; color: #5b21b6; }
+.adg-pbud.adg-pbd, .adg-prow.adg-pbd { background: #f5f0ff; border-color: #d8c8fb; color: #5b21b6; }
 /* จำนวน KOL ต่อสินค้า ที่หัวกลุ่ม (หน้าเอเจนซี่ + แท็บรายชื่อฝั่งทีม) — ต้องการกี่คน · ส่งแล้วกี่คน */
 .ag-pkol { margin-top: 8px; display: flex; flex-direction: column; gap: 5px; }
 .ag-pkol-lbl { font-size: 11.5px; font-weight: 700; color: var(--muted); }
@@ -3040,6 +3057,12 @@ a.ads-thumb:focus-visible { outline: 2px solid var(--mint-dark); outline-offset:
 /* แท็บรายชื่อ KOL — แบ่งเป็นกล่องตาม Platform + Content Type ให้ตรงกับที่เอเจนซี่กรอก */
 .list-typebox { border: 1px solid var(--border); border-radius: 12px; background: #fff; padding: 9px 11px; margin: 9px 0; }
 .list-typebox-left { border-style: dashed; background: #fafafa; }
+/* แถวกรอกรายชื่อฝั่งทีม (TeamAddRows · 6 ต.ค. 2026) — แบบเดียวกับกล่องเอเจนซี่ + คอลัมน์ ค่าตัว/คลิป ต่อจาก KOL CONTACT */
+.ag-add-grid.team { min-width: 1040px; margin-top: 6px; display: flex; flex-direction: column; gap: 6px; }
+.ag-add-grid.team .ag-add-head { padding-bottom: 3px; }
+.ag-add-grid.team .ag-add-head, .ag-add-grid.team .ag-add-row {
+    grid-template-columns: minmax(120px,1.9fr) minmax(76px,0.8fr) minmax(76px,0.8fr) minmax(104px,1fr) minmax(74px,0.66fr) minmax(84px,0.86fr) minmax(80px,0.8fr) minmax(74px,0.7fr) minmax(84px,0.9fr) 76px;
+}
 .list-tb-head { margin-bottom: 6px; }
 .list-typebox .sub-group { margin-top: 6px; }
 /* การ์ดกลุ่มในแท็บรายชื่อฝั่งทีม = การ์ดเดียวกับหน้าเอเจนซี่ (.agency-card.ag-group + หัว GroupNeedHead)

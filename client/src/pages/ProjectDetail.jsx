@@ -6,18 +6,19 @@ import ProjectForm from '../components/ProjectForm.jsx';
 import OtherProjectDetail from './OtherProjectDetail.jsx';
 import SoloKolDetail from './SoloKolDetail.jsx';
 import OnProcessTable from '../components/OnProcessTable.jsx';
-import ProductChips, { ProductSummary } from '../components/ProductChips.jsx';
+import { ProductSummary } from '../components/ProductChips.jsx';
 import ConceptLines from '../components/ConceptLines.jsx';
 import GroupNeedHead, { groupClipNeed } from '../components/GroupNeedHead.jsx';
 import ProductMultiSelect from '../components/ProductMultiSelect.jsx';
+import TeamAddRows from '../components/TeamAddRows.jsx';
 import { unreadCount } from '../components/MessageBox.jsx';
 import ChatDock from '../components/ChatDock.jsx';
 import { productLabel, asTargetArray } from '../data/products.js';
 import {
     groupPlatforms, kolInScope, contentTypesOf, mediaFor, quotaOf,
-    toBlocks, blockKol, blocksKol, blocksBudget, num, needTarget, isSplitBudget, hasOwnConcepts,
+    toBlocks, blockKol, blocksKol, blocksBudget, num, isSplitBudget, hasOwnConcepts,
     contentCells, cellKeyOf, cellKey, clipCountFor, targetFor, groupNoGencode, productsFor, allocsInScope, conceptOneLine,
-    isKolSplit, productKolOf, productKolProgress, productRows, blockBundles
+    isKolSplit, productKolOf, productKolProgress, productRows
 } from '../data/adGroups.js';
 import { collapseByPerson, countPeople } from '../data/clips.js';
 import ProductFilter from '../components/ProductFilter.jsx';
@@ -101,8 +102,8 @@ function AddKolModal({ projectId, existingIds, onClose, onAdded }) {
 const SUB_PLATFORMS = ['TikTok', 'Instagram', 'Facebook', 'Lemon8', 'YouTube', 'X'];
 
 // modal เพิ่ม KOL เข้าลิสต์เอง (ฝั่งทีม)
-// preset = { group_key, platform, content_type } — เปิดจากปุ่ม "+ เพิ่มรายชื่อ" ในกล่องของแท็บรายชื่อ
-// เลือกกลุ่ม / Platform / Content Type ของกล่องนั้นไว้ให้เลย (ยังเปลี่ยนเองได้) · ไม่มี preset = ทำงานแบบเดิมทุกอย่าง
+// preset = { group_key, platform, content_type } — เลือกกลุ่ม / Platform / Content Type ไว้ให้ (ยังเปลี่ยนเองได้) · ไม่มี preset = แบบเดิม
+// ปุ่ม "+ เพิ่มรายชื่อ" ในกล่องเปลี่ยนเป็นแถวกรอก (TeamAddRows) แล้ว 6 ต.ค. 2026 — หน้าต่างนี้เหลือใช้จากปุ่ม "เพิ่ม KOL" ด้านบน
 function AddSubmissionModal({ projectId, products = [], groups = [], preset = null, onClose, onAdded }) {
     // มีกลุ่มเดียวก็เลือกให้เลย ไม่ต้องกดซ้ำ
     const [f, setF] = useState(() => {
@@ -353,18 +354,6 @@ function AgencyLinkRow({ l, url, copied, onCopy, onEdit, onDelete, onChat, unrea
             )}
         </div>
     );
-}
-
-// สินค้าในบล็อกที่ตั้ง Target เป็นชุดเดียวกัน รวมไว้แถวเดียว (เรียงตามสินค้าตัวแรกที่เจอ)
-function groupByTargets(b) {
-    const rows = [];
-    (b.products || []).forEach(code => {
-        const targets = asTargetArray((b.product_targets || {})[code]);
-        const key = [...targets].sort().join('|');
-        const row = rows.find(r => r.key === key);
-        if (row) row.codes.push(code); else rows.push({ key, targets, codes: [code] });
-    });
-    return rows;
 }
 
 export default function ProjectDetail() {
@@ -858,11 +847,9 @@ export default function ProjectDetail() {
                         {mine.length > 0
                             ? statusBlocks(mine, g)
                             : all.length > 0 && <div className="proc-group-empty">{emptyText('ในช่องนี้')}</div>}
-                        {/* ปุ่มหน้าตาเดียวกับกล่องกรอกของเอเจนซี่ — เปิดหน้าต่างเพิ่ม KOL เดิม โดยเลือกกลุ่ม/Platform/Content Type ของกล่องนี้ไว้ให้ */}
-                        <button type="button" className="agency-add-row list-add-row"
-                            onClick={() => openAddSub({ group_key: g.key, platform: c.platform, content_type: c.contentType || '' })}>
-                            <Icon name="plus" size={15} /> เพิ่มรายชื่อ
-                        </button>
+                        {/* "+ เพิ่มรายชื่อ" = แถวกรอกในกล่องแบบหน้าเอเจนซี่ (6 ต.ค. 2026 · เดิมเปิดหน้าต่าง) — กลุ่ม/Platform/Content Type ของกล่องนี้ */}
+                        <TeamAddRows projectId={id} group={g} platform={c.platform} contentType={c.contentType || ''}
+                            startNo={countPeople(all) + 1} onSaved={loadSubs} />
                     </div>
                 );
             })}
@@ -1124,58 +1111,26 @@ export default function ProjectDetail() {
                                                             {(b.clips || []).length > 1 && <span className="adg-pb-clip">🎬 {b.clips.length} Content / คน</span>}
                                                         </div>
                                                         <div className="adg-fields">
-                                                            {/* บล็อกที่ตั้ง Target แยกต่อสินค้า: 1 แถว = สินค้า + Target ของสินค้านั้น */}
-                                                            {needTarget(b.platform) && b.product_targets && (b.products || []).length > 0 ? (
-                                                                <div className="adg-field">
-                                                                    <span className="adg-label">สินค้า + Target <span className="adg-count">({b.products.length})</span></span>
-                                                                    <div className="adg-ptgt">
-                                                                        {groupByTargets(b).map(r => (
-                                                                            <div className="adg-ptgt-row" key={r.key}>
-                                                                                <div className="adg-ptgt-tg">
-                                                                                    {r.targets.length > 0
-                                                                                        ? r.targets.map(t => <span className="chip-target" key={t}>🎯 {t}</span>)
-                                                                                        : <span className="muted">ไม่ระบุ Target</span>}
-                                                                                    <span className="adg-count">· {r.codes.length} สินค้า</span>
-                                                                                </div>
-                                                                                <ProductChips products={r.codes} />
-                                                                            </div>
-                                                                        ))}
+                                                            {/* สินค้า / ชุดสินค้า + จำนวนคน (ผู้ใช้สั่ง 6 ต.ค. 2026: เอาป้าย "สินค้า + Target" ออกจากการ์ด)
+                                                                1 รายการ = 1 สินค้า หรือ 1 ชุด (KOL 1 คนรีวิวรวมในคลิปเดียว — สีม่วง 🔗) · Target ดูที่ฟอร์มแก้แคมเปญ / คอลัมน์ TARGET แท็บ On Process (ฝั่งทีม)
+                                                                แยกจำนวนต่อสินค้าแล้ว = มีจำนวนคน · แคมเปญเก่าที่ยังไม่แบ่ง = ชื่ออย่างเดียว (จำนวนรวมดูที่หัวบล็อก) */}
+                                                            {(() => {
+                                                                const rows = productRows(b);
+                                                                const kSplit = isKolSplit(b);
+                                                                return (
+                                                                    <div className="adg-field">
+                                                                        <span className="adg-label">{kSplit ? 'สินค้า · จำนวนคน' : 'สินค้า'} <span className="adg-count">({rows.length})</span></span>
+                                                                        <div className="adg-val">
+                                                                            {rows.length ? rows.map(r => (
+                                                                                <span className={(kSplit ? 'adg-pbud adg-pkol' : 'adg-prow') + (r.bundle ? ' adg-pbd' : '')} key={r.head}
+                                                                                    title={(r.bundle ? 'รีวิวรวมในคลิปเดียว\n' : '') + r.codes.map(productLabel).join('\n')}>
+                                                                                    {r.bundle && '🔗 '}<b>{r.label}</b>{kSplit && <> {productKolOf(b, r.head)} คน</>}
+                                                                                </span>
+                                                                            )) : <span className="muted">ไม่ระบุ</span>}
+                                                                        </div>
                                                                     </div>
-                                                                </div>
-                                                            ) : (<>
-                                                            <div className="adg-field">
-                                                                <span className="adg-label">สินค้า <span className="adg-count">({(b.products || []).length})</span></span>
-                                                                <div className="adg-val">
-                                                                    {(b.products || []).length > 0
-                                                                        ? <ProductChips products={b.products} />
-                                                                        : <span className="muted">ไม่ระบุ</span>}
-                                                                </div>
-                                                            </div>
-                                                            {/* Target มีเฉพาะ Platform ที่ใช้ยิงแอด (TikTok) */}
-                                                            {needTarget(b.platform) && (
-                                                                <div className="adg-field">
-                                                                    <span className="adg-label">กลุ่มเป้าหมาย (Target)</span>
-                                                                    <div className="adg-val">
-                                                                        {b.target.length > 0
-                                                                            ? b.target.map(t => <span className="chip-target" key={t}>🎯 {t}</span>)
-                                                                            : <span className="muted">ไม่ระบุ</span>}
-                                                                    </div>
-                                                                </div>
-                                                            )}
-                                                            </>)}
-                                                            {/* ชุดสินค้า: KOL 1 คนรีวิวหลายสินค้ารวมในคลิปเดียว (งบ / จำนวนคน / Concept / Target ชุดเดียว) */}
-                                                            {blockBundles(b).length > 0 && (
-                                                                <div className="adg-field">
-                                                                    <span className="adg-label">ชุดรีวิวรวม (คลิปเดียว)</span>
-                                                                    <div className="adg-val">
-                                                                        {blockBundles(b).map(bd => (
-                                                                            <span className="adg-pbud adg-pbd" key={bd[0]} title={bd.map(productLabel).join('\n')}>
-                                                                                🔗 <b>{bd.join(' + ')}</b>
-                                                                            </span>
-                                                                        ))}
-                                                                    </div>
-                                                                </div>
-                                                            )}
+                                                                );
+                                                            })()}
                                                             {/* งบแยกต่อสินค้า (ผลรวม = งบของ Platform ที่หัวบล็อก) · ชุด = 1 รายการ (งบอยู่ที่หัวชุด) */}
                                                             {isSplitBudget(b) && (b.products || []).length > 0 && (
                                                                 <div className="adg-field">
@@ -1184,19 +1139,6 @@ export default function ProjectDetail() {
                                                                         {productRows(b).map(r => (
                                                                             <span className="adg-pbud" key={r.head} title={r.codes.map(productLabel).join('\n')}>
                                                                                 <b>{r.label}</b> ฿{num((b.product_budgets || {})[r.head]).toLocaleString('th-TH')}
-                                                                            </span>
-                                                                        ))}
-                                                                    </div>
-                                                                </div>
-                                                            )}
-                                                            {/* จำนวน KOL แยกต่อสินค้า (ผลรวม = จำนวนคนของ Platform ที่หัวบล็อก) · ชุด = 1 รายการ */}
-                                                            {isKolSplit(b) && (b.products || []).length > 0 && (
-                                                                <div className="adg-field">
-                                                                    <span className="adg-label">จำนวน KOL ต่อสินค้า</span>
-                                                                    <div className="adg-val">
-                                                                        {productRows(b).map(r => (
-                                                                            <span className="adg-pbud adg-pkol" key={r.head} title={r.codes.map(productLabel).join('\n')}>
-                                                                                <b>{r.label}</b> {productKolOf(b, r.head)} คน
                                                                             </span>
                                                                         ))}
                                                                     </div>
@@ -1214,10 +1156,15 @@ export default function ProjectDetail() {
                                                                         {s.media_type && <span className="chip-ctype media">{s.media_type}</span>}
                                                                         {splitCsv(s.content_format).map(x => <span className="chip-ctype fmt" key={x}>{x}</span>)}
                                                                     </div>
+                                                                    {/* Tier ใช้ร่วมทุก Content Type ไม่มีจำนวนต่อ Tier แล้ว (6 ต.ค. 2026) — โชว์ชื่อ Tier + จำนวนคนรวมของ Content Type นี้ */}
                                                                     <div className="adg-set-tiers">
-                                                                        {(s.tiers || []).filter(t => t.tier || num(t.kols)).map((t, ti) => (
-                                                                            <span className="adg-alloc" key={ti}><b>{t.tier || '—'}</b> · {num(t.kols)} คน</span>
-                                                                        ))}
+                                                                        {(() => {
+                                                                            const names = [...new Set((s.tiers || []).map(t => t.tier).filter(Boolean))];
+                                                                            const n = (s.tiers || []).reduce((sum, t) => sum + num(t.kols), 0);
+                                                                            return (names.length || n > 0) && (
+                                                                                <span className="adg-alloc"><b>{names.length ? names.join(' / ') : '—'}</b> · {n} คน</span>
+                                                                            );
+                                                                        })()}
                                                                     </div>
                                                                 </div>
                                                             ))}

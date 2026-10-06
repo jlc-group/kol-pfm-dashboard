@@ -12,6 +12,7 @@ import ProductFilter from './ProductFilter.jsx';
 import { knownProductCodes, matchProducts, productFilterOptions } from '../data/productFilter.js';
 import { NO_GROUP, groupKeySet, matchGroup, normalizeGroupSel, groupFilterOptions } from '../data/groupFilter.js';
 import { draftIsNew, markDraftSeen } from '../utils/tabUpdates.js';
+import { platformOfUrl, KNOWN_LINK_PLATFORMS } from '../data/talentSocials.js';
 
 // ค่าที่เก็บเป็นสตริงคั่นด้วย , (เช่น content_format) → แยกเป็นรายตัว
 const splitCsv = v => (v ? String(v).split(',').map(x => x.trim()).filter(Boolean) : []);
@@ -112,8 +113,14 @@ function ProcessRow({ sub, putSubmission, reload, showAds = false, group = null,
         idPost !== (sub.id_post || '') ||
         Number(codeExpire) !== (Number(sub.code_expire) || 60);
 
+    // ลิงก์โพสต์ต้องเป็นของ Platform ของแถวนี้ (ผู้ใช้สั่ง 6 ต.ค. 2026) — เช่นแถว TikTok ใส่ลิงก์ instagram.com = ขึ้นเตือนว่าลิงก์ผิด
+    // เช็คเฉพาะ Platform ที่รู้จักโดเมน · ลิงก์ย่อของแพลตฟอร์มเอง (vt.tiktok.com / youtu.be / fb.watch) ผ่าน · ทั้งฝั่งทีมและเอเจนซี่
+    const linkPlat = openablePostUrl ? platformOfUrl(openablePostUrl) : '';
+    const linkWrong = !!openablePostUrl && KNOWN_LINK_PLATFORMS.includes(sub.platform) && linkPlat !== sub.platform;
+    const linkWarn = linkWrong ? `ลิงก์ผิด — ไม่ใช่ลิงก์ ${sub.platform}${linkPlat ? ` (เป็นลิงก์ ${linkPlat})` : ''}` : '';
+
     // ฝั่งเอเจนซี่ (directEdit): ต้องกรอกครบก่อนกดบันทึก — ลิงก์โพสต์ / วันที่โพสต์ / Gencode / Code Expire (ผู้ใช้สั่ง 6 ต.ค. 2026)
-    // ID Post ไม่บังคับ · กลุ่มไม่ใช้ Gencode = ไม่ถาม Gencode / Code Expire
+    // ID Post บังคับเฉพาะ TikTok (Platform อื่นไม่บังคับ) · ลิงก์โพสต์ต้องตรง Platform · กลุ่มไม่ใช้ Gencode = ไม่ถาม Gencode / Code Expire
     // ช่องที่ล็อกเพราะยิงแอดแล้ว (แก้ไม่ได้) ไม่นับ — ไม่งั้นแถวที่ขาดค่าตั้งแต่ก่อนยิงจะกดบันทึกช่องอื่นไม่ได้เลย
     // ฝั่งทีมไม่บังคับ (แก้ทีละช่องได้ตามเดิม)
     const missing = (() => {
@@ -122,8 +129,10 @@ function ProcessRow({ sub, putSubmission, reload, showAds = false, group = null,
         const url = String(postUrl || '').trim();
         if (canEditPost && !url) miss.push('ลิงก์โพสต์');
         else if (canEditPost && !openablePostUrl) miss.push('ลิงก์โพสต์ (ต้องขึ้นต้นด้วย http:// หรือ https://)');
+        else if (canEditPost && linkWrong) miss.push(`ลิงก์โพสต์ (ไม่ใช่ลิงก์ ${sub.platform})`);
         if (!postDate) miss.push('วันที่โพสต์');
         if (!noGencode && canEditPost && !String(gencode || '').trim()) miss.push('Gencode');
+        if (sub.platform === 'TikTok' && canEditPost && !String(idPost || '').trim()) miss.push('ID Post');
         if (!noGencode && !(Number(codeExpire) > 0)) miss.push('Code Expire');
         return miss;
     })();
@@ -206,18 +215,20 @@ function ProcessRow({ sub, putSubmission, reload, showAds = false, group = null,
                     📊 {hasPerf ? `${Number(sub.views).toLocaleString()} วิว` : 'Perf'}
                 </button>
             </div>
-            <div className={'proc-cell' + need('ลิงก์โพสต์')} title={adLocked ? lockTip : undefined}>
-                <input type="url" value={postUrl} onChange={e => setPostUrl(e.target.value)} placeholder="ลิงก์โพสต์" disabled={!canEditPost} />
+            <div className={'proc-cell' + need('ลิงก์โพสต์') + (linkWrong ? ' link-bad' : '')} title={adLocked ? lockTip : (linkWarn || undefined)}>
+                <input type="url" value={postUrl} onChange={e => setPostUrl(e.target.value)} placeholder="ลิงก์โพสต์" disabled={!canEditPost}
+                    aria-invalid={linkWrong || undefined} />
                 {/* กดดูคลิปได้แม้แถวถูกล็อก — ล็อกแค่ห้ามแก้ ไม่ได้ห้ามดู */}
                 {openablePostUrl
                     ? <a className="proc-openpost" href={openablePostUrl} target="_blank" rel="noreferrer" title="เปิดลิงก์คลิปในแท็บใหม่"><Icon name="eye" size={14} /></a>
                     : <span className="proc-openpost off" title={postUrl.trim() ? 'ลิงก์ไม่ถูกต้อง — ต้องขึ้นต้นด้วย http:// หรือ https://' : 'ยังไม่มีลิงก์โพสต์'}><Icon name="eye" size={14} /></span>}
+                {linkWrong && <span className="proc-link-warn" role="alert">⚠ {linkWarn}</span>}
             </div>
             <div className={'proc-cell' + need('วันที่โพสต์')}><DatePicker value={postDate} onChange={setPostDate} disabled={!unlocked} placeholder="เลือกวัน" /></div>
             <div className={'proc-cell' + need('Gencode')} title={adLocked && !noGencode ? lockTip : undefined}>{noGencode
                 ? <span className="muted" title="กลุ่มนี้ไม่ใช้ Gencode">—</span>
                 : <input value={gencode} onChange={e => setGencode(e.target.value)} placeholder="Gencode" disabled={!canEditPost} />}</div>
-            <div className="proc-cell" title={adLocked && !noIdPost ? lockTip : undefined}>{noIdPost
+            <div className={'proc-cell' + need('ID Post')} title={adLocked && !noIdPost ? lockTip : undefined}>{noIdPost
                 ? <span className="muted" title="แพลตฟอร์มนี้ไม่ใช้ ID Post">—</span>
                 : <input value={idPost} onChange={e => setIdPost(e.target.value)} placeholder="ID Post" disabled={!canEditPost} />}</div>
             <div className="proc-cell">{noGencode

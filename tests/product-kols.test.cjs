@@ -190,3 +190,94 @@ test('what the new form saves passes the server carry-over untouched', () => {
     const saved = [{ key: 'g1', blocks: [web.packKols(kolBlock()), web.packKols({ platform: 'Instagram', products: ['L3'], sets: [] })] }];
     assert.deepEqual(carryProductKols(saved, stored()), saved);
 });
+
+// ---- จำนวนคนใส่ที่สินค้า (ผู้ใช้สั่ง 6 ต.ค. 2026): Content Type เดียว + Tier เดียว = จำนวนของ Tier รวมจากสินค้าเอง ----
+const blkOf = (over = {}) => ({
+    platform: 'TikTok', products: ['L3', 'L8A'], bundles: [], kol_split: true, product_kols: {},
+    sets: [{ content_type: 'Review', tiers: [{ tier: 'Micro 10k - 100k', kols: '' }] }], ...over
+});
+
+// รอบ 2 (วันเดียวกัน): Tier แยกจาก Content Type ใช้ร่วมทุกชุด ไม่มีจำนวน — มีช่องจำนวนเฉพาะตอนหลาย Content Type
+test('kolAutoTier: Content Type เดียว (กี่ Tier ก็ได้) = จำนวนมาจากสินค้า · หลาย Content Type = ใส่ต่อ Content Type', () => {
+    assert.equal(web.kolAutoTier(blkOf()), true);
+    assert.equal(web.kolAutoTier(blkOf({ sets: [{ tiers: [{ tier: 'Nano', kols: 5 }, { tier: 'Micro', kols: '' }] }] })), true, 'หลาย Tier ไม่ต้องแบ่ง');
+    assert.equal(web.kolAutoTier(blkOf({ sets: [{ tiers: [{ tier: 'Nano', kols: 5 }] }, { tiers: [{ tier: 'Nano', kols: 5 }] }] })), false, 'หลาย Content Type');
+    assert.equal(web.kolAutoTier(null), false);
+});
+
+test('unifyTiers / setSetKols / blockTierNames: ทุกชุดใช้ Tier ชุดเดียวกัน · จำนวนของชุดอยู่ที่ Tier ตัวแรก · allocations ยังมีทุก Tier', () => {
+    // ข้อมูลเก่า: Review แบ่ง Micro 30 + Macro 20 · Sale ใช้ Nano 15
+    const old = blkOf({ sets: [
+        { content_type: 'Review', tiers: [{ tier: 'Micro 10k - 100k', kols: 30 }, { tier: 'Macro 100k - 1M', kols: 20 }] },
+        { content_type: 'Sale', tiers: [{ tier: 'Nano 1k - 10k', kols: 15 }] }
+    ] });
+    const u = web.unifyTiers(old);
+    assert.deepEqual(web.blockTierNames(u), ['Micro 10k - 100k', 'Macro 100k - 1M', 'Nano 1k - 10k']);
+    assert.deepEqual(u.sets.map(s => s.tiers.map(t => t.kols)), [['50', '', ''], ['15', '', '']], 'ยอดรวมต่อ Content Type ไม่เปลี่ยน');
+    assert.deepEqual(u.sets.map(web.setKol), [50, 15]);
+    assert.equal(web.blockKol(u), web.blockKol(old), 'จำนวนรวมของ Platform เท่าเดิม');
+    const al = web.flattenBlocks([u]);
+    assert.equal(al.length, 6, 'ทุกชุด × ทุก Tier');
+    const g = { allocations: al };
+    assert.deepEqual([web.quotaOf(g, 'TikTok', 'Review'), web.quotaOf(g, 'TikTok', 'Sale')], [50, 15], 'เป้าต่อกล่องถูก');
+    assert.deepEqual(web.tiersOf(g, 'TikTok', 'Sale'), ['Micro 10k - 100k', 'Macro 100k - 1M', 'Nano 1k - 10k'], 'เอเจนซี่เลือก Tier ได้ครบ');
+    const s2 = web.setSetKols(u, 1, '20');
+    assert.deepEqual(s2.sets.map(web.setKol), [50, 20]);
+    assert.equal(u.sets[1].tiers[0].kols, '15', 'ไม่แก้ตัวต้นฉบับ');
+    assert.deepEqual(web.blockTierNames(null), ['']);
+});
+
+test('syncAutoKols: จำนวนของ Tier = ผลรวมจากสินค้า · ยังไม่ใส่สักสินค้า = คงค่าเดิม · หลายชุดไม่แตะ · ไม่แก้ตัวต้นฉบับ', () => {
+    const b = blkOf({ product_kols: { L3: '30', L8A: '20' } });
+    const out = web.syncAutoKols(b);
+    assert.equal(out.sets[0].tiers[0].kols, '50');
+    assert.equal(b.sets[0].tiers[0].kols, '', 'ต้นฉบับไม่ถูกแก้');
+    assert.equal(web.blockKol(out), 50);
+    assert.equal(web.syncAutoKols(out), out, 'ตรงแล้ว = ตัวเดิม');
+    const old = blkOf({ sets: [{ tiers: [{ tier: 'Micro', kols: 40 }] }] });
+    assert.equal(web.syncAutoKols(old).sets[0].tiers[0].kols, 40, 'แคมเปญเก่ายังไม่แบ่ง = คงยอดเดิมไว้ให้เห็น');
+    // หลาย Tier ใน Content Type เดียว: ผลรวมลง Tier ตัวแรก ตัวอื่นว่าง
+    const multiTier = blkOf({ product_kols: { L3: '1', L8A: '1' }, sets: [{ tiers: [{ tier: 'Nano', kols: 5 }, { tier: 'Micro', kols: 5 }] }] });
+    assert.deepEqual(web.syncAutoKols(multiTier).sets[0].tiers.map(t => t.kols), ['2', '']);
+    const multiSet = blkOf({ product_kols: { L3: '1', L8A: '1' }, sets: [{ tiers: [{ tier: 'Nano', kols: 5 }] }, { tiers: [{ tier: 'Nano', kols: 5 }] }] });
+    assert.equal(web.syncAutoKols(multiSet), multiSet, 'หลาย Content Type ใส่จำนวนต่อ Content Type เอง');
+    // ชุดสินค้านับครั้งเดียว (จำนวนเก็บที่หัวชุด)
+    const bundled = blkOf({ products: ['L3', 'L8A', 'L10'], bundles: [['L3', 'L8A']], product_kols: { L3: '7', L10: '3' } });
+    assert.equal(web.syncAutoKols(bundled).sets[0].tiers[0].kols, '10');
+});
+
+test('seedKolSplit: เปิดในฟอร์ม = แยกต่อสินค้าเสมอ · สินค้าแถวเดียว ยกยอดเดิมไปใส่ · หลายแถว เริ่มว่าง · แยกอยู่แล้วไม่แตะ', () => {
+    const one = web.seedKolSplit(blkOf({ kol_split: false, products: ['L3'], sets: [{ tiers: [{ tier: 'Micro', kols: 12 }] }] }));
+    assert.deepEqual([one.kol_split, one.product_kols], [true, { L3: '12' }]);
+    const two = web.seedKolSplit(blkOf({ kol_split: false, sets: [{ tiers: [{ tier: 'Micro', kols: 12 }] }] }));
+    assert.deepEqual([two.kol_split, two.product_kols], [true, {}]);
+    const st = web.kolSplitState(two);
+    assert.equal(st.ok, false, 'ต้องแบ่งให้ครบก่อนบันทึก');
+    const done = blkOf({ product_kols: { L3: '2', L8A: '3' } });
+    assert.equal(web.seedKolSplit(done), done);
+    const fresh = web.seedKolSplit(web.emptyBlock('Instagram'));
+    assert.deepEqual([fresh.kol_split, fresh.product_kols], [true, {}], 'Platform ที่เพิ่งเลือก');
+});
+
+test('settleKols / ช่องเก็บจำนวน: Tier ตัวแรกว่างชื่อ = จำนวนไปอยู่ Tier ตัวแรกที่มีชื่อ · บันทึกแล้วจำนวนไม่หาย (รีวิว 6 ต.ค. 2026)', () => {
+    // เปิดแก้ → ล้างชื่อ Tier ตัวแรก (ไม่ได้กด ×) — เดิมจำนวนค้างที่ตัวไม่มีชื่อ แล้ว flattenBlocks ทิ้งทั้งชุด = โควตา 0
+    const blank0 = blkOf({ product_kols: { L3: '3', L8A: '2' }, sets: [{ tiers: [{ tier: '', kols: '5' }, { tier: 'Macro', kols: '' }] }] });
+    const s1 = web.syncAutoKols(web.settleKols(blank0));
+    assert.deepEqual(s1.sets[0].tiers.map(t => t.kols), ['', '5']);
+    assert.deepEqual(web.flattenBlocks([s1]).map(a => [a.tier, a.kols]), [['Macro', 5]]);
+    // Platform ใหม่ตอนแก้: Tier ตัวแรกว่าง เลือกแค่ตัวที่ 2 แล้วใส่จำนวนที่สินค้า
+    const fresh = blkOf({ product_kols: { L3: '4', L8A: '1' }, sets: [{ tiers: [{ tier: '', kols: '' }, { tier: 'Micro', kols: '' }] }] });
+    assert.deepEqual(web.syncAutoKols(fresh).sets[0].tiers.map(t => t.kols), ['', '5']);
+    // หลาย Content Type: ตั้งจำนวนต่อชุด + ล้างชื่อ Tier ตัวแรก
+    const multi = blkOf({ sets: [{ tiers: [{ tier: 'Nano', kols: '6' }, { tier: 'Micro', kols: '' }] }, { tiers: [{ tier: 'Nano', kols: '4' }, { tier: 'Micro', kols: '' }] }] });
+    const cleared = { ...multi, sets: multi.sets.map(s => ({ ...s, tiers: s.tiers.map((t, k) => (k === 0 ? { ...t, tier: '' } : t)) })) };
+    const s2 = web.settleKols(cleared);
+    assert.deepEqual(s2.sets.map(s => s.tiers.map(t => t.kols)), [['', '6'], ['', '4']]);
+    assert.equal(web.flattenBlocks([s2]).reduce((n, a) => n + a.kols, 0), 10);
+    assert.deepEqual(web.setSetKols(s2, 1, '7').sets[1].tiers.map(t => t.kols), ['', '7'], 'ใส่จำนวนต่อชุดลงช่องที่มีชื่อ');
+    // อยู่ถูกที่แล้ว = ตัวเดิม · ไม่มี Tier ไหนมีชื่อ = เก็บที่ตัวแรก (เหมือนเดิม) · ไม่แก้ตัวต้นฉบับ
+    assert.equal(web.settleKols(multi), multi);
+    const none = blkOf({ sets: [{ tiers: [{ tier: '', kols: '3' }] }] });
+    assert.equal(web.settleKols(none), none);
+    assert.deepEqual(cleared.sets[0].tiers.map(t => t.kols), ['6', ''], 'ต้นฉบับไม่ถูกแก้');
+});

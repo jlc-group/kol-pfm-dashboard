@@ -536,6 +536,72 @@ export function packKols(b) {
     return { ...rest, kol_split: true, product_kols: pk };
 }
 
+// ---------- จำนวนคนใส่ที่สินค้า (ผู้ใช้สั่ง 6 ต.ค. 2026) ----------
+// ฟอร์มแคมเปญแยกจำนวน KOL ต่อสินค้าเสมอ (เอาปุ่ม 👥 ออก)
+// Tier แยกออกจาก Content Type (ผู้ใช้สั่งรอบ 2 วันเดียวกัน): Tier ตั้งที่ระดับ Platform ใช้ร่วมทุก Content Type และไม่มีจำนวนคน
+// จำนวนคนต่อ Content Type มีเฉพาะตอนมีมากกว่า 1 Content Type (ผลรวมต้องเท่าผลรวมจากสินค้า) · Content Type เดียว = จำนวนมาจากสินค้าเอง
+// เก็บข้อมูลรูปเดิม (sets[].tiers = [{ tier, kols }]) ให้หน้าอื่นอ่านได้เหมือนเดิม: ทุกชุดมี Tier ชุดเดียวกัน · จำนวนของชุดเก็บที่ Tier ตัวแรก
+//   Tier อื่นเป็น 0 แต่ยังอยู่ใน allocations (tiersOf ยังให้เอเจนซี่เลือกได้ครบ · quotaOf ต่อ Content Type รวมถูก)
+export const kolAutoTier = b => !!b && (b.sets || []).length === 1;
+// ช่องที่เก็บจำนวนคนของชุด = Tier ตัวแรกที่มีชื่อ (ไม่มีสักตัว = ตัวแรก)
+// ตอนบันทึก flattenBlocks ทิ้ง Tier ที่ไม่มีชื่อ — ถ้าเก็บที่ตัวแรกที่ยังว่างชื่อ จำนวนทั้งชุดจะหาย (รีวิว 6 ต.ค. 2026)
+const kolSlot = s => Math.max(0, (s.tiers || []).findIndex(t => t.tier));
+// จำนวนคนของชุดลงที่ช่องเก็บ (ตัวอื่นว่าง)
+const putSetKols = (s, v) => { const at = kolSlot(s); return { ...s, tiers: (s.tiers || []).map((t, k) => ({ ...t, kols: k === at ? v : '' })) }; };
+// หลังแก้ Tier (ลบชื่อ Tier ตัวแรก / เลือกแค่ Tier ตัวหลัง / ลบ Tier) — ย้ายจำนวนของชุดไปอยู่ช่องเก็บให้ถูกที่ (คืนตัวเดิมถ้าอยู่ถูกที่แล้ว)
+const hasVal = t => String(t.kols ?? '').trim() !== '';
+export function settleKols(b) {
+    if (!b || !Array.isArray(b.sets)) return b;
+    let changed = false;
+    const sets = b.sets.map(s => {
+        const tiers = s.tiers || [];
+        const at = kolSlot(s);
+        if (!tiers.some((t, k) => k !== at && hasVal(t))) return s;
+        changed = true;
+        const vals = tiers.filter(hasVal);
+        return putSetKols(s, vals.length === 1 ? String(vals[0].kols) : String(setKol(s)));
+    });
+    return changed ? { ...b, sets } : b;
+}
+// Content Type เดียว: เขียนผลรวมจากสินค้าลงชุดนั้น (คืนตัวเดิมถ้าไม่ใช่บล็อกชุดเดียว / ค่าตรงอยู่แล้ว)
+// ยังไม่ได้ใส่สักสินค้า (แคมเปญเก่าที่เพิ่งเปิดแก้) = คงจำนวนเดิมไว้ให้เห็น — ตัวตรวจก่อนบันทึก (kolSplitProblem) บังคับให้ใส่ครบเอง
+export function syncAutoKols(b) {
+    if (!kolAutoTier(b)) return b;
+    const sum = productKolSum(b);
+    if (sum <= 0) return b;
+    const s0 = b.sets[0];
+    const tiers = s0.tiers || [];
+    const at = kolSlot(s0);
+    if (tiers.length && String(tiers[at].kols) === String(sum) && tiers.every((t, k) => k === at || !num(t.kols))) return b;
+    return { ...b, sets: [putSetKols(s0, String(sum))] };
+}
+// Tier ของ Platform (ชื่อเรียงตามลำดับ · ชุดแรกเป็นตัวตั้ง)
+export const blockTierNames = b => ((b && b.sets && b.sets[0] && b.sets[0].tiers) || [{ tier: '' }]).map(t => t.tier || '');
+// เปิดบล็อกในฟอร์ม: ทุกชุดใช้ Tier ชุดเดียวกัน (รวมชื่อ Tier จากทุกชุดตามลำดับที่เจอ) · จำนวนเดิมของแต่ละชุด (รวมทุก Tier) ย้ายไปที่ Tier ตัวแรก
+// ข้อมูลเก่าที่แบ่งจำนวนต่อ Tier ไว้ จะเหลือยอดรวมต่อ Content Type (ผู้ใช้สั่งเลิกแบ่งต่อ Tier)
+export function unifyTiers(b) {
+    if (!b || !(b.sets || []).length) return b;
+    const names = [];
+    b.sets.forEach(s => (s.tiers || []).forEach(t => { if (t.tier && !names.includes(t.tier)) names.push(t.tier); }));
+    if (!names.length) names.push('');
+    const sets = b.sets.map(s => {
+        const total = setKol(s);
+        return { ...s, tiers: names.map((tier, k) => ({ tier, kols: k === 0 && total > 0 ? String(total) : '' })) };
+    });
+    return { ...b, sets };
+}
+// ตั้งจำนวนคนของชุด si (ใช้ตอนมีหลาย Content Type)
+export const setSetKols = (b, si, v) => ({ ...b, sets: b.sets.map((s, j) => (j === si ? putSetKols(s, v) : s)) });
+// เปิดบล็อกในฟอร์ม (แคมเปญเดิม / Platform ที่เพิ่งเลือก): บังคับแยกต่อสินค้า
+// บล็อกที่ยังไม่เคยแยกและมีแถวสินค้าแถวเดียว = ยกจำนวนรวมเดิมไปใส่ที่สินค้านั้น (ไม่ต้องกรอกซ้ำ) · หลายแถว = เริ่มว่าง ให้ทีมแบ่งเอง
+export function seedKolSplit(b) {
+    if (!b || isKolSplit(b)) return b;
+    const rows = productRows(b);
+    const total = blockKol(b);
+    const product_kols = rows.length === 1 && total > 0 ? { [rows[0].head]: String(total) } : {};
+    return { ...b, kol_split: true, product_kols };
+}
+
 // ความคืบหน้าต่อสินค้าของกลุ่ม (เฉพาะบล็อกที่แยกจำนวนคน) — หน้าเอเจนซี่ / แท็บรายชื่อ / On Process ใช้ตัวเดียวกัน
 // คืน [{ platform, rows: [{ code, need, sent, over, full, codes? }] }] (codes เฉพาะแถวที่เป็นชุด) · ไม่มีบล็อกไหนแยก = []
 // sent = จำนวน "คน" (person_key) ของ Platform นั้นในกลุ่มนี้ที่ยังไม่ถูกปฏิเสธ — 1 คนที่ช่องสินค้ามีหลายรหัส นับให้ทุกรหัสที่มี

@@ -267,3 +267,24 @@ test('ฟอร์ม: ตรวจแถว / แถว → socials ที่�
     assert.equal(c.webUrl('javascript:alert(1)'), '');
     assert.equal(c.webUrl('drive.google.com/x'), '');
 });
+
+test('platformOfUrl: ลิงก์โพสต์ → แพลตฟอร์มจากโดเมน (ตาราง On Process เช็คว่าตรง Platform ของแถว · 6 ต.ค. 2026)', () => {
+    assert.equal(c.platformOfUrl('https://www.tiktok.com/@flow3rgurrl/video/7690488609664748800'), 'TikTok');
+    assert.equal(c.platformOfUrl('https://vt.tiktok.com/ZSabc123/'), 'TikTok', 'ลิงก์ย่อ TikTok');
+    assert.equal(c.platformOfUrl('https://www.instagram.com/reel/DPabc/'), 'Instagram');
+    assert.equal(c.platformOfUrl('https://fb.watch/abc/'), 'Facebook');
+    assert.equal(c.platformOfUrl('https://youtu.be/xyz'), 'YouTube');
+    assert.equal(c.platformOfUrl('https://twitter.com/a/status/1'), 'X');
+    assert.equal(c.platformOfUrl('https://www.lemon8-app.com/@a/123'), 'Lemon8');
+    assert.equal(c.platformOfUrl('https://t.co/AbC123'), 'X', 'ลิงก์ย่อของ X (รีวิว 6 ต.ค.)');
+    assert.equal(c.platformOfUrl('https://www.tiktokv.com/share/video/7123456789/'), 'TikTok', 'ลิงก์แชร์ของ TikTok');
+    assert.equal(c.platformOfUrl('https://www.tiktok.com./@a/video/1'), 'TikTok', 'โดเมนลงท้ายจุด');
+    assert.equal(c.platformOfUrl('https://notat.co/x'), '', 'ไม่ใช่ t.co จริง');
+    assert.equal(c.platformOfUrl('https://bit.ly/abc'), '', 'โดเมนที่ไม่รู้จัก');
+    assert.equal(c.platformOfUrl('https://evil.com/tiktok.com'), '', 'ดูที่โดเมนเท่านั้น ไม่ใช่ path');
+    assert.equal(c.platformOfUrl('https://nottiktok.com/x'), '', 'ต้องเป็นโดเมนนั้นจริง ไม่ใช่แค่ลงท้ายคล้าย');
+    assert.equal(c.platformOfUrl('tiktok.com/@a'), '', 'ไม่มี http(s) = ไม่ใช่ลิงก์');
+    assert.equal(c.platformOfUrl('javascript:alert(1)'), '');
+    assert.equal(c.platformOfUrl(null), '');
+    assert.deepEqual(c.KNOWN_LINK_PLATFORMS, ['TikTok', 'Instagram', 'Facebook', 'YouTube', 'X', 'Lemon8']);
+});
