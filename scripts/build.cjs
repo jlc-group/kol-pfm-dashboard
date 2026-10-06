@@ -52,8 +52,11 @@ for (const key of ['DATABASE_URL', 'PGSSLMODE', 'BEAUTERRY_PFM_EXPORT_KEY', 'WEB
     delete testEnv[key];
 }
 try {
-    // A stuck test should fail with its test name instead of holding deploy for 15 minutes.
-    npm(['test', '--', '--test-timeout=60000'], root, testEnv);
+    // Per-test timeouts do not terminate the test runner when a test leaks an
+    // active handle. Force the runner to exit after reporting all test results
+    // so a leaked socket/timer cannot hold the deployment until its 15-minute
+    // outer timeout.
+    npm(['test', '--', '--test-timeout=60000', '--test-force-exit'], root, testEnv);
 } finally {
     fs.rmSync(testUploadDir, { recursive: true, force: true });
 }
