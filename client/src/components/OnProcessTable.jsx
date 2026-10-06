@@ -230,7 +230,8 @@ function ProcessRow({ sub, putSubmission, reload, showAds = false, group = null,
                 : <input value={gencode} onChange={e => setGencode(e.target.value)} placeholder="Gencode" disabled={!canEditPost} />}</div>
             <div className={'proc-cell' + need('ID Post')} title={adLocked && !noIdPost ? lockTip : undefined}>{noIdPost
                 ? <span className="muted" title="แพลตฟอร์มนี้ไม่ใช้ ID Post">—</span>
-                : <input value={idPost} onChange={e => setIdPost(e.target.value)} placeholder="ID Post" disabled={!canEditPost} />}</div>
+                : <input value={idPost} onChange={e => setIdPost(e.target.value)} placeholder="ID Post" disabled={!canEditPost}
+                    title={[idPost, adLocked ? lockTip : ''].filter(Boolean).join('\n') || undefined} />}</div>
             <div className="proc-cell">{noGencode
                 ? <span className="muted" title="กลุ่มนี้ไม่ใช้ Gencode">—</span>
                 : <select value={codeExpire} onChange={e => setCodeExpire(e.target.value)} disabled={!unlocked}>

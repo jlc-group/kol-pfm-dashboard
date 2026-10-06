@@ -1019,11 +1019,12 @@ a { text-decoration: none; color: inherit; }
 
 /* ตาราง On Process (แถวแนวนอน) */
 .proc-tbl-scroll { overflow-x: auto; }
-.proc-tbl { min-width: 1080px; }
+.proc-tbl { min-width: 1160px; }
 .proc-tbl-head, .proc-row {
     display: grid;
-    /* KOL PRODUCT C_TYPE C_FORMAT PLATFORM DRAFT POST POSTDATE GENCODE IDPOST EXPIRE จัดการ */
-    grid-template-columns: 0.95fr 0.62fr 0.6fr 0.85fr 0.55fr 1.05fr 1.4fr 1.1fr 0.85fr 0.8fr 0.5fr 0.6fr;
+    /* KOL PRODUCT C_TYPE C_FORMAT PLATFORM DRAFT POST POSTDATE GENCODE IDPOST EXPIRE จัดการ
+       IDPOST กว้างอย่างน้อย 170px — เลข TikTok 19 หลักต้องเห็นครบ (ผู้ใช้สั่ง 6 ต.ค. 2026 · เดิมถูกตัดเหลือ ~17 หลัก) */
+    grid-template-columns: 0.95fr 0.62fr 0.6fr 0.85fr 0.55fr 1.05fr 1.4fr 1.1fr 0.85fr minmax(170px, 0.8fr) 0.5fr 0.6fr;
     gap: 7px; align-items: center;
 }
 .proc-tbl-head { font-size: 10px; font-weight: 700; color: var(--muted); letter-spacing: .3px; padding: 0 4px 9px; }
@@ -1080,11 +1081,11 @@ a { text-decoration: none; color: inherit; }
 .proc-plat { display: inline-block; background: var(--bg-soft); color: var(--mint-dark); font-size: 11px; font-weight: 700; padding: 4px 8px; border-radius: 8px; }
 .proc-prod { display: inline-block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; background: #eef4ff; color: #3b5ba5; font-size: 11px; font-weight: 800; padding: 4px 9px; border-radius: 8px; }
 /* คอลัมน์ Ads (เฉพาะ Dashboard) — Target + Content Type */
-.proc-tbl.with-ads { min-width: 1250px; }
+.proc-tbl.with-ads { min-width: 1340px; }
 .proc-tbl.with-ads .proc-tbl-head, .proc-tbl.with-ads .proc-row {
     /* KOL PRODUCT TARGET C_TYPE C_FORMAT PLATFORM DRAFT POST POSTDATE GENCODE IDPOST EXPIRE จัดการ
-       6 คอลัมน์แรกเป็นชิปสั้น ๆ บีบให้ชิดกัน แล้วเอาที่ว่างไปเพิ่มให้ช่องลิงก์โพสต์ */
-    grid-template-columns: 0.94fr 0.66fr 0.77fr 0.54fr 0.86fr 0.52fr 1fr 1.64fr 0.98fr 0.75fr 0.73fr 0.5fr 0.62fr;
+       6 คอลัมน์แรกเป็นชิปสั้น ๆ บีบให้ชิดกัน แล้วเอาที่ว่างไปเพิ่มให้ช่องลิงก์โพสต์ · IDPOST อย่างน้อย 170px (เลข 19 หลักเห็นครบ) */
+    grid-template-columns: 0.94fr 0.66fr 0.77fr 0.54fr 0.86fr 0.52fr 1fr 1.64fr 0.98fr 0.75fr minmax(170px, 0.73fr) 0.5fr 0.62fr;
 }
 .proc-ads-tgt { display: inline-block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; background: #fff4ed; color: #c2591b; font-size: 10.5px; font-weight: 800; padding: 4px 8px; border-radius: 8px; }
 .proc-ctype-chip { display: inline-block; background: #f3ecff; color: #6d3fc0; font-size: 11px; font-weight: 800; padding: 4px 9px; border-radius: 8px; }
