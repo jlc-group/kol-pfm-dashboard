@@ -1297,7 +1297,7 @@ a { text-decoration: none; color: inherit; }
     display: grid;
     /* IMAGE KOL BRANDS PRODUCT CAMPAIGN TARGET CONTENT-TYPE FORMAT GENCODE ID-POST วันลงงาน วันยิงแอด สถานะ ค่าแอด/REACH ระยะเวลายิง STAMPED LIVE หมายเหตุ */
     /* IMAGE กว้างคงที่เท่ารูปปก (กดรูปเปิดโพสต์ — คอลัมน์ POST เดิมเอาออกแล้ว) */
-    grid-template-columns: 56px 1fr 0.95fr 0.85fr 0.85fr 1.25fr 0.7fr 0.5fr 1fr 1.3fr 0.8fr 0.65fr 0.65fr 0.85fr 0.6fr 0.7fr 0.7fr 0.9fr;
+    grid-template-columns: 56px 1fr 0.95fr 0.85fr 0.85fr 1.25fr 0.7fr 0.5fr 1fr 1.3fr 0.8fr 0.7fr 1fr 0.85fr 1.1fr 0.7fr 0.7fr 0.9fr;
     gap: 10px; align-items: center;
 }
 .kol-track-note input { width: 100%; }
@@ -1369,6 +1369,22 @@ a.ads-thumb:focus-visible { outline: 2px solid var(--mint-dark); outline-offset:
 .ads-clip-prods .prodchip-wrap { gap: 4px; }
 .ads-clip-prods .prodchip, .ads-clip-prods .prodchip-more { padding: 1px 7px; font-size: 10.5px; border-radius: 6px; }
 .ads-cell { min-width: 0; }
+.ads-evidence-cell, .ads-late { display: flex; flex-direction: column; align-items: flex-start; gap: 5px; }
+.ads-evidence-badge { display: inline-block; font-size: 12px; font-weight: 700; line-height: 1.45; padding: 5px 8px; border-radius: 8px; border: 1px solid var(--border); }
+.ads-evidence-badge.paid { color: var(--mint-dark); background: #e7f7ef; }
+.ads-evidence-badge.reported { color: #8a5400; background: #fff3d6; }
+.ads-evidence-badge.pending { color: var(--text); background: #f1f5f3; }
+.ads-evidence-detail { color: var(--text); font-size: 11px; line-height: 1.5; overflow-wrap: anywhere; }
+.ads-confirm-button { display: inline-block; padding: 3px 0; background: none; border: 0; font: inherit; font-size: 11px; color: var(--mint-dark); text-decoration: underline; text-underline-offset: 3px; cursor: pointer; text-align: left; }
+.ads-confirm-button:disabled { cursor: default; opacity: .6; }
+.ads-explainer { color: var(--text); font-size: 12px; line-height: 1.65; }
+.ads-status-guide { background: #f1f5f3; border: 1px solid var(--border); border-radius: 12px; padding: 12px 16px; margin-bottom: 16px; }
+.ads-status-guide span { display: block; margin-top: 4px; }
+.ads-date-warning { background: #fff3d6; color: #8a5400; padding: 12px; border-radius: 10px; line-height: 1.6; }
+.ads-date-warning a { display: block; margin-top: 6px; text-decoration: underline; color: inherit; }
+.ads-confirm-modal h2 { font-size: 18px; margin: 0 0 12px; }
+.ads-confirm-modal .field { margin-top: 16px; }
+.ads-confirm-modal .field small { display: block; margin-top: 6px; }
 /* บรรทัดเล็กใต้ช่อง บอกวันที่นำข้อมูลเข้าระบบ
    ตั้งใจให้จางและเล็กกว่าค่าหลักชัดเจน จะได้ไม่แย่งสายตาไปจากตัวข้อมูลเอง */
 .ads-entered { display: block; margin-top: 3px; font-size: 9.5px; line-height: 1.4; color: var(--muted); opacity: .75; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }

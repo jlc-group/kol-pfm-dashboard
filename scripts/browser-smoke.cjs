@@ -85,18 +85,28 @@ const app = require('../server/src/app');
         // Ads data and its rows must remain visible even when paid Reach is unavailable.
         let savedPerf = null;
         store.projects.findByIdFull = async () => ({ id: 55, brand: 'Beauterry', campaign_type: 'kol' });
-        store.submissions.update = async (id, projectId, payload) => { savedPerf = { id, projectId, payload }; return { id: Number(id), account_name: 'Fixture KOL 1' }; };
-        store.ads.list = async () => ({
-            summary: { total_posts: 93, done_count: 1, pending_count: 92,
-                total_spend: 1234.56, total_reach: 0, cpm: 0, by_brand: [] },
-            rows: Array.from({ length: 93 }, (_, i) => ({ sub_id: 17 + i, account_name: `Fixture KOL ${i + 1}`, platform: 'TikTok',
+        const adFixtures = Array.from({ length: 93 }, (_, i) => ({ sub_id: 17 + i, id: 17 + i, account_name: `Fixture KOL ${i + 1}`, platform: 'TikTok',
                 brand: 'Beauterry', project_name: 'Fixture campaign', project_id: 55,
                 gencode: 'fixture-code', id_post: '7691273256392854792', views: 0,
                 likes: 12, comments: 7, saves: 8, shares: 9,
                 post_date: '2026-10-10', ad_end: '2026-10-06', stamp_at: 3000,
                 post_url: 'https://example.invalid/post', ad_status: 'ยังไม่ยิง',
                 ad_status_shown: 'ยิงแล้ว', ad_spend: 1234.56, ad_reach: 0,
-                spend_from_pfm: true }))
+                spend_from_pfm: true }));
+        Object.assign(adFixtures[1], { platform:'Instagram', status_auto:false, post_date:'2026-10-03', ad_end:null, ad_spend:0, ad_has_spend:false, ad_status_shown:'ยังไม่ยิง' });
+        Object.assign(adFixtures[2], { platform:'Instagram', status_auto:false, post_date:'2026-10-03', ad_end:'2026-10-05', ad_status:'ยิงแล้ว', ad_has_spend:true });
+        store.ads.subContext = async id => ({submission:adFixtures.find(r => r.id === Number(id)),team_id:1,project_id:55,brand:'Beauterry'});
+        store.submissions.update = async (id, projectId, payload) => {
+            savedPerf = { id, projectId, payload };
+            const row = adFixtures.find(r => r.id === Number(id));
+            Object.assign(row, payload);
+            row.ad_status_shown = row.ad_spend > 0 || row.ad_status === 'ยิงแล้ว' ? 'ยิงแล้ว' : 'ยังไม่ยิง';
+            return {...row};
+        };
+        store.ads.list = async () => ({
+            summary: { total_posts: 93, done_count: 1, pending_count: 92,
+                total_spend: 1234.56, total_reach: 0, cpm: 0, by_brand: [] },
+            rows: adFixtures.map(r => ({...r}))
         });
         await page.setViewportSize({ width: 1200, height: 711 });
         // Common ad blockers hide elements named ads-row. The data row must
@@ -109,7 +119,8 @@ const app = require('../server/src/app');
         const firstRow = page.locator('.kol-track-entry').first();
         assert.equal(await firstRow.locator('.kol-track-code').first().isVisible(), true);
         assert.equal(await firstRow.locator('.kol-track-note input').isVisible(), true);
-        assert.match(await firstRow.locator('.ads-late').innerText(), /วันที่ขัดกัน/);
+        assert.match(await firstRow.locator('.ads-late').innerText(), /ต้องตรวจวันที่/);
+        assert.match(await firstRow.locator('.ads-late').innerText(), /ก่อนลงโพสต์/);
         await firstRow.getByRole('button', { name: 'กรอกผลงาน', exact: true }).click();
         await page.locator('.modal').waitFor({ state: 'visible' });
         assert.equal(await page.getByRole('button', { name: 'ดึงจาก TikTok อัตโนมัติ' }).count(), 0);
@@ -137,6 +148,37 @@ const app = require('../server/src/app');
                 && row.getBoundingClientRect().top < window.innerHeight;
         });
         await page.setViewportSize({ width: 390, height: 844 });
+
+        // A real UI save chooses a start date explicitly; cancelling has no write.
+        const manualRow = page.locator('.kol-track-entry').nth(1);
+        await manualRow.getByRole('button',{name:'แจ้งการเริ่มยิง',exact:true}).click();
+        let confirmation = page.getByRole('dialog');
+        await confirmation.getByLabel('การยืนยันของทีม').selectOption('yes');
+        assert.equal(await confirmation.getByLabel('วันเริ่มยิงจริง').inputValue(),'');
+        const priorWrite = savedPerf;
+        await confirmation.getByRole('button',{name:'ยกเลิก',exact:true}).click();
+        assert.equal(savedPerf,priorWrite);
+        await manualRow.getByRole('button',{name:'แจ้งการเริ่มยิง',exact:true}).click();
+        confirmation = page.getByRole('dialog');
+        await confirmation.getByLabel('การยืนยันของทีม').selectOption('yes');
+        await confirmation.getByLabel('วันเริ่มยิงจริง').fill('2026-10-04');
+        assert.equal(await confirmation.evaluate(el => el.getBoundingClientRect().right <= window.innerWidth),true,'mobile confirmation must fit');
+        await confirmation.getByRole('button',{name:'บันทึกการยืนยัน',exact:true}).click();
+        await confirmation.waitFor({state:'hidden'});
+        assert.equal(savedPerf.payload.ad_end,'2026-10-04');
+        assert.equal(savedPerf.payload.ad_status,'ยิงแล้ว');
+        await manualRow.getByText('ทีมยืนยันว่าเริ่มยิงแล้ว',{exact:true}).waitFor();
+        // Cancelling a team's confirmation cannot erase paid evidence or its start date.
+        const paidRow = page.locator('.kol-track-entry').nth(2);
+        await paidRow.getByRole('button',{name:'แก้การยืนยัน',exact:true}).click();
+        confirmation = page.getByRole('dialog');
+        await confirmation.getByLabel('การยืนยันของทีม').selectOption('no');
+        await confirmation.getByRole('button',{name:'บันทึกการยืนยัน',exact:true}).click();
+        await confirmation.waitFor({state:'hidden'});
+        assert.equal(savedPerf.payload.ad_status,'ยังไม่ยิง');
+        assert.equal(savedPerf.payload.ad_end,'2026-10-05');
+        await paidRow.getByText('มีค่าแอดแล้ว',{exact:true}).waitFor();
+        await paidRow.getByText('ทีมยังไม่ยืนยัน',{exact:true}).waitFor();
 
         await page.goto(base + '/');
         await menuButton.click();

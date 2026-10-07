@@ -14,10 +14,12 @@ import { matchAdsSearch } from '../data/adsSearch.js';
 import PostThumb from '../components/PostThumb.jsx';
 import { performanceSourceInfo } from '../data/performanceSources.js';
 import PerfModal from '../components/PerfModal.jsx';
+import AdConfirmationModal from '../components/AdConfirmationModal.jsx';
+import { adEvidence, hasAdSpend } from '../data/adEvidence.js';
 import { adTiming, timingLevel, timingTip, TIMING_OPTS } from '../data/adTiming.js';
 
 
-const STATUSES = ['ยังไม่ยิง', 'ยิงแล้ว'];
+const STATUSES = [['paid', 'มีค่าแอดแล้ว'], ['reported', 'บันทึกว่าเริ่มยิง (ยังไม่มีค่าแอด)'], ['pending', 'ยังไม่มีข้อมูลเริ่มยิง']];
 
 const fmtMoney = n => '฿' + (Number(n) || 0).toLocaleString('th-TH');
 
@@ -216,6 +218,9 @@ function AdRow({ row, onSaved, canCost, noAd = false }) {
     const [end, setEnd] = useState(row.ad_end || '');
     const [note, setNote] = useState(row.ad_note || '');
     const [perfOpen, setPerfOpen] = useState(false);
+    const [confirmOpen, setConfirmOpen] = useState(false);
+    useEffect(() => { setAdStatus(row.ad_status || 'ยังไม่ยิง'); }, [row.ad_status]);
+    useEffect(() => { setEnd(row.ad_end || ''); }, [row.ad_end]);
     // ค่าแอดสะสม: โพสต์ TikTok ที่มี ID Post ระบบ PFM ซิงก์ให้เอง (แก้ไม่ได้) · โพสต์อื่นกรอกเองได้ (เฉพาะคนที่เห็นต้นทุน)
     // Reach: Beauterry / WeBoostX ส่งยอดสะสมจากรายงานที่ไม่ซ้ำ กรอกเองได้เมื่อยังไม่มีข้อมูล
     // ช่องจะตามค่าล่าสุดจากรายการเสมอ ยกเว้นตอนผู้ใช้กำลังพิมพ์ (dirty) — แค่กด Tab ผ่านต้องไม่เอาค่าเก่าไปทับ
@@ -239,7 +244,8 @@ function AdRow({ row, onSaved, canCost, noAd = false }) {
             await api(`/ads/${row.sub_id}`, { method: 'PUT', body });
             setSaved(true); onSaved();
             setTimeout(() => setSaved(false), 1600);
-        } catch (err) { alert(err.message); }
+            return true;
+        } catch (err) { alert(err.message); return false; }
         finally { setSaving(false); }
     }
 
@@ -273,30 +279,13 @@ function AdRow({ row, onSaved, canCost, noAd = false }) {
         put({ ad_reach: v, ad_reach_from: Math.round(Number(reachFrom) || 0) });
     }
 
-    // สลับสถานะ — เมื่อกด "ยิงแล้ว" ให้ลงวันยิงแอด (ad_end) เป็นวันนี้อัตโนมัติ, ยกเลิกให้ล้างวันที่
-    // ถ้ามีวันยิงแอดอยู่แล้ว (PFM ลงวันแรกที่มีค่าแอดให้) ใช้วันนั้นต่อ ไม่ทับด้วยวันที่กดยืนยัน
-    function toggleStatus() {
-        const next = adStatus === 'ยิงแล้ว' ? 'ยังไม่ยิง' : 'ยิงแล้ว';
-        setAdStatus(next);
-        if (next === 'ยิงแล้ว') {
-            const d = new Date(); // วันที่ปัจจุบันตามเครื่องผู้ใช้ (local)
-            const today = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-            const date = end || today;
-            setEnd(date);
-            put({ ad_status: next, ad_end: date });
-        } else {
-            setEnd('');
-            put({ ad_status: next, ad_end: null });
-        }
-    }
-
     // ค่าแอดเดินแล้ว = แอดวิ่งไปแล้วแน่นอน แม้ยังไม่มีใครกดยืนยัน — โชว์ว่ายิงแล้วไปก่อน
     // (ไม่เขียนลงฐาน ปุ่มยังกดยืนยันได้ตามปกติ และไม่กระทบฟีดที่ beauterry ดึงไป)
-    const ranBySpend = (Number(row.ad_spend) || 0) > 0;
+    const ranBySpend = hasAdSpend(row);
     const shownStatus = (adStatus === 'ยิงแล้ว' || ranBySpend) ? 'ยิงแล้ว' : 'ยังไม่ยิง';
-    const doneFromSpend = ranBySpend && adStatus !== 'ยิงแล้ว';
     const autoStatus = adStatusAuto(row);
     const noAdLabel = noAd && shownStatus !== 'ยิงแล้ว';
+    const evidence = adEvidence(row, adStatus === 'ยิงแล้ว', autoStatus, noAd);
 
     // ระยะเวลายิง — นับจากวันพร้อมยิง (ข้อมูลครบชิ้นสุดท้าย: ลงคลิป / Gencode / ID Post / ทีมอนุมัติ) → วันยิงแอด (ดู data/adTiming.js)
     // แถวที่รู้จากค่าแอดก็นับได้ถ้า PFM ลงวันยิงแอดมาให้แล้ว
@@ -369,48 +358,21 @@ function AdRow({ row, onSaved, canCost, noAd = false }) {
                     </span>
                 )}
             </div>
-            {/* วันยิงแอด — PFM ลงวันแรกที่มีค่าแอดให้เอง หรือระบบลงวันที่ตอนกดสถานะเป็น "ยิงแล้ว" */}
+            {/* วันเริ่มยิงและหลักฐานแสดงแยกจากการยืนยันของทีม */}
             <div className="ads-cell">
-                {end
-                    ? <span className="ads-postdate" title="วันที่ยิงแอด (วันแรกที่มีค่าแอดจาก PFM หรือวันที่กดสถานะเป็นยิงแล้ว)">{fmtDate(end)}</span>
-                    : noAdLabel ? <span className="muted" title="คลิปนี้ไม่ต้องยิงแอด (กลุ่มที่ตั้งว่าไม่ใช้ Gencode)">—</span>
-                    : doneFromSpend
-                        /* ค่าแอดบอกว่ายิงแล้ว แต่ไม่รู้วันไหน — เขียน "ยังไม่ยิง" ตรงนี้จะขัดกับสถานะข้าง ๆ */
-                        ? <span className="muted" title={autoStatus
-                            ? 'ยิงไปแล้ว (รู้จากค่าแอด) — PFM ยังไม่ส่งวันยิงแอดมา'
-                            : 'ยิงไปแล้ว (รู้จากค่าแอด) แต่ยังไม่มีวันยิงแอด — กดปุ่มสถานะเพื่อลงวันที่'}>—</span>
-                        : <span className="muted">ยังไม่ยิง</span>}
+                {end ? <span className="ads-postdate" title="วันเริ่มยิงที่บันทึกไว้ จากรายงานแอดหรือการยืนยันของทีม">{fmtDate(end)}</span>
+                    : <span className="muted">{noAdLabel ? '—' : shownStatus === 'ยิงแล้ว' ? 'ยังไม่มีวันเริ่มยิง' : 'ยังไม่ระบุ'}</span>}
             </div>
-            <div className="ads-cell">
-                {noAdLabel ? (
-                    /* แท็บไม่ต้องยิงแอด: ป้ายอ่านอย่างเดียว — คลิปในกลุ่มที่ตั้งว่าไม่ใช้ Gencode ไม่ต้องยิง (และไม่ส่งให้ PFM) */
-                    <span className="ads-status auto pending noad" title="คลิปในกลุ่มที่ตั้งว่าไม่ใช้ Gencode — ไม่ต้องยิงแอด และไม่ได้ส่งให้ PFM · ถ้าต้องยิง ให้ใส่ Gencode หรือเปลี่ยนตั้งค่ากลุ่มในหน้าแคมเปญ">
-                        ไม่ต้องยิง<em>ไม่ใช้ Gencode</em>
-                    </span>
-                ) : autoStatus ? (
-                    /* TikTok: ป้ายอ่านอย่างเดียว — สถานะมาจาก PFM (ไม่ใช่ปุ่ม กดไม่ได้) */
-                    <span className={'ads-status auto ' + (shownStatus === 'ยิงแล้ว' ? 'done' : 'pending') + (doneFromSpend ? ' from-spend' : '')}
-                        title={shownStatus === 'ยิงแล้ว'
-                            ? 'TikTok ยิงแอดผ่านระบบ PFM — ระบบขึ้นยิงแล้วให้เอง (มี ad เกาะคลิป หรือมีค่าแอดแล้ว) · กดเองไม่ได้'
-                            : 'TikTok ยิงแอดผ่านระบบ PFM — พอ PFM มี ad เกาะคลิปนี้ สถานะจะเปลี่ยนเป็นยิงแล้วเอง · กดเองไม่ได้'}>
-                        {shownStatus === 'ยิงแล้ว' ? '✓ ยิงแล้ว' : 'ยังไม่ยิง'}
-                        <em>{doneFromSpend ? 'จากค่าแอด' : 'อัตโนมัติ (PFM)'}</em>
-                    </span>
-                ) : (
-                <button type="button"
-                    className={'ads-status ' + (shownStatus === 'ยิงแล้ว' ? 'done' : 'pending') + (doneFromSpend ? ' from-spend' : '')}
-                    onClick={toggleStatus} disabled={saving}
-                    title={doneFromSpend
-                        ? (end
-                            ? 'รู้ว่ายิงแล้วจากค่าแอด (ค่าแอดเดินแล้ว) แต่ยังไม่มีใครกดยืนยัน — กดเพื่อยืนยัน (ใช้วันยิงแอดเดิม)'
-                            : 'รู้ว่ายิงแล้วจากค่าแอด (ค่าแอดเดินแล้ว) แต่ยังไม่มีใครกดยืนยัน — กดเพื่อยืนยันและลงวันยิงแอดเป็นวันนี้')
-                        : (shownStatus === 'ยิงแล้ว' ? 'กดเพื่อกลับเป็นยังไม่ยิง' : 'กดเมื่อยิงแอดคลิปนี้แล้ว')}>
-                    {shownStatus === 'ยิงแล้ว' ? '✓ ยิงแล้ว' : 'ยังไม่ยิง'}
-                    {doneFromSpend && <em>จากค่าแอด</em>}
-                </button>
-                )}
-                {/* ย้ายตัวบอกสถานะการบันทึกมาจากช่อง CPM ที่เอาออกไป */}
-                {saving ? <span className="proc-status">…</span> : saved ? <span className="proc-status ok">✓</span> : null}
+            <div className="ads-cell ads-evidence-cell">
+                <span className={'ads-evidence-badge ' + evidence.kind}>{evidence.label}</span>
+                <small className="ads-evidence-detail">{evidence.detail}</small>
+                {!autoStatus && !noAdLabel && <>
+                    {ranBySpend && <small className="ads-evidence-detail">{adStatus === 'ยิงแล้ว' ? 'ทีมยืนยันแล้ว' : 'ทีมยังไม่ยืนยัน'}</small>}
+                    <button type="button" className="ads-confirm-button" disabled={saving} onClick={() => setConfirmOpen(true)}>
+                        {adStatus === 'ยิงแล้ว' ? 'แก้การยืนยัน' : 'แจ้งการเริ่มยิง'}
+                    </button>
+                </>}
+                {saving ? <span className="proc-status">…</span> : saved ? <span className="proc-status ok">บันทึกแล้ว</span> : null}
             </div>
             {/* ค่าแอดสะสม + Reach — บันทึกเมื่อออกจากช่อง (ใช้คิด CPM ในหน้านี้และหน้าภาพรวม) */}
             <div className="ads-cell ads-spend">
@@ -429,13 +391,15 @@ function AdRow({ row, onSaved, canCost, noAd = false }) {
                     onChange={e => { setReach(e.target.value.replace(/[^0-9]/g, '')); setReachDirty(true); }} onBlur={saveReach} />
             </div>
             <div className="ads-cell ads-late">
-                {timing === null
-                    ? <span className="muted">—</span>
-                    : timing.conflict
-                        ? <span className="late-chip invalid" title={timingTip(timing)}>วันที่ขัดกัน</span>
-                    : timing.late <= 0
-                        ? <span className="late-chip ontime" title={timingTip(timing)}>ตรงเวลา</span>
-                        : <span className={'late-chip ' + timingLevel(timing.late)} title={timingTip(timing)}>ช้า {timing.late} วัน</span>}
+                {timing === null ? <small className="ads-evidence-detail">{noAdLabel ? 'ไม่ต้องประเมิน' : shownStatus !== 'ยิงแล้ว' ? 'รอข้อมูลเริ่มยิง' : !end ? 'รอวันเริ่มยิง' : 'รอวันลงโพสต์'}</small>
+                    : timing.conflict ? <>
+                        <span className="late-chip invalid">ต้องตรวจวันที่</span>
+                        <small className="ads-evidence-detail">เริ่มยิง {fmtDate(timing.adDate)}<br />ก่อนลงโพสต์ {fmtDate(timing.postDate)}</small>
+                        <Link className="ads-confirm-button" to={`/projects/${row.project_id}?tab=process`}>ตรวจวันที่ในแคมเปญ</Link>
+                    </> : <>
+                        <span className={'late-chip ' + timingLevel(timing.late)} title={timingTip(timing)}>{timing.late <= 0 ? 'เริ่มยิงทันกำหนด' : `เกินกำหนด ${timing.late} วัน`}</span>
+                        <small className="ads-evidence-detail">พร้อมยิง {fmtDate(timing.ready.date)}<br />เริ่มหลังพร้อม {timing.waited} วัน · เกณฑ์ 3 วัน</small>
+                    </>}
             </div>
             <div className="ads-cell"><StampCell row={row} /></div>
             <div className="ads-cell ads-stack">
@@ -447,6 +411,12 @@ function AdRow({ row, onSaved, canCost, noAd = false }) {
                 <input value={note} onChange={e => setNote(e.target.value)} onBlur={saveNote}
                     placeholder="เช่น Gencode ใช้ไม่ได้ / ยิงไม่ได้" title={note || 'หมายเหตุจากทีมยิงแอด'} />
             </div>
+            {confirmOpen && <AdConfirmationModal row={row} status={adStatus} date={end} onClose={() => setConfirmOpen(false)}
+                onSave={async payload => {
+                    const ok = await put(payload);
+                    if (ok) { setAdStatus(payload.ad_status); setEnd(payload.ad_end || ''); }
+                    return ok;
+                }} />}
             {perfOpen && <PerfModal sub={{ ...row, id: row.sub_id }} onClose={() => setPerfOpen(false)}
                 notice={row.perf_stamp
                     ? 'บันทึกนี้ปรับผลงานปัจจุบัน โดยคง Stamp เดิมไว้'
@@ -524,10 +494,11 @@ export default function Ads() {
     // ใช้สถานะที่โชว์ (ad_status_shown) เพื่อให้เลขบนปุ่มตรงกับที่ตาเห็นในตาราง
     // แถวเก่าก่อนมีฟิลด์นี้ค่อยถอยไปใช้ ad_status
     const shownStatusOf = r => r.ad_status_shown || r.ad_status;
+    const evidenceOf = r => adEvidence(r, r.ad_status === 'ยิงแล้ว', adStatusAuto(r), isNoAdRow(r)).kind;
     // คำค้นหาไม่มี skip — เลขบนปุ่มกรองนับเฉพาะแถวที่ตรงกับคำค้นหาด้วย จะได้ตรงกับที่เหลือในตารางจริง
     const matches = (r, skip) =>
         (skip === 'platform' || !platform || r.platform === platform) &&
-        (skip === 'status' || !status || shownStatusOf(r) === status) &&
+        (skip === 'status' || !status || evidenceOf(r) === status) &&
         (skip === 'late' || !late || lateBucket(r) === late) &&
         (!missingPerf || !r.performance) &&
         matchAdsSearch(r, search);
@@ -571,8 +542,12 @@ export default function Ads() {
                 <button type="button" aria-pressed={missingPerf} onClick={() => setMissingPerf(v => !v)}>
                     {missingPerf ? 'แสดงผลงานทั้งหมด' : `ดูโพสต์ที่ยังคำนวณไม่ได้ (${tabRows.length - ratedCount})`}
                 </button>
-                {dateConflicts > 0 && <button type="button" onClick={() => setLate('invalid')}>วันที่ขัดกัน {dateConflicts} โพสต์</button>}
+                {dateConflicts > 0 && <button type="button" onClick={() => setLate('invalid')}>ต้องตรวจวันที่ {dateConflicts} โพสต์</button>}
                 <small>ค่าแอด / Reach กับ Views / Engagement เป็นคนละข้อมูล · ยอดผลงานที่ขาดกรอกได้ในตาราง</small>
+            </div>
+            <div className="ads-explainer ads-status-guide">
+                <strong>อ่านสถานะแอด:</strong> “มีค่าแอดแล้ว” = มีค่าใช้จ่ายเกิดขึ้นจริง · “ทีมยืนยัน” = ทีมบันทึกว่าเริ่มยิงแล้ว
+                <span>หน้านี้ยังไม่บอกว่าแอดกำลังเปิดหรือหยุดอยู่ · ความตรงเวลาเริ่มยิงนับจากวันที่ข้อมูลพร้อมยิง ภายใน 3 วัน</span>
             </div>
             {/* ตัวกรอง */}
             <div className="toolbar" style={{ flexWrap: 'wrap' }}>
@@ -645,10 +620,11 @@ export default function Ads() {
             {tab === 'ads' && (
             <div className="summary-grid">
                 <div className="summary-card">
-                    <div className="summary-label">ยิงแอดแล้ว</div>
+                    <div className="summary-label">มีข้อมูลว่าเริ่มยิงแล้ว</div>
                     <div className="summary-value">{s ? `${s.done_count}/${s.total_posts}` : '—'}</div>
                     <div className="ads-progress"><span style={{ width: `${donePct}%` }} /></div>
-                    <div className="summary-sub">{s ? `เหลือยังไม่ยิง ${s.pending_count} โพสต์ · ${donePct}%` : '—'}</div>
+                    <div className="summary-sub">{s ? `ยังไม่มีข้อมูลเริ่มยิง ${s.pending_count} โพสต์ · ${donePct}%` : '—'}</div>
+                    {s && <div className="summary-sub">มีค่าแอด {adRowsAll.filter(hasAdSpend).length} · บันทึกเริ่มยิงแต่ยังไม่มีค่าแอด {adRowsAll.filter(r => evidenceOf(r) === 'reported').length} โพสต์</div>}
                     {canSeeSpend && <div className="summary-sub">ค่าแอดสะสม {fmtMoney(s.total_spend)}</div>}
                 </div>
                 <div className="summary-card">
@@ -739,15 +715,15 @@ export default function Ads() {
                                         ...platformOptions.map(p => ({ value: p, label: p, count: countIf('platform', r => r.platform === p) }))]} />
                                 </span>
                                 <span>BRANDS</span><span>PRODUCTS</span><span>CAMPAIGN</span><span>TARGET</span><span>CONTENT TYPE</span><span>FORMAT</span>
-                                <span>GENCODE</span><span>ID POST</span><span>วันลงงาน</span><span>วันยิงแอด</span>
-                                <span>สถานะ
-                                    <ColumnFilter label="สถานะยิงแอด" value={status} onPick={setStatus}
+                                <span>GENCODE</span><span>ID POST</span><span>วันลงโพสต์</span><span>วันเริ่มยิง</span>
+                                <span>หลักฐานการเริ่มยิง
+                                    <ColumnFilter label="หลักฐานการเริ่มยิง" value={status} onPick={setStatus}
                                         options={[{ value: '', label: 'ทุกสถานะ', count: countIf('status', () => true) },
-                                        ...STATUSES.map(st => ({ value: st, label: st === 'ยิงแล้ว' ? '✓ ยิงแล้ว' : st, count: countIf('status', r => shownStatusOf(r) === st) }))]} />
+                                        ...STATUSES.map(([value, label]) => ({ value, label, count: countIf('status', r => evidenceOf(r) === value) }))]} />
                                 </span>
                                 <span title="ค่าแอดสะสม (บาท) และ Reach — กรอกเองได้ บันทึกเมื่อออกจากช่อง">ค่าแอด / REACH</span>
-                                <span title="นับจากวันที่ข้อมูลครบพร้อมยิง (ลงคลิป / Gencode / ID Post / ทีมอนุมัติ) ถึงวันยิงแอด — ภายใน 3 วัน = ตรงเวลา">ระยะเวลายิง
-                                    <ColumnFilter label="ระยะเวลายิง" value={late} onPick={setLate}
+                                <span title="นับจากวันที่ข้อมูลครบพร้อมยิง (ลงคลิป / Gencode / ID Post / ทีมอนุมัติ) ถึงวันยิงแอด — ภายใน 3 วัน = ตรงเวลา">ความตรงเวลาเริ่มยิง
+                                    <ColumnFilter label="ความตรงเวลาเริ่มยิง" value={late} onPick={setLate}
                                         options={[{ value: '', label: 'ทั้งหมด', count: countIf('late', () => true) },
                                         ...TIMING_OPTS.map(([v, l]) => ({ value: v, label: l, dot: v, count: countIf('late', r => lateBucket(r) === v) }))]} />
                                 </span>

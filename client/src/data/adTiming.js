@@ -58,10 +58,10 @@ export function adTiming(row, adDate) {
 // ระดับสีของป้าย + ตัวกรอง: ตรงเวลา / ช้า 1-2 วัน / ช้า 3 วันขึ้นไป
 export const timingLevel = late => (late == null ? 'invalid' : late <= 0 ? 'ontime' : late <= 2 ? 'warn' : 'bad');
 export const TIMING_OPTS = [
-    ['ontime', 'ตรงเวลา (ภายใน 3 วัน)'],
-    ['warn', 'ช้า 1-2 วัน'],
-    ['bad', 'ช้า 3 วันขึ้นไป'],
-    ['invalid', 'วันที่ขัดกัน']
+    ['ontime', 'เริ่มยิงทันกำหนด (ภายใน 3 วัน)'],
+    ['warn', 'เกินกำหนด 1-2 วัน'],
+    ['bad', 'เกินกำหนด 3 วันขึ้นไป'],
+    ['invalid', 'ต้องตรวจวันที่ (ยิงก่อนลงโพสต์)']
 ];
 
 // คำอธิบายเวลาชี้ที่ป้าย

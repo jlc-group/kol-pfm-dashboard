@@ -265,6 +265,8 @@ const ads = {
                     ad_status_shown: effectiveAdStatus(s),
                     // true = รู้ว่ายิงแล้วเพราะมีค่าแอด ไม่ใช่เพราะมีคนกดยืนยัน
                     ad_done_from_spend: adRanBySpend(s) && s.ad_status !== 'ยิงแล้ว',
+                    // Preserve evidence visibility when the amount itself is masked for members.
+                    ad_has_spend: adRanBySpend(s),
                     ad_spend: spend,
                     ad_reach: reach,
                     // ค่าแอดมาจาก PFM อัตโนมัติ (หน้าโฆษณาไม่ให้กรอกทับ) — TikTok ของแบรนด์ที่ยังไม่ต่อ PFM กรอกเองได้
