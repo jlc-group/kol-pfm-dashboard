@@ -44,6 +44,7 @@ export default function AdConfirmationModal({ row, status, date, onSave, onClose
             {(confirmed || paid) && <div className="field">
                 <label htmlFor="ad-confirm-date">วันเริ่มยิงจริง</label>
                 <input id="ad-confirm-date" type="date" value={startDate} required={confirmed} disabled={saving} onChange={e => setStartDate(e.target.value)} />
+                {startDate && <small className="ads-evidence-detail">วันที่เลือก: {new Date(startDate + 'T00:00:00Z').toLocaleDateString('th-TH', { day: 'numeric', month: 'long', year: 'numeric', calendar: 'gregory', timeZone: 'UTC' })}</small>}
                 <small className="ads-evidence-detail">เลือกวันที่เริ่มยิงจริง ระบบจะไม่ลงวันที่วันนี้ให้เอง</small>
             </div>}
             {paid && <p className="ads-explainer">โพสต์นี้มีค่าแอดแล้ว แม้ยกเลิกการยืนยันของทีม ป้าย “มีค่าแอดแล้ว” จะยังอยู่ เพราะค่าแอดสะสมเป็นหลักฐานว่าเคยยิง</p>}
