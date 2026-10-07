@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { performanceBaseline, performanceSourceInfo, canSelectApi } from '../data/performanceSources.js';
+import { useEffect, useState } from 'react';
+import { performanceBaseline, performanceSourceInfo, canSelectApi, canSelectIsolated } from '../data/performanceSources.js';
 import Icon from './Icon.jsx';
 import { api } from '../api/client.js';
 
@@ -23,15 +23,25 @@ export default function PerfModal({ sub, fetchUrl, onSave, onClose, notice }) {
         views: sub.views || '', likes: sub.likes || '', comments: sub.comments || '',
         saves: sub.saves || '', shares: sub.shares || '', reposts: sub.reposts || ''
     });
-    const [baseline, setBaseline] = useState(() => performanceBaseline(sub));
+    const [baseline] = useState(() => performanceBaseline(sub));
     const sourceInfo = performanceSourceInfo(sub);
     const apiEvidence = sub.perf_sources?.api;
+    const [isolated, setIsolated] = useState(sub.perf_sources?.tiktok_evidence);
+    const useIsolated = canSelectIsolated({ ...sub, perf_sources: { ...sub.perf_sources, tiktok_evidence: isolated } });
     const apiCounter = key => ['available', 'snapshot_only'].includes(apiEvidence?.status)
         ? apiEvidence.metrics?.[key]?.toLocaleString() ?? '—' : '—';
     const useApi = /^tiktok/i.test(String(sub.platform || '').trim()) && canSelectApi(sub.perf_sources, Date.now(), sub.id_post);
     const [saving, setSaving] = useState(false);
     const [fetching, setFetching] = useState(false);
     const [msg, setMsg] = useState('');
+    const [collector, setCollector] = useState(null);
+    useEffect(() => {
+        if (!canFetch) return;
+        let active = true;
+        api('/ads/tiktok-evidence-status').then(r => { if (active) setCollector(r.data); })
+            .catch(() => { if (active) setCollector({ configured: false, reason: 'ตรวจสถานะบริการดึงยอดไม่ได้ กรุณาลองใหม่' }); });
+        return () => { active = false; };
+    }, [canFetch]);
     const up = (k, v) => setF(s => ({ ...s, [k]: v }));
     const num = v => Number(String(v).replace(/[^\d]/g, '')) || 0;
 
@@ -44,13 +54,8 @@ export default function PerfModal({ sub, fetchUrl, onSave, onClose, notice }) {
         try {
             const res = await api(fetchUrl, { method: 'POST' });
             const d = res.data || {};
-            setBaseline(performanceBaseline(d));
-            setF(s => ({
-                ...s,
-                views: d.views ?? s.views, likes: d.likes ?? s.likes, comments: d.comments ?? s.comments,
-                saves: d.saves ?? s.saves, shares: d.shares ?? s.shares
-            }));
-            setMsg('✓ ดึงข้อมูลจาก TikTok สำเร็จ');
+            setIsolated(d.perf_sources?.tiktok_evidence);
+            setMsg('✓ รับยอดไว้แยกแล้ว ตรวจยอดและกดเลือกใช้ก่อนเปลี่ยนผลงาน');
         } catch (err) {
             setMsg('⚠️ ' + (err.message || 'ดึงจาก TikTok ไม่สำเร็จ — ตรวจสอบการตั้งค่า TikTok API'));
         } finally { setFetching(false); }
@@ -90,13 +95,30 @@ export default function PerfModal({ sub, fetchUrl, onSave, onClose, notice }) {
                         }}>ใช้ข้อมูล API</button>
                         {!useApi && <small>ยังเลือก API ไม่ได้: ต้นทางต้องพร้อม มียอดครบ และ sync ภายใน 2 ชั่วโมง</small>}
                     </div>}
+                    {isolated && <div className="perf-api-preview">
+                        <strong>ยอด TikTok แยกสำหรับ KOL</strong>
+                        <small>{({ available: 'รับยอดไว้แล้ว', pending: 'รอยอดจากต้นทาง', source_not_found: 'ต้นทางไม่พบคลิป', source_unavailable: 'ต้นทางยังดึงยอดไม่ได้', fetch_failed: 'ดึงยอดรอบล่าสุดไม่สำเร็จ' })[isolated.status] || 'ยังไม่พร้อม'}</small>
+                        <span>Views {isolated.metrics?.views?.toLocaleString() ?? '—'} · Likes {isolated.metrics?.likes?.toLocaleString() ?? '—'} · Comments {isolated.metrics?.comments?.toLocaleString() ?? '—'} · Saves {isolated.metrics?.saves?.toLocaleString() ?? '—'} · Shares {isolated.metrics?.shares?.toLocaleString() ?? '—'}</span>
+                        {isolated.collected_at && <small>ดึงยอดสำเร็จ: {new Date(isolated.collected_at).toLocaleString('th-TH')}</small>}
+                        <button type="button" className="btn-ghost" disabled={saving || fetching || !useIsolated} onClick={async () => {
+                            setSaving(true);
+                            try { await onSave({ perf_mode: 'isolated', perf_from: baseline, perf_evidence_from: isolated.evidence_id }); onClose(); }
+                            catch (err) { setMsg(err.message); }
+                            finally { setSaving(false); }
+                        }}>เลือกใช้ยอด TikTok ชุดนี้</button>
+                        {!useIsolated && <small>ยังเลือกไม่ได้: ต้องตรงคลิป ยอดครบ และดึงสำเร็จภายใน 2 ชั่วโมง</small>}
+                        <small>เก็บแยกใน KOL การรับยอดไม่เปลี่ยนผลงานหรือ Stamp จนกว่าจะเลือกใช้</small>
+                    </div>}
                     <small>กดบันทึกจะใช้ค่ากรอกเอง และเก็บข้อมูล API แยกไว้จนกว่าจะเลือกใช้ API</small>
                 </div>
                 {notice && <div className="perf-manual-note">{notice}</div>}
                 {canFetch ? (
-                    <button type="button" className="perf-fetch-btn" onClick={fetchTikTok} disabled={fetching}>
-                        <Icon name="target" size={15} /> {fetching ? 'กำลังดึง...' : 'ดึงจาก TikTok อัตโนมัติ'}
-                    </button>
+                    <div>
+                        <button type="button" className="perf-fetch-btn" onClick={fetchTikTok} disabled={fetching || saving || !collector?.configured}>
+                            <Icon name="target" size={15} /> {fetching ? 'กำลังดึง...' : 'ดึงยอด TikTok มาเทียบ'}
+                        </button>
+                        {!collector?.configured && <div className="perf-manual-note">{collector?.reason || 'กำลังตรวจบริการดึงยอด TikTok...'} — ค่าแอดและ Reach ยัง sync ตามเดิม</div>}
+                    </div>
                 ) : (
                     <div className="perf-manual-note">
                         ✍️ กรอก Views และ Engagement จาก Insights ของโพสต์จริง — ค่าแอดและ Reach เป็นคนละตัวเลขกับยอดวิว

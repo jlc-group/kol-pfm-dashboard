@@ -25,6 +25,7 @@ const { hires } = require('./pg/hires');
 const { talents } = require('./pg/talents');
 const { talentJobs } = require('./pg/talentJobs');
 const { catalog } = require('./pg/catalog');
+const { tiktokEvidence } = require('./pg/tiktokEvidence');
 
 module.exports = {
     // helper บริสุทธิ์ที่ route เรียกใช้ตรง ๆ (ใช้ชุดเดียวกับ jsonStore)
@@ -34,7 +35,7 @@ module.exports = {
 
     teams, users, kols, projects, projectKols, dashboard, payments,
     installments, payBatches, budget, activity, submissions,
-    ads, adsSync, contentExport, reports, rateRequests, hires, talents, talentJobs, catalog, meta,
+    ads, adsSync, tiktokEvidence, contentExport, reports, rateRequests, hires, talents, talentJobs, catalog, meta,
 
     _duplicateError: logic.duplicateError
 };

@@ -3,6 +3,7 @@ const crypto = require('crypto');
 const store = require('../store');
 const beauterryPfm = require('../services/beauterryPfmSync');
 const weboostxPfm = require('../services/weboostxPfmSync');
+const tiktokEvidence = require('../services/tiktokEvidenceSync');
 
 const router = express.Router();
 
@@ -54,6 +55,16 @@ router.post('/pull-weboostx', checkSyncKey, async (req, res, next) => {
 });
 router.get('/weboostx-status', checkSyncKey, (req, res) => {
     res.json({ status: 'success', data: weboostxPfm.getStatus() });
+});
+
+router.get('/tiktok-evidence-status', checkSyncKey, (req, res) => {
+    res.json({ status: 'success', data: tiktokEvidence.getStatus() });
+});
+router.post('/pull-tiktok-evidence', checkSyncKey, async (req, res, next) => {
+    try {
+        const result = await tiktokEvidence.runSync();
+        res.status(result.skipped ? 409 : 200).json({ status: 'success', data: result });
+    } catch (err) { next(err); }
 });
 
 module.exports = router;

@@ -16,4 +16,10 @@ Validation: `npm run build` runs the isolated regression suite. `node scripts/te
 
 This release changes KOL only. Restoring external TikTok KOL counters and auditing historical Beauterry budget decisions remain separate work. This evidence stores the latest entry per source, not a complete time series of every counter observation.
 
+The optional [isolated TikTok consumer](tiktok-evidence.md) stores maintained-provider
+observations in `perf_sources.tiktok_evidence` without calling the PFM apply path.
+It remains unconfigured until a real provider is available. Explicitly reviewed
+selection freezes a manual-mode copy with its origin; collection alone cannot change
+effective metrics or create a stamp, and never writes to Beauterry.
+
 Rollback: deploy the previous application commit and retain the nullable evidence column. The prior version ignores it; do not drop it as part of application rollback.

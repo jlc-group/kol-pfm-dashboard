@@ -62,8 +62,36 @@ let pool, blocker, created = false;
     assert.equal(Number(row.views),12000);
     assert.equal(row.perf_sources.manual.metrics.views,15000);
     assert.deepEqual(row.perf_stamp,stamp);
+    const { tiktokEvidence } = require('../server/src/store/pg/tiktokEvidence');
+    const isolated = { id_post: api.id_post, status: 'available', collected_at: new Date(Date.now() - 1000).toISOString(),
+        metrics: { views: 19000, likes: 190, comments: 19, saves: 0, shares: 0 } };
+    const beforeIsolated = structuredClone(row);
+    blocker = await pool.connect();
+    await blocker.query('BEGIN');
+    await blocker.query('SELECT * FROM submissions WHERE id=1 FOR UPDATE');
+    let evidenceFinished = false;
+    const collecting = tiktokEvidence.apply([isolated]).then(result => { evidenceFinished = true; return result; });
+    let evidenceWaiting = false;
+    for (let i = 0; i < 100; i++) {
+        const state = await admin.query("SELECT 1 FROM pg_stat_activity WHERE datname=$1 AND wait_event_type='Lock'", [name]);
+        if (state.rowCount) { evidenceWaiting = true; break; }
+        await new Promise(resolve => setTimeout(resolve, 20));
+    }
+    assert.equal(evidenceWaiting, true); assert.equal(evidenceFinished, false);
+    await blocker.query('COMMIT'); blocker.release(); blocker = null;
+    await collecting;
+    row = (await pool.query('SELECT * FROM submissions WHERE id=1')).rows[0];
+    for (const key of Object.keys(row).filter(k => k !== 'perf_sources')) assert.deepEqual(row[key], beforeIsolated[key], key);
+    await submissions.update(1,1,{ perf_mode: 'isolated', perf_evidence_from: row.perf_sources.tiktok_evidence.evidence_id,
+        perf_from: metricsOf(row) },'fixture');
+    row = (await pool.query('SELECT * FROM submissions WHERE id=1')).rows[0];
+    assert.equal(Number(row.views),19000); assert.equal(row.perf_sources.mode,'manual');
+    assert.equal(row.perf_sources.manual.origin.source,'kol-tiktok-evidence'); assert.deepEqual(row.perf_stamp,stamp);
+    await adsSync.apply([{ ...api, views: 29000 }]);
+    row = (await pool.query('SELECT * FROM submissions WHERE id=1')).rows[0];
+    assert.equal(Number(row.views),19000);
     console.log(JSON.stringify({database:name, realRowLock:true, manualPreserved:true, stampPreserved:true,
-        paidSyncContinues:true, staleFormRejected:true, explicitApiSelection:true}));
+        paidSyncContinues:true, staleFormRejected:true, explicitApiSelection:true, isolatedEvidenceOnly:true, isolatedEvidenceRowLock:true, selectedIsolatedCopyFrozen:true}));
 })().catch(error => { console.error(error.code || error.message); process.exitCode=1; }).finally(async () => {
     if (blocker) { await blocker.query('ROLLBACK'); blocker.release(); }
     if (pool) await pool.end();

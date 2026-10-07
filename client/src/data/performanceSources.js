@@ -1,6 +1,16 @@
 export const PERFORMANCE_KEYS = ['views', 'likes', 'comments', 'saves', 'shares', 'reposts'];
 export const performanceBaseline = row => Object.fromEntries(PERFORMANCE_KEYS.map(k => [k, Number(row[k]) || 0]));
 
+export function canSelectIsolated(row, now = Date.now()) {
+    const e = row.perf_sources?.tiktok_evidence;
+    const collected = Date.parse(e?.collected_at || ''), received = Date.parse(e?.observed_at || '');
+    return Boolean(/^tiktok/i.test(String(row.platform || '').trim()) && e?.status === 'available' && e.evidence_id
+        && e.id_post === String(row.id_post || '').trim() && Number.isFinite(collected) && Number.isFinite(received)
+        && collected <= received && received <= now && now - collected <= 2 * 3600000 && now - received <= 2 * 3600000
+        && PERFORMANCE_KEYS.filter(k => k !== 'reposts').every(k => Number.isSafeInteger(e.metrics?.[k]) && e.metrics[k] >= 0)
+        && e.metrics.views > 0);
+}
+
 export function canSelectApi(state, now = Date.now(), idPost = state?.api?.id_post) {
     const api = state?.api;
     const observed = Date.parse(api?.observed_at || '');
@@ -18,8 +28,10 @@ export function performanceSourceInfo(row, now = Date.now()) {
         label: 'ยอดของคลิปเดิม', detail: 'ID Post เปลี่ยนแล้ว กรุณากรอกผลงานของคลิปใหม่ หรือเลือก API ที่ตรงกับคลิปใหม่'
     };
     if (state?.mode === 'manual') return {
-        label: 'ใช้ค่ากรอกเอง', time: state.manual?.saved_at,
-        detail: 'API จะเก็บแยกและไม่ทับผลงานที่กรอก เลือกกลับไปใช้ API ได้เมื่อข้อมูลพร้อม'
+        label: state.manual?.origin?.source === 'kol-tiktok-evidence' ? 'ใช้ยอด TikTok ที่เลือกไว้' : 'ใช้ค่ากรอกเอง', time: state.manual?.saved_at,
+        detail: state.manual?.origin?.source === 'kol-tiktok-evidence'
+            ? 'ใช้ยอดชุดที่คุณเลือกบันทึกไว้ ยอดที่ดึงใหม่จะเก็บให้เทียบก่อนและไม่ทับชุดนี้อัตโนมัติ'
+            : 'API จะเก็บแยกและไม่ทับผลงานที่กรอก เลือกกลับไปใช้ API ได้เมื่อข้อมูลพร้อม'
     };
     const observed = Date.parse(state?.api?.observed_at || '');
     if (Number.isFinite(observed) && now - observed > 2 * 60 * 60 * 1000) return {

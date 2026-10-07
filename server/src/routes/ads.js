@@ -28,6 +28,11 @@ function maskCost(data, user) {
 const router = express.Router();
 router.use(authenticate);
 
+router.get('/tiktok-evidence-status', (req, res) => {
+    const status = require('../services/tiktokEvidenceSync').getStatus();
+    res.json({ status: 'success', data: { configured: status.configured, reason: status.reason } });
+});
+
 // รูปปกคลิป TikTok (คอลัมน์ IMAGE) — ดึงครั้งแรกแล้วเก็บไว้ในเครื่อง ครั้งต่อไปเสิร์ฟจากไฟล์เลย
 const thumbs = createThumbCache({ dir: path.join(UPLOAD_DIR, 'ads-thumbs') });
 

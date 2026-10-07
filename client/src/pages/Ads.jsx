@@ -418,6 +418,7 @@ function AdRow({ row, onSaved, canCost, noAd = false }) {
                     return ok;
                 }} />}
             {perfOpen && <PerfModal sub={{ ...row, id: row.sub_id }} onClose={() => setPerfOpen(false)}
+                fetchUrl={`/projects/${row.project_id}/submissions/${row.sub_id}/fetch-tiktok`}
                 notice={row.perf_stamp
                     ? 'บันทึกนี้ปรับผลงานปัจจุบัน โดยคง Stamp เดิมไว้'
                     : 'เมื่อค่าแอดถึงเกณฑ์และผลงานครบ ระบบจะ Stamp จากยอดตอนบันทึกนี้ ไม่ใช่ยอดย้อนหลัง ณ วันที่ค่าแอดถึงเกณฑ์'}

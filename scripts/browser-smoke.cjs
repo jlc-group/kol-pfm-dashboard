@@ -7,6 +7,9 @@ const { once } = require('node:events');
 const { chromium } = require('playwright');
 
 process.env.NODE_ENV = 'test';
+process.env.KOL_TIKTOK_EVIDENCE_ENABLED = 'false';
+delete process.env.KOL_TIKTOK_EVIDENCE_URL;
+delete process.env.KOL_TIKTOK_EVIDENCE_KEY;
 process.env.JWT_SECRET = crypto.randomBytes(48).toString('hex');
 const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'kol-browser-test-'));
 process.env.UPLOAD_DIR = temp;
@@ -99,7 +102,7 @@ const app = require('../server/src/app');
         store.submissions.update = async (id, projectId, payload) => {
             savedPerf = { id, projectId, payload };
             const row = adFixtures.find(r => r.id === Number(id));
-            Object.assign(row, payload);
+            Object.assign(row, Object.fromEntries(Object.entries(payload).filter(([, value]) => value !== undefined)));
             row.ad_status_shown = row.ad_spend > 0 || row.ad_status === 'ยิงแล้ว' ? 'ยิงแล้ว' : 'ยังไม่ยิง';
             return {...row};
         };
@@ -124,6 +127,8 @@ const app = require('../server/src/app');
         await firstRow.getByRole('button', { name: 'กรอกผลงาน', exact: true }).click();
         await page.locator('.modal').waitFor({ state: 'visible' });
         assert.equal(await page.getByRole('button', { name: 'ดึงจาก TikTok อัตโนมัติ' }).count(), 0);
+        await page.getByText('ยังไม่มีบริการดึงยอด TikTok แยกสำหรับ KOL ที่ตั้งค่าไว้', { exact: false }).waitFor();
+        assert.equal(await page.getByRole('button', { name: 'ดึงยอด TikTok มาเทียบ' }).isDisabled(), true);
         const perfInputs = page.locator('.modal input');
         assert.equal(await perfInputs.nth(1).inputValue(), '12');
         await perfInputs.nth(0).fill('500');
@@ -148,6 +153,24 @@ const app = require('../server/src/app');
                 && row.getBoundingClientRect().top < window.innerHeight;
         });
         await page.setViewportSize({ width: 390, height: 844 });
+
+        // An isolated observation is shown for review and copied only by an explicit action.
+        const { normalize: normalizeEvidence, record: recordEvidence } = require('../server/src/store/tiktokEvidence');
+        const isolated = normalizeEvidence({ id_post: adFixtures[0].id_post, status: 'available',
+            collected_at: new Date(Date.now() - 1000).toISOString(),
+            metrics: { views: 2200, likes: 220, comments: 0, saves: 0, shares: 0 } });
+        adFixtures[0].perf_sources = recordEvidence(null, isolated, new Date().toISOString());
+        await page.reload();
+        await page.locator('.kol-track-entry').first().getByRole('button', { name: 'กรอกผลงาน', exact: true }).click();
+        await page.getByText('ยอด TikTok แยกสำหรับ KOL', { exact: true }).waitFor();
+        assert.equal(await page.locator('.modal input').first().inputValue(), '500', 'opening evidence must not change effective counters');
+        assert.equal(await page.locator('.modal').evaluate(el => el.getBoundingClientRect().right <= window.innerWidth), true);
+        await page.getByRole('button', { name: 'เลือกใช้ยอด TikTok ชุดนี้', exact: true }).click();
+        await page.locator('.modal').waitFor({ state: 'hidden' });
+        assert.equal(savedPerf.payload.perf_mode, 'isolated');
+        assert.equal(savedPerf.payload.perf_evidence_from, isolated.evidence_id);
+        assert.equal(savedPerf.payload.perf_from.views, 500);
+        assert.equal(savedPerf.payload.views, undefined, 'server copies validated evidence, client does not supply replacement counters');
 
         // A real UI save chooses a start date explicitly; cancelling has no write.
         const manualRow = page.locator('.kol-track-entry').nth(1);

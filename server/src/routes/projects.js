@@ -4,7 +4,7 @@ const fs = require('fs');
 const multer = require('multer');
 const chatHub = require('../services/chatHub');
 const store = require('../store');
-const tiktok = require('../services/tiktok');
+const tiktokEvidence = require('../services/tiktokEvidenceSync');
 const { authenticate, requireRole } = require('../middleware/auth');
 
 const router = express.Router();
@@ -1523,7 +1523,7 @@ router.put('/:id/submissions/:subId', async (req, res, next) => {
             team_note: team_note !== undefined ? ((team_note && String(team_note).trim()) ? String(team_note).trim() : null) : undefined,
             views: views !== undefined ? Number(views) : undefined, likes: likes !== undefined ? Number(likes) : undefined, comments: comments !== undefined ? Number(comments) : undefined, saves: saves !== undefined ? Number(saves) : undefined, shares: shares !== undefined ? Number(shares) : undefined,
             reposts: reposts !== undefined ? Number(reposts) : undefined,
-            perf_from: req.body.perf_from, perf_mode: req.body.perf_mode
+            perf_from: req.body.perf_from, perf_mode: req.body.perf_mode, perf_evidence_from: req.body.perf_evidence_from
         }, byName, { actor: 'team' });   // ทีมแก้ข้อมูลโพสต์เอง = นับว่าตรวจแล้ว
         if (!data) return res.status(404).json({ status: 'error', message: 'ไม่พบรายการ' });
         if (status !== undefined) {
@@ -1696,15 +1696,25 @@ router.post('/:id/submissions/:subId/fetch-tiktok', async (req, res, next) => {
         const check = await canEditProject(req, req.params.id);
         if (!check.ok) return res.status(check.code).json({ status: 'error', message: check.message });
         const sub = await store.submissions.get(req.params.subId);
-        if (!sub) return res.status(404).json({ status: 'error', message: 'ไม่พบรายการ' });
+        if (!sub || Number(sub.project_id) !== Number(req.params.id)) return res.status(404).json({ status: 'error', message: 'ไม่พบรายการ' });
         try {
-            const stats = await tiktok.fetchVideoStats(sub.post_url);
-            const data = await store.submissions.update(req.params.subId, req.params.id, { ...stats, perf_synced_at: new Date().toISOString(),
-                perf_from: Object.fromEntries(['views', 'likes', 'comments', 'saves', 'shares', 'reposts'].map(k => [k, Number(sub[k]) || 0]))
-            }, null, { performanceSource: 'tiktok-direct' });
+            const brands = require('../store/logic').pfmSourceBrands('beauterry-pfm');
+            if (!brands.some(b => b.trim().toLowerCase() === String(check.project.brand || '').trim().toLowerCase())) {
+                return res.status(409).json({ status: 'error', message: 'แบรนด์นี้ยังไม่มีแหล่งยอด TikTok ที่เชื่อมไว้' });
+            }
+            if (!/^tiktok/i.test(String(sub.platform || '').trim()) || !/^\d{1,50}$/.test(String(sub.id_post || '').trim())) {
+                return res.status(400).json({ status: 'error', message: 'ต้องเป็นโพสต์ TikTok และมี ID Post ที่ถูกต้อง' });
+            }
+            const rows = await tiktokEvidence.fetchBatch([String(sub.id_post).trim()]);
+            const stored = await store.tiktokEvidence.apply(rows);
+            if (stored.not_found.length) return res.status(409).json({ status: 'error', message: 'โพสต์เปลี่ยนหรือแบรนด์ยังไม่รองรับ กรุณาโหลดข้อมูลใหม่' });
+            const data = await store.submissions.get(req.params.subId);
+            if (!data || String(data.id_post || '').trim() !== String(sub.id_post).trim()) {
+                return res.status(409).json({ status: 'error', message: 'ID Post เปลี่ยนระหว่างดึงยอด กรุณาโหลดข้อมูลใหม่' });
+            }
             res.json({ status: 'success', data });
         } catch (e) {
-            res.status(400).json({ status: 'error', message: e.message, code: e.code });
+            res.status(e.status || 502).json({ status: 'error', message: e.message });
         }
     } catch (err) { next(err); }
 });

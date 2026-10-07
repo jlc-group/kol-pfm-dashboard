@@ -162,3 +162,25 @@ test('client labels missing counters, manual overrides and source-record timesta
     row.perf_sources.api.status = 'available';
     assert.equal(web.canSelectApi(row.perf_sources), Boolean(evidence.apiSelection(row)));
 });
+
+test('isolated collection updates evidence only and explicit review freezes the selected copy', async () => {
+    const { tiktokEvidence } = require(path.join(SRC, 'store/pg/tiktokEvidence'));
+    row.perf_stamp = { at: 'historical', views: 1000 };
+    row.perf_sources = evidence.manualEvidence(row, {}, 'editor', new Date().toISOString());
+    const original = structuredClone(row);
+    const incoming = { id_post: row.id_post, status: 'available', collected_at: new Date(Date.now() - 1000).toISOString(),
+        metrics: { views: 2000, likes: 20, comments: 0, saves: 0, shares: 5 }, ad_spend: 99999 };
+    await tiktokEvidence.apply([incoming]);
+    assert.deepEqual(Object.keys(writes[0]), ['perf_sources']);
+    for (const key of ['views', 'likes', 'comments', 'saves', 'shares', 'ad_spend', 'ad_reach', 'perf_stamp']) assert.deepEqual(row[key], original[key]);
+    assert.deepEqual(row.perf_sources.manual, original.perf_sources.manual);
+    const chosenId = row.perf_sources.tiktok_evidence.evidence_id;
+    await assert.rejects(submissions.update(1, 1, { perf_mode: 'isolated', perf_evidence_from: 'changed', perf_from: evidence.metricsOf(row) }), { status: 409 });
+    await submissions.update(1, 1, { perf_mode: 'isolated', perf_evidence_from: chosenId, perf_from: evidence.metricsOf(row) }, 'editor');
+    assert.equal(row.views, 2000); assert.equal(row.perf_sources.mode, 'manual');
+    assert.equal(row.perf_sources.manual.origin.evidence_id, chosenId);
+    assert.deepEqual(row.perf_stamp, original.perf_stamp);
+    await adsSync.apply([apiRow({ views: 5000, ad_spend: 5000 })]);
+    assert.equal(row.views, 2000); assert.equal(row.ad_spend, 5000);
+    assert.equal(row.perf_sources.tiktok_evidence.evidence_id, chosenId);
+});

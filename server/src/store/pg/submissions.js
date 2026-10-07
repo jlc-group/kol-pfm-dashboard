@@ -12,6 +12,7 @@ const { query, withTransaction, insertRow, updateRow, asNum, asBool, asText, asJ
 const { now, maybeStamp, stampAtFor, AD_STAMP_AT, AD_STAMP_BY_BRAND, nextPostCheck, postCheckDecision, POST_CHECK_OPEN, sameInstant } = require('../logic');
 
 const { METRIC_KEYS, manualEvidence, apiSelection, recordApi } = require('../performanceSources');
+const { selectable: isolatedSelectable } = require('../tiktokEvidence');
 
 // เกณฑ์ต่ำสุดของทุกแบรนด์ — ค่าแอดยังไม่ถึงเท่านี้ก็ไม่มีทางสแตมป์ ไม่ต้องเสียเวลาไปหาแบรนด์
 // (การแก้ข้อมูลส่วนใหญ่เป็นแถวที่ยังไม่ได้ยิงแอดเลย)
@@ -175,7 +176,7 @@ async function updateOne(client, subId, projectId, fields, byName, opts = {}) {
             e.status = 409; throw e;
         }
     }
-    if (fields.perf_mode !== undefined && fields.perf_mode !== 'api') {
+    if (fields.perf_mode !== undefined && !['api', 'isolated'].includes(fields.perf_mode)) {
         const e = new Error('รูปแบบแหล่งข้อมูลไม่ถูกต้อง'); e.status = 400; throw e;
     }
     if (fields.perf_mode === 'api') {
@@ -184,6 +185,12 @@ async function updateOne(client, subId, projectId, fields, byName, opts = {}) {
             const e = new Error('ยังไม่มีข้อมูล API ที่พร้อมใช้ กรุณารอข้อมูลต้นทาง'); e.status = 409; throw e;
         }
         Object.assign(fields, selection);
+    }
+    if (fields.perf_mode === 'isolated') {
+        if (fields.perf_from === undefined || !isolatedSelectable(s, fields.perf_evidence_from)) {
+            const e = new Error('ยอด TikTok แยกยังไม่พร้อมหรือเปลี่ยนแล้ว กรุณาเปิดฟอร์มใหม่'); e.status = 409; throw e;
+        }
+        Object.assign(fields, s.perf_sources.tiktok_evidence.metrics);
     }
     for (const k of METRIC_KEYS) {
         if (fields[k] !== undefined && (!Number.isSafeInteger(Number(fields[k])) || Number(fields[k]) < 0)) {
@@ -205,6 +212,14 @@ async function updateOne(client, subId, projectId, fields, byName, opts = {}) {
             ? { ...s.perf_sources, mode: 'api' }
             : manualEvidence(s, fields, byName, now());
         patch.perf_sources = asJson(s.perf_sources);
+        if (fields.perf_mode === 'isolated') {
+            // An explicit reviewed copy is frozen like manual data. Neither collector nor PFM can replace it.
+            s.perf_sources.manual.origin = {
+                source: 'kol-tiktok-evidence', evidence_id: s.perf_sources.tiktok_evidence.evidence_id,
+                collected_at: s.perf_sources.tiktok_evidence.collected_at
+            };
+            patch.perf_sources = asJson(s.perf_sources);
+        }
         if (fields.perf_mode === 'api') {
             s.perf_synced_at = s.perf_sources.api.source_updated_at;
             patch.perf_synced_at = s.perf_synced_at;

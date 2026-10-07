@@ -17,10 +17,12 @@ async function start() {
     const host = process.env.HOST || '127.0.0.1';
     let stopPfmSync = () => {};
     let stopWeBoostxSync = () => {};
+    let stopTikTokEvidence = () => {};
     const server = app.listen(port, host, () => {
         console.log(`KOL Dashboard listening on http://${host}:${port}`);
         stopPfmSync = require('./services/beauterryPfmSync').startScheduler();
         stopWeBoostxSync = require('./services/weboostxPfmSync').startScheduler();
+        stopTikTokEvidence = require('./services/tiktokEvidenceSync').startScheduler();
         if (process.send) process.send('ready');
     });
     let stopping = false;
@@ -29,6 +31,7 @@ async function start() {
         stopping = true;
         stopPfmSync();
         stopWeBoostxSync();
+        stopTikTokEvidence();
         const deadline = setTimeout(() => process.exit(1), 10000);
         deadline.unref();
         server.close(async () => {
