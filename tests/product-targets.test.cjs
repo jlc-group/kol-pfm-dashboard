@@ -144,3 +144,15 @@ test('carry-over steps aside when Targets changed, the new form sent its own, or
     assert.equal(carryProductTargets(null, storedGroups()), null);
     assert.deepEqual(carryProductTargets(stale(), null), stale());
 });
+
+test('Jernis (น้ำหอม) ทุกสินค้ามี Target F_Beauty-Fragrance_18-44 ตัวเดียว · Beauterry ยังเป็นเมคอัพ (ผู้ใช้สั่ง 7 ต.ค. 2026)', async () => {
+    const p = await import(pathToFileURL(path.join(__dirname, '../client/src/data/products.js')).href);
+    const jernis = p.productsByBrand('Jernis').map(x => x.code);
+    assert.deepEqual(jernis, ['JNP1', 'JNP2', 'JNP3']);
+    for (const code of jernis) assert.deepEqual(p.targetsForProduct(code), ['F_Beauty-Fragrance_18-44'], code);
+    assert.deepEqual(p.targetsForProducts(jernis), ['F_Beauty-Fragrance_18-44']);
+    assert.deepEqual(p.targetsForProduct('BTA1-01'), ['F_Beauty-Make up_18-44']);
+    // คืนสำเนา — แก้แล้วไม่กระทบรายการจริงของสินค้าอื่น
+    p.targetsForProduct('JNP1').push('X');
+    assert.deepEqual(p.targetsForProduct('JNP2'), ['F_Beauty-Fragrance_18-44']);
+});
