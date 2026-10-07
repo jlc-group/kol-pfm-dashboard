@@ -5145,3 +5145,11 @@ button { color: inherit; }
     .tfs-row > input, .tfs-row > textarea { grid-column: 1 / -1; }
     .tfs-row > .tfs-x { grid-column: 2; grid-row: 1; }
 }
+
+/* Source evidence in the performance editor and tracking rows. */
+.perf-source-panel { padding: 12px; margin: 12px 0; background: var(--bg); border: 1px solid var(--border); border-radius: 10px; overflow-wrap: anywhere; }
+.perf-source-panel p { margin: 6px 0; font-size: 12px; }
+.perf-source-panel small { display: block; color: var(--muted); margin-top: 6px; }
+.perf-api-preview { display: flex; flex-direction: column; gap: 8px; padding-top: 10px; margin-top: 10px; border-top: 1px solid var(--border); font-size: 12px; }
+.perf-api-preview button { align-self: flex-start; }
+.kol-track-source { color: var(--muted); font-size: 10px; text-align: center; overflow-wrap: anywhere; }

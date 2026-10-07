@@ -90,10 +90,22 @@ async function fetchBatch(itemIds, { fetchImpl = fetch, env = process.env } = {}
     if (payload.status !== 'success' || !Array.isArray(payload.data?.rows)) {
         throw new Error('Beauterry PFM returned an invalid response');
     }
-    return {
-        rows: payload.data.rows.map(sanitizeRow).filter(Boolean),
-        notFound: Array.isArray(payload.data.not_found) ? payload.data.not_found : []
-    };
+    const requested = new Set(itemIds.map(String));
+    const seen = new Set();
+    const rows = payload.data.rows.map(sanitizeRow);
+    const notFound = Array.isArray(payload.data.not_found) ? payload.data.not_found.map(String) : [];
+    for (const row of rows) {
+        if (!row || !requested.has(row.id_post) || seen.has(row.id_post)) {
+            throw new Error('Beauterry PFM returned an invalid or ambiguous response');
+        }
+        seen.add(row.id_post);
+    }
+    for (const id of notFound) {
+        if (!requested.has(id) || seen.has(id)) throw new Error('Beauterry PFM returned an invalid or ambiguous response');
+        seen.add(id);
+    }
+    if (seen.size !== requested.size) throw new Error('Beauterry PFM returned an incomplete response');
+    return { rows, notFound };
 }
 
 async function runSync({ storeImpl = store, fetchImpl = fetch, env = process.env } = {}) {
@@ -115,7 +127,8 @@ async function runSync({ storeImpl = store, fetchImpl = fetch, env = process.env
                 if (row.organic_metrics_status) nextOrganicStatus.set(row.id_post, row.organic_metrics_status);
             }
             result.source_not_found.push(...exported.notFound);
-            const applied = await storeImpl.adsSync.apply(exported.rows);
+            const missingRows = exported.notFound.map(id_post => ({ id_post: String(id_post), pfm_source: SOURCE, organic_metrics_status: 'source_not_found' }));
+            const applied = await storeImpl.adsSync.apply([...exported.rows, ...missingRows]);
             for (const key of ['updated', 'stale', 'stale_raised', 'regressed_metrics', 'stamped', 'skipped', 'other_brand']) {
                 result[key] += applied[key] || 0;
             }

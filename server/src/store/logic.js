@@ -1,3 +1,4 @@
+const { sourceUnavailable } = require('./performanceSources');
 /**
  * ตรรกะบริสุทธิ์ (pure logic) ที่ใช้ร่วมกันระหว่าง jsonStore และ pgStore
  *
@@ -1007,7 +1008,7 @@ function maybeStamp(s, at = AD_STAMP_AT, campaignType) {
     if (spend < (Number(at) || AD_STAMP_AT)) return null;
     const views = Number(s.views) || 0;
     // ถึงเกณฑ์แล้วแต่ยังไม่มีผลงาน -> รอไว้ก่อน ไม่งั้นจะล็อกค่าว่างค้างถาวร
-    if (views <= 0) return null;
+    if (views <= 0 || sourceUnavailable(s)) return null;
     // ยังไม่ได้ใส่ค่าตัว -> รอไว้ก่อน ไม่งั้นต้นทุนรวมเหลือแค่ค่าแอด CPM/CPE ต่ำเกินจริงแล้วล็อกค้างถาวร
     // (ใส่ค่าตัวเมื่อไหร่ submissions.updateOne เรียกฟังก์ชันนี้ซ้ำ แล้วสแตมป์ตอนนั้นเอง)
     if (feeMissing(s.budget, campaignType)) return null;
@@ -1017,6 +1018,9 @@ function maybeStamp(s, at = AD_STAMP_AT, campaignType) {
     const { cpm, cpe } = m;
     s.perf_stamp = {
         at: now(),
+        ...(s.perf_sources ? { metric_source: s.perf_sources.mode,
+            manual_saved_at: s.perf_sources.mode === 'manual' ? s.perf_sources.manual?.saved_at : null,
+            api_observed_at: s.perf_sources.mode === 'manual' ? null : s.perf_sources.api?.observed_at } : {}),
         ad_spend: spend,
         views, engagement,
         er: Number(((engagement / views) * 100).toFixed(2)),
@@ -1065,6 +1069,7 @@ function stampWaitReason(s, at = AD_STAMP_AT, campaignType) {
     if (!s || s.perf_stamp) return null;
     if ((Number(s.ad_spend) || 0) < (Number(at) || AD_STAMP_AT)) return null;
     if ((Number(s.views) || 0) <= 0) return 'views';
+    if (sourceUnavailable(s)) return 'source';
     if (feeMissing(s.budget, campaignType)) return 'fee';
     return null;
 }

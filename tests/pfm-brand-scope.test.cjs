@@ -55,7 +55,13 @@ snapshot.loadSnapshot = async (only = Object.keys(FIXTURE)) => {
 // ต้องสลับก่อน require pg/ads (ไฟล์นั้นหยิบ query / updateRow ไปเก็บตอนโหลด)
 const base = require(path.join(SRC, 'store/pg/_base'));
 base.query = async (sql, params) => { queries.push({ sql, params }); return { rows: [{ id_post: '7600000000000000001' }], rowCount: 1 }; };
-base.withTransaction = async fn => fn({ query: async () => ({ rows: [], rowCount: 0 }) });
+base.withTransaction = async fn => fn({ query: async sql => {
+    assert.match(sql, /FOR UPDATE OF s/);
+    return { rows: structuredClone(FIXTURE.submissions).map(s => {
+        const p = FIXTURE.projects.find(p => p.id === s.project_id);
+        return { ...s, sync_brand: p?.brand, sync_campaign_type: p?.campaign_type };
+    }) };
+} });
 base.updateRow = async (table, id, patch) => { written.push({ table, id, patch }); return { id, ...patch }; };
 
 const logic = require(path.join(SRC, 'store/logic'));

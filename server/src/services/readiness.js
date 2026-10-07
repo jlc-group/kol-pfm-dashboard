@@ -19,6 +19,11 @@ async function checkDatabase() {
         values: [tables], query_timeout: 5000
     });
     if (result.rows.length) throw new Error('Database schema is not ready');
+    const columns = await pool.query({
+        text: "SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='submissions' AND column_name='perf_sources'",
+        query_timeout: 5000
+    });
+    if (!columns.rows.length) throw new Error('Performance source migration is required');
 }
 
 module.exports = { checkDatabase };

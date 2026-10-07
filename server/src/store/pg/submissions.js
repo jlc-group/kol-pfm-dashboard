@@ -11,6 +11,8 @@
 const { query, withTransaction, insertRow, updateRow, asNum, asBool, asText, asJson } = require('./_base');
 const { now, maybeStamp, stampAtFor, AD_STAMP_AT, AD_STAMP_BY_BRAND, nextPostCheck, postCheckDecision, POST_CHECK_OPEN, sameInstant } = require('../logic');
 
+const { METRIC_KEYS, manualEvidence, apiSelection, recordApi } = require('../performanceSources');
+
 // เกณฑ์ต่ำสุดของทุกแบรนด์ — ค่าแอดยังไม่ถึงเท่านี้ก็ไม่มีทางสแตมป์ ไม่ต้องเสียเวลาไปหาแบรนด์
 // (การแก้ข้อมูลส่วนใหญ่เป็นแถวที่ยังไม่ได้ยิงแอดเลย)
 const MIN_STAMP_AT = Math.min(AD_STAMP_AT, ...Object.values(AD_STAMP_BY_BRAND));
@@ -157,12 +159,56 @@ async function updateOne(client, subId, projectId, fields, byName, opts = {}) {
     // perf_stamp ห้ามเซ็ตจากภายนอกเด็ดขาด ระบบเป็นคนสแตมป์เองเท่านั้น
     delete fields.perf_stamp;
 
+    for (const k of ['ad_spend', 'ad_reach']) {
+        if (fields[k] !== undefined && fields[k + '_from'] !== undefined
+            && Number(fields[k + '_from']) !== (Number(s[k]) || 0)) {
+            const e = new Error('ค่าแอดหรือ Reach เปลี่ยนระหว่างแก้ไข กรุณาโหลดหน้าใหม่');
+            e.status = 409; throw e;
+        }
+    }
+    const performanceEdit = METRIC_KEYS.some(k => fields[k] !== undefined) || fields.perf_mode !== undefined;
+    if (performanceEdit && fields.perf_from !== undefined) {
+        const expected = fields.perf_from;
+        if (!expected || typeof expected !== 'object' || METRIC_KEYS.some(k =>
+            !Number.isFinite(Number(expected[k])) || Number(expected[k]) !== (Number(s[k]) || 0))) {
+            const e = new Error('ผลงานเปลี่ยนระหว่างเปิดฟอร์ม กรุณาปิดแล้วเปิดใหม่ก่อนบันทึก');
+            e.status = 409; throw e;
+        }
+    }
+    if (fields.perf_mode !== undefined && fields.perf_mode !== 'api') {
+        const e = new Error('รูปแบบแหล่งข้อมูลไม่ถูกต้อง'); e.status = 400; throw e;
+    }
+    if (fields.perf_mode === 'api') {
+        const selection = apiSelection(s);
+        if (!selection) {
+            const e = new Error('ยังไม่มีข้อมูล API ที่พร้อมใช้ กรุณารอข้อมูลต้นทาง'); e.status = 409; throw e;
+        }
+        Object.assign(fields, selection);
+    }
+    for (const k of METRIC_KEYS) {
+        if (fields[k] !== undefined && (!Number.isSafeInteger(Number(fields[k])) || Number(fields[k]) < 0)) {
+            const e = new Error('ยอดผลงานต้องเป็นจำนวนเต็มตั้งแต่ 0 ขึ้นไป'); e.status = 400; throw e;
+        }
+    }
     const prevRow = { ...s };               // แถวก่อนแก้ — ใช้ตัดสินสถานะตรวจข้อมูลโพสต์
     const patch = {};                       // คอลัมน์ที่จะเขียนกลับลง DB
     const before = {};
     STAMP_F.forEach(f => { before[f] = s[f]; });
     for (const k of UPDATABLE) {
         if (fields[k] !== undefined) { s[k] = fields[k]; patch[k] = coerceCol(k, fields[k]); }
+    }
+    if (performanceEdit) {
+        s.perf_sources = opts.performanceSource
+            ? { ...recordApi(s.perf_sources, { ...fields, id_post: s.id_post, pfm_source: opts.performanceSource,
+                source_updated_at: now(), organic_metrics_status: 'available' }, now()), mode: 'api' }
+            : fields.perf_mode === 'api'
+            ? { ...s.perf_sources, mode: 'api' }
+            : manualEvidence(s, fields, byName, now());
+        patch.perf_sources = asJson(s.perf_sources);
+        if (fields.perf_mode === 'api') {
+            s.perf_synced_at = s.perf_sources.api.source_updated_at;
+            patch.perf_synced_at = s.perf_synced_at;
+        }
     }
     // บันทึกว่า "ใครแก้ล่าสุดเมื่อไหร่" ของลิงก์คลิป / Gencode / ID Post
     // ขยับทุกครั้งที่ค่าเปลี่ยนจริง (ส่งค่าเดิมมาซ้ำไม่นับ) — ล้างทิ้งเมื่อลบค่าออก
@@ -300,7 +346,7 @@ const submissions = {
     // อัปเดตได้ทั้งสถานะคัดเลือก + ข้อมูลดราฟงาน
     async update(subId, projectId, fields, byName, opts = {}) {
         // ส่งต่อเฉพาะ actor — allowFee เปิดได้ทางเดียวคือ setFees
-        return withTransaction(client => updateOne(client, subId, projectId, fields, byName, { actor: opts.actor }));
+        return withTransaction(client => updateOne(client, subId, projectId, fields, byName, { actor: opts.actor, performanceSource: opts.performanceSource }));
     },
     // ทีมตัดสินผลตรวจข้อมูลโพสต์ — action 'ok' ยืนยัน (ขึ้นหน้า Ads) | 'return' ส่งกลับให้เอเจนซี่แก้ (note = เหตุผล)
     // seenAt = post_check_at ที่หน้าเว็บเห็นตอนกด — เอเจนซี่แก้แทรกระหว่างนั้น (เวลาไม่ตรง) = 409 ห้ามยืนยันค่าที่ทีมยังไม่เห็น

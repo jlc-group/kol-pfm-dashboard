@@ -49,7 +49,7 @@ router.get('/', async (req, res, next) => {
         (data.rows || []).forEach(r => {
             r.thumb = thumbPath(r);
             if (r.status_auto === true) {
-                r.organic_metrics_status = getOrganicMetricStatus(r.id_post);
+                r.organic_metrics_status = r.perf_sources?.api?.status || getOrganicMetricStatus(r.id_post);
                 if (r.views_reason === 'pfm_no_views' && r.organic_metrics_status === 'source_unavailable') r.views_reason = 'pfm_source_unavailable';
             }
         });
@@ -126,6 +126,8 @@ router.put('/:subId', async (req, res, next) => {
         if (ad_end !== undefined) fields.ad_end = ad_end || null;
         if (ad_note !== undefined) fields.ad_note = (ad_note && String(ad_note).trim()) ? String(ad_note).trim() : null;
 
+        if (req.body.ad_spend_from !== undefined) fields.ad_spend_from = req.body.ad_spend_from;
+        if (req.body.ad_reach_from !== undefined) fields.ad_reach_from = req.body.ad_reach_from;
         const data = await store.submissions.update(req.params.subId, null, fields);
         if (!data) return res.status(404).json({ status: 'error', message: 'ไม่พบโพสต์' });
 

@@ -3,8 +3,8 @@
  * ย้ายมาจาก jsonStore.js บรรทัด 1477-1643 — ตรรกะเดิมทุกบรรทัด เปลี่ยนแค่ที่มาของข้อมูล
  *
  * • adsSync.apply — เขียนจริงลงตาราง submissions ใน transaction เดียว (สำเร็จทั้งชุดหรือไม่สำเร็จเลย)
- *   แต่ยังต้องคำนวณบนสำเนาในหน่วยความจำก่อน เพราะกฎ "ค่าแอดเดินหน้าอย่างเดียว" ต้องเห็นผลของ
- *   แถวก่อนหน้าในชุดเดียวกัน (ส่งซ้ำ 2 แถวชี้ submission เดียว แถวหลังต้องเทียบกับค่าที่แถวแรกเพิ่งตั้ง)
+ *   อ่านค่าหลังล็อกแถว และคำนวณต่อเนื่องภายใน transaction เดียวกัน
+ *   แถวซ้ำในชุดเดียวกันต้องเทียบกับค่าที่แถวก่อนหน้าเพิ่งตั้ง
  * • ads.subContext — อ่านตรงด้วย SQL
  * • ads.list      — งานสรุปสถิติ ใช้ snapshot แล้วรันอัลกอริทึมเดิมเป๊ะ (สูตร CPM/CPE ห้ามเพี้ยน)
  */
@@ -30,7 +30,7 @@ const {
 // ============================ ads (ติดตามการยิงแอด + สรุปค่าแอด) ============================
 // รับข้อมูลจากระบบยิงแอดของบริษัท — จับคู่ด้วย Gencode หรือ ID Post
 // ค่าแอดไม่ถูกแสดงที่ไหนในหน้าเว็บ ใช้เป็นตัวจุดชนวนสแตมป์อย่างเดียว
-const METRIC_KEYS = ['views', 'likes', 'comments', 'saves', 'shares', 'reposts'];
+const { METRIC_KEYS, recordApi } = require('../performanceSources');
 
 const lowerTrim = v => String(v == null ? '' : v).trim().toLowerCase();
 
@@ -61,114 +61,123 @@ const adsSync = {
             stamped: 0, not_found: [], skipped: 0, other_brand: 0 };
         if (!rows || !rows.length) return out;
 
-        // ต้องมี projects ด้วย เพราะเกณฑ์สแตมป์แยกตามแบรนด์ และแบรนด์อยู่ที่ projects.brand
-        // ประเภทแคมเปญด้วย — KOL รายคนค่าตัว 0 = ได้ฟรี สแตมป์ได้โดยไม่ต้องรอค่าตัว
-        const snap = await loadSnapshot(['projects', 'submissions']);
-        const brandOf = {}, typeOf = {};
-        snap.projects.forEach(p => { brandOf[p.id] = p.brand; typeOf[p.id] = p.campaign_type; });
-        // แถวที่มาจาก PFM ของแบรนด์ (pfm_source ที่รู้จัก) จับคู่ได้เฉพาะคลิปของแบรนด์นั้น — แหล่งอื่น (ไม่มี pfm_source) เหมือนเดิม
-        const poolBySource = new Map();
-        const poolFor = source => {
-            const brands = source ? pfmSourceBrands(source) : null;
-            if (!brands) return snap.submissions;
-            if (!poolBySource.has(source)) {
+        return withTransaction(async client => {
+            // Lock rows in id order before reading values; manual edits use the same lock.
+            // Re-read project identity inside this transaction, never apply a pre-lock snapshot.
+            const locked = await client.query(`SELECT s.*, p.brand AS sync_brand, p.campaign_type AS sync_campaign_type
+                FROM submissions s JOIN projects p ON p.id = s.project_id
+                WHERE s.id = ANY($1::int[]) OR btrim(s.id_post) = ANY($2::text[]) OR btrim(s.gencode) = ANY($3::text[])
+                ORDER BY s.id FOR UPDATE OF s`, [
+                rows.map(r => Number(r.submission_id)).filter(id => Number.isSafeInteger(id) && id > 0 && id <= 2147483647),
+                rows.map(r => String(r.id_post || '').trim()).filter(Boolean),
+                rows.map(r => String(r.gencode || '').trim()).filter(Boolean)
+            ]);
+            const snap = { submissions: locked.rows };
+            const brandOf = Object.fromEntries(locked.rows.map(s => [s.project_id, s.sync_brand]));
+            const typeOf = Object.fromEntries(locked.rows.map(s => [s.project_id, s.sync_campaign_type]));
+            const poolFor = source => {
+                const brands = source ? pfmSourceBrands(source) : null;
+                if (!brands) return snap.submissions;
                 const keys = new Set(brands.map(lowerTrim));
-                poolBySource.set(source, snap.submissions.filter(x => keys.has(lowerTrim(brandOf[x.project_id]))));
-            }
-            return poolBySource.get(source);
-        };
-        const matches = r => x =>
-            (r.submission_id && x.id === Number(r.submission_id))
-            || (r.gencode && String(x.gencode || '').trim() === String(r.gencode).trim())
-            || (r.id_post && String(x.id_post || '').trim() === String(r.id_post).trim());
-        // เก็บ "คอลัมน์ที่ถูกแตะ" ต่อ submission เพื่อไม่เขียนทับฟิลด์ที่ไม่เกี่ยวข้อง
-        const touched = new Map();   // subId -> { sub, cols:Set }
-        const mark = (s, col) => {
-            let e = touched.get(s.id);
-            if (!e) { e = { sub: s, cols: new Set() }; touched.set(s.id, e); }
-            e.cols.add(col);
-        };
+                return snap.submissions.filter(s => keys.has(lowerTrim(brandOf[s.project_id])));
+            };
+            const matches = r => x =>
+                (r.submission_id && x.id === Number(r.submission_id))
+                || (r.gencode && String(x.gencode || '').trim() === String(r.gencode).trim())
+                || (r.id_post && String(x.id_post || '').trim() === String(r.id_post).trim());
+            // เก็บ "คอลัมน์ที่ถูกแตะ" ต่อ submission เพื่อไม่เขียนทับฟิลด์ที่ไม่เกี่ยวข้อง
+            const touched = new Map();   // subId -> { sub, cols:Set }
+            const mark = (s, col) => {
+                let e = touched.get(s.id);
+                if (!e) { e = { sub: s, cols: new Set() }; touched.set(s.id, e); }
+                e.cols.add(col);
+            };
 
-        for (const r of rows) {
-            const key = String(r.gencode || r.id_post || r.submission_id || '').trim();
-            if (!key) { out.skipped++; continue; }
-            const s = poolFor(r.pfm_source).find(matches(r));
-            if (!s) {
-                // มีคลิปที่ตรง แต่เป็นของแบรนด์อื่น = ไม่ใช่งานของ PFM ตัวนี้ — ไม่เขียนอะไรลงไป
-                if (r.pfm_source && snap.submissions.some(matches(r))) out.other_brand++;
-                else out.not_found.push(key);
-                continue;
-            }
-            // ค่าแอดเดินหน้าอย่างเดียว กันข้อมูลย้อนหลังมาลบยอดสะสม
-            if (r.ad_spend !== undefined) {
-                const next = Number(r.ad_spend) || 0;
-                if (next > (Number(s.ad_spend) || 0)) { s.ad_spend = next; mark(s, 'ad_spend'); }
-            }
-            if (r.ad_reach !== undefined && r.ad_reach !== null && r.ad_reach !== '') {
-                const next = Number(r.ad_reach);
-                if (Number.isFinite(next) && next >= 0
-                    && (!r.pfm_source || next > (Number(s.ad_reach) || 0))) {
-                    s.ad_reach = next;
-                    mark(s, 'ad_reach');
-                }
-            }
-            // วันยิงแอด (ad_end) — PFM บอกวันแรกที่มีค่าแอดจริงมาให้ ลงให้เฉพาะแถวที่ยังว่าง
-            // ไม่ทับวันที่ที่มีอยู่แล้ว (คนอาจตั้งใจแก้เอง)
-            if (r.first_ad_date && !s.ad_end) { s.ad_end = r.first_ad_date; mark(s, 'ad_end'); }
-            // Beauterry มี ad เกาะคลิปแล้ว = ยิงแล้ว ไม่ต้องรอค่าแอด (ad ที่เพิ่งยิงยังไม่มี spend)
-            // ตั้งทางเดียว ไม่ย้อนกลับเป็น "ยังไม่ยิง" ให้คนกดเองถ้าจะยกเลิก
-            if (r.ad_launched === true && s.ad_status !== 'ยิงแล้ว') { s.ad_status = 'ยิงแล้ว'; mark(s, 'ad_status'); }
-            const hasOrganicMetrics = METRIC_KEYS.some(k => r[k] !== undefined);
-            // แหล่งข้อมูลเดิมที่ยังไม่ส่ง source timestamp ต้องทำงานเหมือนเดิม
-            // ส่วน PFM adapter ต้องผ่าน freshness guard ก่อนเขียน organic metrics
-            const fresh = !hasOrganicMetrics || !r.pfm_source
-                || shouldApplyOrganicMetrics(r.source_updated_at, s.perf_synced_at);
-            // 2 ต.ค. 2026: เวลาอัปเดตของต้นทางไม่ขยับ (หรือไม่ส่งมา) แต่ยอดสูงขึ้นจริง → รับเฉพาะช่องที่สูงขึ้น
-            // ยอดวิว/engagement เป็นยอดสะสมขึ้นอย่างเดียว ค่าที่สูงกว่าจึงใหม่กว่าแน่นอน (ของเดิมทิ้งทั้งชุด ยอดเลยค้างที่ค่าแรก)
-            // perf_synced_at ไม่ขยับในกรณีนี้ — ยังเป็นเวลาของต้นทางรอบล่าสุดที่ใหม่จริง
-            let raised = false;
-            for (const k of METRIC_KEYS) {
-                if (!hasOrganicMetrics || r[k] === undefined) continue;
-                const next = Number(r[k]) || 0;
-                if (!shouldApplyCumulativeMetric(next, s[k], Boolean(r.pfm_source))) {
-                    out.regressed_metrics++;
+            for (const r of rows) {
+                const key = String(r.gencode || r.id_post || r.submission_id || '').trim();
+                if (!key) { out.skipped++; continue; }
+                const s = poolFor(r.pfm_source).find(matches(r));
+                if (!s) {
+                    // มีคลิปที่ตรง แต่เป็นของแบรนด์อื่น = ไม่ใช่งานของ PFM ตัวนี้ — ไม่เขียนอะไรลงไป
+                    if (r.pfm_source && snap.submissions.some(matches(r))) out.other_brand++;
+                    else out.not_found.push(key);
                     continue;
                 }
-                if (!fresh && !(next > (Number(s[k]) || 0))) continue;
-                s[k] = next;
-                mark(s, k);
-                if (!fresh) raised = true;
-            }
-            if (fresh) {
-                if (hasOrganicMetrics && r.source_updated_at) {
-                    s.perf_synced_at = new Date(r.source_updated_at).toISOString();
-                    mark(s, 'perf_synced_at');
+                // ค่าแอดเดินหน้าอย่างเดียว กันข้อมูลย้อนหลังมาลบยอดสะสม
+                if (r.ad_spend !== undefined) {
+                    const next = Number(r.ad_spend) || 0;
+                    if (next > (Number(s.ad_spend) || 0)) { s.ad_spend = next; mark(s, 'ad_spend'); }
                 }
-            } else {
-                out.stale++;
-                if (raised) out.stale_raised++;
+                if (r.ad_reach !== undefined && r.ad_reach !== null && r.ad_reach !== '') {
+                    const next = Number(r.ad_reach);
+                    if (Number.isFinite(next) && next >= 0
+                        && (!r.pfm_source || next > (Number(s.ad_reach) || 0))) {
+                        s.ad_reach = next;
+                        mark(s, 'ad_reach');
+                    }
+                }
+                // วันยิงแอด (ad_end) — PFM บอกวันแรกที่มีค่าแอดจริงมาให้ ลงให้เฉพาะแถวที่ยังว่าง
+                // ไม่ทับวันที่ที่มีอยู่แล้ว (คนอาจตั้งใจแก้เอง)
+                if (r.first_ad_date && !s.ad_end) { s.ad_end = r.first_ad_date; mark(s, 'ad_end'); }
+                // Beauterry มี ad เกาะคลิปแล้ว = ยิงแล้ว ไม่ต้องรอค่าแอด (ad ที่เพิ่งยิงยังไม่มี spend)
+                // ตั้งทางเดียว ไม่ย้อนกลับเป็น "ยังไม่ยิง" ให้คนกดเองถ้าจะยกเลิก
+                if (r.ad_launched === true && s.ad_status !== 'ยิงแล้ว') { s.ad_status = 'ยิงแล้ว'; mark(s, 'ad_status'); }
+                if (r.pfm_source) {
+                    s.perf_sources = recordApi(s.perf_sources, r, now());
+                    mark(s, 'perf_sources');
+                }
+                const manual = s.perf_sources?.mode === 'manual';
+                const unavailable = ['snapshot_only', 'source_unavailable', 'pending', 'source_not_found'].includes(r.organic_metrics_status);
+                const hasOrganicMetrics = !manual && !unavailable && METRIC_KEYS.some(k => r[k] !== undefined);
+                // แหล่งข้อมูลเดิมที่ยังไม่ส่ง source timestamp ต้องทำงานเหมือนเดิม
+                // ส่วน PFM adapter ต้องผ่าน freshness guard ก่อนเขียน organic metrics
+                const fresh = !hasOrganicMetrics || !r.pfm_source
+                    || shouldApplyOrganicMetrics(r.source_updated_at, s.perf_synced_at);
+                // 2 ต.ค. 2026: เวลาอัปเดตของต้นทางไม่ขยับ (หรือไม่ส่งมา) แต่ยอดสูงขึ้นจริง → รับเฉพาะช่องที่สูงขึ้น
+                // ยอดวิว/engagement เป็นยอดสะสมขึ้นอย่างเดียว ค่าที่สูงกว่าจึงใหม่กว่าแน่นอน (ของเดิมทิ้งทั้งชุด ยอดเลยค้างที่ค่าแรก)
+                // perf_synced_at ไม่ขยับในกรณีนี้ — ยังเป็นเวลาของต้นทางรอบล่าสุดที่ใหม่จริง
+                let raised = false;
+                for (const k of METRIC_KEYS) {
+                    if (!hasOrganicMetrics || r[k] === undefined) continue;
+                    const next = Number(r[k]) || 0;
+                    if (!shouldApplyCumulativeMetric(next, s[k], Boolean(r.pfm_source))) {
+                        out.regressed_metrics++;
+                        continue;
+                    }
+                    if (!fresh && !(next > (Number(s[k]) || 0))) continue;
+                    s[k] = next;
+                    mark(s, k);
+                    if (!fresh) raised = true;
+                }
+                if (fresh) {
+                    if (hasOrganicMetrics && r.source_updated_at) {
+                        s.perf_synced_at = new Date(r.source_updated_at).toISOString();
+                        mark(s, 'perf_synced_at');
+                    }
+                } else {
+                    out.stale++;
+                    if (raised) out.stale_raised++;
+                }
+                s.ad_synced_at = now();
+                s.updated_at = now();
+                mark(s, 'ad_synced_at');
+                mark(s, 'updated_at');
+                out.updated++;
+                if (maybeStamp(s, stampAtFor(brandOf[s.project_id]), typeOf[s.project_id])) { out.stamped++; mark(s, 'perf_stamp'); }
             }
-            s.ad_synced_at = now();
-            s.updated_at = now();
-            mark(s, 'ad_synced_at');
-            mark(s, 'updated_at');
-            out.updated++;
-            if (maybeStamp(s, stampAtFor(brandOf[s.project_id]), typeOf[s.project_id])) { out.stamped++; mark(s, 'perf_stamp'); }
-        }
 
-        // persist() ของเดิม = เขียนไฟล์ทั้งก้อน · ที่นี่ = UPDATE จริงใน transaction เดียว
-        if (touched.size) {
-            await withTransaction(async (client) => {
+            // persist() ของเดิม = เขียนไฟล์ทั้งก้อน · ที่นี่ = UPDATE จริงใน transaction เดียว
+            if (touched.size) {
                 for (const { sub, cols } of touched.values()) {
                     const patch = {};
                     for (const c of cols) {
-                        patch[c] = (c === 'perf_stamp') ? asJson(sub.perf_stamp) : sub[c];
+                        patch[c] = ['perf_stamp', 'perf_sources'].includes(c) ? asJson(sub[c]) : sub[c];
                     }
                     await updateRow('submissions', sub.id, patch, client);
                 }
-            });
-        }
-        return out;
+            }
+            return out;
+        });
     }
 };
 
@@ -268,6 +277,8 @@ const ads = {
                     cpm: adCpm(spend, reach),
                     // ทำไมยังไม่มียอดวิว (ป้าย Not rated / Awaiting data) — null = มียอดวิวแล้ว (logic.js viewsMissingReason)
                     views_reason: viewsMissingReason(s, firstByPost, p && p.brand),
+                    perf_sources: s.perf_sources || null,
+                    perf_synced_at: s.perf_synced_at || null,
                     // Individual fields let the existing performance editor open
                     // without resetting engagement components to zero.
                     ...Object.fromEntries(METRIC_KEYS.filter(k => k !== 'views').map(k => [k, Number(s[k]) || 0])),

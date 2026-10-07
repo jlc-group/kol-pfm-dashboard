@@ -1521,8 +1521,9 @@ router.put('/:id/submissions/:subId', async (req, res, next) => {
             account_name, platform, product, agency,
             link_account, concept, gen_date,
             team_note: team_note !== undefined ? ((team_note && String(team_note).trim()) ? String(team_note).trim() : null) : undefined,
-            views: views !== undefined ? (Number(views) || 0) : undefined, likes: likes !== undefined ? (Number(likes) || 0) : undefined, comments: comments !== undefined ? (Number(comments) || 0) : undefined, saves: saves !== undefined ? (Number(saves) || 0) : undefined, shares: shares !== undefined ? (Number(shares) || 0) : undefined,
-            reposts: reposts !== undefined ? (Number(reposts) || 0) : undefined
+            views: views !== undefined ? Number(views) : undefined, likes: likes !== undefined ? Number(likes) : undefined, comments: comments !== undefined ? Number(comments) : undefined, saves: saves !== undefined ? Number(saves) : undefined, shares: shares !== undefined ? Number(shares) : undefined,
+            reposts: reposts !== undefined ? Number(reposts) : undefined,
+            perf_from: req.body.perf_from, perf_mode: req.body.perf_mode
         }, byName, { actor: 'team' });   // ทีมแก้ข้อมูลโพสต์เอง = นับว่าตรวจแล้ว
         if (!data) return res.status(404).json({ status: 'error', message: 'ไม่พบรายการ' });
         if (status !== undefined) {
@@ -1698,7 +1699,9 @@ router.post('/:id/submissions/:subId/fetch-tiktok', async (req, res, next) => {
         if (!sub) return res.status(404).json({ status: 'error', message: 'ไม่พบรายการ' });
         try {
             const stats = await tiktok.fetchVideoStats(sub.post_url);
-            const data = await store.submissions.update(req.params.subId, req.params.id, { ...stats, perf_synced_at: new Date().toISOString() });
+            const data = await store.submissions.update(req.params.subId, req.params.id, { ...stats, perf_synced_at: new Date().toISOString(),
+                perf_from: Object.fromEntries(['views', 'likes', 'comments', 'saves', 'shares', 'reposts'].map(k => [k, Number(sub[k]) || 0]))
+            }, null, { performanceSource: 'tiktok-direct' });
             res.json({ status: 'success', data });
         } catch (e) {
             res.status(400).json({ status: 'error', message: e.message, code: e.code });

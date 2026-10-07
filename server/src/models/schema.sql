@@ -239,6 +239,7 @@ CREATE TABLE IF NOT EXISTS submissions (
     reposts          NUMERIC(20,2) NOT NULL DEFAULT 0,
     perf_synced_at   TEXT,
     perf_stamp       JSONB,
+    perf_sources     JSONB,
     team_note        TEXT,
     agency_note      TEXT,
     submitted_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -488,3 +489,6 @@ CREATE TABLE IF NOT EXISTS catalog_targets (
     updated_at     TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE UNIQUE INDEX IF NOT EXISTS catalog_targets_key ON catalog_targets (product_code, (lower(btrim(target))));
+
+-- Additive source evidence; preserves existing metrics and stamps.
+ALTER TABLE submissions ADD COLUMN IF NOT EXISTS perf_sources JSONB;

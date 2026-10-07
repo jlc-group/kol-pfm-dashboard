@@ -12,6 +12,7 @@ import { campaignIsCtype } from '../data/adGroups.js';
 import { stampAtOf, stampAtText, viewsReasonText } from '../data/stamp.js';
 import { matchAdsSearch } from '../data/adsSearch.js';
 import PostThumb from '../components/PostThumb.jsx';
+import { performanceSourceInfo } from '../data/performanceSources.js';
 import PerfModal from '../components/PerfModal.jsx';
 import { adTiming, timingLevel, timingTip, TIMING_OPTS } from '../data/adTiming.js';
 
@@ -52,6 +53,7 @@ function StampCell({ row }) {
     const st = row.perf_stamp;
     if (!st) {
         if (row.stamp_waiting) {
+            if (row.stamp_wait_reason === 'source') return <span className="perf-pill wait with-reason" title="ค่าแอดถึงเกณฑ์แล้ว แต่ยอดคลิปจากต้นทางยังไม่พร้อมหรือเป็นยอดเดิม รอข้อมูลพร้อม หรือกรอกผลงานจาก Insights เพื่อบันทึก Stamp ณ ตอนบันทึก">Awaiting data<em>รอยอดที่พร้อมใช้</em></span>;
             // ค่าแอดถึงเกณฑ์ + มียอดวิวแล้ว ติดอยู่อย่างเดียวคือทีมยังไม่ใส่ค่าตัว — บอกให้ตรงจุด ไม่ใช่ "รอข้อมูล"
             if (row.stamp_wait_reason === 'fee') {
                 return <span className="perf-pill wait fee" title="ค่าแอดถึงเกณฑ์และมียอดวิวแล้ว แต่ทีมยังไม่ได้ใส่ค่าตัว KOL — ใส่ที่หน้าแคมเปญแล้วระบบจะล็อกผลให้ทันที">รอค่าตัว</span>;
@@ -70,6 +72,7 @@ function StampCell({ row }) {
         st.cpm != null
             ? 'CPM ฿' + fmtNum(st.cpm) + ' (เกณฑ์ ≤ ' + GOOD_CPM + ')  ·  CPE ฿' + fmtNum(st.cpe) + ' (เกณฑ์ ≤ ' + GOOD_CPE + ')'
             : 'CPM/CPE ดูได้เฉพาะผู้ดูแลระบบและ Manager',
+        'แหล่งยอด: ' + (st.metric_source === 'manual' ? 'กรอกเอง' : st.metric_source === 'api' ? 'API' : 'ข้อมูลเดิมยังไม่ระบุแหล่ง'),
         'ยอดวิว ' + fmtNum(st.views) + ' · Engagement ' + fmtNum(st.engagement) + ' (ER ' + st.er + '%)',
         'ผลตัดสิน: ' + (st.verdict === 'Pass' ? 'ผ่านเกณฑ์' : 'ไม่ผ่านเกณฑ์')
     ].join(String.fromCharCode(10));
@@ -112,7 +115,7 @@ function LiveCell({ row }) {
             ? 'CPM ฿' + fmtNum(row.content_cpm) + ' (เกณฑ์ ≤ ' + GOOD_CPM + ')  ·  CPE ฿' + fmtNum(row.content_cpe) + ' (เกณฑ์ ≤ ' + GOOD_CPE + ')'
             : 'CPM/CPE ดูได้เฉพาะผู้ดูแลระบบและ Manager',
         'ยอดวิว ' + fmtNum(row.views) + ' · Engagement ' + fmtNum(row.engagement),
-        'ผลตอนนี้: ' + (pass ? 'ผ่านเกณฑ์' : 'ไม่ผ่านเกณฑ์')
+        'ผลจากยอดที่แสดง: ' + (pass ? 'ผ่านเกณฑ์' : 'ไม่ผ่านเกณฑ์')
     ].join(String.fromCharCode(10));
     return (
         <span className="perf-live">
@@ -437,7 +440,7 @@ function AdRow({ row, onSaved, canCost, noAd = false }) {
             <div className="ads-cell"><StampCell row={row} /></div>
             <div className="ads-cell ads-stack">
                 <LiveCell row={row} />
-                {row.organic_metrics_status === 'snapshot_only' && <small className="muted" title="ต้นทางเก็บยอดเดิมไว้ แต่บริการอัปเดตผลงาน KOL ยังปิดอยู่">ยอดเดิมจากต้นทาง</small>}
+                <small className="kol-track-source" title={performanceSourceInfo(row).detail + (performanceSourceInfo(row).time ? '\nรับ / บันทึก: ' + new Date(performanceSourceInfo(row).time).toLocaleString('th-TH') : '')}>{performanceSourceInfo(row).label}</small>
                 <button type="button" className="kol-track-perf-edit" onClick={() => setPerfOpen(true)}>กรอกผลงาน</button>
             </div>
             <div className="ads-cell kol-track-note">

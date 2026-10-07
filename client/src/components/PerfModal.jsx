@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { performanceBaseline, performanceSourceInfo, canSelectApi } from '../data/performanceSources.js';
 import Icon from './Icon.jsx';
 import { api } from '../api/client.js';
 
@@ -22,6 +23,12 @@ export default function PerfModal({ sub, fetchUrl, onSave, onClose, notice }) {
         views: sub.views || '', likes: sub.likes || '', comments: sub.comments || '',
         saves: sub.saves || '', shares: sub.shares || '', reposts: sub.reposts || ''
     });
+    const [baseline, setBaseline] = useState(() => performanceBaseline(sub));
+    const sourceInfo = performanceSourceInfo(sub);
+    const apiEvidence = sub.perf_sources?.api;
+    const apiCounter = key => ['available', 'snapshot_only'].includes(apiEvidence?.status)
+        ? apiEvidence.metrics?.[key]?.toLocaleString() ?? '—' : '—';
+    const useApi = /^tiktok/i.test(String(sub.platform || '').trim()) && canSelectApi(sub.perf_sources, Date.now(), sub.id_post);
     const [saving, setSaving] = useState(false);
     const [fetching, setFetching] = useState(false);
     const [msg, setMsg] = useState('');
@@ -37,6 +44,7 @@ export default function PerfModal({ sub, fetchUrl, onSave, onClose, notice }) {
         try {
             const res = await api(fetchUrl, { method: 'POST' });
             const d = res.data || {};
+            setBaseline(performanceBaseline(d));
             setF(s => ({
                 ...s,
                 views: d.views ?? s.views, likes: d.likes ?? s.likes, comments: d.comments ?? s.comments,
@@ -52,6 +60,7 @@ export default function PerfModal({ sub, fetchUrl, onSave, onClose, notice }) {
         setSaving(true);
         try {
             await onSave({
+                perf_from: baseline,
                 views: num(f.views), likes: num(f.likes), comments: num(f.comments),
                 saves: num(f.saves), shares: num(f.shares),
                 ...(hasRepost ? { reposts: num(f.reposts) } : {})
@@ -66,6 +75,22 @@ export default function PerfModal({ sub, fetchUrl, onSave, onClose, notice }) {
             <div className="modal" onClick={e => e.stopPropagation()}>
                 <div className="draft-head">
                     <div className="draft-name">📊 ผลงานคอนเทนต์ · {sub.account_name} <span className="muted">· {sub.platform || '—'}</span></div>
+                </div>
+                <div className="perf-source-panel">
+                    <strong>{sourceInfo.label}</strong>
+                    <p>{sourceInfo.detail}</p>
+                    {sourceInfo.time && <small>บันทึก / รับข้อมูล: {new Date(sourceInfo.time).toLocaleString('th-TH')}</small>}
+                    {apiEvidence && <div className="perf-api-preview">
+                        <span>ข้อมูล API ที่รับไว้แยก: Views {apiCounter('views')} · Likes {apiCounter('likes')} · Comments {apiCounter('comments')} · Saves {apiCounter('saves')} · Shares {apiCounter('shares')}</span>
+                        <button type="button" className="btn-ghost" disabled={saving || !useApi} onClick={async () => {
+                            setSaving(true);
+                            try { await onSave({ perf_mode: 'api', perf_from: baseline }); onClose(); }
+                            catch (err) { setMsg(err.message); }
+                            finally { setSaving(false); }
+                        }}>ใช้ข้อมูล API</button>
+                        {!useApi && <small>ยังเลือก API ไม่ได้: ต้นทางต้องพร้อม มียอดครบ และ sync ภายใน 2 ชั่วโมง</small>}
+                    </div>}
+                    <small>กดบันทึกจะใช้ค่ากรอกเอง และเก็บข้อมูล API แยกไว้จนกว่าจะเลือกใช้ API</small>
                 </div>
                 {notice && <div className="perf-manual-note">{notice}</div>}
                 {canFetch ? (

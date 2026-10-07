@@ -68,7 +68,13 @@ snapshot.loadSnapshot = async (only = Object.keys(FIXTURE)) => {
 };
 const base = require(path.join(SRC, 'store/pg/_base'));
 let written = [];
-base.withTransaction = async fn => fn({ query: async () => ({ rows: [], rowCount: 0 }) });
+base.withTransaction = async fn => fn({ query: async sql => {
+    assert.match(sql, /FOR UPDATE OF s/);
+    return { rows: structuredClone(FIXTURE.submissions).map(s => {
+        const p = FIXTURE.projects.find(p => p.id === s.project_id);
+        return { ...s, sync_brand: p?.brand, sync_campaign_type: p?.campaign_type };
+    }) };
+} });
 base.updateRow = async (table, id, patch) => { written.push({ table, id, patch }); return { id, ...patch }; };
 
 const { pooledCpe, viewsMissingReason, firstByIdPost } = require(path.join(SRC, 'store/logic'));

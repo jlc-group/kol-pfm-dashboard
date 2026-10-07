@@ -106,3 +106,17 @@ test('ad_launched passes through only as true', () => {
     assert.equal(sanitizeRow({ id_post: '1', ad_launched: 'true' }).ad_launched, undefined);
     assert.equal(sanitizeRow({ id_post: '1', ad_launched: false }).ad_launched, undefined);
 });
+
+test('fetchBatch rejects unsolicited, duplicate, contradictory or incomplete post identities', async () => {
+    for (const data of [
+        { rows: [{ id_post: '2' }], not_found: [] },
+        { rows: [{ id_post: '1' }, { id_post: '1' }], not_found: [] },
+        { rows: [{ id_post: '1' }], not_found: ['1'] },
+        { rows: [], not_found: [] }
+    ]) {
+        await assert.rejects(fetchBatch(['1'], {
+            env: { BEAUTERRY_PFM_EXPORT_KEY: 'fixture' },
+            fetchImpl: async () => ({ ok: true, json: async () => ({ status: 'success', data }) })
+        }), /response/);
+    }
+});

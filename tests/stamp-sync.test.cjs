@@ -49,7 +49,13 @@ snapshot.loadSnapshot = async (only = Object.keys(FIXTURE)) => {
 // adsSync.apply เขียนจริงผ่าน _base — ดักไว้ดูว่าเขียนอะไรบ้าง แทนที่จะไปแตะฐาน
 const base = require(path.join(SRC, 'store/pg/_base'));
 let written = [];
-base.withTransaction = async fn => fn({ query: async () => ({ rows: [], rowCount: 0 }) });
+base.withTransaction = async fn => fn({ query: async sql => {
+    assert.match(sql, /FOR UPDATE OF s/);
+    return { rows: structuredClone(FIXTURE.submissions).map(s => {
+        const p = FIXTURE.projects.find(p => p.id === s.project_id);
+        return { ...s, sync_brand: p?.brand, sync_campaign_type: p?.campaign_type };
+    }) };
+} });
 base.updateRow = async (table, id, patch) => { written.push({ table, id, patch }); return { id, ...patch }; };
 
 // ต้องสลับ loadSnapshot / _base ให้เสร็จก่อน require โมดูลที่หยิบไปเก็บไว้ตอนโหลด

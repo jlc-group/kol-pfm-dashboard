@@ -843,7 +843,10 @@ test('pg/talents.setFile: keepUserFile ไม่ทับไฟล์ที่�
 test('ด่านความพร้อมของ production ไม่บังคับตาราง talent_jobs (โค้ดขึ้นก่อน setup-db ทั้งเว็บต้องไม่ล่ม)', async () => {
     const saved = pool.query;
     let asked = null;
-    pool.query = async q => { asked = q.values[0]; return { rows: [] }; };
+    pool.query = async q => {
+        if (q.text.includes('information_schema.columns')) return { rows: [{ column: 'perf_sources' }] };
+        asked = q.values[0]; return { rows: [] };
+    };
     try {
         const { checkDatabase } = require(path.join(SRC, 'services/readiness'));
         await checkDatabase();
