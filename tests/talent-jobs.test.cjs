@@ -740,6 +740,11 @@ test('วางรูป (Ctrl+V): ไฟล์ไม่มีนามสกุ
     assert.match(rows.get(a.id).image.filename, /\.jpg$/);
     // ชื่อที่ Chrome ตั้งให้ ("image.png") ผ่านทางนามสกุลตามเดิม
     assert.equal((await upload(2, `/hires/talents/${a.id}/image`, 'image.png', PNG, 'image/png')).status, 200);
+    // The route removes replaced files asynchronously. Wait for that cleanup
+    // before measuring whether rejected uploads create any additional files.
+    const currentFiles = [rows.get(a.id).image.filename];
+    for (let i = 0; i < 50 && uploadsNow().join() !== currentFiles.join(); i++) await tick();
+    assert.deepEqual(uploadsNow(), currentFiles, 'ไฟล์ที่แทนแล้วต้องลบเสร็จก่อนตรวจไฟล์ที่ไม่รับ');
     const before = uploadsNow();
     for (const [name, type] of [['blob', 'text/plain'], ['blob', 'image/gif'], ['blob', 'application/pdf'], ['x.exe', 'image/png'], ['blob', 'image/svg+xml']]) {
         const r = await upload(2, `/hires/talents/${a.id}/image`, name, PNG, type);
