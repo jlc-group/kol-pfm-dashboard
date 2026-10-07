@@ -521,6 +521,8 @@ export default function Ads() {
 
     const countIf = (skip, pred) => tabRows.filter(r => matches(r, skip) && pred(r)).length;
     const platformOptions = [...new Set(tabRows.map(r => r.platform).filter(Boolean))].sort();
+    // ดรอปดาวน์ Platform: Platform ที่เลือกค้างไว้แต่แท็บนี้ไม่มีคลิป ยังต้องอยู่ในรายการ (ไม่งั้นช่องโชว์ "ทุก Platform" ทั้งที่ยังกรองอยู่)
+    const platformPick = platform && !platformOptions.includes(platform) ? [...platformOptions, platform] : platformOptions;
     const hasFilter = !!(platform || status || late || search.trim());
     const clearFilters = () => { setPlatform(''); setStatus(''); setLate(''); setSearch(''); };
     // ค่า insight เพิ่มเติม (คำนวณจากข้อมูลที่มี)
@@ -548,15 +550,26 @@ export default function Ads() {
                 </button>
             </div>
 
-            <div className="brand-filter">
+            {/* แบรนด์ + Platform เป็นดรอปดาวน์ (ผู้ใช้สั่ง 7 ต.ค. 2026 — เดิมเป็นปุ่มเรียงยาว) · หน้าตาเดียวกับตัวกรองหน้า Campaign Reports
+                Platform ใช้ state ตัวเดียวกับตัวกรองในหัวคอลัมน์ KOL · เลขในวงเล็บนับตามแท็บที่เปิดอยู่ */}
+            <div className="brand-filter report-filters ads-dd-filters">
                 <span className="brand-filter-label">▼ แบรนด์:</span>
-                <button className={'brand-chip' + (brand === '' ? ' active' : '')} onClick={() => setBrand('')}>ทุกแบรนด์</button>
-                {BRANDS.map(b => (
-                    <button key={b} className={'brand-chip' + (brand === b ? ' active' : '')} onClick={() => setBrand(b)}>{b}</button>
-                ))}
+                <select className="campaign-select" aria-label="กรองตามแบรนด์" value={brand} onChange={e => setBrand(e.target.value)}>
+                    <option value="">ทุกแบรนด์</option>
+                    {BRANDS.map(b => <option key={b} value={b}>{b}</option>)}
+                </select>
+                {(platformPick.length > 1 || platform) && (
+                    <>
+                        <span className="brand-filter-label">▼ Platform:</span>
+                        <select className="campaign-select" aria-label="กรองตาม Platform" value={platform} onChange={e => setPlatform(e.target.value)}>
+                            <option value="">ทุก Platform ({countIf('platform', () => true)})</option>
+                            {platformPick.map(pf => <option key={pf} value={pf}>{pf} ({countIf('platform', r => r.platform === pf)})</option>)}
+                        </select>
+                    </>
+                )}
             </div>
 
-            {/* แท็บ ต้องยิงแอด / ไม่ต้องยิงแอด (5 ต.ค. 2026) — หน้าตาเดียวกับแท็บหน้าแคมเปญ · อยู่เหนือแถบ Platform เพราะเลขบนปุ่ม Platform นับตามแท็บ */}
+            {/* แท็บ ต้องยิงแอด / ไม่ต้องยิงแอด (5 ต.ค. 2026) — หน้าตาเดียวกับแท็บหน้าแคมเปญ · เลขในดรอปดาวน์ Platform ด้านบนนับตามแท็บที่เปิดอยู่ */}
             <div className="agency-tabs hub-tabs proj-type-tabs ads-tabs" role="tablist" aria-label="แยกคลิปที่ต้องยิงแอด">
                 <button type="button" role="tab" aria-selected={tab === 'ads'} className={tab === 'ads' ? 'active' : ''} onClick={() => setTab('ads')}>
                     ต้องยิงแอด <span className="agency-tab-count">{data ? adRowsAll.length : '…'}</span>
@@ -567,22 +580,6 @@ export default function Ads() {
                     {' '}<span className="agency-tab-count">{data ? noAdRows.length : '…'}</span>
                 </button>
             </div>
-
-            {/* กรอง Platform — เดิมซ่อนอยู่ในหัวคอลัมน์ KOL มองไม่เห็น
-                ใช้ state ตัวเดียวกับตัวกรองในหัวคอลัมน์ กดที่ไหนก็ตรงกัน */}
-            {platformOptions.length > 1 && (
-                <div className="brand-filter">
-                    <span className="brand-filter-label">▼ Platform:</span>
-                    <button className={'brand-chip' + (platform === '' ? ' active' : '')} onClick={() => setPlatform('')}>
-                        ทุก Platform ({countIf('platform', () => true)})
-                    </button>
-                    {platformOptions.map(pf => (
-                        <button key={pf} className={'brand-chip' + (platform === pf ? ' active' : '')} onClick={() => setPlatform(pf)}>
-                            {pf} ({countIf('platform', r => r.platform === pf)})
-                        </button>
-                    ))}
-                </div>
-            )}
 
             {error && <div className="alert-error">{error}</div>}
 
