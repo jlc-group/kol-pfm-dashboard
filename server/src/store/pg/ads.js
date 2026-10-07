@@ -104,7 +104,14 @@ const adsSync = {
                 const next = Number(r.ad_spend) || 0;
                 if (next > (Number(s.ad_spend) || 0)) { s.ad_spend = next; mark(s, 'ad_spend'); }
             }
-            if (r.ad_reach !== undefined) { s.ad_reach = Number(r.ad_reach) || 0; mark(s, 'ad_reach'); }
+            if (r.ad_reach !== undefined && r.ad_reach !== null && r.ad_reach !== '') {
+                const next = Number(r.ad_reach);
+                if (Number.isFinite(next) && next >= 0
+                    && (!r.pfm_source || next > (Number(s.ad_reach) || 0))) {
+                    s.ad_reach = next;
+                    mark(s, 'ad_reach');
+                }
+            }
             // วันยิงแอด (ad_end) — PFM บอกวันแรกที่มีค่าแอดจริงมาให้ ลงให้เฉพาะแถวที่ยังว่าง
             // ไม่ทับวันที่ที่มีอยู่แล้ว (คนอาจตั้งใจแก้เอง)
             if (r.first_ad_date && !s.ad_end) { s.ad_end = r.first_ad_date; mark(s, 'ad_end'); }

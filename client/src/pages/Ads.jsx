@@ -208,7 +208,7 @@ function AdRow({ row, onSaved, canCost, noAd = false }) {
     const [end, setEnd] = useState(row.ad_end || '');
     const [note, setNote] = useState(row.ad_note || '');
     // ค่าแอดสะสม: โพสต์ TikTok ที่มี ID Post ระบบ PFM ซิงก์ให้เอง (แก้ไม่ได้) · โพสต์อื่นกรอกเองได้ (เฉพาะคนที่เห็นต้นทุน)
-    // Reach: PFM ไม่ได้ส่งมา กรอกเองได้ทุกโพสต์
+    // Reach: Beauterry / WeBoostX ส่งยอดสะสมจากรายงานที่ไม่ซ้ำ กรอกเองได้เมื่อยังไม่มีข้อมูล
     // ช่องจะตามค่าล่าสุดจากรายการเสมอ ยกเว้นตอนผู้ใช้กำลังพิมพ์ (dirty) — แค่กด Tab ผ่านต้องไม่เอาค่าเก่าไปทับ
     const spendText = v => (v == null || Number(v) === 0 ? '' : String(Math.round(Number(v) * 100) / 100));
     const reachText = v => (v == null || Number(v) === 0 ? '' : String(Math.round(Number(v))));
@@ -416,7 +416,7 @@ function AdRow({ row, onSaved, canCost, noAd = false }) {
                 ) : (
                     <span className="muted" title="ค่าแอดดูและแก้ได้เฉพาะผู้ดูแลระบบและ Manager">—</span>
                 )}
-                <input inputMode="numeric" value={reach} placeholder="Reach" title="Reach สะสม (PFM ไม่ได้ส่งมา กรอกเองได้)"
+                <input inputMode="numeric" value={reach} placeholder="Reach" title="Reach สะสม — ซิงก์จาก PFM เมื่อมีข้อมูล หรือกรอกเองได้"
                     onChange={e => { setReach(e.target.value.replace(/[^0-9]/g, '')); setReachDirty(true); }} onBlur={saveReach} />
             </div>
             <div className="ads-cell ads-late">

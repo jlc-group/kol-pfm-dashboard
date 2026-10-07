@@ -64,6 +64,17 @@ const { ads, adsSync } = require(path.join(SRC, 'store/pg/ads'));
 const kols = require(path.join(SRC, 'store/pg/kols'));
 const { runSync, sanitizeRow, syncSummaryLine } = require(path.join(SRC, 'services/beauterryPfmSync'));
 
+test('Beauterry lifetime reach is stored without clearing or lowering a previous total', async () => {
+    FIXTURE.submissions[0].ad_reach = 100;
+    await adsSync.apply([{ id_post: '7600000000000000001', pfm_source: 'beauterry-pfm', ad_reach: 11691 }]);
+    assert.equal(written[0].patch.ad_reach, 11691);
+    for (const value of [null, undefined, '', 0, 90, -1, 'NaN']) {
+        written = [];
+        await adsSync.apply([{ id_post: '7600000000000000001', pfm_source: 'beauterry-pfm', ad_reach: value }]);
+        assert.equal('ad_reach' in written[0].patch, false, String(value));
+    }
+});
+
 test('รายชื่อแบรนด์ที่ต่อ PFM: ตอนนี้ Beauterry อย่างเดียว · ไม่สนตัวพิมพ์/ช่องว่าง · source ที่ไม่รู้จัก = null', () => {
     assert.deepEqual(PFM_SOURCES, { 'beauterry-pfm': ['Beauterry'] });
     for (const b of ['Beauterry', ' beauterry ', 'BEAUTERRY']) assert.equal(isPfmBrand(b), true, b);

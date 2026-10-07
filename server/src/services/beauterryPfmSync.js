@@ -8,7 +8,7 @@ const DEFAULT_INITIAL_DELAY_MS = 30 * 1000;
 const MAX_BATCH_SIZE = 2000;
 const ALLOWED_FIELDS = [
     'id_post', 'views', 'likes', 'comments', 'saves', 'shares', 'reposts',
-    'ad_spend', 'source_updated_at', 'paid_updated_at', 'first_ad_date', 'ad_launched'
+    'ad_spend', 'ad_reach', 'source_updated_at', 'paid_updated_at', 'first_ad_date', 'ad_launched'
 ];
 
 let running = false;

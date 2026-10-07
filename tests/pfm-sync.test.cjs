@@ -11,7 +11,7 @@ test('Beauterry rows are limited to fields accepted by the dashboard', () => {
         paid_impressions: 999, ad_reach: 888, source_updated_at: '2026-09-15T00:00:00Z',
         unknown: 'drop me'
     }), {
-        id_post: '7412345678901234567', views: 100, likes: 12, ad_spend: 500.25,
+        id_post: '7412345678901234567', views: 100, likes: 12, ad_spend: 500.25, ad_reach: 888,
         source_updated_at: '2026-09-15T00:00:00Z', pfm_source: 'beauterry-pfm'
     });
     assert.equal(sanitizeRow({ id_post: 'not-numeric', views: 1 }), null);
@@ -22,6 +22,14 @@ test('first_ad_date passes through only as a YYYY-MM-DD date', () => {
     assert.equal(sanitizeRow({ id_post: '1', first_ad_date: '25/09/2026' }).first_ad_date, undefined);
     assert.equal(sanitizeRow({ id_post: '1', first_ad_date: '2026-13-45' }).first_ad_date, undefined);
     assert.equal(sanitizeRow({ id_post: '1' }).first_ad_date, undefined);
+});
+
+test('paid reach preserves unknown values and never uses impressions as reach', () => {
+    for (const value of [null, undefined, '', -1, 'NaN']) {
+        assert.equal(sanitizeRow({ id_post: '1', ad_reach: value }).ad_reach, undefined);
+    }
+    assert.equal(sanitizeRow({ id_post: '1', ad_reach: '11691' }).ad_reach, 11691);
+    assert.equal(sanitizeRow({ id_post: '1', paid_impressions: 12043 }).ad_reach, undefined);
 });
 
 test('source timestamps prevent old organic metrics from overwriting newer values', () => {
