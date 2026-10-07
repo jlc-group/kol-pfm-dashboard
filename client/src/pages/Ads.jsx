@@ -752,7 +752,7 @@ export default function Ads() {
                                         ...TIMING_OPTS.map(([v, l]) => ({ value: v, label: l, dot: v, count: countIf('late', r => lateBucket(r) === v) }))]} />
                                 </span>
                                 <span title="ผลที่ระบบล็อกไว้ตอนค่ายิงแอดสะสมถึงเกณฑ์ของแบรนด์นั้น — แก้ไม่ได้ (ชี้ที่ป้ายในแถวเพื่อดูตัวเลขของแบรนด์)">STAMPED PFM 🔒</span>
-                                <span title="ผลตอนนี้ คำนวณสดจากข้อมูลล่าสุด — ใช้ตัดสินว่าควรยิงต่อหรือหยุด">PFM</span>
+                                <span title="คำนวณจากยอดที่แสดง — ตรวจแหล่งข้อมูลและเวลารับยอดก่อนใช้ตัดสินใจยิงแอด">PFM</span>
                                 <span>หมายเหตุ</span>
                             </div>
                         </div>
