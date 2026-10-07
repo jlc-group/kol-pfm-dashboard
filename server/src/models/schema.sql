@@ -458,3 +458,33 @@ CREATE TABLE IF NOT EXISTS talent_jobs (
     updated_at     TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS idx_talent_jobs_talent ON talent_jobs(talent_id);
+
+-- ===== คลังสินค้า / Target ที่ Admin เพิ่ม-ซ่อนเองในหน้า Products & Targets (ผู้ใช้สั่ง 7 ต.ค. 2026) =====
+-- เก็บเฉพาะส่วนที่ต่างจากรายการตั้งต้นในโค้ด (client/src/data/products.js) — ตารางว่าง = ทุกอย่างเหมือนเดิม
+-- เป็นตารางเสริม (services/readiness.js OPTIONAL_TABLES): โค้ดขึ้นก่อนรัน setup-db ได้ เว็บใช้รายการตั้งต้น · บันทึกในหน้านี้ไม่ได้จนกว่าจะสร้างตาราง
+-- ไม่มีการลบ — เอาออก = ซ่อน (hidden) แคมเปญเก่าที่เลือกไปแล้วยังอ่านได้ · รหัสสินค้าแก้ไม่ได้ (แคมเปญอ้างด้วยรหัส)
+-- catalog_products: สินค้าที่เพิ่มใหม่ (name / brand ใช้จริง) หรือแถวซ่อนสินค้าตั้งต้น (ใช้แค่ hidden — ชื่อ/แบรนด์ยึดตามโค้ด)
+CREATE TABLE IF NOT EXISTS catalog_products (
+    code           VARCHAR(40) PRIMARY KEY,
+    name           VARCHAR(200) NOT NULL,
+    brand          VARCHAR(100) NOT NULL,
+    hidden         BOOLEAN NOT NULL DEFAULT false,
+    created_by_id  INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    created_by     VARCHAR(255),
+    updated_by     VARCHAR(255),
+    created_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at     TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+-- catalog_targets: Target ที่เพิ่มให้สินค้า (ตั้งต้นหรือเพิ่มใหม่) หรือแถวซ่อน Target ตั้งต้น · ต่อสินค้าห้ามชื่อซ้ำ (ไม่สนตัวพิมพ์ / ช่องว่างหัวท้าย)
+CREATE TABLE IF NOT EXISTS catalog_targets (
+    id             SERIAL PRIMARY KEY,
+    product_code   VARCHAR(40) NOT NULL,
+    target         VARCHAR(100) NOT NULL,
+    hidden         BOOLEAN NOT NULL DEFAULT false,
+    created_by_id  INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    created_by     VARCHAR(255),
+    updated_by     VARCHAR(255),
+    created_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at     TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS catalog_targets_key ON catalog_targets (product_code, (lower(btrim(target))));

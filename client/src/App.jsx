@@ -11,7 +11,7 @@ import Register from './pages/Register.jsx';
 // (หน้าล็อกอิน/สมัครโหลดมาพร้อมกันเลย เพราะเป็นหน้าแรกที่คนส่วนใหญ่เจอ)
 import {
     AgencyPortal, Dashboard, Kols, OtherWork, InfluencerDetail, Projects, ProjectDetail,
-    Budget, Report, Ads, Activity, Users, Teams, Payments
+    Budget, Report, Ads, Activity, Users, Teams, Payments, Catalog
 } from './pages/lazyPages.js';
 
 // จำกัดเฉพาะ admin — ถ้าไม่ใช่ เด้งกลับหน้าแรก
@@ -53,6 +53,8 @@ export default function App() {
                         <Route path="payments" element={<AdminRoute><Payments /></AdminRoute>} />
                         <Route path="users" element={<AdminRoute><Users /></AdminRoute>} />
                         <Route path="teams" element={<AdminRoute><Teams /></AdminRoute>} />
+                        {/* Products & Targets — Admin เพิ่มสินค้า / Target เอง (7 ต.ค. 2026) */}
+                        <Route path="catalog" element={<AdminRoute><Catalog /></AdminRoute>} />
                     </Route>
                     <Route path="*" element={<Navigate to="/" replace />} />
                 </Routes>

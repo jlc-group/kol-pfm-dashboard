@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { api, uploadFile } from '../api/client.js';
 import Icon from './Icon.jsx';
 import DatePicker from './DatePicker.jsx';
-import { productsByBrand, productLabel, targetsForProduct, asTargetArray } from '../data/products.js';
+import { pickableProducts, productLabel, targetsForProduct, asTargetArray } from '../data/products.js';
 import { CONTENT_FORMATS } from '../data/contentFormats.js';
 import MultiSelect from './MultiSelect.jsx';
 import { useAuth } from '../auth/AuthContext.jsx';
@@ -163,6 +163,8 @@ export default function ProjectForm({ editing, onClose, onSaved }) {
         status: editing?.status || 'Draft'
     });
     const [adGroups, setAdGroups] = useState(() => initGroups(editing));
+    // รหัสสินค้าที่แคมเปญนี้บันทึกไว้ตอนเปิดฟอร์ม — สินค้าที่ Admin ซ่อนแล้วแต่แคมเปญนี้ใช้อยู่ เผลอติ๊กออกยังติ๊กกลับได้
+    const [savedCodes] = useState(() => [...new Set(adGroups.flatMap(g => [...(g.products || []), ...(g.blocks || []).flatMap(b => b.products || [])]))]);
     // ชุดสินค้า: แถวที่ติ๊กไว้รอกด 🔗 รวมเป็นชุด — { 'คีย์กลุ่ม::Platform': [รหัส] } (ไม่ถูกบันทึก)
     const [bundlePick, setBundlePick] = useState({});
     // Platform ไม่ใช่ state แยกอีกแล้ว — อ่านจากกลุ่มสินค้าที่มีอยู่
@@ -735,7 +737,8 @@ export default function ProjectForm({ editing, onClose, onSaved }) {
                                                 placeholder="+ เลือกสินค้า"
                                                 emptyText="ไม่มีสินค้าในแบรนด์นี้"
                                                 allLabel="ทุกสินค้า"
-                                                options={productsByBrand(form.brand).map(p => ({ value: p.code, label: `${p.code} - ${p.name}` }))}
+                                                // สินค้าที่ Admin ซ่อน (หน้า Products & Targets) ไม่ขึ้นให้เลือก ยกเว้นที่เลือกไว้แล้ว / แคมเปญนี้บันทึกไว้ (เอาออกแล้วติ๊กกลับได้)
+                                                options={pickableProducts(form.brand, [...savedCodes, ...(b.products || [])]).map(p => ({ value: p.code, label: `${p.code} - ${p.name}` }))}
                                                 selected={b.products || []}
                                                 onToggle={code => toggleBlockProduct(i, bi, code)}
                                             />

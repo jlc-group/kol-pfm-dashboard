@@ -1,6 +1,7 @@
 const { query } = require('./_base');
 const { resolveGroupProducts, resolveGroupTarget } = require('../logic');
-const { expandProductFamilies } = require('../productFamilies');
+const { expandProductFamilies, familyMapWith } = require('../productFamilies');
+const { catalog } = require('./catalog');
 
 const AD_STATUS = 'ยังไม่ยิง';
 
@@ -52,6 +53,10 @@ async function listCandidates({ brand, limit = 100, updatedSince = null } = {}) 
         values
     );
 
+    // สีใหม่ที่ Admin เพิ่มในหน้า Products & Targets (7 ต.ค. 2026) กางครบเหมือนสีตั้งต้น · อ่านคลังไม่ได้ = ใช้กลุ่มตั้งต้น (ฟีดไม่ล่ม)
+    let familyOf;
+    try { familyOf = familyMapWith(await catalog.familyProducts()); } catch { familyOf = undefined; }
+
     return result.rows.map(row => {
         // Same Product/Target the /ads page shows for this clip.
         const grp = Array.isArray(row.ad_groups) ? row.ad_groups.find(g => g && g.key === row.group_key) : null;
@@ -59,7 +64,7 @@ async function listCandidates({ brand, limit = 100, updatedSince = null } = {}) 
         const target = resolveGroupTarget(grp, row.platform, row.product);
         // product = ทุกสีของสินค้าที่คลิปรีวิว (ระบบยิงแอดยิงครอบทุกสี) เหมือนช่อง PRODUCTS หน้า Ads
         // เช่น คลิปรีวิว BTA4-01 → "BTA4-00, BTA4-01, ..., BTA4-07" · สินค้าที่ไม่มีหลายสีส่งตามเดิม
-        const products = expandProductFamilies(row.product || resolveGroupProducts(grp, row.platform));
+        const products = expandProductFamilies(row.product || resolveGroupProducts(grp, row.platform), familyOf);
         return {
         submission_id: row.submission_id,
         id_post: String(row.id_post),

@@ -23,7 +23,9 @@ const MAIN_NAV = [
 const ADMIN_NAV = [
     { to: '/payments', label: 'Payouts', icon: 'wallet' },
     { to: '/activity', label: 'Activity Log', icon: 'history' },
-    { to: '/users', label: 'Users', icon: 'users' }
+    { to: '/users', label: 'Users', icon: 'users' },
+    // Admin เพิ่มสินค้า / Target เอง (7 ต.ค. 2026)
+    { to: '/catalog', label: 'Products & Targets', icon: 'tag' }
 ];
 
 // พับเมนูซ้ายให้เหลือแถบไอคอน — หน้าเนื้อหา (เช่นตารางหน้า Ads) จะได้กว้างขึ้น

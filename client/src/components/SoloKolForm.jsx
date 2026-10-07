@@ -3,7 +3,8 @@ import { api } from '../api/client.js';
 import SideDrawer from './SideDrawer.jsx';
 import { useAuth } from '../auth/AuthContext.jsx';
 import { visibleBrands } from '../data/brands.js';
-import { productsByBrand, targetsForProducts } from '../data/products.js';
+import { pickableProducts, targetsForProducts, allTargetsForProducts } from '../data/products.js';
+import { useCatalogVersion } from '../data/useCatalog.js';
 import { contentTypesFor, CAMPAIGN_TYPES, SOCIAL_CAMPAIGNS, campaignIsCtype, needCampaign, needTarget } from '../data/adGroups.js';
 import { CONTENT_FORMATS } from '../data/contentFormats.js';
 import {
@@ -178,8 +179,11 @@ export default function SoloKolForm({ onClose, onSaved, project = null, clipName
     // แก้ไข: ค่าตัวของ Platform เดิมแก้ที่ช่องค่าตัวในหน้า KOL — ฟอร์มถามเฉพาะ Platform ที่เพิ่มใหม่ (ยังไม่มีคลิป)
     const feeNeeded = p => !editing || !existing.includes(p);
     const feePlats = plats.filter(feeNeeded);
-    const productOptions = useMemo(() => (j.brand ? productsByBrand(j.brand) : []), [j.brand]);
-    const productTargets = useMemo(() => targetsForProducts(j.products), [j.products]);
+    // คลังเปลี่ยนได้จากหน้า Products & Targets (7 ต.ค. 2026) — version อยู่ใน deps · สินค้าที่ซ่อนไม่ขึ้นให้เลือก
+    // ยกเว้นที่เลือกไว้แล้ว / การจ้างนี้บันทึกไว้ตอนเปิดฟอร์ม (เผลอติ๊กออกยังติ๊กกลับได้)
+    const catalogVersion = useCatalogVersion();
+    const productOptions = useMemo(() => (j.brand ? pickableProducts(j.brand, [...((init && init.j.products) || []), ...(j.products || [])]) : []), [init, j.brand, j.products, catalogVersion]);
+    const productTargets = useMemo(() => targetsForProducts(j.products), [j.products, catalogVersion]);
     const targetOptionsOf = p => (needTarget(p) ? productTargets : []);
     const ownerOptions = j.owner && !owners.includes(j.owner) ? [...owners, j.owner] : owners;
     const tag = (p, m) => (multi ? `${p}: ${m}` : m);   // หลาย Platform — บอกว่าช่องของ Platform ไหน
@@ -243,11 +247,12 @@ export default function SoloKolForm({ onClose, onSaved, project = null, clipName
         setJ(s => {
             const products = s.products.includes(code) ? s.products.filter(x => x !== code) : [...s.products, code];
             const opts = targetsForProducts(products);
+            const kept = allTargetsForProducts(products);   // Target ที่เลือกไว้แล้วแต่ถูกซ่อน ยังเก็บไว้ (ไม่หายเงียบ ๆ)
             // Target ที่ไม่อยู่ในตัวเลือกใหม่ล้างทิ้ง · มีตัวเลือกเดียว = เลือกให้เลย (ทุก Platform ที่ใช้ Target)
             const ad = { ...s.ad };
             soloPlatformOrder([...Object.keys(s.ad), ...plats]).filter(needTarget).forEach(p => {
                 const d = s.ad[p] || AD_EMPTY;
-                let target = d.target.filter(t => opts.includes(t));
+                let target = d.target.filter(t => opts.includes(t) || kept.includes(t));
                 if (!target.length && opts.length === 1) target = [opts[0]];
                 ad[p] = { ...d, target };
             });
@@ -634,6 +639,8 @@ export default function SoloKolForm({ onClose, onSaved, project = null, clipName
                             const d = adOf(p);
                             const social = campaignIsCtype(p);
                             const tOpts = targetOptionsOf(p);
+                            // ตัวเลือก + ค่าที่เลือกไว้แล้วแต่ถูกซ่อน (ให้เห็นและกดเอาออกได้)
+                            const tChips = [...tOpts, ...adOf(p).target.filter(t => !tOpts.includes(t))];
                             return (
                                 <div className="solo-plat" key={p}>
                                     <div className="solo-plat-head">{p}{nKol > 1 && <span className="solo-plat-count"> · ใช้กับ {kolsOn(p)} KOL</span>}</div>
@@ -643,7 +650,7 @@ export default function SoloKolForm({ onClose, onSaved, project = null, clipName
                                     {needTarget(p) && (
                                         <Field label="Target" req={tOpts.length > 0} err={E['tg_' + p]} labelId={id('tg-' + p)}
                                             hint={j.products.length ? (tOpts.length ? '' : 'สินค้าที่เลือกไม่มี Target ให้เลือก') : 'เลือกสินค้าก่อน'}>
-                                            {tOpts.length > 0 && <Chips options={tOpts} value={d.target} onPick={t => toggleTarget(p, t)} multi labelId={id('tg-' + p)} />}
+                                            {tChips.length > 0 && <Chips options={tChips} value={d.target} onPick={t => toggleTarget(p, t)} multi labelId={id('tg-' + p)} />}
                                         </Field>
                                     )}
                                     {needCampaign(p) && !social && (

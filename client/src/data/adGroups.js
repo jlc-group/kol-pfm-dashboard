@@ -1,4 +1,4 @@
-import { targetsForProduct } from './products.js';
+import { allTargetsForProduct } from './products.js';
 
 // Platform ของกลุ่มโฆษณา — 1 กลุ่มลงได้หลาย Platform
 //
@@ -273,7 +273,8 @@ export function withProductTargets(b) {
     const saved = pt0 && typeof pt0 === 'object' && !Array.isArray(pt0) ? pt0 : null;
     const pt = {};
     (b.products || []).forEach(code => {
-        pt[code] = saved ? asArr(saved[code]) : union.filter(t => targetsForProduct(code).includes(t));
+        // นับ Target ที่ Admin ซ่อนแล้วด้วย (หน้า Products & Targets) — แคมเปญเก่าที่เลือกไว้ไม่กลายเป็น Target ค้าง
+        pt[code] = saved ? asArr(saved[code]) : union.filter(t => allTargetsForProduct(code).includes(t));
     });
     const used = new Set(Object.values(pt).flat());
     return { ...b, product_targets: pt, legacy_orphans: saved ? [] : union.filter(t => !used.has(t)) };

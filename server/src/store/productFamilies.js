@@ -12,6 +12,34 @@ const PRODUCT_FAMILIES = [
 ];
 const FAMILY_OF = new Map(PRODUCT_FAMILIES.flatMap(codes => codes.map(c => [c, codes])));
 
+// ===== สินค้าที่ Admin เพิ่มเองในหน้า Products & Targets (7 ต.ค. 2026 · ตาราง catalog_products) =====
+// กติกาจัดกลุ่มเดียวกับหน้าเว็บ (client/src/data/products.js FAMILY_RULES): Beauterry ตัดเลขท้ายขีด (BTA4-08 → BTA4) · Jula's Herb ตัดตัวอักษรท้าย
+// สีใหม่ที่ key ตรงกลุ่มเดิม (BTA4-08) ต่อท้ายกลุ่มนั้น · key ใหม่ (BTA5-01 + BTA5-02) เป็นกลุ่มใหม่ (ต้องมีอย่างน้อย 2 สี)
+// ฝั่งนี้รู้แค่กลุ่มตั้งต้นด้านบน (ไม่รู้สินค้าตั้งต้นตัวเดี่ยวอย่าง L3) — ฟีด PFM ส่งเฉพาะ Beauterry ที่สินค้าตั้งต้นอยู่ในกลุ่มครบทุกตัวแล้ว
+const FAMILY_RULES = {
+    Beauterry: code => (code.match(/^(.+)-\d+$/) || [])[1] || null,
+    "Jula's Herb": code => (code.match(/^([A-Z]+\d+)[A-Z]$/) || [])[1] || null
+};
+const keyOfDefault = code => FAMILY_RULES.Beauterry(code) || FAMILY_RULES["Jula's Herb"](code);
+// extra = [{ code, brand }] เรียงตามรหัส (pg/catalog.js familyProducts) → Map รหัส → ทุกสีในกลุ่ม · ไม่มี extra = กลุ่มตั้งต้นเดิม
+function familyMapWith(extra) {
+    // เรียงรหัสแบบตัวเลขเอง (BTA4-08 ก่อน BTA4-10) — ลำดับสีต้องตรงกับหน้าเว็บ (products.js เรียงสินค้าที่เพิ่มแบบเดียวกัน)
+    const list = (extra || []).filter(p => p && typeof p.code === 'string' && typeof p.brand === 'string')
+        .sort((a, b) => a.code.localeCompare(b.code, 'en', { numeric: true }));
+    if (!list.length) return FAMILY_OF;
+    const byKey = new Map(PRODUCT_FAMILIES.map(codes => [keyOfDefault(codes[0]), [...codes]]));
+    for (const p of list) {
+        const rule = FAMILY_RULES[p.brand];
+        const key = rule ? rule(p.code) : null;
+        if (!key) continue;
+        if (!byKey.has(key)) byKey.set(key, []);
+        const codes = byKey.get(key);
+        if (!codes.includes(p.code)) codes.push(p.code);
+    }
+    const fams = [...byKey.values()].filter(codes => codes.length > 1);
+    return new Map(fams.flatMap(codes => codes.map(c => [c, codes])));
+}
+
 // แยกช่องสินค้า ("BTA1-03,BTA1-04" หรือ array) เป็นรายการ — คั่นด้วย , หรือ ， (จุลภาคเต็มความกว้าง แบบเดียวกับ productCodesIn)
 // ตัดช่องว่าง ทิ้งช่องว่างเปล่า
 function splitProductList(value) {
@@ -37,15 +65,16 @@ function productCodeOf(entry) {
 }
 
 // กางทุกสีของสินค้าที่มีหลายสี · สินค้าอื่นคืนค่าเดิม · ไม่ซ้ำ เรียงตามที่เจอก่อน
-function expandProductFamilies(value) {
+// familyOf = กลุ่มที่รวมสินค้าที่ Admin เพิ่มแล้ว (familyMapWith) · ไม่ส่ง = กลุ่มตั้งต้น
+function expandProductFamilies(value, familyOf = FAMILY_OF) {
     const out = [];
     const seen = new Set();
     const add = v => { if (!seen.has(v)) { seen.add(v); out.push(v); } };
     for (const part of productParts(value)) {
-        const fam = FAMILY_OF.get(productCodeOf(part));
+        const fam = familyOf.get(productCodeOf(part));
         if (fam) fam.forEach(add); else add(part);
     }
     return out;
 }
 
-module.exports = { PRODUCT_FAMILIES, splitProductList, productParts, productCodeOf, expandProductFamilies };
+module.exports = { PRODUCT_FAMILIES, FAMILY_RULES, CODE_SHAPE, splitProductList, productParts, productCodeOf, expandProductFamilies, familyMapWith };

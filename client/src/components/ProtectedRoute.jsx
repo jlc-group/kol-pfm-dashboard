@@ -1,11 +1,14 @@
 import { Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext.jsx';
 import Pending from '../pages/Pending.jsx';
+import { useCatalogReady } from '../data/useCatalog.js';
 
 // ป้องกันหน้าที่ต้องล็อกอินก่อน — ถ้ายังไม่ล็อกอิน เด้งไปหน้า Login
 export default function ProtectedRoute({ children }) {
     const { user, loading, connecting, authError, retry } = useAuth();
     const loc = useLocation();
+    // คลังสินค้า/Target ที่ Admin เพิ่มเอง (หน้า Products & Targets) — รอโหลดก่อนเปิดหน้า (ช้าสุด 4 วิ แล้วใช้รายการตั้งต้น)
+    const catalogReady = useCatalogReady(!!user && (user.status || 'active') === 'active' && user.role !== 'agency');
 
     if (loading) {
         return <div className="page-loading">{connecting ? 'กำลังเชื่อมต่อเซิร์ฟเวอร์ใหม่... (ระบบอาจกำลังอัปเดต)' : 'กำลังโหลด...'}</div>;
@@ -34,5 +37,6 @@ export default function ProtectedRoute({ children }) {
         const tk = (user.agency_tokens || [])[0];
         return tk ? <Navigate to={`/agency/${tk}`} replace /> : <Pending />;
     }
+    if (!catalogReady) return <div className="page-loading">กำลังโหลด...</div>;
     return children;
 }

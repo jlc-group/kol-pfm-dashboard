@@ -1,5 +1,6 @@
 import { Navigate, useLocation, useParams } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext.jsx';
+import { useCatalogReady } from '../data/useCatalog.js';
 
 /**
  * หน้า /agency/:token ต้องล็อกอินก่อน
@@ -12,6 +13,8 @@ export default function AgencyRoute({ children }) {
     const { user, loading, connecting, authError, retry } = useAuth();
     const { token } = useParams();
     const loc = useLocation();
+    // ชื่อสินค้าที่ Admin เพิ่มเอง (หน้า Products & Targets) — รอโหลดก่อนเปิดหน้า (ช้าสุด 4 วิ แล้วใช้รายการตั้งต้น)
+    const catalogReady = useCatalogReady(!!user);
 
     if (loading) return <div className="page-loading">{connecting ? 'กำลังเชื่อมต่อเซิร์ฟเวอร์ใหม่... (ระบบอาจกำลังอัปเดต)' : 'กำลังโหลด...'}</div>;
     // เซิร์ฟเวอร์ยังตอบไม่ได้ (ไม่ใช่ token เสีย) — ให้กดลองใหม่ ไม่เตะไปหน้าล็อกอิน
@@ -38,5 +41,6 @@ export default function AgencyRoute({ children }) {
             </div>
         );
     }
+    if (!catalogReady) return <div className="page-loading">กำลังโหลด...</div>;
     return children;
 }
