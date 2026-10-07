@@ -454,12 +454,13 @@ export default function OtherProjectDetail({ project, reload, onDeleted }) {
                                 { key: 'cancel', label: 'ยกเลิกงาน', sub: 'งานนี้ไม่ทำแล้ว', danger: true, onClick: () => changeStatus('Cancelled') }
                             ]} />
                     )}
-                    <HeroMenu label="⋯" ariaLabel="เมนูเพิ่มเติมของงาน" title="แก้ข้อมูลงาน / แก้หลายคนพร้อมกัน / ลบงาน"
+                    {/* ลบงานได้เฉพาะ Admin (ผู้ใช้สั่ง 7 ต.ค. 2026 · server ตรวจซ้ำ) */}
+                    <HeroMenu label="⋯" ariaLabel="เมนูเพิ่มเติมของงาน" title={isAdmin ? 'แก้ข้อมูลงาน / แก้หลายคนพร้อมกัน / ลบงาน' : 'แก้ข้อมูลงาน / แก้หลายคนพร้อมกัน'}
                         className="tc-hero-ghost tj-more"
                         items={[
                             { key: 'info', label: 'แก้ข้อมูลงาน', sub: `ชื่องาน รายละเอียดงาน ${T.owner}`, onClick: () => setShowInfo(true) },
                             { key: 'full', label: 'แก้หลายคนพร้อมกัน (ฟอร์มเต็ม)', sub: `เพิ่ม/แก้หลายคน หรือหลาย${T.request}ในครั้งเดียว`, onClick: () => setShowEdit(true) },
-                            { key: 'del', label: 'ลบงาน', sub: 'ลบงานนี้และทุกคนในงานถาวร', danger: true, onClick: openDelete }
+                            isAdmin && { key: 'del', label: 'ลบงาน', sub: 'ลบงานนี้และทุกคนในงานถาวร', danger: true, onClick: openDelete }
                         ]} />
                 </div>
             </div>

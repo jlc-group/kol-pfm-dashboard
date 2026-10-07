@@ -981,9 +981,12 @@ export default function ProjectDetail() {
                     <button className="pd-edit-btn" onClick={() => setShowEdit(true)}>
                         <Icon name="edit" size={15} /> แก้ไข
                     </button>
-                    <button className="pd-del-btn" onClick={() => setShowDelConfirm(true)} title="ลบโปรเจคนี้">
-                        <Icon name="trash" size={15} /> ลบ
-                    </button>
+                    {/* ลบแคมเปญได้เฉพาะ Admin (ผู้ใช้สั่ง 7 ต.ค. 2026 · server ตรวจซ้ำ) */}
+                    {user?.role === 'admin' && (
+                        <button className="pd-del-btn" onClick={() => setShowDelConfirm(true)} title="ลบโปรเจคนี้">
+                            <Icon name="trash" size={15} /> ลบ
+                        </button>
+                    )}
                 </div>
             </div>
 

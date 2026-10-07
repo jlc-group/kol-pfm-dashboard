@@ -16,6 +16,7 @@ import {
 } from '../data/soloKol.js';
 import { fmtDate } from '../utils/date.js';
 import SoloKolForm from '../components/SoloKolForm.jsx';
+import { useAuth } from '../auth/AuthContext.jsx';
 
 // หน้าของ KOL รายคน 1 การจ้าง (campaign_type 'solo' · ผู้ใช้สั่ง 30 ก.ย. 2026) — ProjectDetail แตกทางมาที่นี่ (URL /projects/:id เดิม)
 // ติดตามงานใช้ตาราง On Process ตัวเดียวกับแคมเปญ (ดราฟ / ลงงาน / Gencode / ID Post / ยอดวิว / ยิงแอด)
@@ -27,6 +28,7 @@ const clipLive = c => !!(c.post_url && String(c.post_url).trim()) || Number(c.ad
 
 export default function SoloKolDetail({ project, reload }) {
     const navigate = useNavigate();
+    const { user } = useAuth();
     const id = project.id;
     const [subs, setSubs] = useState([]);
     const [stage, setStage] = useState('all');
@@ -168,7 +170,10 @@ export default function SoloKolDetail({ project, reload }) {
                     {project.status === 'Active' && (
                         <button type="button" className="btn-ghost" disabled={busy} onClick={() => setStatus('Cancelled', 'ยกเลิกการจ้างนี้? (ข้อมูลยังอยู่ เปิดงานอีกครั้งได้)')}>ยกเลิกการจ้าง</button>
                     )}
-                    <button type="button" className="btn-ghost solo-del" disabled={busy} onClick={remove}><Icon name="trash" size={15} /> ลบ</button>
+                    {/* ลบได้เฉพาะ Admin (ผู้ใช้สั่ง 7 ต.ค. 2026 · server ตรวจซ้ำ) — ทีมใช้ "ยกเลิกการจ้าง" แทน */}
+                    {user?.role === 'admin' && (
+                        <button type="button" className="btn-ghost solo-del" disabled={busy} onClick={remove}><Icon name="trash" size={15} /> ลบ</button>
+                    )}
                 </div>
                 {subsState === 'error' && <div className="alert-error" style={{ marginTop: 12 }}>โหลดรายการคลิปไม่สำเร็จ — กด F5 แล้วลองใหม่</div>}
             </div>

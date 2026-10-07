@@ -5,7 +5,7 @@ const multer = require('multer');
 const chatHub = require('../services/chatHub');
 const store = require('../store');
 const tiktok = require('../services/tiktok');
-const { authenticate } = require('../middleware/auth');
+const { authenticate, requireRole } = require('../middleware/auth');
 
 const router = express.Router();
 router.use(authenticate);
@@ -462,8 +462,8 @@ router.put('/:id', async (req, res, next) => {
     } catch (err) { next(err); }
 });
 
-// DELETE /api/projects/:id — ลบ Project
-router.delete('/:id', async (req, res, next) => {
+// DELETE /api/projects/:id — ลบ Project · ลบได้เฉพาะ Admin (ผู้ใช้สั่ง 7 ต.ค. 2026 — ทีมลบแคมเปญเองไม่ได้แล้ว)
+router.delete('/:id', requireRole('admin'), async (req, res, next) => {
     try {
         const check = await canEditProject(req, req.params.id);
         if (!check.ok) return res.status(check.code).json({ status: 'error', message: check.message });

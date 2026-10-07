@@ -974,18 +974,29 @@ test('เส้นเพิ่มคน / สร้างลิงก์ Agency 
     assert.match(link.body.message, /KOL รายคน/);
 });
 
-test('DELETE KOL รายคน: มีงานแล้ว (ลงงาน / งวดจ่าย) = 409 ให้ยกเลิกแทน · ยังไม่มีงาน = ลบได้ · แคมเปญปกติไม่เช็ค', async () => {
+test('DELETE แคมเปญ: ลบได้เฉพาะ Admin (ผู้ใช้สั่ง 7 ต.ค. 2026) — สมาชิกทีมเดียวกัน = 403 ไม่ถึงขั้นลบ', async () => {
+    const before = removed.length;
+    for (const id of [70, 71]) {
+        const r = await call(2, 'DELETE', `/projects/${id}`);
+        assert.equal(r.status, 403);
+        assert.equal(r.body.status, 'error');
+    }
+    assert.equal(removed.length, before);
+    assert.ok(!logged.some(e => e && e.action === 'delete'), 'ไม่มี Activity Log การลบ');
+});
+
+test('DELETE KOL รายคน (Admin): มีงานแล้ว (ลงงาน / งวดจ่าย) = 409 ให้ยกเลิกแทน · ยังไม่มีงาน = ลบได้ · แคมเปญปกติไม่เช็ค', async () => {
     subsById[70][0].post_url = 'https://p';
-    const r1 = await call(2, 'DELETE', '/projects/70');
+    const r1 = await call(1, 'DELETE', '/projects/70');
     assert.equal(r1.status, 409);
     assert.match(r1.body.message, /ลงงานแล้ว.*ยกเลิก/);
     delete subsById[70][0].post_url;
     itsById[70] = [{ id: 5 }];
-    assert.equal((await call(2, 'DELETE', '/projects/70')).status, 409);
+    assert.equal((await call(1, 'DELETE', '/projects/70')).status, 409);
     itsById[70] = [];
-    assert.equal((await call(2, 'DELETE', '/projects/70')).status, 200);
+    assert.equal((await call(1, 'DELETE', '/projects/70')).status, 200);
     assert.deepEqual(removed, [70]);
-    assert.equal((await call(2, 'DELETE', '/projects/71')).status, 200);
+    assert.equal((await call(1, 'DELETE', '/projects/71')).status, 200);
 });
 
 test('หน้าทำจ่าย: ผู้รับเงินของ KOL รายคน = Agency ที่ระบุ หรือบัญชีของ Platform หลัก (ติดต่อเอง) · แคมเปญปกติยังมาจากลิงก์เอเจนซี่', () => {
