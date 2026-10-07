@@ -2,7 +2,7 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 
 process.env.NODE_ENV = 'test';
-const { config, sanitizeRow, fetchBatch, runSync } = require('../server/src/services/beauterryPfmSync');
+const { config, sanitizeRow, fetchBatch, runSync, getOrganicMetricStatus } = require('../server/src/services/beauterryPfmSync');
 const { shouldApplyOrganicMetrics, shouldApplyCumulativeMetric } = require('../server/src/store/metricSync');
 
 test('Beauterry rows are limited to fields accepted by the dashboard', () => {
@@ -22,6 +22,20 @@ test('first_ad_date passes through only as a YYYY-MM-DD date', () => {
     assert.equal(sanitizeRow({ id_post: '1', first_ad_date: '25/09/2026' }).first_ad_date, undefined);
     assert.equal(sanitizeRow({ id_post: '1', first_ad_date: '2026-13-45' }).first_ad_date, undefined);
     assert.equal(sanitizeRow({ id_post: '1' }).first_ad_date, undefined);
+});
+
+test('organic source diagnostics accept only known statuses and do not invent metrics', async () => {
+    const row = sanitizeRow({ id_post: '123', ad_spend: 462.15, organic_metrics_status: 'source_unavailable' });
+    assert.equal(row.organic_metrics_status, 'source_unavailable');
+    assert.equal(row.views, undefined);
+    assert.equal(sanitizeRow({ id_post: '123', organic_metrics_status: 'unknown' }).organic_metrics_status, undefined);
+    await runSync({
+        env: { BEAUTERRY_PFM_EXPORT_KEY: 'fixture' },
+        storeImpl: { adsSync: { itemIds: async () => ['123'], apply: async () => ({ updated: 1 }) } },
+        fetchImpl: async () => ({ ok: true, json: async () => ({ status: 'success', data: { rows: [row], not_found: [] } }) })
+    });
+    assert.equal(getOrganicMetricStatus('123'), 'source_unavailable');
+    assert.equal(getOrganicMetricStatus('not-exported'), null);
 });
 
 test('paid reach preserves unknown values and never uses impressions as reach', () => {

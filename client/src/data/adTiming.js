@@ -45,6 +45,10 @@ export function adTiming(row, adDate) {
     const ad = thDay(adDate);
     const ready = adReadyDate(row);
     if (!ad || !ready) return null;
+    // A late Gencode/check entry is allowed; an ad before the post itself is
+    // inconsistent data and must never be counted as on time.
+    const post = thDay(row.post_date);
+    if (post && ad < post) return { ready, adDate: ad, postDate: post, waited: null, late: null, conflict: true };
     const d = dayDiff(ready.date, ad);
     if (d === null) return null;
     const waited = Math.max(0, d);
@@ -52,16 +56,18 @@ export function adTiming(row, adDate) {
 }
 
 // ระดับสีของป้าย + ตัวกรอง: ตรงเวลา / ช้า 1-2 วัน / ช้า 3 วันขึ้นไป
-export const timingLevel = late => (late <= 0 ? 'ontime' : late <= 2 ? 'warn' : 'bad');
+export const timingLevel = late => (late == null ? 'invalid' : late <= 0 ? 'ontime' : late <= 2 ? 'warn' : 'bad');
 export const TIMING_OPTS = [
     ['ontime', 'ตรงเวลา (ภายใน 3 วัน)'],
     ['warn', 'ช้า 1-2 วัน'],
-    ['bad', 'ช้า 3 วันขึ้นไป']
+    ['bad', 'ช้า 3 วันขึ้นไป'],
+    ['invalid', 'วันที่ขัดกัน']
 ];
 
 // คำอธิบายเวลาชี้ที่ป้าย
 export function timingTip(t) {
     if (!t) return '';
+    if (t.conflict) return `วันยิงแอด ${t.adDate} อยู่ก่อนวันลงงาน ${t.postDate} — ตรวจสอบทั้งสองวันที่ในแคมเปญ ยังไม่ประเมินความตรงเวลา`;
     const base = `พร้อมยิง ${t.ready.date} (${t.ready.label}) · ยิง ${t.adDate} · รอ ${t.waited} วัน`;
     return t.late > 0
         ? `${base} — เกินกำหนด ${AD_GRACE_DAYS} วันไป ${t.late} วัน`

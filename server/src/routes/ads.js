@@ -6,6 +6,7 @@ const { thumbPath, createThumbCache } = require('../services/adThumbs');
 const { authenticate } = require('../middleware/auth');
 const { allowedBrands, canSeeBrand, canSeeCostMetrics } = require('../data/roles');
 const { cleanFee, pfmManagedSpend, postCheckWaiting, adStatusAuto } = require('../store/logic');
+const { getOrganicMetricStatus } = require('../services/beauterryPfmSync');
 
 // ค่ายิงแอดเป็นข้อมูลลับ — คนที่ไม่ใช่ admin/manager ไม่ได้รับตัวเลขไปเลย
 // (CPM ถอดกลับเป็นค่าแอดได้ จึงต้องปิดด้วย) แต่ยังเห็นผล Pass/Fail ตามปกติ
@@ -45,7 +46,13 @@ router.get('/', async (req, res, next) => {
             to: to || undefined
         });
         // path รูปปกของแต่ละแถว (null = ไม่ใช่โพสต์ TikTok หน้าเว็บขึ้นไอคอนแทน)
-        (data.rows || []).forEach(r => { r.thumb = thumbPath(r); });
+        (data.rows || []).forEach(r => {
+            r.thumb = thumbPath(r);
+            if (r.status_auto === true) {
+                r.organic_metrics_status = getOrganicMetricStatus(r.id_post);
+                if (r.views_reason === 'pfm_no_views' && r.organic_metrics_status === 'source_unavailable') r.views_reason = 'pfm_source_unavailable';
+            }
+        });
         res.json({ status: 'success', data: maskCost(data, req.account || req.user) });
     } catch (err) { next(err); }
 });

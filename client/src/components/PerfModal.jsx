@@ -13,9 +13,9 @@ import { api } from '../api/client.js';
  *   onSave(payload) = async ผู้เรียกยิง API เอง
  *   onClose()
  */
-export default function PerfModal({ sub, fetchUrl, onSave, onClose }) {
+export default function PerfModal({ sub, fetchUrl, onSave, onClose, notice }) {
     // ดึงอัตโนมัติได้เฉพาะ TikTok — FB/IG/อื่น ๆ ยังไม่มีทางดึง ต้องกรอกมือ
-    const canFetch = sub.platform === "TikTok";
+    const canFetch = sub.platform === "TikTok" && Boolean(fetchUrl);
     // Repost มีเฉพาะ Instagram — แพลตฟอร์มอื่นไม่ต้องขึ้นช่องนี้ให้รก
     const hasRepost = sub.platform === 'Instagram';
     const [f, setF] = useState({
@@ -67,13 +67,14 @@ export default function PerfModal({ sub, fetchUrl, onSave, onClose }) {
                 <div className="draft-head">
                     <div className="draft-name">📊 ผลงานคอนเทนต์ · {sub.account_name} <span className="muted">· {sub.platform || '—'}</span></div>
                 </div>
+                {notice && <div className="perf-manual-note">{notice}</div>}
                 {canFetch ? (
                     <button type="button" className="perf-fetch-btn" onClick={fetchTikTok} disabled={fetching}>
                         <Icon name="target" size={15} /> {fetching ? 'กำลังดึง...' : 'ดึงจาก TikTok อัตโนมัติ'}
                     </button>
                 ) : (
                     <div className="perf-manual-note">
-                        ✍️ {sub.platform || "แพลตฟอร์มนี้"} ยังไม่มีช่องทางดึงตัวเลขอัตโนมัติ — กรอกจากหน้า Insights ของโพสต์เอง
+                        ✍️ กรอก Views และ Engagement จาก Insights ของโพสต์จริง — ค่าแอดและ Reach เป็นคนละตัวเลขกับยอดวิว
                     </div>
                 )}
                 {msg && <div className="perf-msg">{msg}</div>}

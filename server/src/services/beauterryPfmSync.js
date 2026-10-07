@@ -8,11 +8,17 @@ const DEFAULT_INITIAL_DELAY_MS = 30 * 1000;
 const MAX_BATCH_SIZE = 2000;
 const ALLOWED_FIELDS = [
     'id_post', 'views', 'likes', 'comments', 'saves', 'shares', 'reposts',
-    'ad_spend', 'ad_reach', 'source_updated_at', 'paid_updated_at', 'first_ad_date', 'ad_launched'
+    'ad_spend', 'ad_reach', 'source_updated_at', 'paid_updated_at', 'first_ad_date', 'ad_launched', 'organic_metrics_status'
 ];
 
 let running = false;
 let lastRun = null;
+let organicStatus = new Map();
+const ORGANIC_STATUSES = new Set(['available', 'pending', 'snapshot_only', 'source_unavailable']);
+
+function getOrganicMetricStatus(idPost) {
+    return organicStatus.get(String(idPost || '').trim()) || null;
+}
 
 function config(env = process.env) {
     const intervalSeconds = Number(env.BEAUTERRY_PFM_SYNC_INTERVAL_SECONDS || 3600);
@@ -41,6 +47,10 @@ function sanitizeRow(row) {
     const clean = { id_post: String(row.id_post) };
     for (const field of ALLOWED_FIELDS) {
         if (field === 'id_post') continue;
+        if (field === 'organic_metrics_status') {
+            if (ORGANIC_STATUSES.has(row[field])) clean[field] = row[field];
+            continue;
+        }
         if (field.endsWith('_at')) {
             if (row[field] && Number.isFinite(Date.parse(row[field]))) clean[field] = row[field];
             continue;
@@ -93,6 +103,7 @@ async function runSync({ storeImpl = store, fetchImpl = fetch, env = process.env
     try {
         // ถามเฉพาะคลิปของแบรนด์ที่ PFM ตัวนี้ดูแล (logic.js PFM_SOURCES · ตอนนี้ Beauterry) — แบรนด์อื่นไม่ถูกส่งมาถาม (6 ต.ค. 2026)
         const itemIds = await storeImpl.adsSync.itemIds(pfmSourceBrands(SOURCE));
+        const nextOrganicStatus = new Map();
         const result = { requested: itemIds.length, received: 0, source_not_found: [], updated: 0,
             stale: 0, stale_raised: 0, regressed_metrics: 0, stamped: 0, not_found: [], skipped: 0, other_brand: 0,
             started_at: startedAt };
@@ -100,6 +111,9 @@ async function runSync({ storeImpl = store, fetchImpl = fetch, env = process.env
             const batch = itemIds.slice(offset, offset + MAX_BATCH_SIZE);
             const exported = await fetchBatch(batch, { fetchImpl, env });
             result.received += exported.rows.length;
+            for (const row of exported.rows) {
+                if (row.organic_metrics_status) nextOrganicStatus.set(row.id_post, row.organic_metrics_status);
+            }
             result.source_not_found.push(...exported.notFound);
             const applied = await storeImpl.adsSync.apply(exported.rows);
             for (const key of ['updated', 'stale', 'stale_raised', 'regressed_metrics', 'stamped', 'skipped', 'other_brand']) {
@@ -108,6 +122,9 @@ async function runSync({ storeImpl = store, fetchImpl = fetch, env = process.env
             result.not_found.push(...(applied.not_found || []));
         }
         result.finished_at = new Date().toISOString();
+        organicStatus = nextOrganicStatus;
+        result.organic_unavailable = [...organicStatus.values()].filter(v => v === 'source_unavailable').length;
+        result.organic_snapshot_only = [...organicStatus.values()].filter(v => v === 'snapshot_only').length;
         lastRun = { status: 'success', ...result };
         return result;
     } catch (error) {
@@ -156,4 +173,4 @@ function startScheduler({ logger = console, env = process.env } = {}) {
     };
 }
 
-module.exports = { config, sanitizeRow, fetchBatch, runSync, getStatus, startScheduler, syncSummaryLine };
+module.exports = { config, sanitizeRow, fetchBatch, runSync, getStatus, startScheduler, syncSummaryLine, getOrganicMetricStatus };

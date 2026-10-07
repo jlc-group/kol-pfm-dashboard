@@ -268,6 +268,9 @@ const ads = {
                     cpm: adCpm(spend, reach),
                     // ทำไมยังไม่มียอดวิว (ป้าย Not rated / Awaiting data) — null = มียอดวิวแล้ว (logic.js viewsMissingReason)
                     views_reason: viewsMissingReason(s, firstByPost, p && p.brand),
+                    // Individual fields let the existing performance editor open
+                    // without resetting engagement components to zero.
+                    ...Object.fromEntries(METRIC_KEYS.filter(k => k !== 'views').map(k => [k, Number(s[k]) || 0])),
                     // Performance ของคอนเทนต์ — ใช้ตัดสินว่าควรยิงต่อหรือหยุด
                     ...(() => {
                         const views = Number(s.views) || 0;

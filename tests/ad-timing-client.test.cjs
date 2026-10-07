@@ -70,5 +70,16 @@ test('คำอธิบายเวลาชี้บอกวันพร้�
     const x = t.adTiming(row({ gencode: 'G', gencode_at: '2026-10-02T02:00:00Z' }), '2026-10-08');
     assert.match(t.timingTip(x), /พร้อมยิง 2026-10-02 \(ใส่ Gencode\) · ยิง 2026-10-08 · รอ 6 วัน — เกินกำหนด 3 วันไป 3 วัน/);
     assert.match(t.timingTip(t.adTiming(row(), '2026-10-02')), /ภายในกำหนด 3 วัน/);
-    assert.equal(t.TIMING_OPTS.length, 3);
+    assert.equal(t.TIMING_OPTS.length, 4);
+});
+
+test('ad before post is a date conflict, while ad before later paperwork stays on time', () => {
+    const x = t.adTiming(row({ post_date: '2026-10-10' }), '2026-10-06');
+    assert.equal(x.conflict, true);
+    assert.equal(x.waited, null);
+    assert.equal(x.late, null);
+    assert.equal(t.timingLevel(x.late), 'invalid');
+    assert.match(t.timingTip(x), /วันยิงแอด 2026-10-06 อยู่ก่อนวันลงงาน 2026-10-10/);
+    assert.doesNotMatch(t.timingTip(x), /ภายในกำหนด/);
+    assert.equal(t.adTiming(row({ post_date: '2026-10-01', gencode: 'G', gencode_at: '2026-10-10T02:00:00Z' }), '2026-10-06').late, 0);
 });

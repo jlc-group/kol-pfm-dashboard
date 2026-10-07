@@ -12,6 +12,7 @@ import { campaignIsCtype } from '../data/adGroups.js';
 import { stampAtOf, stampAtText, viewsReasonText } from '../data/stamp.js';
 import { matchAdsSearch } from '../data/adsSearch.js';
 import PostThumb from '../components/PostThumb.jsx';
+import PerfModal from '../components/PerfModal.jsx';
 import { adTiming, timingLevel, timingTip, TIMING_OPTS } from '../data/adTiming.js';
 
 
@@ -167,21 +168,25 @@ function EnteredAt({ at, by, has }) {
 // full = แสดงครบไม่ตัดเป็น ... (ID Post — ทีมต้องอ่านเลขเทียบกับในแอปได้) · Gencode ยาว 65 ตัวยังตัดไว้ ใช้ปุ่มคัดลอกแทน
 // none = กลุ่มนี้ตั้ง "-" (ไม่ใช้ Gencode) และแถวนี้ไม่มี Gencode (server ตัดสินให้ใน row.no_gencode) — บอกว่า "ไม่ใช้" ไม่ใช่ "ยังไม่กรอก"
 // มีค่าอยู่ = แสดงและคัดลอกได้ตามเดิม (Gencode ที่กรอกไว้ก่อนเปลี่ยนกลุ่มเป็น "-")
-function CopyCode({ value, empty = '—', none = false, full = false }) {
+function CopyCode({ value, empty = '—', none = false, full = false, label = 'โค้ด' }) {
     const [copied, setCopied] = useState(false);
+    const [copyError, setCopyError] = useState(false);
     if (none && !String(value ?? '').trim()) return <span className="muted" title="กลุ่มนี้ไม่ใช้ Gencode">ไม่ใช้</span>;
     if (!value) return <span className="muted">{empty}</span>;
-    const copy = () => {
-        navigator.clipboard?.writeText(String(value))
-            .then(() => { setCopied(true); setTimeout(() => setCopied(false), 1400); })
-            .catch(() => {});
+    const copy = async () => {
+        setCopyError(false);
+        try {
+            await navigator.clipboard.writeText(String(value));
+            setCopied(true); setTimeout(() => setCopied(false), 1400);
+        } catch { setCopyError(true); }
     };
     return (
-        <span className="ads-code-wrap">
-            <span className={'ads-code' + (full ? ' full' : '')} title={value}>{value}</span>
-            <button type="button" className={'ads-copy' + (copied ? ' done' : '')} onClick={copy} title={copied ? 'คัดลอกแล้ว' : 'คัดลอก'}>
+        <span className="kol-track-code-wrap">
+            <span className={'kol-track-code' + (full ? ' full' : '')} title={value}>{value}</span>
+            <button type="button" aria-label={`คัดลอก ${label}`} className={'ads-copy' + (copied ? ' done' : '')} onClick={copy} title={copied ? 'คัดลอกแล้ว' : 'คัดลอก'}>
                 {copied ? <Icon name="check" size={13} /> : <Icon name="copy" size={13} />}
             </button>
+            {copyError && <span role="alert" className="kol-track-copy-error">คัดลอกไม่ได้ เลือกข้อความเพื่อคัดลอกเอง</span>}
         </span>
     );
 }
@@ -207,6 +212,7 @@ function AdRow({ row, onSaved, canCost, noAd = false }) {
     const [adStatus, setAdStatus] = useState(row.ad_status || 'ยังไม่ยิง');
     const [end, setEnd] = useState(row.ad_end || '');
     const [note, setNote] = useState(row.ad_note || '');
+    const [perfOpen, setPerfOpen] = useState(false);
     // ค่าแอดสะสม: โพสต์ TikTok ที่มี ID Post ระบบ PFM ซิงก์ให้เอง (แก้ไม่ได้) · โพสต์อื่นกรอกเองได้ (เฉพาะคนที่เห็นต้นทุน)
     // Reach: Beauterry / WeBoostX ส่งยอดสะสมจากรายงานที่ไม่ซ้ำ กรอกเองได้เมื่อยังไม่มีข้อมูล
     // ช่องจะตามค่าล่าสุดจากรายการเสมอ ยกเว้นตอนผู้ใช้กำลังพิมพ์ (dirty) — แค่กด Tab ผ่านต้องไม่เอาค่าเก่าไปทับ
@@ -326,13 +332,13 @@ function AdRow({ row, onSaved, canCost, noAd = false }) {
             </div>
             {/* CAMPAIGN (อยู่หน้า TARGET) — ตั้งไว้ที่ชุด Content Type ของกลุ่ม · แคมเปญที่บันทึกก่อนมีช่องนี้จะเป็น — */}
             <div className="ads-cell ads-stack">
-                {row.campaign ? <span className="proc-ctype-chip camp">{row.campaign}</span> : <span className="muted">—</span>}
+                {row.campaign ? <span className="proc-ctype-chip camp">{row.campaign}</span> : <Link className="kol-track-gap" to={`/projects/${row.project_id}?tab=process`} title="ยังไม่มีค่า Campaign ในกลุ่ม เปิดแคมเปญเพื่อตรวจการตั้งค่า">ยังไม่ระบุ</Link>}
             </div>
             {/* Target ตั้งต่อ Platform และมีเฉพาะ Platform ที่ใช้ยิงแอด — ช่องว่างโชว์ — เหมือนหน้า On Process */}
             <div className="ads-cell ads-stack">
                 {asTargetArray(row.target).length > 0
                     ? asTargetArray(row.target).map(t => <span className="proc-ads-tgt" key={t} title={t}>🎯 {t}</span>)
-                    : <span className="muted">—</span>}
+                    : <Link className="kol-track-gap" to={`/projects/${row.project_id}?tab=process`} title="ยังไม่มี Target ของแพลตฟอร์มนี้ เปิดแคมเปญเพื่อตรวจการตั้งค่า">ยังไม่ระบุ</Link>}
             </div>
             {/* CONTENT TYPE / FORMAT (Photo-VDO) — แยกคอลัมน์ละเรื่อง ไม่กองรวมในช่องเดียว
                 (STYLE ไม่แสดงในหน้านี้ — ทีมแอดไม่ได้ใช้ ดูได้ในหน้าแคมเปญ / ฝั่งเอเจนซี่) */}
@@ -347,9 +353,9 @@ function AdRow({ row, onSaved, canCost, noAd = false }) {
             </div>
             {/* คอลัมน์ POST (ไอคอนตาเปิดโพสต์) เอาออกแล้ว 1 ต.ค. 2026 — กดรูปปกในคอลัมน์ IMAGE เปิดโพสต์แทน */}
             {/* GENCODE — โค้ดยาว 65 ตัว แสดงไม่ครบแน่นอน จึงตัดด้วย ... แล้วให้กดปุ่มคัดลอกเอาไปใช้แทน */}
-            <div className="ads-cell"><CopyCode value={row.gencode} none={row.no_gencode === true} /></div>
+            <div className="ads-cell"><CopyCode value={row.gencode} none={row.no_gencode === true} label="Gencode" /></div>
             {/* ID POST — ตัวเลขยาว ~19 หลัก มักโดนตัด ... จึงมีปุ่มคัดลอกแบบเดียวกับ Gencode */}
-            <div className="ads-cell"><CopyCode value={row.id_post} empty="ยังไม่มี" full /></div>
+            <div className="ads-cell"><CopyCode value={row.id_post} empty="ยังไม่มี" full label="ID Post" /></div>
             {/* วันลงงาน — ป้าย "แจ้งช้า" อยู่ช่องนี้เพราะเป็นเรื่องของวันลงงานโดยตรง (ลงจริงวันหนึ่ง แต่เพิ่งแจ้งอีกวันหนึ่ง) */}
             <div className="ads-cell ads-stack">
                 {row.post_date ? <span className="ads-postdate">{fmtDate(row.post_date)}</span> : <span className="muted">—</span>}
@@ -422,16 +428,30 @@ function AdRow({ row, onSaved, canCost, noAd = false }) {
             <div className="ads-cell ads-late">
                 {timing === null
                     ? <span className="muted">—</span>
+                    : timing.conflict
+                        ? <span className="late-chip invalid" title={timingTip(timing)}>วันที่ขัดกัน</span>
                     : timing.late <= 0
                         ? <span className="late-chip ontime" title={timingTip(timing)}>ตรงเวลา</span>
                         : <span className={'late-chip ' + timingLevel(timing.late)} title={timingTip(timing)}>ช้า {timing.late} วัน</span>}
             </div>
             <div className="ads-cell"><StampCell row={row} /></div>
-            <div className="ads-cell"><LiveCell row={row} /></div>
-            <div className="ads-cell ads-note">
+            <div className="ads-cell ads-stack">
+                <LiveCell row={row} />
+                {row.organic_metrics_status === 'snapshot_only' && <small className="muted" title="ต้นทางเก็บยอดเดิมไว้ แต่บริการอัปเดตผลงาน KOL ยังปิดอยู่">ยอดเดิมจากต้นทาง</small>}
+                <button type="button" className="kol-track-perf-edit" onClick={() => setPerfOpen(true)}>กรอกผลงาน</button>
+            </div>
+            <div className="ads-cell kol-track-note">
                 <input value={note} onChange={e => setNote(e.target.value)} onBlur={saveNote}
                     placeholder="เช่น Gencode ใช้ไม่ได้ / ยิงไม่ได้" title={note || 'หมายเหตุจากทีมยิงแอด'} />
             </div>
+            {perfOpen && <PerfModal sub={{ ...row, id: row.sub_id }} onClose={() => setPerfOpen(false)}
+                notice={row.perf_stamp
+                    ? 'บันทึกนี้ปรับผลงานปัจจุบัน โดยคง Stamp เดิมไว้'
+                    : 'เมื่อค่าแอดถึงเกณฑ์และผลงานครบ ระบบจะ Stamp จากยอดตอนบันทึกนี้ ไม่ใช่ยอดย้อนหลัง ณ วันที่ค่าแอดถึงเกณฑ์'}
+                onSave={async payload => {
+                    await api(`/projects/${row.project_id}/submissions/${row.sub_id}`, { method: 'PUT', body: payload });
+                    onSaved();
+                }} />}
         </div>
     );
 }
@@ -445,6 +465,7 @@ export default function Ads() {
     const [status, setStatus] = useState('');
     const [platform, setPlatform] = useState('');
     const [late, setLate] = useState('');   // '' | ontime | warn | bad
+    const [missingPerf, setMissingPerf] = useState(false);
     // ค้นหาชื่อ KOL / แคมเปญ / สินค้า / Gencode / ID Post — กรองฝั่งหน้าเว็บเหมือนตัวกรองอื่น (ดู data/adsSearch.js)
     const [search, setSearch] = useState('');
     // แท็บ ต้องยิงแอด / ไม่ต้องยิงแอด (5 ต.ค. 2026)
@@ -492,7 +513,7 @@ export default function Ads() {
     // เขียว = ช้าไม่เกิน 3 วัน (รวมยิงตรงวัน) · เหลือง = 4-5 วัน · แดง = 6 วันขึ้นไป
     // ตัวกรองคอลัมน์ระยะเวลายิง — กติกาเดียวกับป้ายในแถว (data/adTiming.js)
     const lateBucket = r => {
-        if (r.ad_status !== 'ยิงแล้ว' || !r.ad_end) return null;
+        if ((r.ad_status_shown || r.ad_status) !== 'ยิงแล้ว' || !r.ad_end) return null;
         const t = adTiming(r, r.ad_end);
         return t ? timingLevel(t.late) : null;
     };
@@ -505,6 +526,7 @@ export default function Ads() {
         (skip === 'platform' || !platform || r.platform === platform) &&
         (skip === 'status' || !status || shownStatusOf(r) === status) &&
         (skip === 'late' || !late || lateBucket(r) === late) &&
+        (!missingPerf || !r.performance) &&
         matchAdsSearch(r, search);
 
     // ลำดับแถวตามที่ server ส่งมา (วันลงงานใหม่สุดก่อน แล้วตาม id) — ไม่เรียงตามสถานะแล้ว
@@ -523,8 +545,10 @@ export default function Ads() {
     const platformOptions = [...new Set(tabRows.map(r => r.platform).filter(Boolean))].sort();
     // ดรอปดาวน์ Platform: Platform ที่เลือกค้างไว้แต่แท็บนี้ไม่มีคลิป ยังต้องอยู่ในรายการ (ไม่งั้นช่องโชว์ "ทุก Platform" ทั้งที่ยังกรองอยู่)
     const platformPick = platform && !platformOptions.includes(platform) ? [...platformOptions, platform] : platformOptions;
-    const hasFilter = !!(platform || status || late || search.trim());
-    const clearFilters = () => { setPlatform(''); setStatus(''); setLate(''); setSearch(''); };
+    const hasFilter = !!(platform || status || late || search.trim() || missingPerf);
+    const clearFilters = () => { setPlatform(''); setStatus(''); setLate(''); setSearch(''); setMissingPerf(false); };
+    const ratedCount = tabRows.filter(r => r.performance).length;
+    const dateConflicts = tabRows.filter(r => lateBucket(r) === 'invalid').length;
     // ค่า insight เพิ่มเติม (คำนวณจากข้อมูลที่มี)
     const topBrand = s && s.by_brand && s.by_brand.length ? s.by_brand[0] : null;
     const donePct = s && s.total_posts ? Math.round((s.done_count / s.total_posts) * 100) : 0;
@@ -539,6 +563,14 @@ export default function Ads() {
                 </div>
             </header>
 
+            <div className="kol-track-health" role="status">
+                <span>PFM คำนวณได้ {ratedCount}/{tabRows.length} โพสต์</span>
+                <button type="button" aria-pressed={missingPerf} onClick={() => setMissingPerf(v => !v)}>
+                    {missingPerf ? 'แสดงผลงานทั้งหมด' : `ดูโพสต์ที่ยังคำนวณไม่ได้ (${tabRows.length - ratedCount})`}
+                </button>
+                {dateConflicts > 0 && <button type="button" onClick={() => setLate('invalid')}>วันที่ขัดกัน {dateConflicts} โพสต์</button>}
+                <small>ค่าแอด / Reach กับ Views / Engagement เป็นคนละข้อมูล · ยอดผลงานที่ขาดกรอกได้ในตาราง</small>
+            </div>
             {/* ตัวกรอง */}
             <div className="toolbar" style={{ flexWrap: 'wrap' }}>
                 <label className="bud-month">

@@ -83,11 +83,17 @@ const app = require('../server/src/app');
         await page.getByRole('button', { name: 'ยกเลิก' }).click();
 
         // Ads data and its rows must remain visible even when paid Reach is unavailable.
+        let savedPerf = null;
+        store.projects.findByIdFull = async () => ({ id: 55, brand: 'Beauterry', campaign_type: 'kol' });
+        store.submissions.update = async (id, projectId, payload) => { savedPerf = { id, projectId, payload }; return { id: Number(id), account_name: 'Fixture KOL 1' }; };
         store.ads.list = async () => ({
             summary: { total_posts: 93, done_count: 1, pending_count: 92,
                 total_spend: 1234.56, total_reach: 0, cpm: 0, by_brand: [] },
             rows: Array.from({ length: 93 }, (_, i) => ({ sub_id: 17 + i, account_name: `Fixture KOL ${i + 1}`, platform: 'TikTok',
-                brand: 'Beauterry', project_name: 'Fixture campaign',
+                brand: 'Beauterry', project_name: 'Fixture campaign', project_id: 55,
+                gencode: 'fixture-code', id_post: '7691273256392854792', views: 0,
+                likes: 12, comments: 7, saves: 8, shares: 9,
+                post_date: '2026-10-10', ad_end: '2026-10-06', stamp_at: 3000,
                 post_url: 'https://example.invalid/post', ad_status: 'ยังไม่ยิง',
                 ad_status_shown: 'ยิงแล้ว', ad_spend: 1234.56, ad_reach: 0,
                 spend_from_pfm: true }))
@@ -97,12 +103,32 @@ const app = require('../server/src/app');
         // remain visible even when that browser-side cosmetic rule is present.
         await page.goto(base + '/ads');
         await page.locator('.kol-track-entry').first().waitFor({ state: 'visible' });
-        await page.addStyleTag({ content: '.ads-row { display: none !important; }' });
+        await page.addStyleTag({ content: '.ads-row, .ads-code, .ads-note { display: none !important; }' });
         assert.equal(await page.locator('.kol-track-entry').count(), 93);
         assert.ok(await page.locator('.kol-track-entry').first().evaluate(el => el.getBoundingClientRect().height > 0));
+        const firstRow = page.locator('.kol-track-entry').first();
+        assert.equal(await firstRow.locator('.kol-track-code').first().isVisible(), true);
+        assert.equal(await firstRow.locator('.kol-track-note input').isVisible(), true);
+        assert.match(await firstRow.locator('.ads-late').innerText(), /วันที่ขัดกัน/);
+        await firstRow.getByRole('button', { name: 'กรอกผลงาน', exact: true }).click();
+        await page.locator('.modal').waitFor({ state: 'visible' });
+        assert.equal(await page.getByRole('button', { name: 'ดึงจาก TikTok อัตโนมัติ' }).count(), 0);
+        const perfInputs = page.locator('.modal input');
+        assert.equal(await perfInputs.nth(1).inputValue(), '12');
+        await perfInputs.nth(0).fill('500');
+        await page.getByRole('button', { name: /บันทึก/ }).click();
+        await page.locator('.modal').waitFor({ state: 'hidden' });
+        assert.equal(Number(savedPerf.id), 17);
+        assert.equal(Number(savedPerf.projectId), 55);
+        assert.equal(savedPerf.payload.views, 500);
+        assert.equal(savedPerf.payload.likes, 12);
+        assert.equal(savedPerf.payload.comments, 7);
+        assert.equal(savedPerf.payload.saves, 8);
+        assert.equal(savedPerf.payload.shares, 9);
+        assert.equal(savedPerf.payload.budget, undefined);
         assert.match(await page.locator('.summary-grid').innerText(), /ค่าแอดสะสม ฿1,234\.56/);
-        assert.match(await page.locator('.summary-grid').innerText(), /PFM ยังไม่ส่ง Reach/);
-        assert.match(await page.locator('.summary-grid').innerText(), /PFM ยังไม่ส่ง Engagement/);
+        assert.match(await page.locator('.summary-grid').innerText(), /ยังไม่มีข้อมูล Reach/);
+        assert.match(await page.locator('.summary-grid').innerText(), /ยังไม่มีโพสต์ที่มี Engagement/);
         assert.doesNotMatch(await page.locator('.summary-grid').innerText(), /฿0/);
         await page.getByRole('button', { name: '↓ ดูรายการ' }).click();
         await page.waitForFunction(() => {
