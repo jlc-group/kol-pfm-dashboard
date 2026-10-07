@@ -263,7 +263,10 @@ test('หน้าเว็บยาว: เจอลิงก์รูปแล
 
 test('หมดเวลา: แพลตฟอร์มไม่ตอบ → timeout (ไม่ค้าง) · ข้อความบอกให้ลองใหม่/วางรูปเอง', async () => {
     const hang = (url, opts) => new Promise((resolve, reject) => {
-        opts.signal.addEventListener('abort', () => reject(opts.signal.reason), { once: true });
+        // A real stalled socket keeps Node alive. AbortSignal.timeout alone
+        // uses an unreferenced timer, so model that socket in this fake too.
+        const socket = setTimeout(() => reject(new Error('fixture did not abort')), 2000);
+        opts.signal.addEventListener('abort', () => { clearTimeout(socket); reject(opts.signal.reason); }, { once: true });
     });
     const s = createTalentAvatars({ dir: tmpDir(), setFile: async () => { throw new Error('ต้องไม่ถูกเรียก'); }, fetchImpl: hang, timeoutMs: 40 });
     const t0 = Date.now();
