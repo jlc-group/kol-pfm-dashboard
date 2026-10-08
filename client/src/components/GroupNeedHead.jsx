@@ -34,6 +34,11 @@ export default function GroupNeedHead({ group, gi, products = [], platforms = []
             <div className="ag-group-head">
                 <div>
                     <span className="ag-group-no">กลุ่มที่ {gi + 1} <span className="adg-count">({products.length} สินค้า)</span></span>
+                    {/* Concept แยกต่อสินค้า — บรีฟ KOL ตามสินค้าของแต่ละคนได้ (เฉพาะสินค้าในขอบเขตที่เห็น)
+                        อยู่ใต้ "กลุ่มที่" ทันที (ผู้ใช้สั่ง 8 ต.ค. 2026 — เดิมอยู่ใต้จำนวน KOL ต่อสินค้า) */}
+                    {hasOwnConcepts(group, products, platforms)
+                        ? <div className="ag-concept-top">📝 Concept ตามสินค้า<ConceptLines group={group} products={products} platforms={platforms} className="ag" /></div>
+                        : group.concept && <div className="ag-concept-top">📝 Concept: <b>{conceptOneLine(group.concept)}</b></div>}
                     {/* เป้าจำนวนคน/คลิป อยู่ที่หัวกลุ่ม — เดิมอยู่ในแถบงบ ซึ่งบัญชีเอเจนซี่ไม่เห็นแล้ว */}
                     {need > 0 && (
                         <div className="ag-group-need">
@@ -61,10 +66,6 @@ export default function GroupNeedHead({ group, gi, products = [], platforms = []
                             ))}
                         </div>
                     )}
-                    {/* Concept แยกต่อสินค้า — บรีฟ KOL ตามสินค้าของแต่ละคนได้ (เฉพาะสินค้าในขอบเขตที่เห็น) */}
-                    {hasOwnConcepts(group, products, platforms)
-                        ? <div className="ag-concept-top">📝 Concept ตามสินค้า<ConceptLines group={group} products={products} platforms={platforms} className="ag" /></div>
-                        : group.concept && <div className="ag-concept-top">📝 Concept: <b>{conceptOneLine(group.concept)}</b></div>}
                     {/* ทีมตั้ง "-" ในฟอร์มแคมเปญ — บอกตั้งแต่หัวกลุ่มว่าไม่ต้องหา Gencode มากรอก */}
                     {groupNoGencode(group) && <div className="ag-concept-top">กลุ่มนี้ไม่ต้องใช้ Gencode</div>}
                     <div style={{ marginTop: 8 }}>

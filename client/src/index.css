@@ -399,8 +399,9 @@ a { text-decoration: none; color: inherit; }
 
 .agency-page { min-height: 100vh; background: linear-gradient(160deg, #e3f7ee 0%, #eef7f4 100%); padding: 30px 20px; }
 .agency-wrap { max-width: 620px; margin: 0 auto; display: flex; flex-direction: column; gap: 18px; }
-/* หน้าเอเจนซี่กว้างสุด 1120px กลางจอ — 6 ต.ค. 2026 เคยลองเต็มจอ (b0e37be) แล้วผู้ใช้สั่งย้อนกลับขนาดเดิม */
-.agency-wrap.wide { max-width: 1120px; }
+/* หน้าเอเจนซี่กว้างสุด 1280px กลางจอ — 6 ต.ค. 2026 เคยลองเต็มจอ (b0e37be) แล้วผู้ใช้สั่งย้อนกลับ 1120px
+   8 ต.ค. 2026 ผู้ใช้เลือกขยายเป็น 1280px ให้ตาราง On Process เว้นระยะคอลัมน์ได้ + หัวคอลัมน์บรรทัดเดียว (ยังไม่เต็มจอ) */
+.agency-wrap.wide { max-width: 1280px; }
 .agency-tabs { display: flex; gap: 26px; border-bottom: 2px solid var(--border); padding: 0 4px; }
 .agency-tabs button {
     border: none; background: transparent; padding: 12px 2px; font-size: 14.5px; font-weight: 700; color: var(--muted);
@@ -1030,6 +1031,26 @@ a { text-decoration: none; color: inherit; }
 }
 .proc-tbl-head { font-size: 10px; font-weight: 700; color: var(--muted); letter-spacing: .3px; padding: 0 4px 9px; }
 .proc-row { background: #fafdfb; border: 1px solid var(--border); border-radius: 12px; padding: 8px 9px; margin-bottom: 9px; }
+/* ตารางหน้าเอเจนซี่ (ไม่มีคอลัมน์ Ads — ฝั่งทีมเป็น .with-ads ไม่โดน) — 8 ต.ค. 2026 ผู้ใช้สั่ง "ให้แต่ละคอลัมน์ห่างกันอีกหน่อย ให้หัวข้อคอลัมน์อยู่ในบรรทัดเดียว"
+   กรอบหน้าเอเจนซี่ 1280px → ตารางได้ ~1232px · ช่องว่าง 12px · ทุกคอลัมน์กว้างอย่างน้อยเท่าหัวคอลัมน์บรรทัดเดียว / ป้ายที่ยาวสุด
+   (CONTENT TYPE 77 · FORMAT / STYLE 84 · PLATFORM 70 = ป้าย Instagram · DRAFT 92 = ปุ่ม View Draft · ID POST 170 = เลข 19 หลัก · CODE EXPIRE IN 84)
+   KOL PRODUCT C_TYPE FORMAT PLATFORM DRAFT POST POSTDATE GENCODE IDPOST EXPIRE จัดการ · min-width = ผลรวมขั้นต่ำ + ช่องว่าง + padding แถว */
+.proc-tbl:not(.with-ads) { min-width: 1205px; }
+.proc-tbl:not(.with-ads) .proc-tbl-head, .proc-tbl:not(.with-ads) .proc-row {
+    grid-template-columns: minmax(104px, 1.3fr) minmax(60px, .6fr) minmax(77px, .7fr) minmax(84px, .8fr) minmax(70px, .6fr) minmax(92px, .9fr)
+        minmax(100px, 1.3fr) minmax(96px, .9fr) minmax(72px, .8fr) minmax(170px, .8fr) minmax(84px, .5fr) minmax(40px, .4fr);
+    gap: 12px;
+}
+/* หัวคอลัมน์บรรทัดเดียว · padding ซ้าย-ขวาเท่าแถว (padding 9 + ขอบ 1) หัวกับแถวตรงคอลัมน์กันพอดี */
+.proc-tbl:not(.with-ads) .proc-tbl-head { padding-inline: 10px; }
+.proc-tbl:not(.with-ads) .proc-tbl-head > span { white-space: nowrap; }
+/* จอแคบกว่า ~1340px (กรอบหน้าเอเจนซี่หดตามจอ) — ช่องว่างเหลือ 8px ตารางยังพอดีกรอบ ไม่ต้องเลื่อนไปหาปุ่ม ✓ */
+@media (max-width: 1340px) {
+    .proc-tbl:not(.with-ads) { min-width: 1161px; }
+    .proc-tbl:not(.with-ads) .proc-tbl-head, .proc-tbl:not(.with-ads) .proc-row { gap: 8px; }
+}
+/* FORMAT / STYLE มีได้หลายป้าย (VDO + Review / Photo + Lifestyle + Unboxing) — ตกบรรทัดในช่องตัวเอง ไม่ล้นทับคอลัมน์ PLATFORM (ทั้งสองตาราง) */
+.proc-fmt-cell { flex-wrap: wrap; row-gap: 3px; }
 /* ตรวจข้อมูลโพสต์ที่เอเจนซี่ส่งมา — แถบเต็มความกว้างใต้แถว */
 /* ปุ่มอยู่หน้าข้อความ — ตารางกว้างเลื่อนแนวนอนได้ ปุ่มท้ายแถวจะหลุดจอ */
 .proc-check { grid-column: 1 / -1; display: flex; align-items: center; justify-content: flex-start; gap: 10px; flex-wrap: wrap;

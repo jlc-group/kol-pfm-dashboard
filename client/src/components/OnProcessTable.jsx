@@ -194,7 +194,7 @@ function ProcessRow({ sub, putSubmission, reload, showAds = false, group = null,
                     ? <span className="proc-ctype-chip">{ctype}</span>
                     : <span className="ctype-none">— ยังไม่ระบุ —</span>}
             </div>
-            <div className="proc-cell">
+            <div className="proc-cell proc-fmt-cell">
                 {media.media_type || media.content_format ? (
                     <>
                         {media.media_type && <span className="proc-ctype-chip media">{media.media_type}</span>}
