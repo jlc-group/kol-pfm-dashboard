@@ -11,8 +11,8 @@ import { useCatalogVersion } from '../data/useCatalog.js';
 // ไม่มีการลบ (ซ่อนแทน แคมเปญเก่าไม่เสีย) · รหัสสินค้าแก้ไม่ได้ · ชื่อ Target ต้องตรงกับระบบยิงแอดทุกตัวอักษร
 // แบรนด์มีเท่าที่ data/brands.js กำหนด (ผูกกับสิทธิ์ผู้ใช้ — เพิ่มแบรนด์ใหม่ต้องแก้แยก)
 
-// รูปแบบรหัสเดียวกับ server (store/productFamilies.js CODE_SHAPE) — เช่น JNP4, BTA5-01, L8C
-const CODE_SHAPE = /^[A-Z]{1,4}\d+[A-Z]?(?:-\d+)?$/;
+// รูปแบบรหัสเดียวกับ server (store/productFamilies.js CODE_SHAPE) — เช่น JNP4, BTA5-01, L8C, JNPSET1 (ตัวอักษร 1-8 ตัว · 8 ต.ค. 2026)
+const CODE_SHAPE = /^[A-Z]{1,8}\d+[A-Z]?(?:-\d+)?$/;
 // ชื่อคล้ายกัน = เหมือนกันเมื่อไม่สนตัวพิมพ์ / ช่องว่าง / _ / - (เช่น F_Beauty-Make up_18-44 กับ f_beauty make up 18-44)
 const loose = t => String(t || '').toLowerCase().replace(/[\s_-]+/g, '');
 const LAST_BRAND_KEY = 'kol:catalog-brand';
@@ -120,7 +120,7 @@ function AddProductModal({ brand, onClose, onSaved }) {
                     <div className="field">
                         <label>รหัสสินค้า *</label>
                         <input value={form.code} onChange={e => setForm(f => ({ ...f, code: e.target.value.toUpperCase() }))} placeholder="JNP4 / BTA5-01" aria-label="รหัสสินค้า" maxLength={40} autoFocus />
-                        <small className="catg-hint">ตัวอักษรอังกฤษ 1-4 ตัว + ตัวเลข (ต่อด้วยตัวอักษร หรือ -ตัวเลข ได้) · แก้ทีหลังไม่ได้</small>
+                        <small className="catg-hint">ตัวอักษรอังกฤษ 1-8 ตัว + ตัวเลข (ต่อด้วยตัวอักษร หรือ -ตัวเลข ได้) เช่น JNP4, JNPSET1 · แก้ทีหลังไม่ได้</small>
                     </div>
                     <div className="field">
                         <label>ชื่อสินค้า *</label>

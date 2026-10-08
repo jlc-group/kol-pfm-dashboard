@@ -280,6 +280,8 @@ test('POST /products: รหัสเป็นตัวพิมพ์ใหญ�
     for (const [body, re] of [
         [{ code: 'JN-P1', name: 'x', brand: 'Jernis' }, /ใช้ไม่ได้/],
         [{ code: 'jnp4/../x', name: 'x', brand: 'Jernis' }, /ใช้ไม่ได้/],
+        [{ code: 'ABCDEFGHI1', name: 'x', brand: 'Jernis' }, /ใช้ไม่ได้ — ต้องเป็นตัวอักษรอังกฤษ 1-8 ตัว/],   // ตัวอักษรนำหน้า 9 ตัว
+        [{ code: 'JNPSET', name: 'x', brand: 'Jernis' }, /ใช้ไม่ได้/],                                        // ไม่มีตัวเลข
         [{ code: 'JNP5', name: '', brand: 'Jernis' }, /ชื่อสินค้า/],
         [{ code: 'JNP5', name: 'x', brand: '' }, /แบรนด์/],
         [{ code: 'JNP5', name: 'x', brand: 'Jernis', targets: ['A,B'] }, /จุลภาค/],
@@ -296,6 +298,33 @@ test('POST /products: รหัสเป็นตัวพิมพ์ใหญ�
     const dup = await call(1, 'POST', '/products', { code: 'JNP4', name: 'x', brand: 'Jernis' });
     assert.equal(dup.status, 409);
     assert.equal(CALLS.filter(c => c[0] === 'addProduct').length, 0);
+    // รหัสเซ็ตตัวอักษรนำหน้า 5-8 ตัว (8 ต.ค. 2026 — เดิมรับแค่ 1-4 ตัว ใส่ JNPSET1 ไม่ได้)
+    for (const code of ['jnpset1', 'ABCDEFGH1', 'BTASET1-01']) {
+        reset();
+        const r = await call(1, 'POST', '/products', { code, name: 'All true your day mini parfum set', brand: 'Jernis' });
+        assert.equal(r.status, 201, code + ' ' + JSON.stringify(r.body));
+        assert.equal(CALLS.find(c => c[0] === 'addProduct')[1].code, code.toUpperCase());
+    }
+});
+
+test('รูปแบบรหัสสินค้า 3 ที่ตรงกัน (server / คลังหน้าเว็บ / ฟอร์ม Products & Targets) · รหัสยาวแยกรายการได้ทั้งสองฝั่ง', () => {
+    const src = f => fs.readFileSync(path.join(__dirname, '../client/src', f), 'utf8');
+    const shapeIn = text => (text.match(/const CODE_SHAPE = (\/.+\/);/) || [])[1];
+    const server = String(families.CODE_SHAPE);
+    assert.equal(shapeIn(src('data/products.js')), server, 'data/products.js ต้องเหมือน server');
+    assert.equal(shapeIn(src('pages/Catalog.jsx')), server, 'pages/Catalog.jsx ต้องเหมือน server');
+    for (const ok of ['JNP1', 'BTA4-01', 'L8A', 'C1', 'JNPSET1', 'ABCDEFGH12B']) assert.ok(families.CODE_SHAPE.test(ok), ok);
+    for (const bad of ['ABCDEFGHI1', 'JNPSET', 'JN-P1', '1JNP', 'JNP1AB']) assert.ok(!families.CODE_SHAPE.test(bad), bad);
+    // พิมพ์รหัสติดกันด้วยเว้นวรรค = แยกเป็นทีละรหัส (รหัสยาวด้วย) · ข้อความที่พิมพ์เองเก็บทั้งก้อน — สองฝั่งต้องได้ผลเดียวกัน
+    for (const [value, want] of [
+        ['JNPSET1 JNP1', ['JNPSET1', 'JNP1']],
+        ['JNPSET1 All true your day mini parfum set', ['JNPSET1 All true your day mini parfum set']],
+        ['Dermiq Serum Vit C', ['Dermiq Serum Vit C']],
+        ['BTA4-01 BTA2-01, JNPSET1', ['BTA4-01', 'BTA2-01', 'JNPSET1']]
+    ]) {
+        assert.deepEqual(web.productParts(value), want, value);
+        assert.deepEqual(families.productParts(value), want, 'server ' + value);
+    }
 });
 
 test('PATCH /products/:code: ซ่อนสินค้าตั้งต้นที่ยังไม่มีแถวต้องส่งชื่อ+แบรนด์ · แก้ชื่อสินค้าที่เพิ่มเอง · hidden ต้องเป็น boolean', async () => {

@@ -27,7 +27,7 @@ const str = v => (typeof v === 'string' || typeof v === 'number' ? String(v) : '
 function codeOf(v) {
     const code = str(v).trim().toUpperCase();
     if (!code) return { error: 'กรุณาใส่รหัสสินค้า' };
-    if (code.length > 40 || !CODE_SHAPE.test(code)) return { error: `รหัส "${code}" ใช้ไม่ได้ — ต้องเป็นตัวอักษรอังกฤษ 1-4 ตัว + ตัวเลข (ต่อด้วยตัวอักษร 1 ตัว หรือ -ตัวเลข ได้) เช่น JNP4, BTA5-01, L8C` };
+    if (code.length > 40 || !CODE_SHAPE.test(code)) return { error: `รหัส "${code}" ใช้ไม่ได้ — ต้องเป็นตัวอักษรอังกฤษ 1-8 ตัว + ตัวเลข (ต่อด้วยตัวอักษร 1 ตัว หรือ -ตัวเลข ได้) เช่น JNP4, BTA5-01, L8C, JNPSET1` };
     return { value: code };
 }
 function textOf(v, label, max) {
