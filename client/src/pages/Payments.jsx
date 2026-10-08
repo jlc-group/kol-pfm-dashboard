@@ -614,6 +614,8 @@ function PlanModal({ row, onClose, onSaved, onReload }) {
         if (saved[idx]) return saved[idx];
         if (noGroupPicked) throw new Error('เลือกกลุ่มที่จะทำจ่ายก่อน');
         if (!agency) throw new Error('ยังไม่มีเอเจนซี่ — เลือกเอเจนซี่ก่อนถึงจะแนบเอกสารได้');
+        // บันทึกแผนให้เองก็ต้องถามแบบเดียวกับปุ่มบันทึก (งวดพักไว้ / วันผ่านไปแล้ว = นับจ่ายทันที)
+        if (!okToSavePlan(plan, saved)) throw new Error('ยังไม่ได้แนบ — ยังไม่ได้บันทึกแผน');
         const res = await api(`/payments/${row.project_id}/plan`, {
             method: 'PUT', body: { agency, group_key: asKey(groupKey) || null, plan }
         });
@@ -864,6 +866,7 @@ function ManualModal({ item, agencies, manuals, onClose, onSaved, onReload }) {
     async function ensure(idx) {
         if (saved[idx]) return saved[idx];
         if (!title.trim() || !agency) throw new Error('ใส่ชื่อรายการกับเอเจนซี่ก่อนถึงจะแนบเอกสารได้');
+        if (!okToSavePlan(plan, saved)) throw new Error('ยังไม่ได้แนบ — ยังไม่ได้บันทึกรายการ');
         const rows = await persist();
         if (!rows[idx]) throw new Error('บันทึกไม่สำเร็จ');
         return rows[idx];
