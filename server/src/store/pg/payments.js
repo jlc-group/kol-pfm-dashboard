@@ -221,11 +221,13 @@ const installments = {
             .map(i => decorateInstallment(i, snap.projects, snap.pay_batches));
     },
 
-    // ทุกงวดในระบบ (ไว้ทำหน้ารอบทำจ่าย) — pending = ยังไม่เข้ารอบไหน
+    // ทุกงวดในระบบ (ไว้ทำหน้ารอบทำจ่าย) — pending = ยังไม่เข้ารอบไหน · hold = ยกเลิกรอบแล้ว พักไว้ (8 ต.ค. 2026)
+    // status ส่งหลายค่าคั่น , ได้ เช่น 'pending,hold'
     async list({ status } = {}) {
         const snap = await loadSnapshot(['installments', 'projects', 'pay_batches']);
         let rows = snap.installments.slice();
-        if (status) rows = rows.filter(i => (i.status || 'pending') === status);
+        const want = String(status || '').split(',').map(s => s.trim()).filter(Boolean);
+        if (want.length) rows = rows.filter(i => want.includes(i.status || 'pending'));
         return rows
             .sort((a, b) => (a.due_date || '9999').localeCompare(b.due_date || '9999') || a.id - b.id)
             .map(i => decorateInstallment(i, snap.projects, snap.pay_batches));
@@ -301,7 +303,8 @@ const installments = {
         });
     },
 
-    // แก้ยอด/วันครบกำหนดของงวดเดียว (งวดที่จ่ายแล้วแก้ไม่ได้)
+    // แก้ยอด/วันทำจ่ายของงวดเดียว (งวดที่จ่ายแล้วแก้ไม่ได้) — ใช้ได้แม้แผนถูกล็อก (มีงวดอื่นจ่ายแล้ว)
+    // ทำจ่ายอัตโนมัติ (8 ต.ค. 2026): งวดที่พักไว้ (hold) แก้วันทำจ่าย หรือส่ง release = นับจ่ายใหม่ → กลับเป็น pending
     async update(id, fields) {
         const iid = toInt(id);
         if (iid === null) return { error: 'ไม่พบงวดนี้' };
@@ -314,10 +317,15 @@ const installments = {
             if (fields.percent !== undefined) patch.percent = Number(fields.percent) || 0;
             if (fields.due_date !== undefined) patch.due_date = asDate(fields.due_date || null);
             if (fields.note !== undefined) patch.note = fields.note || null;
+            if (it.status === 'hold' && (fields.release === true
+                || (patch.due_date !== undefined && String(patch.due_date || '') !== String(it.due_date || '')))) {
+                patch.status = 'pending';
+            }
             patch.updated_at = now();
             // RETURNING * คืนคอลัมน์ "of" มาในชื่อเดิมอยู่แล้ว ไม่ต้องอ่านซ้ำ
             const row = await updateRow('installments', iid, patch, client);
-            return { data: await decorateOne(row, client) };
+            // released = งวดที่พักไว้กลับมานับใหม่ (เส้น API ลง Activity Log ว่าใครปลด)
+            return { data: await decorateOne(row, client), released: patch.status === 'pending' };
         });
     },
 

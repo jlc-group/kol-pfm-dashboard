@@ -2778,44 +2778,26 @@ a.ads-thumb:focus-visible { outline: 2px solid var(--mint-dark); outline-offset:
 .pay-tab.active .pay-tab-n { background: rgba(255,255,255,.25); }
 
 .inst-group { background: #fff; border-radius: 16px; box-shadow: var(--shadow); margin-bottom: 14px; overflow: hidden; }
-.inst-group.blocked { opacity: .45; }
 .inst-group-head {
     display: flex; align-items: center; gap: 11px; flex-wrap: wrap;
     padding: 12px 18px; background: #f2fbf7; border-bottom: 1px solid var(--border);
 }
-.inst-group-head input[type=checkbox] { accent-color: var(--mint); width: 16px; height: 16px; }
 .inst-agency { display: flex; align-items: center; gap: 7px; font-weight: 700; color: #0f766e; font-size: 14px; }
 .inst-group-sum { margin-left: auto; font-size: 12.5px; color: #45605a; }
-.inst-blocked-note { width: 100%; font-size: 11.5px; color: #b45309; }
 
+/* แถวงวดในแท็บรอทำจ่าย — ดูอย่างเดียว (ทำจ่ายอัตโนมัติ 8 ต.ค. 2026) · ช่องแรก = ไอคอนสถานะ (เดิมเป็นช่องติ๊ก) */
 .inst-rows { display: flex; flex-direction: column; }
 .inst-row {
     display: grid; grid-template-columns: 22px minmax(160px, 1.6fr) 88px 54px 120px 1fr;
-    align-items: center; gap: 10px; padding: 11px 18px; cursor: pointer;
+    align-items: center; gap: 10px; padding: 11px 18px;
     border-top: 1px solid #f0f5f3; font-size: 13px; color: #45605a;
 }
-.inst-row:hover { background: #f7fbf9; }
-.inst-row.on { background: #eefaf4; }
-.inst-row input[type=checkbox] { accent-color: var(--mint); width: 16px; height: 16px; }
 .inst-project { font-weight: 600; color: #234; display: flex; align-items: center; gap: 8px; min-width: 0; }
 .inst-brand { font-size: 10.5px; font-weight: 700; color: #0f766e; background: #e8f7f1; border-radius: 999px; padding: 2px 8px; flex-shrink: 0; }
 .inst-no { font-weight: 700; color: #0f766e; font-size: 12px; }
 .inst-pct { color: #7d938d; font-size: 12px; }
 .inst-amt { font-weight: 700; font-variant-numeric: tabular-nums; }
 .inst-due { font-size: 12px; color: #7d938d; }
-
-.inst-bar {
-    position: sticky; bottom: 14px; z-index: 20; margin-top: 16px;
-    display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap;
-    background: #0f766e; color: #fff; border-radius: 16px; padding: 13px 20px;
-    box-shadow: 0 14px 34px rgba(16,133,100,.35);
-}
-.inst-bar-info { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; font-size: 13px; }
-.inst-bar-agency { font-weight: 700; background: rgba(255,255,255,.18); border-radius: 999px; padding: 3px 12px; }
-.inst-bar-total { font-size: 16px; font-weight: 800; font-variant-numeric: tabular-nums; }
-.inst-bar-actions { display: flex; gap: 8px; }
-.inst-bar-actions .btn-ghost { background: rgba(255,255,255,.15); border-color: transparent; color: #fff; }
-.inst-bar-actions .btn-primary { background: #fff; color: #0f766e; }
 
 .batch-list { display: flex; flex-direction: column; gap: 12px; }
 .batch-card { background: #fff; border-radius: 16px; box-shadow: var(--shadow); overflow: hidden; }
@@ -2901,16 +2883,6 @@ a.ads-thumb:focus-visible { outline: 2px solid var(--mint-dark); outline-offset:
     font-weight: 700; font-size: 13px; color: #0f766e;
 }
 
-.inst-take-all {
-    background: #fff; border: 1.5px solid var(--mint); color: #0f766e; cursor: pointer;
-    border-radius: 999px; padding: 5px 14px; font-size: 11.5px; font-weight: 600;
-}
-.inst-take-all:hover { background: var(--grad); color: #fff; border-color: transparent; }
-.batch-merge {
-    background: #fdf0e3; color: #92400e; border-radius: 12px; padding: 11px 15px;
-    font-size: 12.5px; line-height: 1.7; margin-bottom: 12px;
-}
-
 /* บล็อกรอบวันที่ในแท็บรอทำจ่าย */
 .due-block { margin-bottom: 20px; }
 .due-head {
@@ -2919,6 +2891,20 @@ a.ads-thumb:focus-visible { outline: 2px solid var(--mint-dark); outline-offset:
 }
 .due-date { font-size: 14.5px; font-weight: 800; color: #0f766e; }
 .due-sum { font-size: 12.5px; color: #45605a; }
+/* ทำจ่ายอัตโนมัติ (8 ต.ค. 2026): แท็บรอทำจ่ายดูอย่างเดียว · ป้ายวันที่ระบบย้ายเป็นจ่ายแล้ว · รอบที่ระบบสร้าง */
+.due-move { margin-right: auto; font-size: 12px; font-weight: 700; color: #0f766e; background: #e8f7f1; border-radius: 999px; padding: 3px 11px; }
+.due-move.late { color: #b45309; background: #fdf0e3; }
+.due-move.hold { color: #64748b; background: #f1f5f9; font-weight: 600; }
+.inst-row.st-hold { background: #f8fafc; }
+.inst-state { font-size: 13px; text-align: center; color: #7d938d; }
+.pay-auto-note { background: #f2fbf7; border: 1px solid #cdeee0; color: #0f5e57; border-radius: 12px; padding: 10px 14px; font-size: 12.5px; line-height: 1.7; margin-bottom: 14px; }
+.pay-auto-note.warn { background: #fdf6ec; border-color: #f6dfbd; color: #92400e; }
+.inst-old-due { margin-right: 6px; font-size: 11.5px; color: #64748b; white-space: nowrap; }
+.plan-st { font-size: 11.5px; font-weight: 700; border-radius: 999px; padding: 2px 9px; white-space: nowrap; }
+.plan-st.paid { color: #0f766e; background: #e8f7f1; }
+.plan-st.hold { color: #64748b; background: #f1f5f9; }
+.btn-ghost.plan-release { padding: 4px 11px; font-size: 12px; border-radius: 999px; margin-left: 6px; white-space: nowrap; }
+.batch-auto { margin-left: 8px; font-size: 10.5px; font-weight: 700; color: #0f766e; background: #e8f7f1; border-radius: 999px; padding: 2px 9px; vertical-align: middle; }
 
 .btn-ghost.danger { color: var(--danger); border-color: #fbd5dc; }
 .btn-ghost.danger:hover { background: #fdecef; border-color: var(--danger); }

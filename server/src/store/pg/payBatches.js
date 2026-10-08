@@ -9,7 +9,22 @@
  * เพราะถ้าพังกลางคัน งวดจะค้างสถานะ 'paid' โดยไม่มีรอบทำจ่ายอยู่จริง
  */
 const { query, withTransaction, asJson, asNumOrNull } = require('./_base');
-const { now, clone, scopeProjects } = require('../logic');
+const { now, clone, scopeProjects, todayTH } = require('../logic');
+
+// ===== ทำจ่ายอัตโนมัติ (ผู้ใช้สั่ง 8 ต.ค. 2026) =====
+// งวดที่แนบใบแจ้งหนี้แล้ว (ไฟล์หรือลิงก์) และเลยวันทำจ่าย (due_date) มาแล้ว 1 วัน = นับว่าจ่ายแล้วเอง ไม่ต้องกดสร้างรอบ
+// มัดเป็นรอบตามกติกาเดิม: 1 เอเจนซี่ + 1 วันทำจ่าย = สลิป 1 ใบ (ต่อการตรวจแต่ละครั้ง) · แนบสลิปทีหลังในแท็บรอบที่จ่ายแล้ว
+// ยกเลิกรอบของงวดที่เลยวันแล้ว = สถานะ 'hold' (พักไว้) — ระบบไม่นับจ่ายซ้ำจนกว่าจะบันทึกแผนงวดใหม่ (กลับเป็น pending)
+const AUTO_PAY_BY = 'ระบบอัตโนมัติ';
+const AUTO_PAY_NOTE = 'ย้ายเป็นจ่ายแล้วอัตโนมัติ — เลยวันทำจ่าย 1 วัน';
+const HAS_INVOICE_SQL = `(jsonb_typeof(invoice) = 'object' OR NULLIF(btrim(COALESCE(invoice_link, '')), '') IS NOT NULL)`;
+// เงื่อนไข "ถึงเวลาจ่ายอัตโนมัติ" — $n = วันนี้ (เวลาไทย) · due_date < วันนี้ = เลยวันทำจ่ายมาแล้วอย่างน้อย 1 วัน
+const dueForAutoPay = n => `(due_date IS NOT NULL AND due_date < $${n}::date AND ${HAS_INVOICE_SQL})`;
+const isDay = v => /^\d{4}-\d{2}-\d{2}$/.test(String(v || ''));
+const hasInvoice = i => !!(i && ((i.invoice && typeof i.invoice === 'object') || (i.invoice_link && String(i.invoice_link).trim())));
+// งวดที่สร้างรอบทำจ่ายเองได้ (เส้นเดิม) — กติกาเดียวกับอัตโนมัติ: มีใบแจ้งหนี้ + เลยวันทำจ่ายแล้ว
+const payableNow = (i, today) => hasInvoice(i) && isDay(i.due_date) && String(i.due_date) < today;
+const NOT_YET_PAYABLE = 'ทำจ่ายได้เฉพาะงวดที่แนบใบแจ้งหนี้แล้ว และเลยวันทำจ่ายมาแล้ว 1 วัน (ระบบย้ายให้อัตโนมัติ)';
 
 // เลือกตัวรันคำสั่ง: อยู่ใน transaction ให้ใช้ client เดิม ไม่งั้นใช้ pool
 const run = (client) => (text, params) => (client ? client.query(text, params) : query(text, params));
@@ -71,19 +86,20 @@ async function decorateOne(b, client) {
     return (await decorateBatches([b], client))[0];
 }
 
-async function findBatch(id, client) {
+// lock = ล็อกแถวไว้จนจบ transaction (FOR UPDATE) — กันชนกับตัวจ่ายอัตโนมัติที่กำลังเติมงวดเข้ารอบเดียวกัน
+async function findBatch(id, client, lock = false) {
     const n = intOrNull(id);
     if (n === null) return null;
-    const r = await run(client)('SELECT * FROM pay_batches WHERE id = $1', [n]);
+    const r = await run(client)('SELECT * FROM pay_batches WHERE id = $1' + (lock ? ' FOR UPDATE' : ''), [n]);
     return r.rows[0] || null;
 }
 
 /** งวดตาม id ที่ส่งมา เรียงตาม id (เหมือนลำดับใน array เดิม) — id ที่ไม่ใช่จำนวนเต็มถือว่าหาไม่เจอ */
-async function findInstallments(ids, client) {
+async function findInstallments(ids, client, lock = false) {
     const valid = ids.filter(n => Number.isInteger(n));
     if (!valid.length) return [];
     const r = await run(client)(
-        'SELECT *, "of" AS of FROM installments WHERE id = ANY($1::int[]) ORDER BY id', [valid]);
+        'SELECT *, "of" AS of FROM installments WHERE id = ANY($1::int[]) ORDER BY id' + (lock ? ' FOR UPDATE' : ''), [valid]);
     return r.rows;
 }
 
@@ -107,10 +123,11 @@ const payBatches = {
     async create({ agency, pay_date, installment_ids, note, created_by }) {
         const ids = (installment_ids || []).map(Number);
         return withTransaction(async (client) => {
-            const rows = await findInstallments(ids, client);
+            const rows = await findInstallments(ids, client, true);
             if (!rows.length) return { error: 'ยังไม่ได้เลือกงวดที่จะจ่าย' };
             if (rows.length !== ids.length) return { error: 'มีงวดที่หาไม่เจอในระบบ' };
             if (rows.some(i => i.status === 'paid')) return { error: 'มีงวดที่ถูกรวมในรอบอื่นไปแล้ว' };
+            if (rows.some(i => !payableNow(i, todayTH()))) return { error: NOT_YET_PAYABLE };
             // สลิปใบเดียวโอนให้เจ้าเดียว — ปนเจ้าไม่ได้
             const names = [...new Set(rows.map(i => i.agency))];
             if (names.length > 1) return { error: 'รวมงวดข้ามเอเจนซี่ในสลิปใบเดียวไม่ได้' };
@@ -137,11 +154,12 @@ const payBatches = {
     async addItems(id, installment_ids) {
         const ids = (installment_ids || []).map(Number);
         return withTransaction(async (client) => {
-            const b = await findBatch(id, client);
+            const b = await findBatch(id, client, true);
             if (!b) return { error: 'ไม่พบรอบทำจ่ายนี้' };
-            const rows = await findInstallments(ids, client);
+            const rows = await findInstallments(ids, client, true);
             if (rows.length !== ids.length) return { error: 'มีงวดที่หาไม่เจอในระบบ' };
             if (rows.some(i => i.status === 'paid')) return { error: 'มีงวดที่ถูกรวมในรอบอื่นไปแล้ว' };
+            if (rows.some(i => !payableNow(i, todayTH()))) return { error: NOT_YET_PAYABLE };
             if (rows.some(i => i.agency !== b.agency)) {
                 return { error: 'งวดที่เลือกไม่ใช่ของ ' + b.agency + ' — สลิปใบเดียวโอนให้เจ้าเดียว' };
             }
@@ -186,21 +204,81 @@ const payBatches = {
         return decorateOne(r.rows[0]);
     },
 
-    // ยกเลิกรอบ — งวดข้างในกลับไปเป็นรอทำจ่ายเหมือนเดิม ไม่ได้หายไปไหน
-    // คืนข้อมูลรอบที่ลบออกไปด้วย เพื่อให้ route เอาไปบันทึกประวัติพร้อมเหตุผล
-    async remove(id) {
+    // ยกเลิกรอบ — งวดข้างในกลับไปรอทำจ่าย ไม่ได้หายไปไหน
+    // งวดที่เลยวันทำจ่ายแล้ว (มีใบแจ้งหนี้) = 'hold' พักไว้ ไม่งั้นระบบจะนับจ่ายอัตโนมัติซ้ำทันที
+    // คืนข้อมูลรอบที่ลบออกไปด้วย (+ held = จำนวนงวดที่พักไว้) เพื่อให้ route เอาไปบันทึกประวัติพร้อมเหตุผล
+    async remove(id, { today } = {}) {
         const n = intOrNull(id);
         if (n === null) return null;
+        const day = isDay(today) ? today : todayTH();
         return withTransaction(async (client) => {
-            const b = await findBatch(n, client);
+            // ล็อกรอบก่อน — ถ้าตัวจ่ายอัตโนมัติกำลังเติมงวดเข้ารอบนี้ จะรอให้เสร็จก่อน แล้วงวดนั้นถูกยกเลิกไปด้วย (ไม่ค้าง paid ไร้รอบ)
+            const b = await findBatch(n, client, true);
             if (!b) return null;
             // ต้องประกอบข้อมูลก่อนลบ ไม่งั้นงวดจะถูกตัดออกจากรอบไปแล้ว
             const gone = await decorateOne(b, client);
-            await client.query(
-                `UPDATE installments SET status = 'pending', batch_id = NULL, updated_at = $1
-                 WHERE batch_id = $2`, [now(), n]);
+            const back = await client.query(
+                `UPDATE installments
+                    SET status = CASE WHEN ${dueForAutoPay(3)} THEN 'hold' ELSE 'pending' END,
+                        batch_id = NULL, updated_at = $1
+                  WHERE batch_id = $2 RETURNING status`, [now(), n, day]);
             await client.query('DELETE FROM pay_batches WHERE id = $1', [n]);
+            gone.held = back.rows.filter(r => r.status === 'hold').length;
             return gone;
+        });
+    },
+
+    // ย้ายงวดที่ถึงเวลาเป็นจ่ายแล้ว (เรียกจาก services/autoPay — ตอนเปิด server / ทุก 10 นาที / ก่อนเปิดหน้าทำจ่าย)
+    // today = วันนี้เวลาไทย 'YYYY-MM-DD' · ทุกครั้งสร้างรอบใหม่ต่อ (เอเจนซี่ + วันทำจ่าย) — ไม่เติมเข้ารอบเดิม
+    // (รอบเดิมอาจโอนเงินไปแล้ว งวดที่ใบแจ้งหนี้มาช้าจึงได้สลิปของตัวเอง · ไม่แตะรอบที่มีอยู่ = ไม่ชนกับยกเลิกรอบ / ลบแคมเปญ)
+    // คืน { count, total, batches: [{ id, agency, pay_date, added, amount, total, projects }] }
+    async autoPayDue(today) {
+        if (!isDay(today)) throw new Error('autoPayDue: วันที่ต้องเป็น YYYY-MM-DD');
+        return withTransaction(async (client) => {
+            // รอล็อกไม่เกิน 5 วิ / ทั้งคำสั่งไม่เกิน 20 วิ — ค้างแล้วล้มออกมา รอบหน้าค่อยลองใหม่ (หน้าทำจ่ายไม่ค้างตาม)
+            await client.query("SET LOCAL lock_timeout = '5s'");
+            await client.query("SET LOCAL statement_timeout = '20s'");
+            // SKIP LOCKED: งวดที่อีกคำขอกำลังจัดการอยู่ ข้ามไป (ไม่นับซ้ำ ไม่รอกันค้าง)
+            const due = (await client.query(
+                `SELECT * FROM installments
+                  WHERE status = 'pending' AND ${dueForAutoPay(1)}
+                  ORDER BY due_date, id FOR UPDATE SKIP LOCKED`, [today])).rows;
+            if (!due.length) return { count: 0, total: 0, batches: [] };
+
+            const pids = [...new Set(due.map(i => i.project_id).filter(v => v !== null && v !== undefined))];
+            const names = new Map(pids.length
+                ? (await client.query('SELECT id, name FROM projects WHERE id = ANY($1::int[])', [pids])).rows.map(p => [p.id, p.name])
+                : []);
+            const groups = new Map();
+            for (const i of due) {
+                const key = JSON.stringify([i.agency || null, String(i.due_date)]);
+                if (!groups.has(key)) groups.set(key, { agency: i.agency || null, day: String(i.due_date), rows: [] });
+                groups.get(key).rows.push(i);
+            }
+
+            const out = [];
+            for (const g of groups.values()) {
+                const stamp = now();
+                const amount = g.rows.reduce((s, i) => s + (Number(i.amount) || 0), 0);
+                const b = (await client.query(
+                    `INSERT INTO pay_batches (agency, pay_date, total, slip, note, created_by, created_at, updated_at)
+                     VALUES ($1, $2, $3, NULL, $4, $5, $6, $6) RETURNING *`,
+                    [g.agency, g.day, amount, AUTO_PAY_NOTE, AUTO_PAY_BY, stamp])).rows[0];
+                // แถวถูกล็อกไว้แล้ว (FOR UPDATE ด้านบน) — เงื่อนไข status กันไว้อีกชั้น
+                await client.query(
+                    `UPDATE installments SET status = 'paid', batch_id = $1, updated_at = $2
+                      WHERE id = ANY($3::int[]) AND status = 'pending'`,
+                    [b.id, stamp, g.rows.map(i => i.id)]);
+                out.push({
+                    id: b.id, agency: g.agency, pay_date: g.day, added: g.rows.length, amount, total: amount,
+                    projects: [...new Set(g.rows.map(i => names.get(i.project_id) || i.title).filter(Boolean))]
+                });
+            }
+            return {
+                count: due.length,
+                total: due.reduce((s, i) => s + (Number(i.amount) || 0), 0),
+                batches: out
+            };
         });
     }
 };
@@ -267,4 +345,4 @@ const rateRequests = {
     }
 };
 
-module.exports = { payBatches, rateRequests };
+module.exports = { payBatches, rateRequests, AUTO_PAY_BY, AUTO_PAY_NOTE, payableNow };

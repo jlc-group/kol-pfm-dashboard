@@ -18,11 +18,14 @@ async function start() {
     let stopPfmSync = () => {};
     let stopWeBoostxSync = () => {};
     let stopTikTokEvidence = () => {};
+    let stopAutoPay = () => {};
     const server = app.listen(port, host, () => {
         console.log(`KOL Dashboard listening on http://${host}:${port}`);
         stopPfmSync = require('./services/beauterryPfmSync').startScheduler();
         stopWeBoostxSync = require('./services/weboostxPfmSync').startScheduler();
         stopTikTokEvidence = require('./services/tiktokEvidenceSync').startScheduler();
+        // งวดที่มีใบแจ้งหนี้ + เลยวันทำจ่าย 1 วัน → จ่ายแล้วอัตโนมัติ (8 ต.ค. 2026)
+        stopAutoPay = require('./services/autoPay').startScheduler();
         if (process.send) process.send('ready');
     });
     let stopping = false;
@@ -32,6 +35,7 @@ async function start() {
         stopPfmSync();
         stopWeBoostxSync();
         stopTikTokEvidence();
+        stopAutoPay();
         const deadline = setTimeout(() => process.exit(1), 10000);
         deadline.unref();
         server.close(async () => {

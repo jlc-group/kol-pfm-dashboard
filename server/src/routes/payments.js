@@ -10,9 +10,18 @@ const router = express.Router();
 // ทุก endpoint ในไฟล์นี้ — admin เท่านั้น (เห็น + แก้ไขได้คนเดียว)
 router.use(authenticate, requireRole('admin'));
 
+// ทำจ่ายอัตโนมัติ (ผู้ใช้สั่ง 8 ต.ค. 2026) — งวดที่มีใบแจ้งหนี้ + เลยวันทำจ่าย 1 วัน ย้ายเป็นจ่ายแล้วเอง (services/autoPay)
+// แก้อะไรในหน้านี้ (งวด / ใบแจ้งหนี้ / รอบ) = คำขออ่านครั้งถัดไปตรวจใหม่ทันที · เส้นอ่านรายการตรวจก่อนตอบ (ล้มก็ไม่ขวาง)
+const autoPay = require('../services/autoPay');
+router.use((req, res, next) => {
+    if (req.method !== 'GET' && req.method !== 'HEAD') res.on('finish', () => autoPay.markStale());
+    next();
+});
+const fresh = async (req, res, next) => { await autoPay.ensureFresh(); next(); };
+
 // ---------- ตั้งค่าที่เก็บไฟล์อัปโหลด ----------
 const { UPLOAD_DIR } = require('../config/uploads');
-const { safeId, safeSlug } = require('../store/logic');
+const { safeId, safeSlug, todayTH } = require('../store/logic');
 if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 
 const storage = multer.diskStorage({
@@ -55,7 +64,7 @@ const upload = multer({
 });
 
 // GET /api/payments — รายการ Project ทั้งหมด + ข้อมูลการจ่าย
-router.get('/', async (req, res, next) => {
+router.get('/', fresh, async (req, res, next) => {
     try {
         const data = await store.payments.listWithProjects();
         res.json({ status: 'success', data });
@@ -65,7 +74,7 @@ router.get('/', async (req, res, next) => {
 // ===================== รายการจ่ายนอกแคมเปญ =====================
 
 // GET /api/payments/manual — รายการจ่ายที่ตั้งเองทั้งหมด
-router.get('/manual', async (req, res, next) => {
+router.get('/manual', fresh, async (req, res, next) => {
     try {
         res.json({ status: 'success', data: await store.installments.listManual() });
     } catch (err) { next(err); }
@@ -97,8 +106,8 @@ router.delete('/manual/:manualId', async (req, res, next) => {
 // ===================== งวดการจ่าย =====================
 // ประกาศไว้ก่อน /:projectId เพื่อไม่ให้ชนกัน
 
-// GET /api/payments/installments?status=pending — งวดทั้งหมด (ไว้ทำหน้ารวมรอบจ่าย)
-router.get('/installments', async (req, res, next) => {
+// GET /api/payments/installments?status=pending,hold — งวดทั้งหมด (ไว้ทำหน้ารวมรอบจ่าย)
+router.get('/installments', fresh, async (req, res, next) => {
     try {
         const data = await store.installments.list({ status: req.query.status || null });
         res.json({ status: 'success', data });
@@ -166,8 +175,23 @@ router.get('/installments/:id/invoice', async (req, res, next) => {
 router.put('/installments/:id', async (req, res, next) => {
     try {
         const { amount, percent, due_date, note } = req.body;
-        const r = await store.installments.update(req.params.id, { amount, percent, due_date, note });
+        // release = นับจ่ายใหม่ให้งวดที่พักไว้ (hold) ด้วยวันเดิม (ทำจ่ายอัตโนมัติ 8 ต.ค. 2026)
+        const release = req.body && req.body.release === true;
+        const r = await store.installments.update(req.params.id, { amount, percent, due_date, note, release });
         if (r.error) return res.status(400).json({ status: 'error', message: r.error });
+        // งวดที่พักไว้ถูกปลด = กลับมานับจ่าย (เลยวันแล้วจะเป็นจ่ายแล้วอัตโนมัติ) — เก็บร่องรอยว่าใครปลด
+        if (r.released) {
+            const d = r.data || {};
+            try {
+                await store.activity.log({
+                    user_id: req.user && req.user.id, action: 'release_hold_installment',
+                    project_id: d.project_id || null, project_name: d.project_name || 'รอบทำจ่าย',
+                    summary: 'นับจ่ายใหม่งวด ' + (d.no || '-') + '/' + (d.of || '-') + ' (' + (d.agency || '-') + ')'
+                        + ' ยอด ' + Number(d.amount || 0).toLocaleString('th-TH') + ' บาท · วันทำจ่าย ' + (d.due_date || '-')
+                        + (release ? ' (วันเดิม)' : ' (แก้วันใหม่)')
+                });
+            } catch { /* บันทึกประวัติพลาดไม่ขวางงานหลัก */ }
+        }
         res.json({ status: 'success', data: r.data });
     } catch (err) { next(err); }
 });
@@ -203,7 +227,7 @@ router.put('/:projectId/plan', async (req, res, next) => {
 // ===================== รอบทำจ่าย (สลิป 1 ใบ) =====================
 
 // GET /api/payments/batches
-router.get('/batches', async (req, res, next) => {
+router.get('/batches', fresh, async (req, res, next) => {
     try {
         res.json({ status: 'success', data: await store.payBatches.list() });
     } catch (err) { next(err); }
@@ -246,7 +270,7 @@ router.delete('/batches/:id', async (req, res, next) => {
     try {
         const reason = String((req.query.reason || (req.body && req.body.reason) || '')).trim();
         if (!reason) return res.status(400).json({ status: 'error', message: 'กรุณาใส่หมายเหตุว่ายกเลิกเพราะอะไร' });
-        const gone = await store.payBatches.remove(req.params.id);
+        const gone = await store.payBatches.remove(req.params.id, { today: todayTH() });
         if (!gone) return res.status(404).json({ status: 'error', message: 'ไม่พบรอบทำจ่ายนี้' });
         // เก็บประวัติไว้ ไม่งั้นรอบที่ยกเลิกไปแล้วจะไม่เหลือร่องรอยเลย
         const names = [...new Set((gone.items || []).map(i => i.project_name).filter(Boolean))];
@@ -260,8 +284,9 @@ router.delete('/batches/:id', async (req, res, next) => {
                 + ' ยอด ' + Number(gone.total || 0).toLocaleString('th-TH') + ' บาท'
                 + ' (' + (gone.item_count || 0) + ' งวด: ' + names.join(', ') + ')'
                 + ' — เหตุผล: ' + reason
+                + (gone.held ? ' · พักไว้ ' + gone.held + ' งวด (เลยวันทำจ่ายแล้ว ไม่นับจ่ายซ้ำจนกว่าจะกดนับจ่ายใหม่หรือแก้วันทำจ่าย)' : '')
         });
-        res.json({ status: 'success', data: { removed: true, reason } });
+        res.json({ status: 'success', data: { removed: true, reason, held: gone.held || 0 } });
     } catch (err) { next(err); }
 });
 

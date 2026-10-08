@@ -8,6 +8,7 @@ import { fmtDate } from '../utils/date.js';
 import { BRANDS } from '../data/brands.js';
 import { conceptOneLine } from '../data/adGroups.js';
 import { ProductSummary } from '../components/ProductChips.jsx';
+import { AUTO_PAY_BY, dayAfter, hasInvoice, inPendingTab, pendingState, todayTH } from '../data/payAuto.js';
 
 const baht = n => '฿' + Number(n || 0).toLocaleString('th-TH');
 
@@ -134,102 +135,118 @@ function FileSlot({ label, uploadPath, viewPath, meta, onUploaded, compact, link
     );
 }
 
-// ===================== แท็บ 1: งวดค้างจ่าย =====================
-// จัดกลุ่มตามเอเจนซี่ เพราะสลิป 1 ใบ = เอเจนซี่ 1 เจ้า
 // ===================== แท็บ 1: งวดรอทำจ่าย =====================
-// จัดตาม "รอบวันที่" ก่อน แล้วค่อยแยกเอเจนซี่ — 1 วัน + 1 เอเจนซี่ = สลิป 1 ใบ
-function PendingTab({ items, picked, setPicked, onMakeBatch, onTakeAll }) {
-    // เจ้าที่กำลังเลือกอยู่ — เลือกแล้วกลุ่มอื่นติ๊กไม่ได้ (สลิปใบเดียวโอนให้เจ้าเดียว วันเดียว)
-    const cur = picked.length ? items.find(i => i.id === picked[0]) : null;
-    const lockKey = cur ? (cur.due_date || '') + '|' + (cur.agency || '') : null;
+// ทำจ่ายอัตโนมัติ (ผู้ใช้สั่ง 8 ต.ค. 2026): ขึ้นเฉพาะงวดที่แนบใบแจ้งหนี้แล้ว · ดูอย่างเดียว ไม่ต้องกดสร้างรอบ
+// เลยวันทำจ่าย 1 วัน ระบบย้ายไปแท็บรอบที่จ่ายแล้วเอง (1 วัน + 1 เอเจนซี่ = สลิป 1 ใบ) — กติกาอยู่ที่ data/payAuto.js + server
+// จัดตาม "วันทำจ่าย" ก่อน แล้วค่อยแยกเอเจนซี่ · งวดที่พักไว้ (ยกเลิกรอบแล้ว) อยู่บนสุด · ยังไม่ตั้งวัน อยู่ท้ายสุด
+const STATE_ICON = { waiting: '⏳', moving: '➜', nodate: '•', hold: '⏸' };
+const STATE_TIP = {
+    waiting: 'รอถึงวัน — เลยวันทำจ่าย 1 วัน ระบบย้ายเป็นจ่ายแล้วเอง',
+    moving: 'เลยวันทำจ่ายแล้ว — ระบบกำลังย้ายไปรอบที่จ่ายแล้ว',
+    nodate: 'ยังไม่ตั้งวันทำจ่าย — ระบบยังไม่ย้ายเอง',
+    hold: 'ยกเลิกรอบแล้ว พักไว้ — ระบบไม่นับจ่ายจนกว่าจะกดนับจ่ายใหม่ หรือแก้วันทำจ่าย'
+};
 
+function PendingTab({ items, today, onChanged }) {
+    const [busyId, setBusyId] = useState(null);
+    // งวดที่พักไว้: นับจ่ายใหม่ด้วยวันเดิม (เลยวันแล้ว = ระบบย้ายเป็นจ่ายแล้วทันทีที่ตรวจรอบถัดไป)
+    async function release(i) {
+        if (!window.confirm('นับงวดนี้ว่าจ่ายแล้วอีกครั้ง (วันทำจ่ายเดิม ' + fmtDateTh(i.due_date) + ')?'
+            + '\nระบบจะย้ายไปแท็บรอบที่จ่ายแล้วให้เอง · ถ้าจะเลื่อนวัน ให้แก้วันทำจ่ายในแท็บแคมเปญ / ตั้งงวดแทน')) return;
+        setBusyId(i.id);
+        try { await api(`/payments/installments/${i.id}`, { method: 'PUT', body: { release: true } }); if (onChanged) onChanged(); }
+        catch (err) { alert(err.message); }
+        finally { setBusyId(null); }
+    }
     if (!items.length) {
         return (
             <div className="panel empty-state">
                 <div className="empty-emoji">✅</div>
                 <p>ไม่มีงวดรอทำจ่ายตามตัวกรองที่เลือก</p>
+                <p className="muted" style={{ fontSize: 12.5 }}>งวดจะขึ้นที่นี่เมื่อแนบใบแจ้งหนี้ในแท็บแคมเปญ / ตั้งงวดแล้ว</p>
             </div>
         );
     }
 
-    // รวมเป็นชั้น: วันที่ -> เอเจนซี่ -> งวด
-    const byDate = {};
+    // ชั้น: บล็อก (พักไว้ / วันทำจ่าย / ยังไม่ตั้งวัน) -> เอเจนซี่ -> งวด
+    const blocks = {};
     items.forEach(i => {
-        const d = i.due_date || '';
+        const st = pendingState(i, today);
+        const k = st === 'hold' ? '0|hold' : st === 'nodate' ? '2|nodate' : '1|' + String(i.due_date).slice(0, 10);
         const a = i.agency || '— ยังไม่ระบุเอเจนซี่ —';
-        byDate[d] = byDate[d] || {};
-        (byDate[d][a] = byDate[d][a] || []).push(i);
+        blocks[k] = blocks[k] || {};
+        (blocks[k][a] = blocks[k][a] || []).push(i);
     });
-    // ไม่กำหนดวันไปอยู่ท้ายสุด
-    const dates = Object.keys(byDate).sort((a, b) => (a || '9999').localeCompare(b || '9999'));
-
-    const toggle = id => setPicked(p => p.includes(id) ? p.filter(x => x !== id) : [...p, id]);
-    const toggleAll = list => {
-        const ids = list.map(i => i.id);
-        const allOn = ids.every(id => picked.includes(id));
-        setPicked(allOn ? picked.filter(id => !ids.includes(id)) : [...new Set([...picked, ...ids])]);
-    };
+    const keys = Object.keys(blocks).sort();
     const sumOf = list => list.reduce((s, i) => s + (Number(i.amount) || 0), 0);
 
     return (
         <>
-            {dates.map(d => {
-                const groups = byDate[d];
+            {keys.map(k => {
+                const [, d] = k.split('|');
+                const groups = blocks[k];
                 const all = Object.values(groups).flat();
                 const agencies = Object.keys(groups).sort((a, b) => a.localeCompare(b, 'th'));
+                const late = d !== 'hold' && d !== 'nodate' && d < today;
                 return (
-                    <div className="due-block" key={d || 'nodate'}>
+                    <div className="due-block" key={k}>
                         <div className="due-head">
                             <span className="due-date">
-                                {d ? '📅 รอบ ' + fmtDateTh(d) : '📅 ยังไม่กำหนดวันครบกำหนด'}
+                                {d === 'hold' ? '⏸ พักไว้ — ยกเลิกรอบแล้ว'
+                                    : d === 'nodate' ? '📅 ยังไม่ตั้งวันทำจ่าย'
+                                    : '📅 วันทำจ่าย ' + fmtDateTh(d)}
                             </span>
+                            {d === 'hold' ? (
+                                <span className="due-move hold">ไม่นับจ่ายอัตโนมัติ · กด "นับจ่ายใหม่" หรือแก้วันทำจ่ายในแท็บแคมเปญ / ตั้งงวด</span>
+                            ) : d === 'nodate' ? (
+                                <span className="due-move hold">ระบบยังไม่ย้ายเอง · ตั้งวันในแท็บแคมเปญ / ตั้งงวด</span>
+                            ) : late ? (
+                                <span className="due-move late">เลยวันแล้ว · กำลังย้ายไปรอบที่จ่ายแล้ว</span>
+                            ) : (
+                                <span className="due-move">ย้ายเป็นจ่ายแล้วอัตโนมัติ {fmtDateTh(dayAfter(d))}</span>
+                            )}
                             <span className="due-sum">{all.length} งวด · <b>{baht(sumOf(all))}</b></span>
                         </div>
 
                         {agencies.map(name => {
                             const list = groups[name];
-                            const key = (d || '') + '|' + (name === '— ยังไม่ระบุเอเจนซี่ —' ? '' : name);
-                            const blocked = lockKey && key !== lockKey;
                             return (
-                                <div className={'inst-group' + (blocked ? ' blocked' : '')} key={name}>
+                                <div className="inst-group" key={name}>
                                     <div className="inst-group-head">
-                                        <input type="checkbox" disabled={blocked}
-                                            checked={list.every(i => picked.includes(i.id))}
-                                            onChange={() => toggleAll(list)} />
                                         <span className="inst-agency"><Icon name="users" size={15} /> {name}</span>
                                         <span className="inst-group-sum">{list.length} งวด · <b>{baht(sumOf(list))}</b></span>
-                                        {!blocked && (
-                                            <button type="button" className="inst-take-all" onClick={() => onTakeAll(list)}>
-                                                รวมทั้งหมด → สร้างรอบทำจ่าย
-                                            </button>
-                                        )}
-                                        {blocked && <span className="inst-blocked-note">สลิป 1 ใบ = 1 เอเจนซี่ 1 รอบวันที่</span>}
                                     </div>
                                     <div className="inst-rows">
-                                        {list.map(i => (
-                                            <label className={'inst-row' + (picked.includes(i.id) ? ' on' : '')} key={i.id}>
-                                                <input type="checkbox" disabled={blocked}
-                                                    checked={picked.includes(i.id)} onChange={() => toggle(i.id)} />
-                                                <span className="inst-project">
-                                                    {i.brand && <span className="inst-brand">{i.brand}</span>}
-                                                    {i.project_name}
-                                                    {i.group_no && (
-                                                        <span className="inst-grp" title={conceptOneLine(i.group_concept)}>
-                                                            กลุ่ม {i.group_no}{i.group_concept ? ' · ' + conceptOneLine(i.group_concept) : ''}
-                                                        </span>
-                                                    )}
-                                                </span>
-                                                <span className="inst-no">งวด {i.no}/{i.of}</span>
-                                                <span className="inst-pct">{i.percent}%</span>
-                                                <span className="inst-amt">{baht(i.amount)}</span>
-                                                <span className="inst-due">
-                                                    <span className={'inv-chip ' + (i.invoice || i.invoice_link ? 'ok' : 'no')}
-                                                        title={i.invoice ? 'แนบไฟล์แล้ว: ' + i.invoice.original : (i.invoice_link || 'ยังไม่ได้แนบใบแจ้งหนี้ของงวดนี้')}>
-                                                        🧾 {i.invoice || i.invoice_link ? 'มีใบแจ้งหนี้' : 'ยังไม่มีใบแจ้งหนี้'}
+                                        {list.map(i => {
+                                            const st = pendingState(i, today);
+                                            return (
+                                                <div className={'inst-row st-' + st} key={i.id} title={STATE_TIP[st]}>
+                                                    <span className="inst-state" aria-label={STATE_TIP[st]}>{STATE_ICON[st]}</span>
+                                                    <span className="inst-project">
+                                                        {i.brand && <span className="inst-brand">{i.brand}</span>}
+                                                        {i.project_name}
+                                                        {i.group_no && (
+                                                            <span className="inst-grp" title={conceptOneLine(i.group_concept)}>
+                                                                กลุ่ม {i.group_no}{i.group_concept ? ' · ' + conceptOneLine(i.group_concept) : ''}
+                                                            </span>
+                                                        )}
                                                     </span>
-                                                </span>
-                                            </label>
-                                        ))}
+                                                    <span className="inst-no">งวด {i.no}/{i.of}</span>
+                                                    <span className="inst-pct">{i.percent}%</span>
+                                                    <span className="inst-amt">{baht(i.amount)}</span>
+                                                    <span className="inst-due">
+                                                        {st === 'hold' && <span className="inst-old-due">เดิม {fmtDateTh(i.due_date)}</span>}
+                                                        <span className="inv-chip ok" title={i.invoice ? 'แนบไฟล์แล้ว: ' + i.invoice.original : (i.invoice_link || '')}>
+                                                            🧾 มีใบแจ้งหนี้
+                                                        </span>
+                                                        {st === 'hold' && (
+                                                            <button type="button" className="btn-ghost plan-release" disabled={busyId === i.id}
+                                                                onClick={() => release(i)}>นับจ่ายใหม่</button>
+                                                        )}
+                                                    </span>
+                                                </div>
+                                            );
+                                        })}
                                     </div>
                                 </div>
                             );
@@ -237,109 +254,7 @@ function PendingTab({ items, picked, setPicked, onMakeBatch, onTakeAll }) {
                     </div>
                 );
             })}
-
-            {picked.length > 0 && (
-                <div className="inst-bar">
-                    <div className="inst-bar-info">
-                        <span className="inst-bar-agency">{cur && cur.agency}</span>
-                        {cur && cur.due_date && <span>รอบ {fmtDateTh(cur.due_date)}</span>}
-                        <span>เลือก <b>{picked.length}</b> งวด</span>
-                        <span className="inst-bar-total">
-                            รวม {baht(items.filter(i => picked.includes(i.id)).reduce((s, i) => s + (Number(i.amount) || 0), 0))}
-                        </span>
-                    </div>
-                    <div className="inst-bar-actions">
-                        <button className="btn-ghost" onClick={() => setPicked([])}>ล้างที่เลือก</button>
-                        <button className="btn-primary" onClick={onMakeBatch}>
-                            <Icon name="wallet" size={16} /> สร้างรอบทำจ่าย
-                        </button>
-                    </div>
-                </div>
-            )}
         </>
-    );
-}
-
-// popup ยืนยันรอบทำจ่าย
-function BatchModal({ agency, items, cycle, batches, onClose, onDone }) {
-    // เติมวันที่ให้เอง ไม่ต้องมากรอกซ้ำ: ใช้ตัวกรองรอบก่อน ถ้าไม่มีก็ใช้วันครบกำหนดของงวดที่เลือก
-    const guessDate = () => {
-        if (cycle && cycle.length === 10) return cycle;
-        const dues = [...new Set(items.map(i => i.due_date).filter(Boolean))].sort();
-        return dues.length ? dues[dues.length - 1] : '';   // งวดครบกำหนดต่างวัน = ใช้วันหลังสุด
-    };
-    const [payDate, setPayDate] = useState(guessDate);
-    const [note, setNote] = useState('');
-    const [saving, setSaving] = useState(false);
-    const total = items.reduce((s, i) => s + (Number(i.amount) || 0), 0);
-    // รอบของเจ้านี้ในวันเดียวกันที่มีอยู่แล้ว — ถ้ามี ควรรวมเข้าใบเดิมแทนออกสลิปสองใบ
-    const sameDay = (batches || []).find(b => b.agency === agency && b.pay_date && b.pay_date === payDate);
-
-    async function save() {
-        setSaving(true);
-        try {
-            if (sameDay) {
-                await api(`/payments/batches/${sameDay.id}/items`, {
-                    method: 'POST', body: { installment_ids: items.map(i => i.id) }
-                });
-            } else {
-                await api('/payments/batches', {
-                    method: 'POST',
-                    body: { agency, pay_date: payDate || null, note: note || null, installment_ids: items.map(i => i.id) }
-                });
-            }
-            onDone();
-        } catch (err) { alert(err.message); setSaving(false); }
-    }
-
-    return (
-        <div className="modal-backdrop" onClick={onClose}>
-            <div className="modal" onClick={e => e.stopPropagation()}>
-                <div className="draft-head"><div className="draft-name">💸 สร้างรอบทำจ่าย</div></div>
-                <p className="dash-section-sub" style={{ marginBottom: 14 }}>
-                    รอบนี้จะออกเป็นสลิป 1 ใบ ยอดเดียว โอนให้ <b>{agency}</b>
-                </p>
-
-                <div className="batch-items">
-                    {items.map(i => (
-                        <div className="batch-item" key={i.id}>
-                            <span>{i.project_name} <span className="muted">งวด {i.no}/{i.of}</span></span>
-                            <b>{baht(i.amount)}</b>
-                        </div>
-                    ))}
-                    <div className="batch-item total">
-                        <span>ยอดโอนรวม</span>
-                        <b>{baht(total)}</b>
-                    </div>
-                </div>
-
-                <div className="field">
-                    <label>วันที่ทำจ่าย</label>
-                    <DatePicker value={payDate} onChange={setPayDate} />
-                    {payDate && payDate === guessDate() && (
-                        <span className="cpw-hint">เติมให้จากวันครบกำหนดของงวดที่เลือก — แก้ได้ถ้าโอนจริงคนละวัน</span>
-                    )}
-                </div>
-                {sameDay ? (
-                    <div className="batch-merge">
-                        มีรอบของ <b>{agency}</b> วันเดียวกันอยู่แล้ว ({baht(sameDay.total)} · {sameDay.item_count} งวด)
-                        <br />กดยืนยันแล้วจะ<b>รวมเข้าใบเดิม</b> ยอดใหม่ {baht(sameDay.total + total)} — สลิปยังเป็นใบเดียว
-                    </div>
-                ) : (
-                    <div className="field">
-                        <label>หมายเหตุ</label>
-                        <input value={note} onChange={e => setNote(e.target.value)} placeholder="เช่น รอบ 25 ก.ย." />
-                    </div>
-                )}
-
-                <div className="modal-actions">
-                    <button className="btn-ghost" onClick={onClose} disabled={saving}>ยกเลิก</button>
-                    <button className="btn-primary" onClick={save} disabled={saving}>
-                        <Icon name="check" size={16} /> {saving ? 'กำลังบันทึก...' : (sameDay ? 'รวมเข้ารอบเดิม' : 'ยืนยันรอบทำจ่าย')}
-                    </button>
-                </div>
-            </div>
-        </div>
     );
 }
 
@@ -347,6 +262,11 @@ function BatchModal({ agency, items, cycle, batches, onClose, onDone }) {
 function CancelBatchModal({ b, onClose, onDone }) {
     const [reason, setReason] = useState('');
     const [saving, setSaving] = useState(false);
+    const today = todayTH();
+    const items = b.items || [];
+    const noInv = items.filter(i => !hasInvoice(i));
+    const held = items.filter(i => hasInvoice(i) && i.due_date && String(i.due_date).slice(0, 10) < today);
+    const back = items.filter(i => hasInvoice(i) && !held.includes(i));
     async function go() {
         if (!reason.trim()) return;
         setSaving(true);
@@ -364,10 +284,19 @@ function CancelBatchModal({ b, onClose, onDone }) {
                     <div className="batch-item"><span>วันที่จ่าย</span><b>{b.pay_date ? fmtDateTh(b.pay_date) : '-'}</b></div>
                     <div className="batch-item total"><span>ยอดที่จะย้อนกลับ</span><b>{baht(b.total)}</b></div>
                 </div>
+                {/* ทำจ่ายอัตโนมัติ (8 ต.ค. 2026): บอกตามจริงว่างวดแต่ละแบบไปไหน — กติกาเดียวกับ remove() ฝั่ง server */}
                 <p className="dash-section-sub" style={{ margin: '12px 0' }}>
-                    งวดทั้ง {b.item_count} งวดจะกลับไปเป็นรอทำจ่ายเหมือนเดิม ไม่หายไปไหน
+                    งวดทั้ง {b.item_count} งวดไม่หายไปไหน
+                    {back.length > 0 && <> · <b>{back.length}</b> งวดกลับไปแท็บรอทำจ่าย</>}
+                    {noInv.length > 0 && <> · <b>{noInv.length}</b> งวดยังไม่มีใบแจ้งหนี้ กลับไปอยู่แท็บแคมเปญ / ตั้งงวด</>}
                     {b.slip ? ' · สลิปที่แนบไว้จะถูกลบไปพร้อมรอบนี้' : ''}
                 </p>
+                {held.length > 0 && (
+                    <div className="pay-auto-note warn">
+                        <b>{held.length}</b> งวดเลยวันทำจ่ายแล้ว จะถูก<b>พักไว้</b> (ระบบไม่นับจ่ายซ้ำ) — ถ้าจะให้นับใหม่ กด "นับจ่ายใหม่"
+                        ในแท็บรอทำจ่าย หรือแก้วันทำจ่ายในแท็บแคมเปญ / ตั้งงวด
+                    </div>
+                )}
                 <div className="field">
                     <label>หมายเหตุ: ยกเลิกเพราะอะไร *</label>
                     <input value={reason} onChange={e => setReason(e.target.value)} autoFocus
@@ -406,7 +335,12 @@ function BatchCard({ b, onChanged }) {
         <div className="batch-card">
             <div className="batch-card-head">
                 <div>
-                    <div className="batch-agency"><Icon name="users" size={15} /> {b.agency || '—'}</div>
+                    <div className="batch-agency">
+                        <Icon name="users" size={15} /> {b.agency || '—'}
+                        {b.created_by === AUTO_PAY_BY && (
+                            <span className="batch-auto" title="ระบบย้ายเป็นจ่ายแล้วเอง เพราะเลยวันทำจ่ายมาแล้ว 1 วัน">อัตโนมัติ</span>
+                        )}
+                    </div>
                     <div className="batch-meta">
                         {b.pay_date ? '📅 ' + fmtDate(b.pay_date) : <span className="muted">ยังไม่ระบุวันจ่าย</span>}
                         <span> · {b.item_count} งวด</span>
@@ -518,6 +452,86 @@ function CampaignCard({ row, onOpen }) {
 }
 
 // ตัวแก้แผนงวด
+// ทำจ่ายอัตโนมัติ (8 ต.ค. 2026): แนบใบแจ้งหนี้ให้งวดที่รอจ่ายและเลยวันทำจ่ายแล้ว = ระบบนับว่าจ่ายแล้วทันที — ถามก่อน
+// งวดที่จ่ายแล้ว / พักไว้ (เปลี่ยนไฟล์ใบแจ้งหนี้) ไม่ถูกนับจ่ายเพิ่ม จึงไม่ต้องถาม
+function okToAttachLate(due, status = 'pending') {
+    const d = String(due || '').slice(0, 10);
+    if (status === 'paid' || status === 'hold' || !d || d >= todayTH()) return true;
+    return window.confirm('งวดนี้เลยวันทำจ่ายแล้ว (' + fmtDateTh(d) + ')\nแนบใบแจ้งหนี้แล้วระบบจะนับว่าจ่ายแล้วทันที (ย้ายไปแท็บรอบที่จ่ายแล้ว)'
+        + '\n\nถ้ายังไม่ได้จ่ายจริง ให้แก้วันทำจ่ายแล้วบันทึกก่อน — แนบต่อเลยไหม?');
+}
+
+// บันทึกแผนทั้งชุด: งวดที่มีใบแจ้งหนี้ + วันทำจ่ายผ่านมาแล้ว = ระบบนับจ่ายทันที · งวดที่พักไว้ = กลับมานับตามวันที่ตั้ง — ถามก่อน
+function okToSavePlan(plan, saved) {
+    const today = todayTH();
+    const late = plan.filter((x, i) => saved[i] && saved[i].status !== 'paid' && hasInvoice(saved[i])
+        && x.due_date && String(x.due_date).slice(0, 10) < today).length;
+    const held = saved.filter((s, i) => i < plan.length && s.status === 'hold').length;
+    if (!late && !held) return true;
+    const lines = [];
+    if (late) lines.push(late + ' งวดมีใบแจ้งหนี้และวันทำจ่ายผ่านมาแล้ว → ระบบจะนับว่าจ่ายแล้วทันที');
+    if (held) lines.push(held + ' งวดที่พักไว้ (ยกเลิกรอบแล้ว) จะกลับมานับตามวันทำจ่ายที่ตั้ง');
+    return window.confirm(lines.join('\n') + '\n\nบันทึกแผนเลยไหม?');
+}
+
+// แถว "วันที่ทำจ่าย" ของการ์ดงวด (ใช้ทั้งแผนของแคมเปญและรายการนอกแคมเปญ)
+// งวดจ่ายแล้ว = โชว์วันเฉย ๆ · แผนถูกล็อก (มีงวดอื่นจ่ายแล้ว) ยังแก้วันของงวดที่ยังไม่จ่ายทีละงวดได้ (บันทึกวัน)
+// งวดที่พักไว้ (ยกเลิกรอบแล้ว) = นับจ่ายใหม่ด้วยวันเดิม หรือแก้วันแล้วบันทึก → กลับไปรอตามกติกาอัตโนมัติ
+function DueDateRow({ x, it, locked, onChange, onReload }) {
+    const [busy, setBusy] = useState(false);
+    // ค่าล่าสุดที่บันทึกแล้ว — หน้าต่างรายการนอกแคมเปญไม่ได้รับงวดใหม่หลังโหลดซ้ำ จึงจำไว้เอง
+    const [cur, setCur] = useState(it ? { due: it.due_date || '', status: it.status } : null);
+    useEffect(() => { setCur(it ? { due: it.due_date || '', status: it.status } : null); }, [it && it.id, it && it.due_date, it && it.status]);   // eslint-disable-line react-hooks/exhaustive-deps
+    if (it && cur && cur.status === 'paid') {
+        return (
+            <div className="plan-card-row">
+                <span className="plan-card-lbl">วันที่ทำจ่าย</span>
+                <span>{fmtDateTh(cur.due)}</span>
+                <span className="plan-st paid">✓ จ่ายแล้ว</span>
+            </div>
+        );
+    }
+    const changed = !!(it && cur && locked && String(x.due_date || '') !== String(cur.due || ''));
+    async function put(body, next, ask) {
+        if (ask && !window.confirm(ask)) return;
+        setBusy(true);
+        try {
+            await api(`/payments/installments/${it.id}`, { method: 'PUT', body });
+            setCur(next);
+            if (onReload) await onReload();
+        } catch (err) { alert(err.message); }
+        finally { setBusy(false); }
+    }
+    return (
+        <div className="plan-card-row">
+            <span className="plan-card-lbl">วันที่ทำจ่าย</span>
+            <DatePicker value={x.due_date} onChange={onChange} />
+            {changed && (
+                <button type="button" className="btn-primary fs-link-save" disabled={busy}
+                    onClick={() => put({ due_date: x.due_date || null }, { due: x.due_date || '', status: 'pending' },
+                        // วันที่ผ่านมาแล้ว + มีใบแจ้งหนี้ = ระบบนับว่าจ่ายแล้วทันที
+                        x.due_date && String(x.due_date).slice(0, 10) < todayTH() && hasInvoice(it)
+                            ? 'วันที่เลือก (' + fmtDateTh(x.due_date) + ') ผ่านมาแล้ว และงวดนี้มีใบแจ้งหนี้\nบันทึกแล้วระบบจะนับว่าจ่ายแล้วทันที — บันทึกเลยไหม?'
+                            : null)}>
+                    บันทึกวัน
+                </button>
+            )}
+            {cur && cur.status === 'hold' && (
+                <>
+                    <span className="plan-st hold" title="ยกเลิกรอบแล้ว — ระบบไม่นับจ่ายจนกว่าจะกดนับจ่ายใหม่หรือแก้วันทำจ่าย">⏸ พักไว้</span>
+                    {!changed && (
+                        <button type="button" className="btn-ghost plan-release" disabled={busy}
+                            onClick={() => put({ release: true }, { ...cur, status: 'pending' },
+                                'นับงวดนี้ว่าจ่ายแล้วอีกครั้ง (วันทำจ่ายเดิม ' + fmtDateTh(cur.due) + ')?\nระบบจะย้ายไปแท็บรอบที่จ่ายแล้วให้เอง · ถ้าจะเลื่อนวัน ให้เลือกวันใหม่แล้วกด "บันทึกวัน" แทน')}>
+                            นับจ่ายใหม่ (วันเดิม)
+                        </button>
+                    )}
+                </>
+            )}
+        </div>
+    );
+}
+
 function PlanModal({ row, onClose, onSaved, onReload }) {
     const groups = row.ad_groups || [];
     // แผนการจ่ายแยกตาม (เอเจนซี่ + กลุ่ม) — ฐานคิด % คืองบของกลุ่มนั้น ไม่ใช่งบทั้งแคมเปญ
@@ -607,12 +621,17 @@ function PlanModal({ row, onClose, onSaved, onReload }) {
         if (!it) throw new Error('บันทึกแผนไม่สำเร็จ');
         return it;
     }
+    // วันที่ server ใช้ตัดสิน = วันของงวดที่บันทึกแล้ว (ยังไม่เคยบันทึก = วันในฟอร์ม ซึ่งจะถูกบันทึกพร้อมแผน)
+    const dueOf = idx => (saved[idx] ? saved[idx].due_date : (plan[idx] || {}).due_date);
+    const statusOf = idx => (saved[idx] ? saved[idx].status : 'pending');
     async function attachInvoiceFile(idx, file) {
+        if (!okToAttachLate(dueOf(idx), statusOf(idx))) return;
         const it = await ensureInstallment(idx);
         await uploadFile(`/payments/installments/${it.id}/invoice`, file);
         if (onReload) await onReload();
     }
     async function attachInvoiceLink(idx, v) {
+        if (v && !okToAttachLate(dueOf(idx), statusOf(idx))) throw new Error('ยังไม่ได้บันทึกลิงก์ใบแจ้งหนี้');
         const it = await ensureInstallment(idx);
         await api(`/payments/installments/${it.id}/invoice-link`, { method: 'PUT', body: { link: v || null } });
         if (onReload) await onReload();
@@ -620,6 +639,7 @@ function PlanModal({ row, onClose, onSaved, onReload }) {
 
     async function save() {
         if (!agency) { alert('ยังไม่มีเอเจนซี่ในแคมเปญนี้ — สร้างลิงก์เอเจนซี่ในหน้าแคมเปญก่อน'); return; }
+        if (!okToSavePlan(plan, saved)) return;
         setSaving(true);
         try {
             await api(`/payments/${row.project_id}/plan`, { method: 'PUT', body: { agency, group_key: asKey(groupKey) || null, plan } });
@@ -691,7 +711,8 @@ function PlanModal({ row, onClose, onSaved, onReload }) {
 
                     {locked && (
                         <div className="alert-error" style={{ marginTop: 4 }}>
-                            เจ้านี้มีงวดที่ทำจ่ายไปแล้ว แก้แผนไม่ได้ — ต้องยกเลิกรอบทำจ่ายนั้นก่อน
+                            เจ้านี้มีงวดที่ทำจ่ายไปแล้ว แก้ยอด/จำนวนงวดไม่ได้ — ต้องยกเลิกรอบทำจ่ายนั้นก่อน
+                            · งวดที่ยังไม่จ่ายแก้วันทำจ่ายได้ทีละงวด (กด "บันทึกวัน")
                         </div>
                     )}
 
@@ -744,10 +765,7 @@ function PlanModal({ row, onClose, onSaved, onReload }) {
                                                 if (onReload) await onReload();
                                             } : null} />
                                     </div>
-                                    <div className="plan-card-row">
-                                        <span className="plan-card-lbl">วันที่ทำจ่าย</span>
-                                        <DatePicker value={x.due_date} onChange={v => setRow(i, 'due_date', v)} />
-                                    </div>
+                                    <DueDateRow x={x} it={it} locked={locked} onChange={v => setRow(i, 'due_date', v)} onReload={onReload} />
                                 </div>
                             );
                         })}
@@ -758,7 +776,8 @@ function PlanModal({ row, onClose, onSaved, onReload }) {
                             <span className="muted">{sumAmt !== budget && budget > 0 ? 'งบ ' + baht(budget) : ''}</span>
                         </div>
                     </div>
-                    <p className="alp-hint">ยอดคิดจาก % ของงบให้อัตโนมัติ แก้ตัวเลขทับได้ · แนบใบแจ้งหนี้ก่อนกดบันทึกแผนได้ ระบบจะบันทึกแผนให้เอง</p>
+                    <p className="alp-hint">ยอดคิดจาก % ของงบให้อัตโนมัติ แก้ตัวเลขทับได้ · แผนที่ยังไม่เคยบันทึก แนบใบแจ้งหนี้ได้เลย ระบบบันทึกแผนให้เอง (แผนที่บันทึกแล้ว แก้ยอด/วันแล้วกดบันทึกก่อนแนบ)</p>
+                    <p className="alp-hint">🧾 งวดที่แนบใบแจ้งหนี้แล้วขึ้นแท็บรอทำจ่ายทันที · เลยวันที่ทำจ่าย 1 วัน ระบบย้ายเป็นจ่ายแล้วให้เอง</p>
                     </>)}
                 </div>
 
@@ -788,8 +807,11 @@ function PlanModal({ row, onClose, onSaved, onReload }) {
 
 // ===================== รายการจ่ายนอกแคมเปญ (ตั้งงวดเอง) =====================
 // ใช้ตอนมีงานที่ไม่ได้เปิดเป็นแคมเปญในระบบ แต่ยังต้องทำจ่ายให้เอเจนซี่
-function ManualModal({ item, agencies, onClose, onSaved, onReload }) {
-    const saved0 = (item && item.installments) || [];
+function ManualModal({ item, agencies, manuals, onClose, onSaved, onReload }) {
+    const [manualId, setManualId] = useState((item && item.manual_id) || null);
+    // ข้อมูลล่าสุดหลังโหลดซ้ำ (สถานะงวดเปลี่ยนได้จากระบบอัตโนมัติ / รายการใหม่ที่เพิ่งถูกบันทึกตอนแนบเอกสาร)
+    const live = (manualId && (manuals || []).find(m => m.manual_id === manualId)) || item;
+    const saved0 = (live && live.installments) || [];
     const [title, setTitle] = useState((item && item.title) || '');
     const [agency, setAgency] = useState((item && item.agency) || agencies[0] || '');
     const [freeAgency, setFreeAgency] = useState(!!(item && item.agency && !agencies.includes(item.agency)));
@@ -798,7 +820,6 @@ function ManualModal({ item, agencies, onClose, onSaved, onReload }) {
         ? saved0.map(i => ({ percent: i.percent, amount: i.amount, due_date: i.due_date || '' }))
         : [{ percent: 100, amount: '', due_date: '' }]);
     const [saving, setSaving] = useState(false);
-    const [manualId, setManualId] = useState((item && item.manual_id) || null);
 
     const locked = saved0.some(i => i.status === 'paid');
     const saved = saved0.slice().sort((a, b) => a.no - b.no);
@@ -834,6 +855,7 @@ function ManualModal({ item, agencies, onClose, onSaved, onReload }) {
     }
     async function save() {
         if (!canSave) return;
+        if (!okToSavePlan(plan, saved)) return;
         setSaving(true);
         try { await persist(); onSaved(); }
         catch (err) { alert(err.message); setSaving(false); }
@@ -846,12 +868,16 @@ function ManualModal({ item, agencies, onClose, onSaved, onReload }) {
         if (!rows[idx]) throw new Error('บันทึกไม่สำเร็จ');
         return rows[idx];
     }
+    const dueOf = idx => (saved[idx] ? saved[idx].due_date : (plan[idx] || {}).due_date);
+    const statusOf = idx => (saved[idx] ? saved[idx].status : 'pending');
     async function attachFile(idx, file) {
+        if (!okToAttachLate(dueOf(idx), statusOf(idx))) return;
         const it = await ensure(idx);
         await uploadFile(`/payments/installments/${it.id}/invoice`, file);
         if (onReload) await onReload();
     }
     async function attachLink(idx, v) {
+        if (v && !okToAttachLate(dueOf(idx), statusOf(idx))) throw new Error('ยังไม่ได้บันทึกลิงก์ใบแจ้งหนี้');
         const it = await ensure(idx);
         await api(`/payments/installments/${it.id}/invoice-link`, { method: 'PUT', body: { link: v || null } });
         if (onReload) await onReload();
@@ -901,7 +927,8 @@ function ManualModal({ item, agencies, onClose, onSaved, onReload }) {
 
                     {locked && (
                         <div className="alert-error" style={{ marginTop: 4 }}>
-                            รายการนี้มีงวดที่ทำจ่ายไปแล้ว แก้ไม่ได้ — ต้องยกเลิกรอบทำจ่ายนั้นก่อน
+                            รายการนี้มีงวดที่ทำจ่ายไปแล้ว แก้ยอด/จำนวนงวดไม่ได้ — ต้องยกเลิกรอบทำจ่ายนั้นก่อน
+                            · งวดที่ยังไม่จ่ายแก้วันทำจ่ายได้ทีละงวด (กด "บันทึกวัน")
                         </div>
                     )}
 
@@ -936,10 +963,7 @@ function ManualModal({ item, agencies, onClose, onSaved, onReload }) {
                                                 if (onReload) await onReload();
                                             } : null} />
                                     </div>
-                                    <div className="plan-card-row">
-                                        <span className="plan-card-lbl">วันที่ทำจ่าย</span>
-                                        <DatePicker value={x.due_date} onChange={v => setRow(i, 'due_date', v)} />
-                                    </div>
+                                    <DueDateRow x={x} it={it} locked={locked} onChange={v => setRow(i, 'due_date', v)} onReload={onReload} />
                                 </div>
                             );
                         })}
@@ -948,7 +972,7 @@ function ManualModal({ item, agencies, onClose, onSaved, onReload }) {
                             <span>{baht(sumAmt)}</span>
                         </div>
                     </div>
-                    <p className="alp-hint">รายการนี้จะไปโผล่ในแท็บรอทำจ่ายเหมือนงวดของแคมเปญ รวมสลิปใบเดียวกับงานอื่นของเอเจนซี่เจ้าเดียวกันได้</p>
+                    <p className="alp-hint">งวดที่แนบใบแจ้งหนี้แล้วจะขึ้นแท็บรอทำจ่ายเหมือนงวดของแคมเปญ · เลยวันที่ทำจ่าย 1 วัน ระบบย้ายเป็นจ่ายแล้วให้เอง (รวมสลิปใบเดียวกับงานอื่นของเอเจนซี่เจ้าเดียวกันในวันเดียวกัน)</p>
                 </div>
 
                 <div className="modal-actions">
@@ -1024,14 +1048,14 @@ export default function Payments() {
     const [tab, setTab] = useState('campaigns');   // campaigns | pending | batches
     const [brand, setBrand] = useState('');
     const [cycle, setCycle] = useState('');
-    const [picked, setPicked] = useState([]);
-    const [showBatch, setShowBatch] = useState(false);
     const [openId, setOpenId] = useState(null);
 
     function loadAll() {
         return Promise.all([
             api('/payments'),
-            api('/payments/installments?status=pending'),
+            // ขอแยก 2 ครั้ง (pending / hold = ยกเลิกรอบแล้ว พักไว้) — server รุ่นก่อน (ยังไม่รีสตาร์ต) ไม่รู้จักแบบคั่น , แท็บจะได้ไม่ว่าง
+            Promise.all([api('/payments/installments?status=pending'), api('/payments/installments?status=hold')])
+                .then(([p, h]) => ({ data: [...(p.data || []), ...(h.data || [])] })),
             api('/payments/batches'),
             api('/payments/manual')
         ]).then(([a, b, c, d]) => {
@@ -1042,13 +1066,15 @@ export default function Payments() {
     useEffect(() => { loadAll(); }, []);
 
     function refresh() {
-        setPicked([]); setShowBatch(false); setOpenId(null); setManualOpen(null);
+        setOpenId(null); setManualOpen(null);
         loadAll();
     }
 
     // ตัวกรองใช้ร่วมกันทุกแท็บ — งวดดูจากวันครบกำหนด รอบดูจากวันที่จ่าย
     const inCycle = d => !cycle || (!!d && (cycle.length === 10 ? d === cycle : d.startsWith(cycle)));
-    const shownPending = pending.filter(i => (!brand || i.brand === brand) && inCycle(i.due_date));
+    // รอทำจ่าย = เฉพาะงวดที่แนบใบแจ้งหนี้แล้ว (ทำจ่ายอัตโนมัติ 8 ต.ค. 2026)
+    const today = todayTH();
+    const shownPending = pending.filter(i => inPendingTab(i) && (!brand || i.brand === brand) && inCycle(i.due_date));
     const shownBatches = batches.filter(b => (!brand || (b.items || []).some(i => i.brand === brand)) && inCycle(b.pay_date));
     const shownRows = rows.filter(r => !brand || r.brand === brand);
 
@@ -1056,13 +1082,11 @@ export default function Payments() {
     const batchTotal = shownBatches.reduce((s, b) => s + (Number(b.total) || 0), 0);
     const countOf = b => rows.filter(r => r.brand === b).length;
 
-    const pickedItems = pending.filter(i => picked.includes(i.id));
-
     return (
         <div>
             <header className="page-head">
                 <h1>รอบทำจ่ายเอเจนซี่</h1>
-                <p className="page-sub">แบ่งงวดต่อแคมเปญ แล้วรวมหลายงวดเป็นสลิปใบเดียวต่อเอเจนซี่ (เฉพาะผู้ดูแลระบบ)</p>
+                <p className="page-sub">ตั้งงวด + แนบใบแจ้งหนี้ → ขึ้นรอทำจ่าย → เลยวันทำจ่าย 1 วัน ระบบย้ายเป็นจ่ายแล้วให้เอง (สลิป 1 ใบต่อเอเจนซี่ต่อวัน · เฉพาะผู้ดูแลระบบ)</p>
             </header>
 
             <div className="pay-tabs">
@@ -1079,7 +1103,7 @@ export default function Payments() {
 
             <div className="toolbar" style={{ flexWrap: 'wrap' }}>
                 <label className="bud-month">
-                    {tab === 'batches' ? 'วันที่จ่าย:' : 'ครบกำหนด:'}
+                    {tab === 'batches' ? 'วันที่จ่าย:' : 'วันทำจ่าย:'}
                     <PayCyclePicker value={cycle} onChange={setCycle} />
                 </label>
             </div>
@@ -1125,9 +1149,13 @@ export default function Payments() {
             {loading ? (
                 <div className="panel"><p className="empty">กำลังโหลด...</p></div>
             ) : tab === 'pending' ? (
-                <PendingTab items={shownPending} picked={picked} setPicked={setPicked}
-                    onMakeBatch={() => setShowBatch(true)}
-                    onTakeAll={list => { setPicked(list.map(i => i.id)); setShowBatch(true); }} />
+                <>
+                    <div className="pay-auto-note">
+                        🧾 งวดที่<b>แนบใบแจ้งหนี้แล้ว</b>ขึ้นที่นี่ทันที · <b>เลยวันทำจ่าย 1 วัน</b> ระบบย้ายไปแท็บรอบที่จ่ายแล้วให้เอง (แนบสลิปทีหลังได้)
+                        · งวดที่ยังไม่แนบใบแจ้งหนี้ดูได้ในแท็บแคมเปญ / ตั้งงวด
+                    </div>
+                    <PendingTab items={shownPending} today={today} onChanged={refresh} />
+                </>
             ) : tab === 'batches' ? (
                 shownBatches.length === 0 ? (
                     <div className="panel empty-state">
@@ -1155,16 +1183,11 @@ export default function Payments() {
                 )
             )}
 
-            {showBatch && pickedItems.length > 0 && (
-                <BatchModal agency={pickedItems[0].agency} items={pickedItems}
-                    cycle={cycle} batches={batches}
-                    onClose={() => setShowBatch(false)} onDone={refresh} />
-            )}
-
             {manualOpen && (
                 <ManualModal
                     item={manualOpen === 'new' ? null : manualOpen}
                     agencies={[...new Set(rows.flatMap(r => r.agencies || []))].sort((a, b) => a.localeCompare(b, 'th'))}
+                    manuals={manuals}
                     onClose={() => setManualOpen(null)} onSaved={refresh} onReload={loadAll} />
             )}
 
