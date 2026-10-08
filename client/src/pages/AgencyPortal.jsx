@@ -754,13 +754,13 @@ export default function AgencyPortal() {
                     </div>
                 )}
 
-                {/* แท็บ */}
-                <div className="agency-tabs">
-                    <button className={tab === 'list' ? 'active' : ''} onClick={() => setTab('list')}>
+                {/* แท็บ — แบบกล่องเหมือนหน้าแคมเปญฝั่งทีม (8 ต.ค. 2026 เส้นใต้เดิมจมไปกับพื้นหลัง มองไม่ค่อยเห็น) */}
+                <div className="agency-tabs hub-tabs proj-type-tabs ag-tabs" role="tablist" aria-label="Influencers List / On Process">
+                    <button type="button" role="tab" aria-selected={tab === 'list'} className={tab === 'list' ? 'active' : ''} onClick={() => setTab('list')}>
                         Influencers List
                         {badges.listNew && <span className="tab-new-dot" title="มีอัปเดตใหม่" />}
                     </button>
-                    <button className={tab === 'process' ? 'active' : ''} onClick={() => setTab('process')}>
+                    <button type="button" role="tab" aria-selected={tab === 'process'} className={tab === 'process' ? 'active' : ''} onClick={() => setTab('process')}>
                         On Process {subs.filter(s => s.status === 'confirmed').length > 0 && <span className="agency-tab-count">{subs.filter(s => s.status === 'confirmed').length}</span>}
                         {/* ทีมส่งข้อมูลโพสต์กลับให้แก้ — ป้ายค้างจนกว่าจะแก้ (เปิดหน้าใหม่ก็ยังเห็น) */}
                         {subs.some(s => s.status === 'confirmed' && s.post_check === 'returned') && (

@@ -1367,13 +1367,14 @@ export default function ProjectDetail() {
                 </div>
             )}
 
-            {/* แท็บ: รายชื่อ KOL / On Process */}
-            <div className="agency-tabs">
-                <button className={subTab === 'list' ? 'active' : ''} onClick={() => setSubTab('list')}>
+            {/* แท็บ: รายชื่อ KOL / On Process — แบบกล่อง (8 ต.ค. 2026 ผู้ใช้ว่าแบบเส้นใต้จมไปกับพื้นหลัง หายาก)
+                หน้าตาเดียวกับแท็บหน้า Campaigns / Ads: กล่องขาวมีขอบ · แท็บที่เปิดอยู่เป็นสีเขียวเต็มกล่อง */}
+            <div className="agency-tabs hub-tabs proj-type-tabs pd-tabs" role="tablist" aria-label="รายชื่อ KOL / On Process">
+                <button type="button" role="tab" aria-selected={subTab === 'list'} className={subTab === 'list' ? 'active' : ''} onClick={() => setSubTab('list')}>
                     รายชื่อ KOL <span className="agency-tab-count">{submissions.length}</span>
                     {badges.listNew && <span className="tab-new-dot" title="มีอัปเดตใหม่" />}
                 </button>
-                <button className={subTab === 'process' ? 'active' : ''} onClick={() => setSubTab('process')}>
+                <button type="button" role="tab" aria-selected={subTab === 'process'} className={subTab === 'process' ? 'active' : ''} onClick={() => setSubTab('process')}>
                     On Process {submissions.filter(s => s.status === 'confirmed').length > 0 && <span className="agency-tab-count">{submissions.filter(s => s.status === 'confirmed').length}</span>}
                     {/* ข้อมูลโพสต์ที่เอเจนซี่ส่งมารอทีมตรวจ (ยังไม่ขึ้นหน้า Ads) */}
                     {submissions.some(s => s.status === 'confirmed' && (s.post_check === 'pending' || s.post_check === 'changed')) && (
