@@ -1,5 +1,5 @@
 const store = require('../store');
-const { pfmSourceBrands } = require('../store/logic');
+const { pfmSourceBrands, pfmBrandCode } = require('../store/logic');
 
 const SOURCE = 'beauterry-pfm';
 const DEFAULT_BASE_URL = 'http://127.0.0.1:8202';
@@ -73,10 +73,17 @@ function sanitizeRow(row) {
     return clean;
 }
 
-async function fetchBatch(itemIds, { fetchImpl = fetch, env = process.env } = {}) {
+// brandCode = รหัสแบรนด์ที่ PFM ใช้ (logic.js PFM_BRAND_CODES) — 9 ต.ค. 2026 PFM ดูแลหลายแบรนด์ (สเปก "Choosing the brand")
+// beauterry / ไม่ส่ง = ไม่ใส่ ?brand (คำขอเหมือนเดิมทุกตัวอักษร · PFM ถือว่าไม่ระบุ = Beauterry)
+// แบรนด์อื่น = ?brand=<รหัส> · 1 คำขอต่อแบรนด์ · คำตอบต้องบอก brand ตรงกับที่ถาม ไม่งั้นไม่รับอะไรเลย
+// (Beauterry ยอมคำตอบที่ไม่มีช่อง brand — PFM รุ่นก่อนหลายแบรนด์ไม่ส่งมา จะได้ไม่พังถ้า PFM ยังไม่ขึ้นรุ่นใหม่)
+async function fetchBatch(itemIds, { fetchImpl = fetch, env = process.env, brandCode = 'beauterry' } = {}) {
     const settings = config(env);
     if (!settings.apiKey) throw new Error('Beauterry PFM sync key is not configured');
-    const response = await fetchImpl(`${settings.baseUrl}/api/v1/integrations/kol-pfm/metrics`, {
+    const want = String(brandCode || 'beauterry').trim().toLowerCase();
+    if (!/^[a-z0-9_-]{1,40}$/.test(want)) throw new Error('Beauterry PFM brand code is invalid');
+    const query = want === 'beauterry' ? '' : `?brand=${encodeURIComponent(want)}`;
+    const response = await fetchImpl(`${settings.baseUrl}/api/v1/integrations/kol-pfm/metrics${query}`, {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
@@ -89,6 +96,10 @@ async function fetchBatch(itemIds, { fetchImpl = fetch, env = process.env } = {}
     const payload = await response.json();
     if (payload.status !== 'success' || !Array.isArray(payload.data?.rows)) {
         throw new Error('Beauterry PFM returned an invalid response');
+    }
+    const got = payload.brand === undefined || payload.brand === null ? null : String(payload.brand).trim().toLowerCase();
+    if (got !== want && !(got === null && want === 'beauterry')) {
+        throw new Error(`Beauterry PFM returned brand "${got === null ? '(none)' : got.slice(0, 40)}" for "${want}"`);
     }
     const requested = new Set(itemIds.map(String));
     const seen = new Set();
@@ -113,32 +124,65 @@ async function runSync({ storeImpl = store, fetchImpl = fetch, env = process.env
     running = true;
     const startedAt = new Date().toISOString();
     try {
-        // ถามเฉพาะคลิปของแบรนด์ที่ PFM ตัวนี้ดูแล (logic.js PFM_SOURCES · ตอนนี้ Beauterry) — แบรนด์อื่นไม่ถูกส่งมาถาม (6 ต.ค. 2026)
-        const itemIds = await storeImpl.adsSync.itemIds(pfmSourceBrands(SOURCE));
+        // ถามเฉพาะคลิปของแบรนด์ที่ PFM ตัวนี้ดูแล (logic.js PFM_SOURCES) — แบรนด์อื่นไม่ถูกส่งมาถาม (6 ต.ค. 2026)
+        // 9 ต.ค. 2026 หลายแบรนด์ (Beauterry / Jarvit / Jernis): ถามทีละแบรนด์ — ส่งเฉพาะ ID Post ของแบรนด์นั้น + ?brand=<รหัส>
+        // แล้วรับยอดลงได้เฉพาะคลิปของแบรนด์นั้น (apply brands) · แบรนด์หนึ่งดึงไม่ได้ (เช่น PFM ยังไม่เปิดแบรนด์นั้น) ไม่ลากแบรนด์อื่น
+        // ทุกแบรนด์ที่ต้องถามล้มหมด = ทั้งรอบล้มเหลว (เหมือนเดิมตอนมีแบรนด์เดียว) · ล้มบางแบรนด์ = status 'partial' + brand_errors
         const nextOrganicStatus = new Map();
-        const result = { requested: itemIds.length, received: 0, source_not_found: [], updated: 0,
+        const result = { requested: 0, received: 0, source_not_found: [], updated: 0,
             stale: 0, stale_raised: 0, regressed_metrics: 0, stamped: 0, not_found: [], skipped: 0, other_brand: 0,
-            started_at: startedAt };
-        for (let offset = 0; offset < itemIds.length; offset += MAX_BATCH_SIZE) {
-            const batch = itemIds.slice(offset, offset + MAX_BATCH_SIZE);
-            const exported = await fetchBatch(batch, { fetchImpl, env });
-            result.received += exported.rows.length;
-            for (const row of exported.rows) {
-                if (row.organic_metrics_status) nextOrganicStatus.set(row.id_post, row.organic_metrics_status);
+            brands: {}, brand_errors: [], started_at: startedAt };
+        let succeeded = 0;
+        for (const brand of pfmSourceBrands(SOURCE) || []) {
+            const code = pfmBrandCode(brand);
+            if (!code) continue;
+            const per = { requested: 0, received: 0, updated: 0 };
+            result.brands[code] = per;
+            let itemIds = [];
+            try {
+                itemIds = await storeImpl.adsSync.itemIds([brand]);
+                // แบรนด์ที่เพิ่งต่อ (Jarvit / Jernis) ID Post เคยกรอกมือโดยไม่มีการตรวจ — ส่งเฉพาะตัวเลขล้วน (สเปก: IDs must contain digits only)
+                // กัน ID ผิดรูปตัวเดียวทำให้ PFM ปฏิเสธทั้งชุดทุกชั่วโมง (ตัวที่ผิดรูปขึ้นป้าย "ID Post ผิดรูปแบบ" ในหน้า Ads อยู่แล้ว)
+                // Beauterry ส่งเหมือนเดิมทุกตัวอักษร
+                if (code !== 'beauterry') itemIds = itemIds.filter(id => /^\d{1,50}$/.test(String(id)));
+                per.requested = itemIds.length;
+                result.requested += itemIds.length;
+                if (!itemIds.length) continue;
+                for (let offset = 0; offset < itemIds.length; offset += MAX_BATCH_SIZE) {
+                    const batch = itemIds.slice(offset, offset + MAX_BATCH_SIZE);
+                    const exported = await fetchBatch(batch, { fetchImpl, env, brandCode: code });
+                    result.received += exported.rows.length;
+                    per.received += exported.rows.length;
+                    for (const row of exported.rows) {
+                        if (row.organic_metrics_status) nextOrganicStatus.set(row.id_post, row.organic_metrics_status);
+                    }
+                    result.source_not_found.push(...exported.notFound);
+                    const missingRows = exported.notFound.map(id_post => ({ id_post: String(id_post), pfm_source: SOURCE, organic_metrics_status: 'source_not_found' }));
+                    const applied = await storeImpl.adsSync.apply([...exported.rows, ...missingRows], { brands: [brand] });
+                    for (const key of ['updated', 'stale', 'stale_raised', 'regressed_metrics', 'stamped', 'skipped', 'other_brand']) {
+                        result[key] += applied[key] || 0;
+                    }
+                    per.updated += applied.updated || 0;
+                    result.not_found.push(...(applied.not_found || []));
+                }
+                succeeded++;
+            } catch (error) {
+                per.error = error.message;
+                result.brand_errors.push({ brand: code, message: error.message });
+                // แบรนด์นี้ไม่ได้ข้อมูลใหม่ — คงสถานะยอด organic เดิมของคลิปแบรนด์นี้ไว้ (เหมือนรอบที่ล้มเหลวแบบเดิม)
+                for (const id of itemIds) {
+                    if (!nextOrganicStatus.has(id) && organicStatus.has(id)) nextOrganicStatus.set(id, organicStatus.get(id));
+                }
             }
-            result.source_not_found.push(...exported.notFound);
-            const missingRows = exported.notFound.map(id_post => ({ id_post: String(id_post), pfm_source: SOURCE, organic_metrics_status: 'source_not_found' }));
-            const applied = await storeImpl.adsSync.apply([...exported.rows, ...missingRows]);
-            for (const key of ['updated', 'stale', 'stale_raised', 'regressed_metrics', 'stamped', 'skipped', 'other_brand']) {
-                result[key] += applied[key] || 0;
-            }
-            result.not_found.push(...(applied.not_found || []));
+        }
+        if (result.brand_errors.length && !succeeded) {
+            throw new Error(result.brand_errors.map(e => `${e.brand}: ${e.message}`).join(' · '));
         }
         result.finished_at = new Date().toISOString();
         organicStatus = nextOrganicStatus;
         result.organic_unavailable = [...organicStatus.values()].filter(v => v === 'source_unavailable').length;
         result.organic_snapshot_only = [...organicStatus.values()].filter(v => v === 'snapshot_only').length;
-        lastRun = { status: 'success', ...result };
+        lastRun = { status: result.brand_errors.length ? 'partial' : 'success', ...result };
         return result;
     } catch (error) {
         lastRun = { status: 'error', started_at: startedAt, finished_at: new Date().toISOString(),
@@ -158,7 +202,21 @@ function syncSummaryLine(r) {
         + ` · received ${n(r.received)} · PFM ไม่มี ${n(r.source_not_found)} · จับคู่ไม่ได้ ${n(r.not_found)}`
         + ` · เวลาต้นทางไม่ขยับ ${n(r.stale)} (รับยอดที่สูงขึ้น ${n(r.stale_raised)})`
         + ` · ยอดต่ำกว่าเดิมไม่รับ ${n(r.regressed_metrics)} · ข้าม ${n(r.skipped)} · สแตมป์ ${n(r.stamped)}`
-        + (n(r.other_brand) ? ` · คลิปแบรนด์อื่นไม่รับ ${n(r.other_brand)}` : '');
+        + (n(r.other_brand) ? ` · คลิปแบรนด์อื่นไม่รับ ${n(r.other_brand)}` : '')
+        // 9 ต.ค. 2026 หลายแบรนด์: แยกต่อแบรนด์ (อัปเดต/ถาม) + แบรนด์ที่ดึงไม่ได้
+        + (r.brands && Object.keys(r.brands).length
+            ? ' · แบรนด์ ' + Object.entries(r.brands).map(([c, v]) => `${c} ${n(v.updated)}/${n(v.requested)}${v.error ? ' ล้มเหลว' : ''}`).join(', ') : '')
+        + (Array.isArray(r.brand_errors) && r.brand_errors.length
+            ? ' · ดึงไม่ได้: ' + r.brand_errors.map(e => `${e.brand} (${e.message})`).join(' · ') : '');
+}
+
+// เขียนผลรอบซิงก์ลง log ของ server — ดึงไม่ได้บางแบรนด์ (status partial · 9 ต.ค. 2026) ต้องขึ้นใน error log ด้วย
+// ไม่งั้นความล้มของ Beauterry (เมื่ออีกแบรนด์ดึงได้) จะหายไปกับบรรทัด completed ที่เป็น log ปกติ
+function logSyncResult(result, logger = console) {
+    logger.log(syncSummaryLine(result));
+    if (result && Array.isArray(result.brand_errors) && result.brand_errors.length) {
+        logger.error(`Beauterry PFM sync failed: ${result.brand_errors.map(e => `${e.brand}: ${e.message}`).join(' · ')}`);
+    }
 }
 
 function getStatus(env = process.env) {
@@ -173,9 +231,8 @@ function startScheduler({ logger = console, env = process.env } = {}) {
         return () => {};
     }
     // 2 ต.ค. 2026: บอกด้วยว่ามีข้อมูลถูกทิ้ง/ข้ามกี่แถว — เดิมพิมพ์แค่ updated ดูเหมือนครบทั้งที่ยอดวิวไม่เข้า
-    const execute = () => runSync({ env }).then(result => {
-        logger.log(syncSummaryLine(result));
-    }).catch(error => logger.error(`Beauterry PFM sync failed: ${error.message}`));
+    const execute = () => runSync({ env }).then(result => logSyncResult(result, logger))
+        .catch(error => logger.error(`Beauterry PFM sync failed: ${error.message}`));
     const initial = setTimeout(execute, settings.initialDelayMs);
     const interval = setInterval(execute, settings.intervalMs);
     initial.unref();
@@ -186,4 +243,4 @@ function startScheduler({ logger = console, env = process.env } = {}) {
     };
 }
 
-module.exports = { config, sanitizeRow, fetchBatch, runSync, getStatus, startScheduler, syncSummaryLine, getOrganicMetricStatus };
+module.exports = { config, sanitizeRow, fetchBatch, runSync, getStatus, startScheduler, syncSummaryLine, logSyncResult, getOrganicMetricStatus };

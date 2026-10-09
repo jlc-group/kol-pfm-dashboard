@@ -1,15 +1,27 @@
 # KOL Content Export for Beauterry PFM
 
 This read-only endpoint is a separate integration from the hourly metrics
-sync. It exposes only Beauterry TikTok submissions that already have an
-`id_post` and are still marked `ยังไม่ยิง`.
+sync. It exposes one brand's TikTok submissions that already have an
+`id_post` and are still marked `ยังไม่ยิง`. There is one feed per brand served
+by Beauterry PFM (since 2026-10-09, beauterry-pfm `docs/kol-content-sync.md`
+"Multiple brands").
 
 ## Endpoint
 
 ```text
-GET /api/integrations/beauterry/content-candidates
+GET /api/integrations/<brand>/content-candidates
 X-KOL-Content-Key: <KOL_CONTENT_EXPORT_KEY>
 ```
+
+| brand | `<brand>` | brand filter |
+|---|---|---|
+| Beauterry | `beauterry` | `KOL_CONTENT_EXPORT_BRAND` (default `Beauterry`, unchanged) |
+| Jarvit | `jarvit` | `Jarvit` |
+| Jernis | `jernis` | `Jernis` |
+
+Codes come from `server/src/store/logic.js` `PFM_BRAND_CODES`. An unknown code
+returns `404 UNKNOWN_BRAND` (checked after the key) and never falls back to
+Beauterry. All brands use the same key.
 
 Optional query parameters:
 
@@ -19,7 +31,7 @@ Optional query parameters:
 The server always applies these filters and does not let the caller choose a
 different brand:
 
-- `projects.brand = KOL_CONTENT_EXPORT_BRAND`
+- `projects.brand` = the brand of the requested feed (Beauterry: `KOL_CONTENT_EXPORT_BRAND`)
 - `platform ILIKE 'tiktok%'`
 - `ad_status = 'ยังไม่ยิง'`
 - not a clip whose campaign group is set to "no Gencode" (`ad_groups[].no_gencode = true`) while the clip still has no Gencode — those clips need no ads and sit in the Ads page tab "ไม่ต้องยิงแอด / ไม่ใช้ Gencode" (5 Oct 2026)

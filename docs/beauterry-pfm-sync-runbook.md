@@ -25,6 +25,18 @@ X-PFM-API-Key: <key>
 BEAUTERRY_PFM_EXPORT_KEY=<same value as Beauterry KOL_PFM_EXPORT_KEY>
 ```
 
+## หลายแบรนด์ (ตั้งแต่ 9 ต.ค. 2026)
+
+Beauterry PFM ดูแลหลายแบรนด์แล้ว (Beauterry / Jarvit / Jernis · สเปก beauterry-pfm
+`docs/kol-pfm-integration-api.md` หัวข้อ "Choosing the brand"):
+
+- ซิงก์ถามทีละแบรนด์ ส่งเฉพาะ ID Post ของแบรนด์นั้น · Beauterry ไม่ใส่ `?brand` (เหมือนเดิม) ·
+  แบรนด์อื่นใส่ `?brand=jarvit` / `?brand=jernis` (รหัสจาก `server/src/store/logic.js` `PFM_BRAND_CODES`)
+- คำตอบต้องมี `brand` ตรงกับที่ถาม ไม่ตรง = ไม่บันทึกอะไรเลย (Beauterry ยอมคำตอบที่ไม่มีช่อง `brand` ของ PFM รุ่นก่อน)
+- ยอดที่ได้ลงเฉพาะคลิปของแบรนด์ที่ถาม · แบรนด์หนึ่งดึงไม่ได้ไม่ลากแบรนด์อื่น (`last_run.status = partial` +
+  `brand_errors`) · ล้มทุกแบรนด์ = `error` เหมือนเดิม
+- ใช้รหัสลับเดียวกันทุกแบรนด์ · เพิ่มแบรนด์ใหม่: เพิ่มชื่อใน `PFM_SOURCES` + รหัสใน `PFM_BRAND_CODES`
+
 `ADS_SYNC_KEY` เป็นคนละหน้าที่ ใช้ป้องกัน endpoint ของ KOL เอง เช่น
 `/api/ads-sync/pull-beauterry` และ `/api/ads-sync/beauterry-status` ห้ามใช้เป็น
 fallback สำหรับเรียก Beauterry

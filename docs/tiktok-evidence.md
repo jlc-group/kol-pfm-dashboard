@@ -31,7 +31,7 @@ this isolation. Setting an arbitrary URL is insufficient: verify the contract be
 The consumer sends GET `<endpoint>?item_ids=<comma-separated IDs>` with
 `X-KOL-TikTok-Key`, batches of 100, no redirects, a 20-second timeout and a 1 MiB
 response limit. It requests only TikTok IDs belonging to the brands managed by the
-Beauterry integration, currently Beauterry. This does not imply Julaherb support.
+Beauterry integration, currently Beauterry, Jarvit and Jernis (since 2026-10-09). This does not imply Julaherb support.
 
 ```json
 {

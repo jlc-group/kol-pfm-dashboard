@@ -1529,9 +1529,11 @@ const submissions = {
 // รับข้อมูลจากระบบยิงแอดของบริษัท — จับคู่ด้วย Gencode หรือ ID Post
 // ค่าแอดไม่ถูกแสดงที่ไหนในหน้าเว็บ ใช้เป็นตัวจุดชนวนสแตมป์อย่างเดียว
 const adsSync = {
-    async apply(rows) {
+    async apply(rows, { brands: onlyBrands = null } = {}) {
         const out = { updated: 0, stamped: 0, not_found: [], skipped: 0, other_brand: 0 };
         const lt = v => String(v == null ? '' : v).trim().toLowerCase();
+        // onlyBrands = ชุดนี้มาจากคำขอของแบรนด์ไหน (ซิงก์ PFM หลายแบรนด์ · 9 ต.ค. 2026) — แบบเดียวกับ pg/ads.js
+        const onlyKeys = Array.isArray(onlyBrands) ? onlyBrands.map(lt) : null;
         for (const r of (rows || [])) {
             const key = String(r.gencode || r.id_post || r.submission_id || '').trim();
             if (!key) { out.skipped++; continue; }
@@ -1539,8 +1541,9 @@ const adsSync = {
                 || (r.gencode && String(x.gencode || '').trim() === String(r.gencode).trim())
                 || (r.id_post && String(x.id_post || '').trim() === String(r.id_post).trim());
             // แถวจาก PFM ของแบรนด์ (pfm_source ที่รู้จัก) จับคู่ได้เฉพาะคลิปของแบรนด์นั้น — แบบเดียวกับ pg/ads.js (6 ต.ค. 2026)
-            const brands = r.pfm_source ? pfmSourceBrands(r.pfm_source) : null;
-            const okBrand = x => { if (!brands) return true; const p = db.projects.find(pr => pr.id === x.project_id); return brands.map(lt).includes(lt(p && p.brand)); };
+            const brands = r.pfm_source ? (pfmSourceBrands(r.pfm_source) || null) : null;
+            const allowed = brands ? brands.map(lt).filter(k => !onlyKeys || onlyKeys.includes(k)) : null;
+            const okBrand = x => { if (!allowed) return true; const p = db.projects.find(pr => pr.id === x.project_id); return allowed.includes(lt(p && p.brand)); };
             const s = db.submissions.find(x => hit(x) && okBrand(x));
             if (!s) { if (brands && db.submissions.some(hit)) out.other_brand++; else out.not_found.push(key); continue; }
             // ค่าแอดเดินหน้าอย่างเดียว กันข้อมูลย้อนหลังมาลบยอดสะสม

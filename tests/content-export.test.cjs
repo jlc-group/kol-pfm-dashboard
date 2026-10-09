@@ -1,5 +1,14 @@
 const assert = require('node:assert/strict');
-const { test } = require('node:test');
+const { test, after } = require('node:test');
+
+// deploy รันเทสต์แบบ --test-force-exit — บน Windows (Node 24) libuv แครช UV_HANDLE_CLOSING ถ้ายังมี socket ค้างตอนจบไฟล์
+// (เป็นมาตั้งแต่ก่อน 9 ต.ค. 2026) → ปิดทุกการเชื่อมต่อแล้วรอให้ socket หมดก่อนจบ แบบ tests/pay-auto.test.cjs
+const closeServer = async server => { server.closeAllConnections(); await new Promise(r => server.close(r)); };
+after(async () => {
+    const until = Date.now() + 3000;
+    while (process.getActiveResourcesInfo().includes('TCPSocketWrap') && Date.now() < until) await new Promise(r => setTimeout(r, 10));
+    await new Promise(r => setTimeout(r, 300));
+});
 const express = require('../server/node_modules/express');
 const route = require('../server/src/routes/contentExport');
 const store = require('../server/src/store');
@@ -42,7 +51,8 @@ test('content export route returns the filtered read-only feed', async () => {
         const url = `http://127.0.0.1:${server.address().port}/api/integrations/beauterry/content-candidates?limit=2`;
         const response = await fetch(url, { headers: { 'X-KOL-Content-Key': 'content-key' } });
         assert.equal(response.status, 503);
-        server.close();
+        await response.text();
+        await closeServer(server);
 
         process.env.KOL_CONTENT_EXPORT_ENABLED = 'true';
         process.env.KOL_CONTENT_EXPORT_KEY = 'content-key';
@@ -56,7 +66,7 @@ test('content export route returns the filtered read-only feed', async () => {
         assert.equal(payload.data.count, 2);
         assert.equal(payload.data.has_more, true);
         assert.deepEqual(payload.data.filters, { brand: 'Beauterry', platform: 'TikTok', ad_status: 'ยังไม่ยิง' });
-        enabledServer.close();
+        await closeServer(enabledServer);
     } finally {
         store.contentExport.listCandidates = original;
         delete process.env.KOL_CONTENT_EXPORT_ENABLED;

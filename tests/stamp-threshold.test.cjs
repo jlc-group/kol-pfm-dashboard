@@ -17,9 +17,14 @@ before(async () => {
 // คลิปที่ข้อมูลครบทุกอย่างแล้ว เหลือแค่ค่าแอดว่าถึงเกณฑ์ไหม
 const clip = (over = {}) => ({ ad_spend: 3000, budget: 5000, views: 100000, likes: 1000, perf_stamp: null, ...over });
 
-test('Beauterry ใช้เกณฑ์ 3,000 · แบรนด์อื่นยังเป็น 10,000 เหมือนเดิม', () => {
+test('Beauterry / Jarvit / Jernis ใช้เกณฑ์ 3,000 · แบรนด์อื่นยังเป็น 10,000 เหมือนเดิม', () => {
     assert.equal(AD_STAMP_AT, 10000);
     assert.equal(stampAtFor('Beauterry'), 3000);
+    // 9 ต.ค. 2026 ผู้ใช้สั่ง Jarvit / Jernis ใช้ 3,000 เหมือน Beauterry
+    assert.equal(stampAtFor('Jarvit'), 3000);
+    assert.equal(stampAtFor('Jernis'), 3000);
+    assert.equal(stampAtFor('  Jernis '), 3000);
+    assert.equal(stampAtFor('jernis'), 10000, 'ตัวพิมพ์ต้องตรงชื่อแบรนด์ในระบบ');
     assert.equal(stampAtFor("Jula's Herb"), 10000);
     assert.equal(stampAtFor('Dermiq'), 10000);
     // แคมเปญที่ไม่ได้ใส่แบรนด์ / ค่าที่หน้าเว็บเติมให้เมื่อไม่มีแบรนด์ ต้องได้ค่ากลาง ไม่ใช่ undefined

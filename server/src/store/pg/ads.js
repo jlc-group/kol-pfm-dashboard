@@ -54,9 +54,11 @@ const adsSync = {
         return result.rows.map(row => String(row.id_post));
     },
 
-    async apply(rows) {
+    async apply(rows, { brands: onlyBrands = null } = {}) {
         // stale = แถวที่เวลาอัปเดตของต้นทางไม่ใหม่กว่าเดิม · stale_raised = ในนั้นมีกี่แถวที่ยังรับยอดที่สูงขึ้นได้
         // other_brand = แถวจาก PFM ที่ตรงกับคลิปของแบรนด์อื่น (ไม่ใช่แบรนด์ของ PFM ตัวนั้น) — ไม่รับ (6 ต.ค. 2026)
+        // onlyBrands = ชุดนี้มาจากคำขอของแบรนด์ไหน (ซิงก์ PFM หลายแบรนด์ถามทีละแบรนด์ · 9 ต.ค. 2026) — แถวที่มี pfm_source
+        // จับคู่ได้เฉพาะคลิปของแบรนด์นั้น (และต้องเป็นแบรนด์ของ source นั้นด้วย) · ไม่ส่ง = ทุกแบรนด์ของ source เหมือนเดิม
         const out = { updated: 0, stale: 0, stale_raised: 0, regressed_metrics: 0,
             stamped: 0, not_found: [], skipped: 0, other_brand: 0 };
         if (!rows || !rows.length) return out;
@@ -75,10 +77,11 @@ const adsSync = {
             const snap = { submissions: locked.rows };
             const brandOf = Object.fromEntries(locked.rows.map(s => [s.project_id, s.sync_brand]));
             const typeOf = Object.fromEntries(locked.rows.map(s => [s.project_id, s.sync_campaign_type]));
+            const onlyKeys = Array.isArray(onlyBrands) ? new Set(onlyBrands.map(lowerTrim)) : null;
             const poolFor = source => {
                 const brands = source ? pfmSourceBrands(source) : null;
                 if (!brands) return snap.submissions;
-                const keys = new Set(brands.map(lowerTrim));
+                const keys = new Set(brands.map(lowerTrim).filter(k => !onlyKeys || onlyKeys.has(k)));
                 return snap.submissions.filter(s => keys.has(lowerTrim(brandOf[s.project_id])));
             };
             const matches = r => x =>

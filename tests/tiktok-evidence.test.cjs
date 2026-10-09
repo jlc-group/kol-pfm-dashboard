@@ -102,7 +102,8 @@ test('invalid requested identity never calls the provider', async () => {
 test('collection calls only evidence storage; no paid or effective-counter store is invoked', async () => {
     let stored;
     const result = await sync.runSync({ env, fetchImpl: async () => response([fixture()]), storeImpl: {
-        adsSync: { itemIds: async brands => { assert.deepEqual(brands, ['Beauterry']); return [id]; },
+        // แบรนด์ที่ PFM ดูแล (9 ต.ค. 2026 เพิ่ม Jarvit / Jernis) — ยังไม่รวมแบรนด์อื่น
+        adsSync: { itemIds: async brands => { assert.deepEqual(brands, ['Beauterry', 'Jarvit', 'Jernis']); return [id]; },
             apply: async () => { throw new Error('Must not apply effective metrics'); } },
         tiktokEvidence: { apply: async rows => { stored = rows; return { stored: 1, stale: 0, not_found: [] }; } }
     } });

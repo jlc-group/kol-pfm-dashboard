@@ -153,8 +153,9 @@ app.use('/api/payments', authenticate, blockPending, blockAgency, require('./rou
 app.use('/api/activity', authenticate, blockPending, blockAgency, require('./routes/activity'));
 // ระบบยิงแอดของบริษัทยิงเข้ามาเอง ใช้ API key ไม่ใช่บัญชีคน จึงต้องอยู่นอกเส้นที่บังคับล็อกอิน
 app.use('/api/ads-sync', require('./routes/adsSync'));
-// Read-only service feed for Beauterry content import. It authenticates with its own key.
-app.use('/api/integrations/beauterry', require('./routes/contentExport'));
+// Read-only service feed for Beauterry PFM content import, one per brand (beauterry / jarvit / jernis · 9 ต.ค. 2026).
+// It authenticates with its own key. /api/integrations/beauterry/content-candidates is unchanged.
+app.use('/api/integrations/:brand', require('./routes/contentExport'));
 app.use('/api/ads', authenticate, blockPending, blockAgency, require('./routes/ads'));
 app.use('/api/rate-requests', authenticate, blockPending, blockAgency, require('./routes/rateRequests'));
 app.use('/api/hires', authenticate, blockPending, blockAgency, require('./routes/hires'));

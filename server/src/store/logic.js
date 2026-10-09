@@ -27,7 +27,8 @@ const AD_STAMP_AT = 10000;
 // บางแบรนด์ยิงแอดต่อโพสต์น้อยกว่าที่อื่นมาก รอถึง 10,000 แทบไม่มีโพสต์ไหนได้สแตมป์เลย จึงตั้งเกณฑ์แยกได้
 // คีย์ต้องตรงกับ projects.brand ทุกตัวอักษร · ฝั่งหน้าเว็บมีสำเนาที่ client/src/data/stamp.js ต้องแก้คู่กันเสมอ
 // (tests/stamp-threshold.test.cjs เทียบข้อความสองฝั่งให้ พิมพ์ไม่ตรงกันเมื่อไหร่เทสต์แดงทันที)
-const AD_STAMP_BY_BRAND = { Beauterry: 3000 };
+// 9 ต.ค. 2026 ผู้ใช้สั่ง Jarvit / Jernis ใช้ 3,000 เหมือน Beauterry (เตรียมต่อ PFM หลายแบรนด์ · ตอนแก้ยังไม่มีคลิปสองแบรนด์นี้ที่มีค่าแอด)
+const AD_STAMP_BY_BRAND = { Beauterry: 3000, Jarvit: 3000, Jernis: 3000 };
 
 // ===== ประเภทแคมเปญ (projects.campaign_type) =====
 // 'kol' แคมเปญ KOL · 'other' งานจ้าง Talent · 'solo' KOL รายคน (จ้าง KOL เดี่ยวไม่ต้องสร้างแคมเปญ — ผู้ใช้สั่ง 30 ก.ย. 2026)
@@ -129,11 +130,20 @@ function hireStage(it, jobStatus, items) {
 }
 
 // ===== แบรนด์ที่ต่อระบบ PFM แล้ว (ผู้ใช้สั่ง 6 ต.ค. 2026) =====
-// แต่ละแบรนด์จะมีระบบ PFM ของตัวเอง (ต่อทีหลัง) — ตอนนี้ต่อแค่ Beauterry (services/beauterryPfmSync.js · source 'beauterry-pfm')
-// แบรนด์อื่น (เช่น Jula's Herb) ห้ามถูกส่งไปถาม / ห้ามรับข้อมูลจาก PFM ของ Beauterry
+// แบรนด์ที่ไม่อยู่ในรายชื่อ (เช่น Jula's Herb) ห้ามถูกส่งไปถาม / ห้ามรับข้อมูลจาก PFM
 // TikTok ของแบรนด์ที่ยังไม่ต่อ PFM = กรอกเองทั้งหมด (สถานะยิงแล้ว / ค่าแอด / ยอดวิว) แบบ Facebook / Instagram
-// ต่อ PFM ของแบรนด์ใหม่: เพิ่ม source → [แบรนด์] ที่นี่ แล้วทำตัวซิงก์ของแบรนด์นั้น (แบบ beauterryPfmSync.js ส่ง pfm_source ของตัวเอง)
-const PFM_SOURCES = { 'beauterry-pfm': ['Beauterry'] };
+// 9 ต.ค. 2026: PFM ตัวเดียว (beauterry-pfm) ดูแลหลายแบรนด์แล้ว (สเปก jlc-group/beauterry-pfm docs/kol-pfm-integration-api.md
+// "Choosing the brand" + docs/kol-content-sync.md "Multiple brands") — ผู้ใช้สั่งต่อ Jarvit / Jernis
+// ต่อแบรนด์ใหม่: เพิ่มชื่อใน PFM_SOURCES + รหัสแบรนด์ (ตัวพิมพ์เล็กที่ PFM ใช้) ใน PFM_BRAND_CODES
+//   รหัสใช้ 2 ที่: ถามตัวเลข ?brand=<รหัส> (services/beauterryPfmSync.js) · ฟีดคลิป /api/integrations/<รหัส>/content-candidates
+const PFM_SOURCES = { 'beauterry-pfm': ['Beauterry', 'Jarvit', 'Jernis'] };
+const PFM_BRAND_CODES = { Beauterry: 'beauterry', Jarvit: 'jarvit', Jernis: 'jernis' };
+// ชื่อแบรนด์ (ตามที่เก็บใน projects.brand) → รหัสที่ PFM ใช้ · ไม่รู้จัก = null
+const pfmBrandCode = brand => (Object.prototype.hasOwnProperty.call(PFM_BRAND_CODES, String(brand == null ? '' : brand).trim())
+    ? PFM_BRAND_CODES[String(brand).trim()] : null);
+// รหัสจาก URL / คำตอบของ PFM → ชื่อแบรนด์ · ไม่รู้จัก = null (ห้ามเดา ห้ามถอยไปเป็น Beauterry)
+const pfmBrandByCode = code => Object.keys(PFM_BRAND_CODES)
+    .find(b => PFM_BRAND_CODES[b] === String(code == null ? '' : code).trim().toLowerCase()) || null;
 const brandKey = b => String(b == null ? '' : b).trim().toLowerCase();
 const PFM_BRAND_KEYS = new Set(Object.values(PFM_SOURCES).flat().map(brandKey));
 // แบรนด์นี้ต่อ PFM แล้วไหม (ไม่สนตัวพิมพ์ / ช่องว่างหัวท้าย)
@@ -1284,7 +1294,7 @@ module.exports = {
     HIRE_JOB_CLOSED, hireWaiting, hireNeedMore, hireStage,
     BOOK_PENDING, BOOK_FEE, BOOK_OK, HIRE_BOOKED, HIRE_AGREED, bookingState, bookingOpen, hireBookings,
     releaseToRequest, bookingConfirm, bookingFeeDecision, bookingUnavailable, hireBreakdown, jobProgress, pfmManagedSpend,
-    adRanBySpend, effectiveAdStatus, adStatusAuto, PFM_SOURCES, isPfmBrand, pfmSourceBrands,
+    adRanBySpend, effectiveAdStatus, adStatusAuto, PFM_SOURCES, isPfmBrand, pfmSourceBrands, PFM_BRAND_CODES, pfmBrandCode, pfmBrandByCode,
     HIRE_PAYABLE, HIRE_DIRECT_STATUS, newHireRow, payableWithoutFee, isDateStr, clipText, HIRE_SCOPE_MAX, hireScope,
     PERSON_FIELDS, personPatch,
     resolveInside, sameInstant, mergeHireItems, mergeBriefFiles, cleanFee, cleanHeadcount, safeId, safeSlug,

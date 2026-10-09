@@ -6,6 +6,7 @@ const path = require('node:path');
 // PFM ผูกกับแบรนด์ (ผู้ใช้สั่ง 6 ต.ค. 2026): ตอนนี้ต่อแค่ PFM ของ Beauterry — แบรนด์อื่น (เช่น Jula's Herb) ห้ามถูกส่งไปถาม
 // และห้ามรับข้อมูลจาก PFM ของ Beauterry · TikTok ของแบรนด์ที่ยังไม่ต่อ PFM กรอกเองได้ (สถานะยิงแล้ว / ค่าแอด / ยอดวิว)
 // แต่ละแบรนด์จะมี PFM ของตัวเองทีหลัง — ต่อเพิ่มที่ logic.js PFM_SOURCES
+// 9 ต.ค. 2026: PFM ตัวเดียวดูแลหลายแบรนด์แล้ว — ต่อ Jarvit / Jernis (ถามทีละแบรนด์ ?brand= · ลงเฉพาะคลิปแบรนด์นั้น)
 // ข้อมูลจำลองทั้งหมด ไม่แตะฐานจริง
 process.env.NODE_ENV = 'test';
 process.env.BEAUTERRY_PFM_SYNC_ENABLED = 'false';
@@ -81,16 +82,28 @@ test('Beauterry lifetime reach is stored without clearing or lowering a previous
     }
 });
 
-test('รายชื่อแบรนด์ที่ต่อ PFM: ตอนนี้ Beauterry อย่างเดียว · ไม่สนตัวพิมพ์/ช่องว่าง · source ที่ไม่รู้จัก = null', () => {
-    assert.deepEqual(PFM_SOURCES, { 'beauterry-pfm': ['Beauterry'] });
-    for (const b of ['Beauterry', ' beauterry ', 'BEAUTERRY']) assert.equal(isPfmBrand(b), true, b);
-    for (const b of ["Jula's Herb", 'Jdent', 'Dermiq', '', null, undefined]) assert.equal(isPfmBrand(b), false, String(b));
-    assert.deepEqual(pfmSourceBrands('beauterry-pfm'), ['Beauterry']);
+test('รายชื่อแบรนด์ที่ต่อ PFM: Beauterry + Jarvit + Jernis (9 ต.ค. 2026) · ไม่สนตัวพิมพ์/ช่องว่าง · source ที่ไม่รู้จัก = null', () => {
+    assert.deepEqual(PFM_SOURCES, { 'beauterry-pfm': ['Beauterry', 'Jarvit', 'Jernis'] });
+    for (const b of ['Beauterry', ' beauterry ', 'BEAUTERRY', 'Jarvit', 'jernis', ' Jernis ']) assert.equal(isPfmBrand(b), true, b);
+    for (const b of ["Jula's Herb", 'Jdent', 'Dermiq', 'Code Lab', 'Minimii', 'Any Skin', '', null, undefined]) assert.equal(isPfmBrand(b), false, String(b));
+    assert.deepEqual(pfmSourceBrands('beauterry-pfm'), ['Beauterry', 'Jarvit', 'Jernis']);
     assert.equal(pfmSourceBrands('weboostx'), null);
     assert.equal(pfmSourceBrands(undefined), null);
     assert.equal(pfmSourceBrands('constructor'), null, 'ไม่หลุดไปอ่าน prototype');
     pfmSourceBrands('beauterry-pfm').push('X');
-    assert.deepEqual(pfmSourceBrands('beauterry-pfm'), ['Beauterry'], 'คืนสำเนา แก้แล้วไม่กระทบรายชื่อจริง');
+    assert.deepEqual(pfmSourceBrands('beauterry-pfm'), ['Beauterry', 'Jarvit', 'Jernis'], 'คืนสำเนา แก้แล้วไม่กระทบรายชื่อจริง');
+});
+
+test('รหัสแบรนด์ที่ PFM ใช้ (?brand= / ฟีด /api/integrations/<รหัส>): ครบทุกแบรนด์ของ PFM · ไม่รู้จัก = null ไม่ถอยเป็น Beauterry', () => {
+    const { PFM_BRAND_CODES, pfmBrandCode, pfmBrandByCode } = logic;
+    assert.deepEqual(PFM_BRAND_CODES, { Beauterry: 'beauterry', Jarvit: 'jarvit', Jernis: 'jernis' });
+    for (const b of pfmSourceBrands('beauterry-pfm')) assert.ok(pfmBrandCode(b), 'ทุกแบรนด์ของ PFM ต้องมีรหัส: ' + b);
+    assert.equal(pfmBrandCode(' Jarvit '), 'jarvit');
+    assert.equal(pfmBrandCode("Jula's Herb"), null);
+    assert.equal(pfmBrandCode('constructor'), null, 'ไม่หลุดไปอ่าน prototype');
+    assert.equal(pfmBrandByCode('JERNIS'), 'Jernis');
+    assert.equal(pfmBrandByCode(' jarvit '), 'Jarvit');
+    for (const c of ['', null, undefined, 'julaherb', 'constructor', '__proto__', 'beauterry2']) assert.equal(pfmBrandByCode(c), null, String(c));
 });
 
 test('สถานะยิงแล้ว / ค่าแอด / เหตุที่ไม่มียอดวิว: TikTok แบรนด์ที่ต่อ PFM = PFM ดูแล · แบรนด์อื่น = กรอกเอง', () => {
@@ -120,7 +133,7 @@ test('itemIds: ถาม PFM เฉพาะคลิป TikTok ของแบ�
     assert.match(queries[0].sql, /s\.platform ILIKE 'tiktok%'/);
     assert.deepEqual(queries[0].params, [['beauterry']]);
     await adsSync.itemIds();
-    assert.deepEqual(queries[1].params, [['beauterry']], 'ค่าเริ่มต้น = แบรนด์ของ beauterry-pfm');
+    assert.deepEqual(queries[1].params, [['beauterry', 'jarvit', 'jernis']], 'ค่าเริ่มต้น = แบรนด์ของ beauterry-pfm (9 ต.ค. 2026 เพิ่ม Jarvit / Jernis)');
     assert.deepEqual(await adsSync.itemIds([]), []);
     assert.deepEqual(await adsSync.itemIds(null), []);
     assert.equal(queries.length, 2, 'ไม่มีแบรนด์ = ไม่ยิง SQL');
@@ -128,13 +141,14 @@ test('itemIds: ถาม PFM เฉพาะคลิป TikTok ของแบ�
 
 test('runSync ของ Beauterry ส่งแบรนด์ของตัวเองไปเลือก ID Post · log บอกจำนวนคลิปแบรนด์อื่นที่ไม่รับ', async () => {
     const asked = [];
+    // 9 ต.ค. 2026 หลายแบรนด์: ถามทีละแบรนด์ — Jarvit / Jernis ไม่มีคลิป = ไม่ยิงคำขอไป PFM
     const storeImpl = { adsSync: {
-        itemIds: async brands => { asked.push(brands); return ['7600000000000000001']; },
+        itemIds: async brands => { asked.push(brands); return brands[0] === 'Beauterry' ? ['7600000000000000001'] : []; },
         apply: async () => ({ updated: 1, stale: 0, stamped: 0, other_brand: 2 })
     } };
     const fetchImpl = async () => ({ ok: true, json: async () => ({ status: 'success', data: { rows: [{ id_post: '7600000000000000001', views: 5 }], not_found: [] } }) });
     const result = await runSync({ storeImpl, fetchImpl, env: { BEAUTERRY_PFM_EXPORT_KEY: 'fixture', BEAUTERRY_PFM_BASE_URL: 'http://pfm.local' } });
-    assert.deepEqual(asked, [['Beauterry']]);
+    assert.deepEqual(asked, [['Beauterry'], ['Jarvit'], ['Jernis']]);
     assert.equal(result.other_brand, 2);
     assert.match(syncSummaryLine(result), /คลิปแบรนด์อื่นไม่รับ 2/);
     assert.doesNotMatch(syncSummaryLine({ ...result, other_brand: 0 }), /แบรนด์อื่น/, 'ไม่มี = ไม่ขึ้นในบรรทัด log');
@@ -161,6 +175,25 @@ test('apply: ID Post เดียวกันทั้งสองแบรน�
     const out = await adsSync.apply([sanitizeRow({ id_post: '7600000000000000777', views: 50 })]);
     assert.equal(out.updated, 1);
     assert.deepEqual(written.map(w => w.id), [2]);
+});
+
+test('apply หลายแบรนด์ (9 ต.ค. 2026): ชุดจากคำขอ ?brand=jernis ลงได้เฉพาะคลิป Jernis · คลิป Beauterry ที่ ID ตรงไม่ถูกแตะ', async () => {
+    FIXTURE.projects.push({ id: 93, name: 'Jernis Oct', brand: 'Jernis', team_id: 1, campaign_type: 'kol', ad_groups: [] });
+    FIXTURE.submissions.push(SUB({ id: 5, project_id: 93, id_post: '7600000000000000005' }));
+    const out = await adsSync.apply([
+        sanitizeRow({ id_post: '7600000000000000001', views: 111 }),   // คลิป Beauterry — มากับคำขอของ Jernis ไม่รับ
+        sanitizeRow({ id_post: '7600000000000000005', views: 555 })    // คลิป Jernis
+    ], { brands: ['Jernis'] });
+    assert.equal(out.updated, 1);
+    assert.equal(out.other_brand, 1);
+    assert.deepEqual(written.map(w => w.id), [5]);
+    assert.equal(written[0].patch.views, 555);
+    // แบรนด์ที่ไม่ใช่ของ PFM ตัวนี้ส่งมาเป็นตัวกรอง = ไม่มีคลิปไหนรับได้เลย (ไม่ถอยไปทุกแบรนด์)
+    written = [];
+    const none = await adsSync.apply([sanitizeRow({ id_post: '7693136943999175988', views: 1 })], { brands: ["Jula's Herb"] });
+    assert.equal(none.updated, 0);
+    assert.equal(none.other_brand, 1);
+    assert.deepEqual(written, []);
 });
 
 test('apply: ข้อมูลจากแหล่งอื่น (เส้น /api/ads-sync/sync ไม่มี pfm_source) ไม่จำกัดแบรนด์ — เหมือนเดิม', async () => {

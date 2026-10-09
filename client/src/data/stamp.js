@@ -2,7 +2,7 @@
 // ต้องตรงกับฝั่ง server ทุกตัวอักษร (tests/stamp-threshold.test.cjs เทียบข้อความสองฝั่งให้)
 // หน้าเว็บใช้แค่ตอนถามยืนยัน/บอกตัวเลขในคำอธิบาย — คนสแตมป์จริงคือ server เท่านั้น
 export const AD_STAMP_AT = 10000;
-export const AD_STAMP_BY_BRAND = { Beauterry: 3000 };
+export const AD_STAMP_BY_BRAND = { Beauterry: 3000, Jarvit: 3000, Jernis: 3000 };
 export const stampAtFor = brand => AD_STAMP_BY_BRAND[String(brand == null ? '' : brand).trim()] || AD_STAMP_AT;
 
 // เกณฑ์ของแถวหนึ่งในหน้า Ads / Influencers — server ส่ง stamp_at มาให้แล้ว
@@ -20,8 +20,8 @@ export function viewsReasonText(reason, row = {}) {
     switch (reason) {
         // Facebook / Instagram: WeBoostX ส่งแค่ค่าแอด / Reach (ไม่ส่งยอดวิว organic) — ยอดวิวยังต้องกรอกเอง
         case 'not_tiktok': return { short: plat + ' · กรอกเอง', long: `ยอดวิว/engagement ของคลิป ${plat} ไม่มีระบบส่งมาให้ (PFM ส่งเฉพาะ TikTok · WeBoostX ส่งแค่ค่าแอด/Reach ของ Facebook/Instagram) — กรอกยอดเองที่ปุ่ม 📊 ในหน้า On Process ของแคมเปญ` };
-        // TikTok ของแบรนด์ที่ยังไม่ต่อ PFM (ตอนนี้ต่อแค่ Beauterry · 6 ต.ค. 2026) — ระบบไม่ส่งไปถามยอด
-        case 'no_pfm_brand': return { short: 'แบรนด์นี้ยังไม่มี PFM · กรอกเอง', long: `แบรนด์ ${String((row && row.brand) || '').trim() || 'นี้'} ยังไม่ได้ต่อระบบ PFM (ตอนนี้ต่อแค่ Beauterry) — ระบบจึงไม่ดึงยอดวิว/ค่าแอดให้ กรอกยอดเองที่ปุ่ม 📊 ในหน้า On Process ของแคมเปญ · สถานะยิงแล้วกดเองได้ที่หน้า Ads (ค่าแอดกรอกได้เฉพาะ Admin / Manager) · พอแบรนด์นี้ต่อ PFM ของตัวเองแล้ว ยอดจะเข้ามาเอง` };
+        // TikTok ของแบรนด์ที่ยังไม่ต่อ PFM (ต่อแล้ว: Beauterry · Jarvit / Jernis ตั้งแต่ 9 ต.ค. 2026 — server logic.js PFM_SOURCES) — ระบบไม่ส่งไปถามยอด
+        case 'no_pfm_brand': return { short: 'แบรนด์นี้ยังไม่มี PFM · กรอกเอง', long: `แบรนด์ ${String((row && row.brand) || '').trim() || 'นี้'} ยังไม่ได้ต่อระบบ PFM (ตอนนี้ต่อ Beauterry, Jarvit, Jernis) — ระบบจึงไม่ดึงยอดวิว/ค่าแอดให้ กรอกยอดเองที่ปุ่ม 📊 ในหน้า On Process ของแคมเปญ · สถานะยิงแล้วกดเองได้ที่หน้า Ads (ค่าแอดกรอกได้เฉพาะ Admin / Manager) · พอแบรนด์นี้ต่อ PFM แล้ว ยอดจะเข้ามาเอง` };
         case 'no_id_post': return { short: 'ยังไม่มี ID Post', long: 'ยังไม่ได้ใส่ ID Post ของคลิปนี้ ระบบเลยยังไม่ได้ถามยอดจาก PFM — ใส่ ID Post แล้ว ถ้า PFM มีคลิปนี้ ยอดจะเข้ามาในรอบซิงก์ถัดไป (ปกติทุกชั่วโมง)' };
         case 'bad_id_post': return { short: 'ID Post ผิดรูปแบบ', long: `ID Post "${idPost}" ไม่ใช่ตัวเลขล้วน PFM จึงจับคู่คลิปไม่ได้ — แก้เป็นเลข ID ของคลิป (ตัวเลขท้ายลิงก์ TikTok)` };
         case 'dup_id_post': return { short: 'ID Post ซ้ำ', long: 'ID Post นี้ซ้ำกับโพสต์อื่น — ยอดจาก PFM ลงที่โพสต์แรกที่ใช้ ID นี้โพสต์เดียว · แก้ ID Post ให้ตรงกับคลิปของโพสต์นี้ หรือกรอกยอดเองที่ปุ่ม 📊' };
