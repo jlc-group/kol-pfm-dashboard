@@ -122,8 +122,10 @@ const app = require('../server/src/app');
         const firstRow = page.locator('.kol-track-entry').first();
         assert.equal(await firstRow.locator('.kol-track-code').first().isVisible(), true);
         assert.equal(await firstRow.locator('.kol-track-note input').isVisible(), true);
-        assert.match(await firstRow.locator('.ads-late').innerText(), /ต้องตรวจวันที่/);
-        assert.match(await firstRow.locator('.ads-late').innerText(), /ก่อนลงโพสต์/);
+        // ระยะเวลายิงแบบเดิม (ผู้ใช้เลือก 12 ต.ค. 2026): ยิงก่อนวันลงโพสต์ = ตรงเวลา · TikTok แบรนด์ PFM = ป้ายสถานะอ่านอย่างเดียว
+        assert.match(await firstRow.locator('.ads-late').innerText(), /ตรงเวลา/);
+        assert.equal(await firstRow.locator('span.ads-status.auto').count(), 1);
+        assert.equal(await firstRow.locator('button.ads-status').count(), 0);
         await firstRow.getByRole('button', { name: 'กรอกผลงาน', exact: true }).click();
         await page.locator('.modal').waitFor({ state: 'visible' });
         assert.equal(await page.getByRole('button', { name: 'ดึงจาก TikTok อัตโนมัติ' }).count(), 0);
@@ -172,36 +174,24 @@ const app = require('../server/src/app');
         assert.equal(savedPerf.payload.perf_from.views, 500);
         assert.equal(savedPerf.payload.views, undefined, 'server copies validated evidence, client does not supply replacement counters');
 
-        // A real UI save chooses a start date explicitly; cancelling has no write.
+        // ปุ่มสถานะแบบเดิม (ผู้ใช้สั่งกลับ 12 ต.ค. 2026): กดทีเดียว ไม่มีหน้าต่างยืนยัน
+        // ยังไม่ยิง → ✓ ยิงแล้ว + วันยิงแอด = วันนี้ (มีวันเดิมอยู่แล้วใช้วันเดิม) · ยิงแล้ว → ยังไม่ยิง + ล้างวันยิงแอด
+        const today = await page.evaluate(() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; });
         const manualRow = page.locator('.kol-track-entry').nth(1);
-        await manualRow.getByRole('button',{name:'แจ้งการเริ่มยิง',exact:true}).click();
-        let confirmation = page.getByRole('dialog');
-        await confirmation.getByLabel('การยืนยันของทีม').selectOption('yes');
-        assert.equal(await confirmation.getByLabel('วันเริ่มยิงจริง').inputValue(),'');
-        const priorWrite = savedPerf;
-        await confirmation.getByRole('button',{name:'ยกเลิก',exact:true}).click();
-        assert.equal(savedPerf,priorWrite);
-        await manualRow.getByRole('button',{name:'แจ้งการเริ่มยิง',exact:true}).click();
-        confirmation = page.getByRole('dialog');
-        await confirmation.getByLabel('การยืนยันของทีม').selectOption('yes');
-        await confirmation.getByLabel('วันเริ่มยิงจริง').fill('2026-10-04');
-        assert.equal(await confirmation.evaluate(el => el.getBoundingClientRect().right <= window.innerWidth),true,'mobile confirmation must fit');
-        await confirmation.getByRole('button',{name:'บันทึกการยืนยัน',exact:true}).click();
-        await confirmation.waitFor({state:'hidden'});
-        assert.equal(savedPerf.payload.ad_end,'2026-10-04');
-        assert.equal(savedPerf.payload.ad_status,'ยิงแล้ว');
-        await manualRow.getByText('ทีมยืนยันว่าเริ่มยิงแล้ว',{exact:true}).waitFor();
-        // Cancelling a team's confirmation cannot erase paid evidence or its start date.
+        assert.match(await manualRow.locator('button.ads-status').innerText(), /ยังไม่ยิง/);
+        await manualRow.locator('button.ads-status').click();
+        await manualRow.locator('button.ads-status.done').waitFor();
+        assert.equal(await page.getByRole('dialog').count(), 0, 'no confirmation dialog');
+        assert.equal(savedPerf.payload.ad_status, 'ยิงแล้ว');
+        assert.equal(savedPerf.payload.ad_end, today);
         const paidRow = page.locator('.kol-track-entry').nth(2);
-        await paidRow.getByRole('button',{name:'แก้การยืนยัน',exact:true}).click();
-        confirmation = page.getByRole('dialog');
-        await confirmation.getByLabel('การยืนยันของทีม').selectOption('no');
-        await confirmation.getByRole('button',{name:'บันทึกการยืนยัน',exact:true}).click();
-        await confirmation.waitFor({state:'hidden'});
-        assert.equal(savedPerf.payload.ad_status,'ยังไม่ยิง');
-        assert.equal(savedPerf.payload.ad_end,'2026-10-05');
-        await paidRow.getByText('มีค่าแอดแล้ว',{exact:true}).waitFor();
-        await paidRow.getByText('ทีมยังไม่ยืนยัน',{exact:true}).waitFor();
+        assert.match(await paidRow.locator('button.ads-status').innerText(), /✓ ยิงแล้ว/);
+        await paidRow.locator('button.ads-status').click();
+        await paidRow.locator('button.ads-status.from-spend').waitFor();
+        assert.equal(savedPerf.payload.ad_status, 'ยังไม่ยิง');
+        assert.equal(savedPerf.payload.ad_end, null);
+        // ค่าแอดเดินแล้วแต่ทีมยังไม่กด = ยังขึ้น ✓ ยิงแล้ว (จากค่าแอด)
+        assert.match(await paidRow.locator('button.ads-status').innerText(), /✓ ยิงแล้ว[\s\S]*จากค่าแอด/);
 
         await page.goto(base + '/');
         await menuButton.click();
