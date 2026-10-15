@@ -28,6 +28,7 @@ import { stampAtFor } from '../data/stamp.js';
 import StageCards from '../components/StageCards.jsx';
 import FeeInput from '../components/FeeInput.jsx';
 import DivideFeesModal, { feeOf, personKeyOf, feeBudgetFor, feeEligible, locksOnFee } from '../components/DivideFeesModal.jsx';
+import { feeTargets } from '../data/feeSplit.js';
 import { tabBadges, markSeen, seedDraftsSeen } from '../utils/tabUpdates.js';
 import { fmtRange } from '../utils/date.js';
 import { useAuth } from '../auth/AuthContext.jsx';
@@ -941,9 +942,11 @@ export default function ProjectDetail() {
                                     = หารเฉลี่ยเท่ากัน
                                 </button>
                             )}
-                            <button type="button" className="ag-clear-btn" disabled={!feeRows.some(s => feeOf(s) > 0)}
+                            {/* กลุ่มที่มีทั้งคนที่ทีมจ้างเองและเอเจนซี่ ล้างเฉพาะฝั่งเอเจนซี่ (15 ต.ค. 2026 · data/feeSplit.js) */}
+                            <button type="button" className="ag-clear-btn"
+                                disabled={!plats.some(p => feeTargets(feeEligible(submissions, g, p)).some(s => feeOf(s) > 0))}
                                 onClick={() => setFeeModal({ key: g.key, gi, mode: 'clear' })}
-                                title="ตั้งค่าตัวของทุกคนในกลุ่มนี้กลับเป็น 0 (ดูตัวอย่างและยืนยันก่อน)">
+                                title="ตั้งค่าตัวกลับเป็น 0 (ดูตัวอย่างและยืนยันก่อน) — กลุ่มที่มีทั้งคนที่ทีมจ้างเองและเอเจนซี่ ล้างเฉพาะฝั่งเอเจนซี่">
                                 ล้างค่าตัว
                             </button>
                         </div>

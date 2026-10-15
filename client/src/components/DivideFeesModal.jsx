@@ -2,11 +2,14 @@ import { useEffect, useState } from 'react';
 import { api } from '../api/client.js';
 import { budgetFor, quotaOf, clipCountFor, groupPlatforms, blocksBudget, toBlocks } from '../data/adGroups.js';
 import { AD_STAMP_AT, stampAtFor } from '../data/stamp.js';
+import { splitPlan } from '../data/feeSplit.js';
 
 // ===== หาร / ล้าง ค่าตัว KOL ของ 1 กลุ่ม (ฝั่งทีม) =====
 // ขอบเขตหาร = 1 กลุ่ม × 1 Platform เพราะงบตั้งไว้ที่ชั้น Platform ของกลุ่ม
 // ค่าตัวต่อคลิป = งบ ÷ (โควตาคน × คลิปต่อคน) — หารจากโควตา ไม่ใช่จำนวนรายชื่อตอนนี้
 //   คนที่ส่งเข้ามาทีหลังจะได้ยอดเท่ากับคนแรก ๆ
+// 15 ต.ค. 2026: กลุ่มที่มีทั้งคนที่ทีมจ้างเองและคลิปจากเอเจนซี่ — หักค่าตัวคนจ้างเองออกจากงบ แล้วหาร/ล้างเฉพาะฝั่งเอเจนซี่
+//   (ไม่แตะค่าตัวคนจ้างเอง) · กลุ่มที่ไม่มีเอเจนซี่เลยหารแบบเดิม — สูตรอยู่ที่ data/feeSplit.js
 // ไม่นับคนที่ "ไม่เลือก" · ส่งคำขอเดียวทั้งชุด (server ทำใน transaction) · ไม่จำอะไรไว้ในเครื่อง
 
 export const feeOf = s => Number(s && s.budget) || 0;
@@ -44,14 +47,17 @@ function planFor(project, group, platform, subs, mode, overwrite) {
     const budget = feeBudgetFor(project, group, platform);
     const quota = quotaOf(group, platform);
     const clips = clipCountFor(group, platform);
-    const divisor = quota * clips;
-    const perClip = (!isClear && budget > 0 && divisor > 0) ? Math.round(budget / divisor) : 0;
-    const to = isClear ? 0 : perClip;
     const rows = feeEligible(subs, group, platform);
+    // กลุ่มที่มีทั้งคนจ้างเองและเอเจนซี่: หักค่าตัวคนจ้างเองออกก่อน แล้วหาร/ล้างเฉพาะคลิปจากเอเจนซี่
+    const split = splitPlan({ budget, quota, clips, rows, personKey: personKeyOf });
+    const divisor = split.divisor;
+    const perClip = isClear ? 0 : split.perClip;
+    const to = isClear ? 0 : perClip;
+    const pool = split.targetRows;
 
     let targets = [];
-    if (isClear) targets = rows.filter(s => feeOf(s) > 0);
-    else if (perClip > 0) targets = rows.filter(s => (overwrite ? feeOf(s) !== perClip : feeOf(s) <= 0));
+    if (isClear) targets = pool.filter(s => feeOf(s) > 0);
+    else if (perClip > 0) targets = pool.filter(s => (overwrite ? feeOf(s) !== perClip : feeOf(s) <= 0));
 
     const changed = new Set(targets.map(s => s.id));
     // ตัวอย่างแสดงเป็น "คน" — คลิปของคนเดียวกันรวมเป็นแถวเดียว
@@ -68,14 +74,17 @@ function planFor(project, group, platform, subs, mode, overwrite) {
 
     return {
         platform, budget, quota, clips, divisor, perClip, to, rows,
+        // ฝั่งคนที่ทีมจ้างเอง (มีเฉพาะกลุ่มที่มีทั้งสองฝั่ง) — โชว์ในตัวอย่างว่าหักออกเท่าไร และไม่ถูกแตะ
+        mixed: split.mixed, pool, ownClips: split.own.length, ownPeople: split.ownPeople, ownFees: split.ownFees,
+        ownMissing: split.ownMissing, budgetLeft: split.budgetLeft, quotaLeft: split.quotaLeft,
         items: targets.map(s => ({ sub_id: s.id, budget: to, from: feeOf(s) })),
         people: [...people.values()],
         totalAfter: rows.reduce((n, s) => n + (changed.has(s.id) ? to : feeOf(s)), 0),
         clearedSum: isClear ? targets.reduce((n, s) => n + feeOf(s), 0) : 0,
         overwritten: isClear ? 0 : targets.filter(s => feeOf(s) > 0).length,
-        kept: isClear ? 0 : rows.filter(s => !changed.has(s.id) && feeOf(s) > 0).length,
-        // ปัดเป็นบาทเต็มแล้ว ถ้าครบโควตาทุกคลิป ยอดรวมจะต่างจากงบเท่านี้ (+ = เกิน, − = ขาด)
-        rounding: perClip > 0 ? perClip * divisor - budget : 0
+        kept: isClear ? 0 : pool.filter(s => !changed.has(s.id) && feeOf(s) > 0).length,
+        // ปัดเป็นบาทเต็มแล้ว ถ้าครบโควตาทุกคลิป ยอดรวมจะต่างจากงบ (ส่วนที่เหลือหลังหักคนจ้างเอง) เท่านี้ (+ = เกิน, − = ขาด)
+        rounding: isClear ? 0 : split.rounding
     };
 }
 
@@ -89,24 +98,47 @@ function PlanBlock({ plan: pl, mode, overwrite }) {
     const isClear = mode === 'clear';
     let note = null;
     if (!isClear && pl.budget <= 0) note = 'กลุ่มนี้ยังไม่ได้ตั้งงบของ Platform นี้ — ตั้งงบที่ฟอร์มแคมเปญก่อน แล้วค่อยหาร';
-    else if (!isClear && pl.divisor <= 0) note = 'Platform นี้ยังไม่ได้ตั้งจำนวน KOL (โควตา) — หารไม่ได้ ข้ามไป';
+    else if (!isClear && pl.mixed && pl.budgetLeft <= 0) {
+        note = `ค่าตัวของคนที่ทีมจ้างเอง ${pl.ownPeople} คน รวม ${baht(pl.ownFees)} ใช้งบของกลุ่ม (${baht(pl.budget)}) หมดแล้ว — ไม่เหลืองบให้หารฝั่งเอเจนซี่`;
+    } else if (!isClear && pl.mixed && pl.quotaLeft <= 0) {
+        note = `ทีมจ้างเองครบโควตา ${pl.quota} คนแล้ว — ไม่เหลือที่ให้หารฝั่งเอเจนซี่`;
+    } else if (!isClear && pl.divisor <= 0) note = 'Platform นี้ยังไม่ได้ตั้งจำนวน KOL (โควตา) — หารไม่ได้ ข้ามไป';
     else if (pl.rows.length === 0) note = 'ยังไม่มีรายชื่อใน Platform นี้';
     else if (pl.items.length === 0) {
-        note = isClear ? 'ไม่มีค่าตัวให้ล้าง'
+        note = isClear ? (pl.mixed ? 'ไม่มีค่าตัวฝั่งเอเจนซี่ให้ล้าง' : 'ไม่มีค่าตัวให้ล้าง')
             : overwrite ? 'ทุกคลิปเท่ากับยอดเฉลี่ยอยู่แล้ว'
                 : 'ทุกคนใส่ค่าตัวแล้ว — ถ้าจะให้เท่ากันหมด เลือก "ทับทุกคนให้เท่ากัน"';
     }
-    const showCalc = !isClear && pl.budget > 0 && pl.divisor > 0;
+    const showCalc = !isClear && pl.budget > 0 && pl.divisor > 0 && (!pl.mixed || pl.budgetLeft > 0);
     return (
         <div className="fee-plan">
             <div className="fee-plan-head">
                 <span className="adg-plat">📱 {pl.platform}</span>
-                {showCalc && (
+                {showCalc && (pl.mixed ? (
+                    /* มีทั้งคนจ้างเองและเอเจนซี่ (15 ต.ค. 2026): หักค่าตัวคนจ้างเองออกก่อน แล้วหารเฉพาะโควตาที่เหลือ */
+                    <span className="fee-plan-calc">
+                        งบ {baht(pl.budget)} − ทีมจ้างเอง {pl.ownPeople} คน {baht(pl.ownFees)} = {baht(pl.budgetLeft)}
+                        {' '}÷ ({pl.quotaLeft} คน × {pl.clips} คลิป) = <b>{baht(pl.perClip)}/คลิป</b>
+                    </span>
+                ) : (
                     <span className="fee-plan-calc">
                         งบ {baht(pl.budget)} ÷ ({pl.quota} คน × {pl.clips} คลิป) = <b>{baht(pl.perClip)}/คลิป</b>
                     </span>
-                )}
+                ))}
             </div>
+            {pl.mixed && (
+                <div className="fee-plan-sum fee-plan-own">
+                    <span className="muted">
+                        {isClear ? 'ล้างเฉพาะคลิปจากเอเจนซี่' : 'ใส่เฉพาะคลิปจากเอเจนซี่'} · ไม่แตะค่าตัว {pl.ownClips} คลิปของคนที่ทีมจ้างเอง
+                        {!isClear && ' (หักออกจากงบแล้ว)'}
+                    </span>
+                    {!isClear && pl.ownMissing > 0 && (
+                        <span className="warn">
+                            มีคนที่ทีมจ้างเอง {pl.ownMissing} คลิปยังไม่ใส่ค่าตัว — ยอดที่หารให้เอเจนซี่จะสูงเกินจริง ใส่ค่าตัวคนจ้างเองในตารางก่อนแล้วค่อยหาร
+                        </span>
+                    )}
+                </div>
+            )}
             {note && <div className="fee-plan-note">{note}</div>}
             {pl.people.length > 0 && (
                 <div className="fee-preview-scroll">
@@ -143,8 +175,10 @@ function PlanBlock({ plan: pl, mode, overwrite }) {
                                 {' '}({pl.rounding > 0 ? 'เกิน' : 'ขาด'}งบ {baht(Math.abs(pl.rounding))})
                             </span>
                         )}
-                        {pl.rows.length > pl.divisor && (
-                            <span className="warn">ตอนนี้มีรายชื่อ {pl.rows.length} คลิป มากกว่าโควตา {pl.divisor} คลิป</span>
+                        {pl.pool.length > pl.divisor && (
+                            <span className="warn">
+                                ตอนนี้มีรายชื่อ{pl.mixed ? 'จากเอเจนซี่' : ''} {pl.pool.length} คลิป มากกว่าโควตา{pl.mixed ? 'ที่เหลือ' : ''} {pl.divisor} คลิป
+                            </span>
                         )}
                         {pl.kept > 0 && <span className="muted">ข้าม {pl.kept} คลิปที่ใส่ค่าตัวไว้แล้ว</span>}
                     </>}
@@ -216,6 +250,7 @@ export default function DivideFeesModal({ projectId, project, group, groupNo, pl
                     {platforms.length ? <>Platform: <b>{platforms.join(' · ')}</b>{filtered && ' (ตามตัวกรอง Platform ที่เลือกอยู่)'}</> : 'กลุ่มนี้ยังไม่ได้เลือก Platform'}
                     {' · '}ไม่นับคนที่ "ไม่เลือก"
                     {isClear ? ' · ค่าตัวที่ใส่ไว้จะกลายเป็น ฿0' : ' · ยอดต่อคลิป = งบ ÷ (โควตาคน × คลิปต่อคน)'}
+                    {' · '}กลุ่มที่มีทั้งคนที่ทีมจ้างเองและเอเจนซี่ {isClear ? 'ล้าง' : 'หักค่าตัวคนจ้างเองออกก่อน แล้วหาร'}เฉพาะฝั่งเอเจนซี่
                 </p>
 
                 {!isClear && (
