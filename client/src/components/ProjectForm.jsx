@@ -155,7 +155,8 @@ export default function ProjectForm({ editing, onClose, onSaved }) {
         objective: editing?.objective || '',
         brief_link: editing?.brief_link || '',
         // ไม่เติมชื่อคนที่ล็อกอินให้อัตโนมัติแล้ว — ให้เลือกจากรายชื่อทีมงานเอง
-        owner: editing?.owner || '',
+        // ช่องเดียว "Project Owner" (19 ต.ค. 2026: เดิมช่อง Project Creator) — แคมเปญเก่าที่ยังไม่มี owner ใช้ชื่อผู้สร้างเป็นค่าเริ่ม
+        owner: editing?.owner || editing?.creator || '',
         creator: editing?.creator || '',
         budget: editing?.budget ?? '',
         kol_target: editing?.kol_target ?? '',
@@ -386,7 +387,7 @@ export default function ProjectForm({ editing, onClose, onSaved }) {
             });
         });
         if (!groupsOk) m.push('กลุ่มสินค้า (Platform/สินค้า/Target ของทุกสินค้าใน TikTok/Content Type (Facebook/Instagram: Campaign — กลุ่มที่ไม่ใช้ Gencode ไม่ต้องใส่) + Tier ให้ครบ · หลาย Content Type ใส่จำนวนคนของแต่ละ Content Type ด้วย)');
-        if (!form.owner) m.push('Project Owner');
+        if (!form.owner) m.push('Project Owner');   // ช่องบนสุด (เดิม Project Creator) — บังคับเหมือนช่อง Owner เดิม
         // งบกรอกที่ชั้น Platform — ต้องมีทุกบล็อก
         // แยกงบต่อสินค้า = ทุกแถวสินค้าในบล็อกต้องใส่งบ (ชุด = งบเดียวที่หัวชุด) · ก้อนเดียว = งบของ Platform ต้องมากกว่า 0
         const budgetOk = adGroups.length > 0 && adGroups.every(g => (g.blocks || []).length > 0
@@ -460,7 +461,9 @@ export default function ProjectForm({ editing, onClose, onSaved }) {
                 platform_briefs,
                 platform_budgets,
                 owner: form.owner || null,
-                creator: form.creator || null,
+                // แคมเปญใหม่: ผู้สร้าง = Project Owner ที่เลือก (ทีมใช้บัญชีร่วมกัน บรรทัด "สร้างโดย" ส่วนหัวหน้าแคมเปญจะได้เป็นชื่อคนจริง)
+                // แก้ไข: ผู้สร้างเดิมคงไว้ ไม่เปลี่ยนตาม Owner
+                creator: isEdit ? (form.creator || null) : (form.owner || null),
                 budget: totalBudget,
                 kol_target: totalKol,
                 start_date: form.start_date || null,
@@ -509,14 +512,16 @@ export default function ProjectForm({ editing, onClose, onSaved }) {
                 </div>
                 {error && <div className="alert-error">{error}</div>}
                 <form onSubmit={handleSubmit}>
-                    {/* ทีมใช้บัญชีเดียวร่วมกัน ระบบจึงบันทึกได้แค่ "System Admin" ต้องเลือกชื่อจริงเอง */}
+                    {/* ทีมใช้บัญชีเดียวร่วมกัน ระบบจึงบันทึกได้แค่ "System Admin" ต้องเลือกชื่อจริงเอง
+                        19 ต.ค. 2026: ช่องนี้เดิมคือ Project Creator → เปลี่ยนเป็น Project Owner (ช่อง Owner เดิมด้านล่างเอาออกแล้ว)
+                        เก็บที่ owner = ที่หน้าแคมเปญ / Influencer List / การ์ดแคมเปญโชว์เป็น Project Owner */}
                     <div className="field">
-                        <label>Project Creator</label>
-                        <select value={form.creator} onChange={e => update('creator', e.target.value)}>
+                        <label>Project Owner</label>
+                        <select value={form.owner} onChange={e => update('owner', e.target.value)}>
                             <option value="">— เลือก —</option>
                             {OWNERS.map(n => <option key={n} value={n}>{n}</option>)}
-                            {form.creator && !OWNERS.includes(form.creator) && (
-                                <option value={form.creator}>{form.creator}</option>
+                            {form.owner && !OWNERS.includes(form.owner) && (
+                                <option value={form.owner}>{form.owner}</option>
                             )}
                         </select>
                     </div>
@@ -1043,17 +1048,7 @@ export default function ProjectForm({ editing, onClose, onSaved }) {
                         </div>
                     </div>
 
-                    <div className="field">
-                        <label>Project Owner</label>
-                        <select value={form.owner} onChange={e => update('owner', e.target.value)}>
-                            <option value="">— เลือก —</option>
-                            {OWNERS.map(n => <option key={n} value={n}>{n}</option>)}
-                            {form.owner && !OWNERS.includes(form.owner) && (
-                                <option value={form.owner}>{form.owner}</option>
-                            )}
-                        </select>
-                    </div>
-
+                    {/* ช่อง Project Owner เดิมตรงนี้เอาออกแล้ว (ผู้ใช้สั่ง 19 ต.ค. 2026) — ย้ายไปใช้ช่องบนสุดแทน (เดิม Project Creator) */}
                     <div className="field-row">
                         <div className="field">
                             <label>Period (Start)</label>
