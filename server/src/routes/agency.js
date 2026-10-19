@@ -178,6 +178,9 @@ function withoutAdCost(row) {
     if (!row) return row;
     const out = { ...row };
     delete out.ad_spend;
+    // KOL PFM / เกรดจาก WeBoostX เป็นข้อมูลภายใน (สัญญา WeBoostX: เอเจนซี่ห้ามเห็น) — ตัดพร้อมต้นทุนแอด
+    delete out.weboostx_pfm;
+    delete out.weboostx_pfm_grade;
     if (out.perf_stamp && typeof out.perf_stamp === 'object') {
         out.perf_stamp = { ...out.perf_stamp };
         AD_COST_KEYS.forEach(k => { delete out.perf_stamp[k]; });

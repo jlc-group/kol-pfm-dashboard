@@ -3,6 +3,7 @@ const path = require('node:path');
 const store = require('../store');
 const { UPLOAD_DIR } = require('../config/uploads');
 const { thumbPath, createThumbCache } = require('../services/adThumbs');
+const wxThumbs = require('../services/weboostxThumbs');
 const { authenticate } = require('../middleware/auth');
 const { allowedBrands, canSeeBrand, canSeeCostMetrics } = require('../data/roles');
 const { cleanFee, pfmManagedSpend, postCheckWaiting, adStatusAuto } = require('../store/logic');
@@ -35,6 +36,8 @@ router.get('/tiktok-evidence-status', (req, res) => {
 
 // รูปปกคลิป TikTok (คอลัมน์ IMAGE) — ดึงครั้งแรกแล้วเก็บไว้ในเครื่อง ครั้งต่อไปเสิร์ฟจากไฟล์เลย
 const thumbs = createThumbCache({ dir: path.join(UPLOAD_DIR, 'ads-thumbs') });
+// รูปปกโพสต์ IG / FB — server ดาวน์โหลดจาก WeBoostX มาเก็บไว้แล้ว (services/weboostxThumbs.js) เส้นนี้แค่ส่งสำเนาของเรา
+const WX_THUMB_DIR = wxThumbs.thumbDir(UPLOAD_DIR);
 
 const AD_STATUSES = ['ยังไม่ยิง', 'ยิงแล้ว'];
 
@@ -52,7 +55,9 @@ router.get('/', async (req, res, next) => {
         });
         // path รูปปกของแต่ละแถว (null = ไม่ใช่โพสต์ TikTok หน้าเว็บขึ้นไอคอนแทน)
         (data.rows || []).forEach(r => {
-            r.thumb = thumbPath(r);
+            // TikTok: ดึงปกตอนขอรูป · IG / FB: สำเนาที่ดาวน์โหลดจาก WeBoostX ไว้แล้ว (ชื่อไฟล์ใช้แค่ทำ ?v= ไม่ส่งออกไป)
+            r.thumb = thumbPath(r) || wxThumbs.thumbPathFor(r);
+            delete r.thumbnail_local;
             if (r.status_auto === true) {
                 r.organic_metrics_status = r.perf_sources?.api?.status || getOrganicMetricStatus(r.id_post);
                 if (r.views_reason === 'pfm_no_views' && r.organic_metrics_status === 'source_unavailable') r.views_reason = 'pfm_source_unavailable';
@@ -62,14 +67,21 @@ router.get('/', async (req, res, next) => {
     } catch (err) { next(err); }
 });
 
-// GET /api/ads/:subId/thumb — รูปปกคลิป TikTok ของโพสต์ · สิทธิ์ตามแบรนด์เหมือนตอนแก้แถว
+// GET /api/ads/:subId/thumb — รูปปกของโพสต์ (TikTok ดึงเอง · IG / FB สำเนาจาก WeBoostX) · สิทธิ์ตามแบรนด์เหมือนตอนแก้แถว
 router.get('/:subId/thumb', async (req, res, next) => {
     try {
         res.set('Cache-Control', 'no-store');   // ตอบ error ห้ามค้างในเบราว์เซอร์ (ดึงได้ทีหลังต้องเห็นรูป)
+        res.set('X-Content-Type-Options', 'nosniff');
         const ctx = await store.ads.subContext(req.params.subId);
         if (!ctx) return res.status(404).json({ status: 'error', message: 'ไม่พบโพสต์' });
         if (!canSeeBrand(req.account || req.user, ctx.brand)) {
             return res.status(403).json({ status: 'error', message: 'ไม่มีสิทธิ์ดูข้อมูลของแบรนด์อื่น' });
+        }
+        // IG / FB: เสิร์ฟสำเนาที่ดาวน์โหลดไว้แล้วเท่านั้น — ไม่เรียก WeBoostX ระหว่างตอบเบราว์เซอร์
+        const local = wxThumbs.localFile(ctx.submission.thumbnail_local, WX_THUMB_DIR);
+        if (local) {
+            // ไฟล์ของ path เดิมไม่เปลี่ยน (path เปลี่ยน = ชื่อไฟล์ใหม่ = ?v= ใหม่) — เก็บในเบราว์เซอร์ได้ 7 วัน
+            return res.sendFile(local, { cacheControl: false, headers: { 'Cache-Control': 'private, max-age=604800' } });
         }
         const fp = await thumbs.get(ctx.submission.post_url);
         if (!fp) return res.status(404).json({ status: 'error', message: 'ยังไม่มีรูปปกของโพสต์นี้' });

@@ -492,3 +492,14 @@ CREATE UNIQUE INDEX IF NOT EXISTS catalog_targets_key ON catalog_targets (produc
 
 -- Additive source evidence; preserves existing metrics and stamps.
 ALTER TABLE submissions ADD COLUMN IF NOT EXISTS perf_sources JSONB;
+
+-- KOL PFM + รูปปกโพสต์ IG / FB จาก WeBoostX (19 ต.ค. 2026 · services/weboostxThumbs.js)
+-- weboostx_pfm 0-10 = engagement จากแอดต่อ 1,000 impressions จัดอันดับในแบรนด์ + แพลตฟอร์ม · เกรด S/A/B/C/D ตามที่ WeBoostX ส่งมา
+-- weboostx_thumbnail_path = path บนเครื่อง WeBoostX (ดึงด้วย key ฝั่ง server) · thumbnail_local = ชื่อไฟล์ใน UPLOAD_DIR/weboostx-thumbs
+-- 3 คอลัมน์หลังเป็นข้อมูลภายใน ไม่ออกไปกับคำตอบ JSON ใด ๆ (data/privateFields.js)
+ALTER TABLE submissions ADD COLUMN IF NOT EXISTS weboostx_pfm NUMERIC(5,2);
+ALTER TABLE submissions ADD COLUMN IF NOT EXISTS weboostx_pfm_grade VARCHAR(1);
+ALTER TABLE submissions ADD COLUMN IF NOT EXISTS weboostx_thumbnail_path TEXT;
+ALTER TABLE submissions ADD COLUMN IF NOT EXISTS thumbnail_local TEXT;
+ALTER TABLE submissions ADD COLUMN IF NOT EXISTS thumbnail_fetched_at TIMESTAMPTZ;
+ALTER TABLE submissions ADD COLUMN IF NOT EXISTS thumbnail_error TEXT;

@@ -3,7 +3,8 @@ import useLazyImage from '../utils/useLazyImage.js';
 import { okThumbPath, postHref, platformShort } from '../data/postThumb.js';
 
 // รูปปกคลิปในคอลัมน์ IMAGE หน้า Ads — แนวตั้งมุมมน กดแล้วเปิดโพสต์ในแท็บใหม่
-// TikTok: server ดึงปกมาเก็บไว้ให้ (row.thumb) · แพลตฟอร์มอื่น / ดึงไม่ได้: กล่องไอคอน + ชื่อแพลตฟอร์ม (ยังกดเปิดโพสต์ได้)
+// TikTok: server ดึงปกมาเก็บไว้ให้ (row.thumb) · IG / FB: server ดาวน์โหลดสำเนาจาก WeBoostX ไว้แล้ว (row.thumb เส้นเดียวกัน)
+// ยังไม่มีรูป / ดึงไม่ได้: กล่องไอคอน + ชื่อแพลตฟอร์ม (ยังกดเปิดโพสต์ได้)
 export default function PostThumb({ row }) {
     const path = okThumbPath(row.thumb) ? row.thumb : '';
     const [box, img] = useLazyImage(path);
@@ -26,7 +27,10 @@ export default function PostThumb({ row }) {
         );
         title = path
             ? 'รูปปกยังไม่พร้อม (TikTok อาจจำกัดการดึงรูป หรือคลิปไม่เปิดสาธารณะ) — กดเพื่อเปิดโพสต์จริง'
-            : 'ไม่มีรูปปก (ดึงอัตโนมัติได้เฉพาะ TikTok) — กดเพื่อเปิดโพสต์';
+            // IG / FB: รูปมาจาก WeBoostX (server ดาวน์โหลดทุกชั่วโมง) — โพสต์ที่ยังไม่อยู่ใน KOL Studio / เกิน 60 วันจะไม่มีรูป
+            : /instagram|facebook/i.test(String(row.platform || ''))
+                ? 'ยังไม่มีรูปปก (IG / FB ได้รูปจาก WeBoostX — อัปเดตทุกชั่วโมง) — กดเพื่อเปิดโพสต์'
+                : 'ไม่มีรูปปก (ดึงอัตโนมัติได้เฉพาะ TikTok / IG / FB) — กดเพื่อเปิดโพสต์';
     }
 
     if (!href) {

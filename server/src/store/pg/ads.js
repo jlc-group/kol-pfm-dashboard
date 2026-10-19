@@ -279,6 +279,12 @@ const ads = {
                     ad_start: s.ad_start || null,
                     ad_end: s.ad_end || null,
                     ad_note: s.ad_note || null,
+                    // KOL PFM ของ WeBoostX (IG / FB · 19 ต.ค. 2026) — engagement จากแอดต่อ 1,000 impressions จัดอันดับในแบรนด์ + แพลตฟอร์ม
+                    // ไม่ใช่ CPM/CPE ของเรา · ?? null = ฐานที่ยังไม่มีคอลัมน์ก็ไม่พัง
+                    weboostx_pfm: s.weboostx_pfm == null ? null : Number(s.weboostx_pfm),
+                    weboostx_pfm_grade: s.weboostx_pfm_grade ?? null,
+                    // ชื่อไฟล์สำเนารูปปก — routes/ads.js ใช้ทำ path รูป (?v=) แล้วลบทิ้งก่อนส่งให้เบราว์เซอร์
+                    thumbnail_local: s.thumbnail_local ?? null,
                     cpm: adCpm(spend, reach),
                     // ทำไมยังไม่มียอดวิว (ป้าย Not rated / Awaiting data) — null = มียอดวิวแล้ว (logic.js viewsMissingReason)
                     views_reason: viewsMissingReason(s, firstByPost, p && p.brand),

@@ -16,6 +16,7 @@ import { performanceSourceInfo } from '../data/performanceSources.js';
 import PerfModal from '../components/PerfModal.jsx';
 import { adEvidence, hasAdSpend } from '../data/adEvidence.js';
 import { adTiming, timingLevel, timingTip, TIMING_OPTS } from '../data/adTiming.js';
+import { wxPfmBadge, isWxPlatform, WX_PFM_TITLE } from '../data/wxPfm.js';
 
 
 // คอลัมน์ "สถานะ" กลับเป็นปุ่ม ✓ ยิงแล้ว / ยังไม่ยิง แบบเดิม (ผู้ใช้สั่ง 12 ต.ค. 2026 — เลิกช่อง "หลักฐานการเริ่มยิง" + หน้าต่างยืนยัน)
@@ -426,6 +427,11 @@ function AdRow({ row, onSaved, canCost, noAd = false }) {
                 )}
                 <input inputMode="numeric" value={reach} placeholder="Reach" title="Reach สะสม — ซิงก์จาก PFM เมื่อมีข้อมูล หรือกรอกเองได้"
                     onChange={e => { setReach(e.target.value.replace(/[^0-9]/g, '')); setReachDirty(true); }} onBlur={saveReach} />
+                {/* KOL PFM ของ WeBoostX (IG / FB เท่านั้น · 19 ต.ค. 2026) — เกรด + คะแนน · ยังไม่มี = "—" */}
+                {isWxPlatform(row.platform) && (() => {
+                    const b = wxPfmBadge(row.weboostx_pfm, row.weboostx_pfm_grade);
+                    return <span className={'wx-pfm ' + b.cls} title={WX_PFM_TITLE}>{b.text}</span>;
+                })()}
             </div>
             {/* ระยะเวลายิง — แบบเดิม (ผู้ใช้สั่งกลับ 12 ต.ค. 2026): ตรงเวลา / ช้า N วัน / — */}
             <div className="ads-cell ads-late">
@@ -738,7 +744,7 @@ export default function Ads() {
                     <div className="ads-tbl-headwrap" ref={headRef} onScroll={() => syncX(headRef, bodyRef)}>
                         <div className="ads-tbl">
                             <div className="ads-tbl-head">
-                                <span title="รูปปกคลิป — TikTok ดึงให้อัตโนมัติ · กดรูปเพื่อเปิดโพสต์">IMAGE</span>
+                                <span title="รูปปกโพสต์ — TikTok ดึงให้อัตโนมัติ · IG / FB ได้จาก WeBoostX (อัปเดตทุกชั่วโมง) · กดรูปเพื่อเปิดโพสต์">IMAGE</span>
                                 <span>KOL
                                     <ColumnFilter label="Platform" value={platform} onPick={setPlatform}
                                         options={[{ value: '', label: 'ทุก Platform', count: countIf('platform', () => true) },

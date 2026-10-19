@@ -1326,6 +1326,14 @@ a { text-decoration: none; color: inherit; }
 .kol-track-entry .ads-spend input { padding: 6px 8px; font-size: 12px; }
 .ads-spend-pfm { font-size: 12px; font-weight: 700; white-space: nowrap; }
 .ads-spend-pfm em { font-style: normal; font-size: 9.5px; font-weight: 700; color: #6d28d9; background: #ede9fe; padding: 1px 5px; border-radius: 999px; margin-left: 2px; }
+/* KOL PFM ของ WeBoostX (IG / FB) ใต้ค่าแอด — เกรด · คะแนน · สีตามเกรด S เขียว / A เขียวอ่อน / B เหลือง / C ส้ม / D แดง (19 ต.ค. 2026) */
+.wx-pfm { justify-self: start; display: inline-flex; align-items: center; padding: 1px 8px; border-radius: 999px; border: 1px solid transparent; font-size: 11px; font-weight: 800; white-space: nowrap; cursor: help; font-variant-numeric: tabular-nums; }
+.wx-pfm.s { background: #d9f5e7; color: #0b6b47; border-color: #a7e3c7; }
+.wx-pfm.a { background: #eefaf3; color: #2f8a5f; border-color: #cdeedc; }
+.wx-pfm.b { background: #fef6d8; color: #8a6200; border-color: #f6e2a0; }
+.wx-pfm.c { background: #fdeedd; color: #b45309; border-color: #f7d3ab; }
+.wx-pfm.d { background: #fdeaea; color: #c0271f; border-color: #f6c4c1; }
+.wx-pfm.none { background: #f3f4f6; color: var(--muted); border-color: #e5e7eb; }
 /* ขอบซ้ายขวาของหัว = padding 12px + เส้นขอบ 1px ของแถว (.kol-track-entry) — กว้างเนื้อในเท่ากัน คอลัมน์ fr จึงตรงกันทุกช่อง (เดิม 4px เยื้องสูงสุด ~9px) */
 .ads-tbl-head { font-size: 10.5px; font-weight: 700; color: var(--muted); letter-spacing: .4px; padding: 0 13px 10px; }
 /* หัวตารางยิงแอดล็อกไว้บนจอตอนเลื่อนลง — เป็นกรอบแยกจากแถว (Ads.jsx ซิงก์การเลื่อนซ้ายขวาให้ตรงกัน)

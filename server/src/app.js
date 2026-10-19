@@ -34,6 +34,8 @@ const blockAgency = (req, res, next) => {
 
 const app = express();
 app.disable('x-powered-by');
+// คอลัมน์ภายใน (path รูปของ WeBoostX / ชื่อไฟล์สำเนา / สาเหตุโหลดไม่ได้) ไม่ออกไปกับคำตอบ JSON ใด ๆ — data/privateFields.js
+app.set('json replacer', require('./data/privateFields').privateFieldReplacer);
 
 app.use(cors());
 app.use(express.json());

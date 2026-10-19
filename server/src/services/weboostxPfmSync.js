@@ -1,5 +1,6 @@
 const store = require('../store/pg/weboostxSync');
 const { sanitizeRow } = require('./weboostxMetrics');
+const thumbs = require('./weboostxThumbs');
 let running = false;
 let lastRun = null;
 function config(env = process.env) {
@@ -67,17 +68,36 @@ async function runSync({ storeImpl = store, fetchImpl = fetch, env = process.env
 }
 function getStatus(env = process.env) {
     const settings = config(env);
-    return { enabled: settings.enabled, configured: Boolean(settings.apiKey), running, last_run: lastRun };
+    return { enabled: settings.enabled, configured: Boolean(settings.apiKey), running, last_run: lastRun,
+        thumbnails: thumbs.getThumbStatus() };
+}
+// 1 รอบของตัวตั้งเวลา: ซิงก์ค่าแอดก่อน แล้วค่อยดาวน์โหลดรูปปก (services/weboostxThumbs.js · 19 ต.ค. 2026)
+// รูปปกเป็นงานแยก — ล้มยังไงผลซิงก์ค่าแอดก็ไม่เปลี่ยน (บันทึกลงฐานไปแล้ว) · ซิงก์ล้มก็ยังลองโหลดรูปของ path ที่มีอยู่
+async function runCycle({ logger = console, env = process.env, storeImpl, fetchImpl, thumbDir } = {}) {
+    const out = { sync: null, thumbs: null };
+    try {
+        out.sync = await runSync({ env, ...(storeImpl ? { storeImpl } : {}), ...(fetchImpl ? { fetchImpl } : {}) });
+        if (!out.sync.skipped) logger.log(`WeBoostX PFM sync completed: ${out.sync.updated}/${out.sync.requested} updated`);
+    } catch (error) {
+        out.syncError = error.message;
+        logger.error(`WeBoostX PFM sync failed: ${error.message}`);
+    }
+    try {
+        out.thumbs = await thumbs.runThumbs({ settings: config(env), storeImpl, ...(fetchImpl ? { fetchImpl } : {}), dir: thumbDir });
+        logger.log(thumbs.thumbSummaryLine(out.thumbs));
+    } catch (error) {
+        out.thumbsError = error.message;
+        logger.error(`WeBoostX thumbnails failed: ${error.message}`);
+    }
+    return out;
 }
 function startScheduler({ logger = console, env = process.env } = {}) {
     const settings = config(env);
     if (!settings.enabled || !settings.apiKey) return () => {};
-    const execute = () => runSync({ env }).then(result => {
-        logger.log(`WeBoostX PFM sync completed: ${result.updated}/${result.requested} updated`);
-    }).catch(error => logger.error(`WeBoostX PFM sync failed: ${error.message}`));
+    const execute = () => runCycle({ logger, env });
     const initial = setTimeout(execute, settings.initialDelayMs);
     const interval = setInterval(execute, settings.intervalMs);
     initial.unref(); interval.unref();
     return () => { clearTimeout(initial); clearInterval(interval); };
 }
-module.exports = { config, fetchBatch, runSync, getStatus, startScheduler };
+module.exports = { config, fetchBatch, runSync, runCycle, getStatus, startScheduler };

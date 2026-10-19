@@ -13,6 +13,9 @@ const { now, maybeStamp, stampAtFor, AD_STAMP_AT, AD_STAMP_BY_BRAND, nextPostChe
 
 const { METRIC_KEYS, manualEvidence, apiSelection, recordApi } = require('../performanceSources');
 const { selectable: isolatedSelectable } = require('../tiktokEvidence');
+const { itemIdFor: wxItemIdFor, platformOf: wxPlatformOf } = require('../../services/weboostxMetrics');
+// คอลัมน์ข้อมูลจาก WeBoostX KOL Studio ของโพสต์ (คะแนน / เกรด / รูปปก) — ล้างเมื่อตัวตนโพสต์เปลี่ยน (ดู updateOne)
+const STUDIO_DATA = ['weboostx_pfm', 'weboostx_pfm_grade', 'weboostx_thumbnail_path', 'thumbnail_local', 'thumbnail_fetched_at', 'thumbnail_error'];
 
 // เกณฑ์ต่ำสุดของทุกแบรนด์ — ค่าแอดยังไม่ถึงเท่านี้ก็ไม่มีทางสแตมป์ ไม่ต้องเสียเวลาไปหาแบรนด์
 // (การแก้ข้อมูลส่วนใหญ่เป็นแถวที่ยังไม่ได้ยิงแอดเลย)
@@ -240,6 +243,14 @@ async function updateOne(client, subId, projectId, fields, byName, opts = {}) {
         patch[f + '_at'] = s[f + '_at'];
         patch[f + '_by'] = s[f + '_by'];
     });
+
+    // ตัวตนโพสต์ IG / FB ที่ใช้ถาม WeBoostX เปลี่ยน (แก้ลิงก์ / ID Post / Gencode / Platform) — คะแนน KOL PFM / เกรด / รูปปก
+    // เป็นของโพสต์เดิม ต้องไม่ค้างโชว์กับโพสต์ใหม่ (19 ต.ค. 2026) → ล้างทิ้ง รอบซิงก์ถัดไปเติมของโพสต์ใหม่ให้ (ถ้า WeBoostX รู้จัก)
+    // path เดิมกลับมา = ไฟล์เดิมในเครื่องถูกใช้ซ้ำ ไม่ต้องโหลดใหม่ · ฐานที่ยังไม่มีคอลัมน์ (ยังไม่ setup-db) = ข้าม
+    if ('weboostx_pfm' in prevRow && STUDIO_DATA.some(k => prevRow[k] != null)
+        && (wxItemIdFor(prevRow) !== wxItemIdFor(s) || wxPlatformOf(prevRow.platform) !== wxPlatformOf(s.platform))) {
+        STUDIO_DATA.forEach(k => { if (prevRow[k] != null) { s[k] = null; patch[k] = null; } });
+    }
 
     // ปรับ timestamp ตามหมวดของข้อมูลที่แก้ (ใช้ทำแจ้งเตือนแท็บ)
     // budget ไม่อยู่ใน LIST_F — ทีมตั้งค่าตัวจากหน้า Dashboard ทีละหลายสิบแถว (หารเฉลี่ย/ล้างค่าตัว)
