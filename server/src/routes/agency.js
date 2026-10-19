@@ -6,6 +6,7 @@ const multer = require('multer');
 const chatHub = require('../services/chatHub');
 const { authenticate } = require('../middleware/auth');
 const { canSeeCostMetrics, canSeeBrand } = require('../data/roles');
+const { isMixedTier, mixedTierError } = require('../data/tiers');
 
 const { UPLOAD_DIR, uploadPath } = require('../config/uploads');
 const router = express.Router();
@@ -237,6 +238,7 @@ router.post('/:token', async (req, res, next) => {
         // budget ที่แท็บเก่าส่งมาไม่ถูกใช้ — ค่าตัว KOL ทีมตั้งที่หน้าแคมเปญ
         const { account_name, followers, platform, product, agency, link_account, group_key, tier, content_type } = req.body;
         if (!account_name) return res.status(400).json({ status: 'error', message: 'กรุณาระบุชื่อ Account' });
+        if (isMixedTier(tier)) return mixedTierError(res);   // "คละ Tier" เป็นค่าของกลุ่ม ไม่ใช่ Tier ของคน (data/tiers.js)
         // จำนวนวัน Gencode เริ่มต้น = ตามที่ตั้งไว้ในกลุ่มสินค้านั้น (ถ้ามี)
         const grp = (project.ad_groups || []).find(g => g.key === group_key);
         // กลุ่มนี้กำหนดให้ 1 คนส่งหลายคลิป -> สร้างแถวให้ครบทุกคลิปเลย เอเจนซี่กรอกชื่อครั้งเดียว
@@ -314,6 +316,7 @@ router.put('/:token/submissions/:subId', async (req, res, next) => {
         if (account_name !== undefined && !String(account_name).trim()) {
             return res.status(400).json({ status: 'error', message: 'กรุณาระบุชื่อ Account' });
         }
+        if (isMixedTier(tier)) return mixedTierError(res);
         // ช่อง "ตัวคน" (ชื่อ/ยอดฟอล/Platform/สินค้า/ลิงก์ช่อง/ผู้ติดต่อ) แก้ทีเดียวให้ครบทุกคลิป
         // ช่อง "ตัวงาน" (Gencode/ดราฟ/โพสต์/ยอดวิว) เป็นของแต่ละคลิป จึงแก้เฉพาะแถวนั้น
         // ค่าตัว (budget / budget_per_clip) ไม่ส่งต่อให้ store เลย — ถึงหลุดมาก็ไม่เขียน (updateOne ตัดทิ้งอีกชั้น)
@@ -383,6 +386,8 @@ router.post('/:token/batch', async (req, res, next) => {
         const items = Array.isArray(req.body.items) ? req.body.items : [];
         const valid = items.filter(it => it && it.account_name && String(it.account_name).trim());
         if (valid.length === 0) return res.status(400).json({ status: 'error', message: 'กรุณากรอกอย่างน้อย 1 รายชื่อ' });
+        // ตรวจก่อนบันทึกคนแรก — มีคนไหนส่ง "คละ Tier" มา = ไม่บันทึกเลยสักคน (ไม่ให้ลงไปครึ่งชุด)
+        if (valid.some(it => isMixedTier(it.tier))) return mixedTierError(res);
 
         const added = [];
         for (const it of valid) {

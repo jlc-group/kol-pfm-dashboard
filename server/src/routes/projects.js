@@ -19,6 +19,7 @@ const {
     carryProductKols, carryProductBundles, carryNoGencode, normCampaignType, todayTH
 } = require('../store/logic');
 const { soloInput, buildSoloGroup, soloPersons, soloAccountsText, soloName, soloDeleteBlock } = require('../store/soloKol');
+const { isMixedTier, mixedTierError } = require('../data/tiers');
 // KOL รายคน (campaign_type 'solo') — ข้อความเมื่อเส้นทั่วไปของแคมเปญถูกเรียกกับรายการ KOL รายคน
 // (หน้าเว็บรุ่นเก่าที่เปิดค้างไว้ไม่รู้จักประเภทนี้ ฟอร์มแคมเปญจะสร้างกลุ่มใหม่ทับจนข้อมูลของ KOL รายคนหาย)
 const SOLO_ONLY_MSG = 'รายการนี้เป็น KOL รายคน — แก้จากหน้าของ KOL คนนั้น (ถ้าเปิดหน้าเว็บค้างไว้นาน กด F5 ก่อน)';
@@ -1464,6 +1465,7 @@ router.post('/:id/submissions', async (req, res, next) => {
         // tier: แถวกรอกในกล่อง (TeamAddRows 6 ต.ค. 2026) ส่งมา · หน้าต่างเดิมไม่ส่ง = ว่างตามเดิม
         const { account_name, platform, product, agency, budget, link_account, followers, group_key, content_type, tier } = req.body;
         if (!account_name) return res.status(400).json({ status: 'error', message: 'กรุณาระบุชื่อ Account' });
+        if (isMixedTier(tier)) return mixedTierError(res);   // "คละ Tier" เป็นค่าของกลุ่ม ไม่ใช่ Tier ของคน (data/tiers.js)
         const proj = await store.projects.findByIdFull(req.params.id);
         const grp = ((proj && proj.ad_groups) || []).find(g => g.key === group_key);
         const rows = await store.submissions.addPerson({

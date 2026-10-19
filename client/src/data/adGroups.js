@@ -773,16 +773,24 @@ export function quotaOf(g, platform, contentType) {
         .reduce((n, a) => n + (Number(a.kols) || 0), 0);
 }
 
+// Tier ของ KOL ที่ทีมเลือกได้ในฟอร์มแคมเปญ (เรียงเล็ก → ใหญ่)
+export const KOL_TIERS = ['Nano 1k - 10k', 'Micro 10k - 100k', 'Macro 100k - 1M', 'Mega 1M+'];
+// "คละ Tier" (ผู้ใช้ขอ 19 ต.ค. 2026) — ทีมไม่ล็อก Tier ของ Platform นั้น · ตอนกรอกรายชื่อ (หน้าเอเจนซี่ / แถวเพิ่มรายชื่อฝั่งทีม)
+// ให้เลือกได้ทุก Tier แล้วเก็บ Tier จริงของแต่ละคน — ค่านี้อยู่แค่ในโครงกลุ่ม ไม่ลงแถวรายชื่อ
+export const MIXED_TIER = 'คละ Tier';
+
 // Tier ที่ (Platform + Content Type) นี้เปิดรับ — ไว้จำกัดตัวเลือกให้เอเจนซี่
-// ไม่ระบุ Content Type = ทุก Tier ของ Platform นั้น
+// ไม่ระบุ Content Type = ทุก Tier ของ Platform นั้น · มี "คละ Tier" = ทุก Tier ตามลำดับปกติ (+ ชื่ออื่นที่ตั้งไว้ต่อท้าย)
 export function tiersOf(g, platform, contentType) {
     const out = [];
+    let mixed = false;
     (g.allocations || []).forEach(a => {
         if (platform && a.platform && a.platform !== platform) return;
         if (contentType && a.content_type && a.content_type !== contentType) return;
-        if (a.tier && !out.includes(a.tier)) out.push(a.tier);
+        if (a.tier === MIXED_TIER) mixed = true;
+        else if (a.tier && !out.includes(a.tier)) out.push(a.tier);
     });
-    return out;
+    return mixed ? [...KOL_TIERS, ...out.filter(t => !KOL_TIERS.includes(t))] : out;
 }
 
 // งบของ Platform หนึ่งในกลุ่ม — ข้อมูลเก่าที่ยังไม่มีงบรายบล็อกจะถูก toBlocks เกลี่ยให้ตามสัดส่วนคน

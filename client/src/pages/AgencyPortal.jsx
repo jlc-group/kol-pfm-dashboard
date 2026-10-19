@@ -13,9 +13,10 @@ import GroupNeedHead, { groupClipNeed } from '../components/GroupNeedHead.jsx';
 import { productLabel } from '../data/products.js';
 import {
     groupPlatforms, allocsInScope, contentTypesOf, mediaFor,
-    tiersOf, productsFor, quotaOf, contentCells, cellKeyOf, cellKey, productKolProgress
+    tiersOf, productsFor, quotaOf, contentCells, cellKeyOf, cellKey, productKolProgress, conceptOneLine
 } from '../data/adGroups.js';
 import { collapseByPerson, countPeople } from '../data/clips.js';
+import { NO_GROUP, normalizeGroupSel, groupFilterOptions } from '../data/groupFilter.js';
 import ProductFilter from '../components/ProductFilter.jsx';
 import { knownProductCodes, matchProducts, productFilterOptions } from '../data/productFilter.js';
 import { tabBadges, markSeen, seedDraftsSeen } from '../utils/tabUpdates.js';
@@ -406,7 +407,8 @@ function agencyScopeOf(group, scopePlatforms = [], platFilter = 'all') {
 
 // section 1 กลุ่มสินค้า — โชว์ความต้องการ (Platform/Tier/จำนวน) + กล่องกรอกแยกตาม Content Type
 // productFilter / knownCodes = ตัวกรองสินค้าของแท็บรายชื่อ — ซ่อนเฉพาะแถวที่ไม่ตรง ตัวเลขเทียบเป้ายังนับทุกคน
-function GroupSection({ token, group, gi, subs, onReload, onEdit, onDelete, onNote, agencyName, scopePlatforms = [], platFilter = 'all', productFilter = [], knownCodes = [], onClearProductFilter }) {
+// hidden = ตัวกรองกลุ่มไม่ได้เลือกกลุ่มนี้ — ซ่อนเฉย ๆ ไม่ถอดออก แถวที่พิมพ์ค้างไว้ (ยังไม่กด ✓) ใน TypeBox จะได้ไม่หายตอนสลับกลุ่ม
+function GroupSection({ token, group, gi, subs, onReload, onEdit, onDelete, onNote, agencyName, scopePlatforms = [], platFilter = 'all', productFilter = [], knownCodes = [], onClearProductFilter, hidden = false }) {
     // Platform ที่กำลังดูอยู่ — งบ / จำนวนคน / Content ต่อคน ต้องคิดเฉพาะขอบเขตนี้
     const { platforms: scopePlats, products: groupProducts } = agencyScopeOf(group, scopePlatforms, platFilter);
     // เห็นแค่แถวของ Platform ที่เจ้านี้รับผิดชอบ ไม่ใช่ทั้งกลุ่ม
@@ -443,7 +445,7 @@ function GroupSection({ token, group, gi, subs, onReload, onEdit, onDelete, onNo
 
     let runningNo = 1;
     return (
-        <div className="agency-card ag-group">
+        <div className="agency-card ag-group" style={hidden ? { display: 'none' } : undefined}>
             {/* หัวกลุ่ม (ต้องการกี่คน · Concept · สินค้า · ส่งแล้ว/ต้องการ · บรีฟ · ชื่อคลิป) ใช้ตัวเดียวกับแท็บรายชื่อฝั่งทีม
                 แก้หน้าตาที่ GroupNeedHead ที่เดียว — Concept / สินค้า จำกัดเฉพาะที่ลิงก์นี้เห็น */}
             <GroupNeedHead group={group} gi={gi} products={groupProducts} platforms={scopePlats}
@@ -489,6 +491,7 @@ export default function AgencyPortal() {
     const [stage, setStage] = useState('all');    // ตัวกรองขั้นงานจากการ์ดสรุป
     const [platFilter, setPlatFilter] = useState('all');   // ดูทีละ Platform เมื่อเจ้านี้รับหลาย Platform
     const [prodFilter, setProdFilter] = useState([]);      // ตัวกรองสินค้าในแท็บรายชื่อ — เลือกได้หลายตัว ([] = ทุกสินค้า)
+    const [listGroup, setListGroup] = useState('all');     // ตัวกรองกลุ่มในแท็บรายชื่อ ('__none' = คนที่ไม่อยู่กลุ่มไหน) — แท็บ On Process มีของตัวเองในตาราง
     const [badges, setBadges] = useState({ listNew: false, processNew: false });
     const [toasts, setToasts] = useState([]);       // แจ้งเตือนเด้งอัตโนมัติ (Feedback/สถานะดราฟจากทีม)
     const toastId = useRef(0);
@@ -503,6 +506,13 @@ export default function AgencyPortal() {
         api(`/agency/${token}`).then(res => setInfo(res.data)).catch(err => setError(err.message));
     }
     useEffect(() => { load(); }, [token]);
+    // ชิปกลุ่มที่เลือกไว้หายไป (กลุ่มถูกเอาออกจากลิงก์ / คนตกกลุ่มคนสุดท้ายหาย) — หน้าถอยเป็น "ทั้งหมด" อยู่แล้ว
+    // ล้างค่าที่จำไว้ด้วย ไม่งั้นพอชิปนั้นกลับมาในรอบโหลดซ้ำ หน้าจะกระโดดไปกรองกลุ่มเก่าเองโดยไม่มีใครกด
+    useEffect(() => {
+        if (!info || listGroup === 'all') return;
+        const opts = groupFilterOptions(info.ad_groups || [], info.submissions || [], countPeople);
+        if (normalizeGroupSel(listGroup, opts) === 'all') setListGroup('all');
+    }, [info, listGroup]);
     // บันทึกหมายเหตุของเอเจนซี่ (ไม่ต้อง reload ทั้งหน้า — ค่าอยู่ในช่องอยู่แล้ว)
     async function saveNote(sub, text) {
         try { await api(`/agency/${token}/submissions/${sub.id}`, { method: 'PUT', body: { agency_note: text || null } }); }
@@ -652,6 +662,10 @@ export default function AgencyPortal() {
     const ungrouped = subs.filter(s => (!s.group_key || !groupKeys.has(s.group_key)) && matchProducts(s, prodFilter, knownCodes));
     // แคมเปญที่ไม่มีกลุ่มสินค้า (ฟอร์มเดี่ยวแบบเดิม) ก็ต้องกรองตามสินค้าที่เลือก
     const noGroupShown = subs.filter(s => matchProducts(s, prodFilter, knownCodes));
+    // ตัวกรองกลุ่มของแท็บรายชื่อ (ผู้ใช้ขอ 19 ต.ค. 2026 · แบบเดียวกับแท็บรายชื่อฝั่งทีม) — นับเป็นคน · ทุกกลุ่มที่ลิงก์นี้เห็น รวมกลุ่มที่ยังไม่มีคน
+    // คุมแค่ว่าการ์ดกลุ่มไหนขึ้น ไม่แตะตัวเลขบนชิปแพลตฟอร์ม/สินค้า · ชิปที่เลือกไว้หายไป (เช่นคนตกกลุ่มคนสุดท้ายถูกลบ) = ถอยเป็น "ทั้งหมด" เอง
+    const groupOpts = groupFilterOptions(adGroups, subs, countPeople);
+    const curGroup = normalizeGroupSel(listGroup, groupOpts);
 
     return (
         <div className="agency-page">
@@ -772,6 +786,25 @@ export default function AgencyPortal() {
                     </button>
                 </div>
 
+                {/* แถบปุ่มกรองกลุ่ม (แท็บรายชื่อ) — โชว์เมื่อลิงก์นี้เห็นเกิน 1 กลุ่ม (นับ "ไม่ระบุกลุ่ม" ด้วย)
+                    วางบนสุดเหมือนฝั่งทีม เพราะกลุ่มเป็นการแบ่งระดับใหญ่กว่าแพลตฟอร์ม · ยังไม่มีรายชื่อก็โชว์ จะได้เลือกดู/กรอกทีละกลุ่ม */}
+                {tab === 'list' && groupOpts.length > 1 && (
+                    <div className="proc-platfilter ag-groupfilter">
+                        <span className="proc-platfilter-lbl">กลุ่ม:</span>
+                        <button type="button" className={'proc-plat-chip' + (curGroup === 'all' ? ' on' : '')}
+                            onClick={() => setListGroup('all')}>ทั้งหมด ({countPeople(subs)})</button>
+                        {groupOpts.map(o => (
+                            <button type="button" key={o.key}
+                                className={'proc-plat-chip' + (curGroup === o.key ? ' on' : '')}
+                                title={o.key === NO_GROUP ? 'KOL ที่ยังไม่ได้ถูกจัดเข้ากลุ่มไหน'
+                                    : [o.products.join(', '), conceptOneLine(o.concept)].filter(Boolean).join(' · ')}
+                                onClick={() => setListGroup(o.key)}>
+                                {o.key === NO_GROUP ? 'ไม่ระบุกลุ่ม' : `กลุ่มที่ ${o.no}${o.concept ? ' · ' + conceptOneLine(o.concept) : ''}`} ({o.count})
+                            </button>
+                        ))}
+                    </div>
+                )}
+
                 {/* ดูทีละ Platform — โชว์เมื่อเจ้านี้รับผิดชอบมากกว่า 1 Platform */}
                 {myPlatforms.length > 1 && (
                     <div className="proc-platfilter ag-platfilter">
@@ -799,13 +832,19 @@ export default function AgencyPortal() {
 
                     {adGroups.length > 0 ? (
                         <>
+                            {/* เลือกดูทีละกลุ่ม — การ์ดกลุ่มอื่นซ่อน (เลขกลุ่มยังเป็นลำดับเดิม gi) · เลือก "ไม่ระบุกลุ่ม" = ซ่อนการ์ดกลุ่มจริงทั้งหมด */}
                             {adGroups.map((g, gi) => (
-                                <GroupSection key={g.key || gi} token={token} group={g} gi={gi} subs={subs} onReload={load} onEdit={setEditSub} onDelete={deleteSub} onNote={saveNote} agencyName={info.agency_name} scopePlatforms={scopePlatforms} platFilter={platFilter} productFilter={prodFilter} knownCodes={knownCodes} onClearProductFilter={() => setProdFilter([])} />
+                                <GroupSection key={g.key || gi} token={token} group={g} gi={gi} subs={subs} onReload={load} onEdit={setEditSub} onDelete={deleteSub} onNote={saveNote} agencyName={info.agency_name} scopePlatforms={scopePlatforms} platFilter={platFilter} productFilter={prodFilter} knownCodes={knownCodes} onClearProductFilter={() => setProdFilter([])}
+                                    hidden={curGroup !== 'all' && g.key !== curGroup} />
                             ))}
-                            {ungrouped.length > 0 && (
+                            {/* เลือกกลุ่มจริงอยู่ = ไม่โชว์การ์ดไม่ระบุกลุ่ม · เลือก "ไม่ระบุกลุ่ม" = การ์ดนี้ต้องขึ้นเสมอ ไม่งั้นกรองสินค้าต่อจนไม่เหลือใครแล้วหน้าว่างสนิท */}
+                            {(curGroup === NO_GROUP || (curGroup === 'all' && ungrouped.length > 0)) && (
                                 <div className="agency-card">
-                                    <h3>ไม่ระบุกลุ่ม ({ungrouped.length}) <span className="dash-section-sub">รายชื่อที่ยังไม่ถูกจัดกลุ่ม</span></h3>
-                                    <div className="agency-list">{ungrouped.map(s => <SubItem key={s.id} s={s} onEdit={setEditSub} />)}</div>
+                                    {/* นับเป็นคนให้ตรงกับชิป "ไม่ระบุกลุ่ม" (รายการข้างล่างยังแยกทีละคลิป จึงบอกจำนวนคลิปด้วยเมื่อไม่เท่ากัน) */}
+                                    <h3>ไม่ระบุกลุ่ม ({countPeople(ungrouped)} คน{countPeople(ungrouped) !== ungrouped.length ? ` · ${ungrouped.length} คลิป` : ''}) <span className="dash-section-sub">รายชื่อที่ยังไม่ถูกจัดกลุ่ม</span></h3>
+                                    {ungrouped.length > 0
+                                        ? <div className="agency-list">{ungrouped.map(s => <SubItem key={s.id} s={s} onEdit={setEditSub} />)}</div>
+                                        : <p className="empty" style={{ padding: '20px 0' }}>ไม่มีรายชื่อของสินค้าที่เลือก</p>}
                                 </div>
                             )}
                             <p className="agency-note">เมื่อทีมคัดเลือกแล้ว สถานะจะเปลี่ยนเป็น "คัดเลือกแล้ว ✓" ที่นี่ทันที</p>

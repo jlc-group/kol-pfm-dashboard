@@ -14,7 +14,7 @@ import {
     needCampaign, campaignIsCtype, withCampaignFromCtype, packCampaigns, setTypeOk, isSplitBudget, productBudgetSum, packBudgets,
     isSplitConcept, isBlockSplitConcept, packConcepts, conceptParts,
     isKolSplit, productKolOf, productKolSum, kolSplitState, kolSplitProblem, packKols, kolAutoTier, syncAutoKols, seedKolSplit,
-    blockTierNames, unifyTiers, setSetKols, setKol, settleKols,
+    blockTierNames, unifyTiers, setSetKols, setKol, settleKols, KOL_TIERS, MIXED_TIER,
     productRows, makeBundle, splitBundle, dropFromBundle, packBundles, copyProductSet, sameProductSet
 } from '../data/adGroups.js';
 
@@ -31,7 +31,8 @@ import {
 const MEDIA_TYPES = ['Photo', 'VDO'];
 const CODE_EXPIRE_OPTS = [7, 30, 60, 180, 365]; // จำนวนวัน Gencode ให้เลือก
 const GROUP_PLATFORMS = ['TikTok', 'Instagram', 'Facebook', 'Lemon8', 'X', 'YouTube'];
-const TIERS = ['Nano 1k - 10k', 'Micro 10k - 100k', 'Macro 100k - 1M', 'Mega 1M+'];
+// ตัวเลือก Tier ของ Platform — 4 Tier ปกติ + "คละ Tier" (เอเจนซี่เลือก Tier ของแต่ละคนเองตอนกรอกรายชื่อ · 19 ต.ค. 2026)
+const TIERS = [...KOL_TIERS, MIXED_TIER];
 // จำนวน KOL รวมของกลุ่ม = ผลรวมทุกแถว allocation (Platform/Tier/จำนวน)
 const groupTotalKol = g => ((g.blocks && g.blocks.length)
     ? blocksKol(g.blocks)
@@ -923,6 +924,11 @@ export default function ProjectForm({ editing, onClose, onSaved }) {
                                                                 )}
                                                             </div>
                                                         ))}
+                                                        {names.includes(MIXED_TIER) && (
+                                                            <div className="muted" style={{ fontSize: 12 }}>
+                                                                คละ Tier = ตอนกรอกรายชื่อเลือก Tier ของแต่ละคนได้ทุก Tier ({KOL_TIERS.map(t => t.split(' ')[0]).join(' / ')})
+                                                            </div>
+                                                        )}
                                                         <button type="button" className="tier-add" onClick={() => addBlockTier(i, bi)}>
                                                             <Icon name="plus" size={13} /> เพิ่ม Tier
                                                         </button>
