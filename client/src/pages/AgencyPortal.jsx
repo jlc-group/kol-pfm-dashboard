@@ -18,7 +18,7 @@ import {
 import { collapseByPerson, countPeople } from '../data/clips.js';
 import { NO_GROUP, normalizeGroupSel, groupFilterOptions } from '../data/groupFilter.js';
 import ProductFilter from '../components/ProductFilter.jsx';
-import { knownProductCodes, matchProducts, productFilterOptions } from '../data/productFilter.js';
+import { knownProductCodes, matchProducts, productFilterOptions, pickProduct } from '../data/productFilter.js';
 import { tabBadges, markSeen, seedDraftsSeen } from '../utils/tabUpdates.js';
 import { useAuth } from '../auth/AuthContext.jsx';
 import ChangePasswordModal from '../components/ChangePasswordModal.jsx';
@@ -408,7 +408,8 @@ function agencyScopeOf(group, scopePlatforms = [], platFilter = 'all') {
 // section 1 กลุ่มสินค้า — โชว์ความต้องการ (Platform/Tier/จำนวน) + กล่องกรอกแยกตาม Content Type
 // productFilter / knownCodes = ตัวกรองสินค้าของแท็บรายชื่อ — ซ่อนเฉพาะแถวที่ไม่ตรง ตัวเลขเทียบเป้ายังนับทุกคน
 // hidden = ตัวกรองกลุ่มไม่ได้เลือกกลุ่มนี้ — ซ่อนเฉย ๆ ไม่ถอดออก แถวที่พิมพ์ค้างไว้ (ยังไม่กด ✓) ใน TypeBox จะได้ไม่หายตอนสลับกลุ่ม
-function GroupSection({ token, group, gi, subs, onReload, onEdit, onDelete, onNote, agencyName, scopePlatforms = [], platFilter = 'all', productFilter = [], knownCodes = [], onClearProductFilter, hidden = false }) {
+// onPickProduct(code, add) = กดรหัสสินค้าที่หัวกลุ่มเพื่อกรอง (ตัวกรองสินค้าของแท็บรายชื่อ · 21 ต.ค. 2026)
+function GroupSection({ token, group, gi, subs, onReload, onEdit, onDelete, onNote, agencyName, scopePlatforms = [], platFilter = 'all', productFilter = [], knownCodes = [], onClearProductFilter, onPickProduct, hidden = false }) {
     // Platform ที่กำลังดูอยู่ — งบ / จำนวนคน / Content ต่อคน ต้องคิดเฉพาะขอบเขตนี้
     const { platforms: scopePlats, products: groupProducts } = agencyScopeOf(group, scopePlatforms, platFilter);
     // เห็นแค่แถวของ Platform ที่เจ้านี้รับผิดชอบ ไม่ใช่ทั้งกลุ่ม
@@ -450,7 +451,8 @@ function GroupSection({ token, group, gi, subs, onReload, onEdit, onDelete, onNo
                 แก้หน้าตาที่ GroupNeedHead ที่เดียว — Concept / สินค้า จำกัดเฉพาะที่ลิงก์นี้เห็น */}
             <GroupNeedHead group={group} gi={gi} products={groupProducts} platforms={scopePlats}
                 need={total} perClip={perClip} needClips={totalClips}
-                sent={groupSubs.length} sentClips={groupRows.length} productNeeds={productNeeds} />
+                sent={groupSubs.length} sentClips={groupRows.length} productNeeds={productNeeds}
+                pickedProducts={productFilter} onPickProduct={onPickProduct} />
 
             {cells.map(c => {
                 const key = cellKey(c);
@@ -835,6 +837,7 @@ export default function AgencyPortal() {
                             {/* เลือกดูทีละกลุ่ม — การ์ดกลุ่มอื่นซ่อน (เลขกลุ่มยังเป็นลำดับเดิม gi) · เลือก "ไม่ระบุกลุ่ม" = ซ่อนการ์ดกลุ่มจริงทั้งหมด */}
                             {adGroups.map((g, gi) => (
                                 <GroupSection key={g.key || gi} token={token} group={g} gi={gi} subs={subs} onReload={load} onEdit={setEditSub} onDelete={deleteSub} onNote={saveNote} agencyName={info.agency_name} scopePlatforms={scopePlatforms} platFilter={platFilter} productFilter={prodFilter} knownCodes={knownCodes} onClearProductFilter={() => setProdFilter([])}
+                                    onPickProduct={(code, add) => setProdFilter(v => pickProduct(v, code, add))}
                                     hidden={curGroup !== 'all' && g.key !== curGroup} />
                             ))}
                             {/* เลือกกลุ่มจริงอยู่ = ไม่โชว์การ์ดไม่ระบุกลุ่ม · เลือก "ไม่ระบุกลุ่ม" = การ์ดนี้ต้องขึ้นเสมอ ไม่งั้นกรองสินค้าต่อจนไม่เหลือใครแล้วหน้าว่างสนิท */}

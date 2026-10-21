@@ -23,7 +23,8 @@ export function groupClipNeed(group, platforms = [], contentType = null) {
 // need / needClips = ต้องการกี่คน / กี่คลิป · sent / sentClips = ส่งแล้วกี่คน / กี่คลิป
 // progExtra = บรรทัดเสริมใต้ตัวเลขด้านขวา (ฝั่งทีมใช้โชว์ "คัดเลือกแล้ว" — เอเจนซี่ไม่มี)
 // productNeeds = จำนวน KOL แยกต่อสินค้า (productKolProgress) ของ Platform ในขอบเขต — [] = ไม่มีบล็อกไหนแยก ไม่ต้องโชว์
-export default function GroupNeedHead({ group, gi, products = [], platforms = [], need = 0, perClip = 1, needClips = 0, sent = 0, sentClips = 0, progExtra = null, productNeeds = [] }) {
+// onPickProduct(code, add) / pickedProducts = กดรหัสสินค้าที่หัวกลุ่มเพื่อกรองรายชื่อตามสินค้า (ตัวกรองสินค้าของแท็บนั้น · 21 ต.ค. 2026)
+export default function GroupNeedHead({ group, gi, products = [], platforms = [], need = 0, perClip = 1, needClips = 0, sent = 0, sentClips = 0, progExtra = null, productNeeds = [], onPickProduct, pickedProducts = [] }) {
     // ชื่อคลิปตั้งแยกต่อ Platform — group.clips เก็บแค่ของ Platform แรก (server ก็ห้ามอ่านตรง ๆ) จึงอ่านของ Platform ในขอบเขต
     // โชว์เฉพาะตอนทุก Platform ในขอบเขตใช้ชุดชื่อเดียวกัน ไม่งั้นจะบอกชื่อคลิปของอีก Platform ผิด ๆ
     const lists = (platforms.length ? platforms.map(p => clipsFor(group, p)) : [group.clips || []])
@@ -69,7 +70,7 @@ export default function GroupNeedHead({ group, gi, products = [], platforms = []
                     {/* ทีมตั้ง "-" ในฟอร์มแคมเปญ — บอกตั้งแต่หัวกลุ่มว่าไม่ต้องหา Gencode มากรอก */}
                     {groupNoGencode(group) && <div className="ag-concept-top">กลุ่มนี้ไม่ต้องใช้ Gencode</div>}
                     <div style={{ marginTop: 8 }}>
-                        <ProductChips products={products} />
+                        <ProductChips products={products} onPick={onPickProduct} picked={pickedProducts} />
                     </div>
                 </div>
                 <div className="ag-group-prog">

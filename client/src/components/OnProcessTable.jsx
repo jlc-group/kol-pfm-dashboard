@@ -9,7 +9,7 @@ import { mediaFor, contentTypesOf, quotaOf, targetFor, conceptText, conceptOneLi
 import { productLabel } from '../data/products.js';
 import { ProductSummary } from './ProductChips.jsx';
 import ProductFilter from './ProductFilter.jsx';
-import { knownProductCodes, matchProducts, productFilterOptions } from '../data/productFilter.js';
+import { knownProductCodes, matchProducts, productFilterOptions, pickProduct } from '../data/productFilter.js';
 import { NO_GROUP, groupKeySet, matchGroup, normalizeGroupSel, groupFilterOptions } from '../data/groupFilter.js';
 import { draftIsNew, markDraftSeen } from '../utils/tabUpdates.js';
 import { platformOfUrl, KNOWN_LINK_PLATFORMS } from '../data/talentSocials.js';
@@ -340,14 +340,15 @@ const procHead = (showAds = false) => (
 // แถบหัวกลุ่มสินค้า (กลุ่มที่ N + รหัสสินค้า + concept + จำนวน)
 // scope = { products, platforms } ที่ผู้ดูเห็น (หน้าเอเจนซี่) — Concept แยกต่อสินค้าโชว์เฉพาะของขอบเขตนี้
 // kolNeeds = จำนวน KOL แยกต่อสินค้า (productKolProgress) — [] = กลุ่มนี้ไม่ได้แยก ไม่มีแถวนี้
-function GroupBar({ group, gi, count, scope, kolNeeds = [] }) {
+// onPickProduct(code, add) / pickedProducts = กดรหัสสินค้าที่หัวกลุ่มเพื่อกรองตามสินค้า (ตัวกรอง "สินค้า:" ของแท็บนี้ · ผู้ใช้สั่ง 21 ต.ค. 2026)
+function GroupBar({ group, gi, count, scope, kolNeeds = [], onPickProduct, pickedProducts = [], pickableCodes = null }) {
     const concept = conceptText(group, false, scope && scope.products, scope && scope.platforms);
     const multiPlat = kolNeeds.length > 1;
     return (
         <div className="grp-bar">
             <span className="grp-no">กลุ่มที่ {gi + 1}</span>
             <div className="grp-chips">
-                <ProductSummary value={group.products || []} max={4} />
+                <ProductSummary value={group.products || []} max={4} onPick={onPickProduct} picked={pickedProducts} pickable={pickableCodes} />
             </div>
             {/* Concept แยกต่อสินค้า = "L3, L10 = ... · L4 = ..." · ไม่แยก = Concept ของกลุ่มเหมือนเดิม */}
             {concept && <span className="grp-concept" title={conceptText(group, true, scope && scope.products, scope && scope.platforms)}>📝 Concept: {concept}</span>}
@@ -407,14 +408,18 @@ export default function OnProcessTable({ subs = [], groups = [], showAds = false
     const groupOpts = groupFilterOptions(groups, confirmed);
     const curGroup = normalizeGroupSel(groupFilter, groupOpts);
     const gKeys = groupKeySet(groups);
-    const view = confirmed
+    // ทุกตัวกรองยกเว้นสินค้า — ใช้ทั้งตารางและตัดสินว่ารหัสไหนที่หัวกลุ่มกดกรองได้
+    const preProduct = confirmed
         .filter(s => platFilter === 'all' || (s.platform || '') === platFilter)
         .filter(s => ctypeFilter === 'all' || (s.content_type || '') === ctypeFilter)
         .filter(s => clipFilter === 'all' || (s.clip_name || '') === clipFilter)
         .filter(s => matchGroup(s, curGroup, gKeys))
-        .filter(s => matchProducts(s, prodFilter, knownCodes))
         .filter(s => !checkOnly || postCheckShown(s))
         .filter(s => stage === 'all' || workStage(s) === stage);   // ตัวกรองจากการ์ดสรุปด้านบน
+    const view = preProduct.filter(s => matchProducts(s, prodFilter, knownCodes));
+    // รหัสที่หัวกลุ่มกดกรองได้ = มีคลิปในตารางตอนนี้ (รีวิว 21 ต.ค. 2026) — กดรหัสที่ไม่มีคลิป ตารางว่างทั้งหมด หัวกลุ่มหาย กดซ้ำเอาออกไม่ได้
+    // (เช่น สินค้าที่ยังไม่มีคนคัดเลือก · หน้าเอเจนซี่ = สินค้าของ Platform / เอเจนซี่อื่น) · ตัวที่กรองอยู่กดได้เสมอ (ไว้เอาออก)
+    const pickableCodes = new Set(productFilterOptions(preProduct, knownCodes).map(o => o.code));
 
     const groupMap = {};
     groups.forEach(g => { groupMap[g.key] = g; });
@@ -538,7 +543,8 @@ export default function OnProcessTable({ subs = [], groups = [], showAds = false
                             const gs = view.filter(s => s.group_key === g.key);
                             return (
                                 <div className="proc-group" key={g.key || gi}>
-                                    <GroupBar group={g} gi={gi} count={gs.length} scope={conceptScope ? conceptScope(g) : null} kolNeeds={kolNeedsOf(g)} />
+                                    <GroupBar group={g} gi={gi} count={gs.length} scope={conceptScope ? conceptScope(g) : null} kolNeeds={kolNeedsOf(g)}
+                                        pickedProducts={prodFilter} pickableCodes={pickableCodes} onPickProduct={(code, add) => setProdFilter(v => pickProduct(v, code, add))} />
                                     {procHead(showAds)}{rowsFor(gs)}
                                 </div>
                             );

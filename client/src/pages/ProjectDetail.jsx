@@ -22,7 +22,7 @@ import {
 } from '../data/adGroups.js';
 import { collapseByPerson, countPeople } from '../data/clips.js';
 import ProductFilter from '../components/ProductFilter.jsx';
-import { knownProductCodes, matchProducts, productFilterOptions } from '../data/productFilter.js';
+import { knownProductCodes, matchProducts, productFilterOptions, pickProduct } from '../data/productFilter.js';
 import { NO_GROUP, groupKeySet, matchGroup, normalizeGroupSel, groupFilterOptions } from '../data/groupFilter.js';
 import { stampAtFor } from '../data/stamp.js';
 import StageCards from '../components/StageCards.jsx';
@@ -913,6 +913,7 @@ export default function ProjectDetail() {
                 <GroupNeedHead group={g} gi={gi} products={products} platforms={plats}
                     need={need} perClip={perClip} needClips={needClips}
                     sent={countPeople(scoped)} sentClips={scoped.length} productNeeds={productNeeds}
+                    pickedProducts={listProducts} onPickProduct={(code, add) => setListProducts(v => pickProduct(v, code, add))}
                     progExtra={(
                         // เฉพาะทีม: ส่งมากี่คนแล้วเลือกไปกี่คน (หน้าเอเจนซี่ไม่มีบรรทัดนี้)
                         // แยกคลิปเป็นบรรทัดของตัวเอง คอลัมน์ขวาจะได้ไม่กว้างกว่าของเอเจนซี่มาก (จอแคบหัวกลุ่มไม่โดนบีบ)

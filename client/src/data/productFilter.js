@@ -31,6 +31,19 @@ export function matchProducts(s, selected, known) {
     return codes.length ? codes.some(c => selected.includes(c)) : selected.includes(NO_PRODUCT);
 }
 
+// กดรหัสสินค้าที่หัวกลุ่มเพื่อกรอง (ผู้ใช้สั่ง 21 ต.ค. 2026) — ใช้ตัวกรองสินค้าเดียวกับแถว "สินค้า:"
+// กดตัวที่ยังไม่เลือก = ดูเฉพาะตัวนั้น (สลับสินค้าได้ในคลิกเดียว) · กด Ctrl / ⌘ / Shift ค้าง = เลือกเพิ่ม · กดตัวที่เลือกอยู่ = เอาออก
+export function pickProduct(value, code, add = false) {
+    const cur = Array.isArray(value) ? value : [];
+    if (cur.includes(code)) return cur.filter(c => c !== code);
+    return add ? [...cur, code] : [code];
+}
+// ปุ่มรหัสสินค้าที่กดกรองได้ (ProductChips / ProductSummary): กดพร้อม Ctrl / ⌘ / Shift = เลือกเพิ่ม · ข้อความชี้เมาส์
+export const pickEventAdd = e => !!e && (e.ctrlKey || e.metaKey || e.shiftKey);
+export const pickTitle = (code, label, on) => (on
+    ? `กำลังกรอง ${code} — กดอีกครั้งเพื่อเอาออก`
+    : `${label}\nกดเพื่อดูเฉพาะ ${code} · กด Ctrl หรือ Shift ค้างเพื่อเลือกเพิ่ม`);
+
 // ตัวเลือกของตัวกรอง: เฉพาะสินค้าที่มีในรายชื่อจริง พร้อมจำนวน — count(list) กำหนดเองได้ (นับคน / นับคลิป)
 export function productFilterOptions(subs, known, count = list => list.length) {
     const list = subs || [];

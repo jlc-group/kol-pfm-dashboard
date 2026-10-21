@@ -976,6 +976,14 @@ a { text-decoration: none; color: inherit; }
     color: var(--mint-dark); font-variant-numeric: tabular-nums; cursor: default; white-space: nowrap;
 }
 .prodchip:hover { background: #dcefe5; border-color: var(--mint); }
+/* รหัสสินค้าที่หัวกลุ่มกดกรองได้ (21 ต.ค. 2026) — ชิป (แท็บรายชื่อ) / รหัสแบบข้อความ (แท็บ On Process) · กำลังกรอง = สีเข้ม */
+.prodchip.pick { font-family: inherit; cursor: pointer; }
+.prodchip.pick.on { background: var(--mint-dark); border-color: var(--mint-dark); color: #fff; }
+.prod-code-pick { padding: 0 3px; margin: 0 -1px; border: none; border-radius: 5px; background: transparent; font: inherit; color: inherit; cursor: pointer; }
+.prod-code-pick:hover { background: #e3ecfb; text-decoration: underline; }
+.prod-code-pick.on { background: #3b5ba5; color: #fff; text-decoration: none; }
+.prod-code-nopick { opacity: .55; cursor: default; }
+.prodchip.pick:focus-visible, .prod-code-pick:focus-visible { outline: 2px solid var(--mint-dark); outline-offset: 1px; }
 .prodchip-more {
     padding: 4px 10px; border-radius: 8px; border: 1px dashed var(--mint); background: transparent;
     color: var(--mint-dark); font-size: 11.5px; font-weight: 700; cursor: pointer; white-space: nowrap;
