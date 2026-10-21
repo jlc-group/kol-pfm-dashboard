@@ -459,7 +459,7 @@ export default function Catalog() {
                         </thead>
                         <tbody>
                             {rows.length === 0 ? (
-                                <tr><td colSpan="4" className="empty">{all.length ? 'ทุกสินค้าของแบรนด์นี้ถูกซ่อนอยู่ — ติ๊ก "แสดงที่ซ่อนไว้"' : `แบรนด์ ${brand} ยังไม่มีสินค้าในคลัง — กด "เพิ่มสินค้า"`}</td></tr>
+                                <tr><td colSpan="4" className="empty">{all.length ? 'ทุกสินค้าของแบรนด์นี้ถูกซ่อนอยู่ — ติ๊ก "แสดงที่ซ่อนไว้"' : (brand ? `แบรนด์ ${brand} ยังไม่มีสินค้าในคลัง — กด "เพิ่มสินค้า"` : 'ยังไม่ได้รับสิทธิ์แบรนด์ — ติดต่อผู้ดูแลระบบ')}</td></tr>
                             ) : rows.map(p => {
                                 const targets = targetEntriesOf(p.code).filter(t => showHidden || !t.hidden);
                                 return (

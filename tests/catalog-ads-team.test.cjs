@@ -146,3 +146,18 @@ test('โหลดคลังสินค้าตั้งต้นไม่�
         assert.equal((await call(1, 'POST', '/targets', { target: 'T', codes: ['JNP1'] })).status, 201);
     } finally { catalogBrands.brandsOf = real; }
 });
+
+test('เพิ่มสินค้า: รหัสของสินค้าตั้งต้น / รหัสที่จะไปเข้ากลุ่มสีของแบรนด์อื่น = 409 ทุกคน (กันแอบเพิ่ม Target ให้สินค้าของแบรนด์อื่น)', async () => {
+    CALLS.length = 0;
+    const r1 = await call(2, 'POST', '/products', { code: 'L3', name: 'x', brand: 'Jernis', targets: ['BOGUS_T'] });
+    assert.equal(r1.status, 409, 'L3 เป็นสินค้าตั้งต้นของ Jula\'s Herb');
+    assert.match(r1.body.message, /สินค้าตั้งต้นของ Jula's Herb/);
+    const r2 = await call(3, 'POST', '/products', { code: 'BTA4X', name: 'x', brand: "Jula's Herb" });
+    assert.equal(r2.status, 409, 'BTA4X ของ Jula\'s Herb จะไปเข้ากลุ่มคุชชั่น Beauterry');
+    assert.match(r2.body.message, /กลุ่มสีเดียวกับสินค้าของ Beauterry/);
+    assert.equal((await call(1, 'POST', '/products', { code: 'jnp1', name: 'x', brand: 'Jernis' })).status, 409, 'admin ก็ใช้รหัสสินค้าตั้งต้นซ้ำไม่ได้');
+    assert.equal((await call(1, 'POST', '/products', { code: 'L8-1', name: 'x', brand: 'Beauterry' })).status, 409);
+    assert.deepEqual(writes(), [], 'ไม่มีอะไรถูกเขียน');
+    assert.equal((await call(3, 'POST', '/products', { code: 'L8C', name: 'อีอีคูชั่น เบอร์ 03', brand: "Jula's Herb" })).status, 201, 'สีใหม่ของกลุ่มแบรนด์ตัวเองได้');
+    assert.equal((await call(2, 'POST', '/products', { code: 'JNP9', name: 'ใหม่', brand: 'Jernis' })).status, 201);
+});

@@ -91,6 +91,11 @@ router.post('/products', requireCatalogEditor, async (req, res, next) => {
         const name = textOf(b.name, 'ชื่อสินค้า', 200); if (name.error) return fail(res, 400, name.error);
         const brand = textOf(b.brand, 'แบรนด์', 100); if (brand.error) return fail(res, 400, brand.error);
         if (!canSeeBrand(req.account, brand.value)) return fail(res, 403, `เพิ่มสินค้าได้เฉพาะแบรนด์ที่คุณมีสิทธิ์ (${brand.value})`);
+        // รหัสของสินค้าตั้งต้น / ชนกลุ่มสีของแบรนด์อื่น = ไม่รับ (ทุกคน) · ตรวจไม่ได้: admin ผ่านแบบเดิม · ทีม Ads = 503
+        let clash = null;
+        try { clash = await catalogBrands.newProductProblem(code.value, brand.value, (await store.catalog.overlay()).products); }
+        catch { if (!seesAllBrands(req.account)) return fail(res, 503, 'ตรวจรหัสสินค้าไม่ได้ในตอนนี้ — ลองใหม่อีกครั้ง'); }
+        if (clash) return fail(res, 409, clash);
         const targets = [];
         for (const t of Array.isArray(b.targets) ? b.targets : []) {
             const r = targetOf(t); if (r.error) return fail(res, 400, r.error);
