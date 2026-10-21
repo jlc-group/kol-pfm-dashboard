@@ -3,7 +3,7 @@ import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext.jsx';
 import Icon from './Icon.jsx';
 import { api } from '../api/client.js';
-import { ROLE_LABEL, hasBrandList } from '../data/brands.js';
+import { ROLE_LABEL, hasBrandList, canManageCatalog } from '../data/brands.js';
 import ChangePasswordModal from './ChangePasswordModal.jsx';
 import { useNavSection } from '../utils/navSection.js';
 import PageErrorBoundary from './PageErrorBoundary.jsx';
@@ -20,12 +20,13 @@ const MAIN_NAV = [
     { to: '/hires', label: 'Talent', icon: 'team' }
 ];
 
+// Admin เพิ่มสินค้า / Target เอง (7 ต.ค. 2026) · ทีม Ads เข้าได้ด้วย (21 ต.ค. 2026 — อยู่ท้ายเมนูหลักของคนที่ไม่ใช่ admin)
+const CATALOG_NAV = { to: '/catalog', label: 'Products & Targets', icon: 'tag' };
 const ADMIN_NAV = [
     { to: '/payments', label: 'Payouts', icon: 'wallet' },
     { to: '/activity', label: 'Activity Log', icon: 'history' },
     { to: '/users', label: 'Users', icon: 'users' },
-    // Admin เพิ่มสินค้า / Target เอง (7 ต.ค. 2026)
-    { to: '/catalog', label: 'Products & Targets', icon: 'tag' }
+    CATALOG_NAV
 ];
 
 // พับเมนูซ้ายให้เหลือแถบไอคอน — หน้าเนื้อหา (เช่นตารางหน้า Ads) จะได้กว้างขึ้น
@@ -173,6 +174,7 @@ export default function Layout() {
                 </div>
                 <nav className="nav" aria-label="เมนูการทำงาน">
                     {MAIN_NAV.map(renderItem)}
+                    {!isAdmin && canManageCatalog(user) && renderItem(CATALOG_NAV)}
                     {isAdmin && (
                         <>
                             <div className="nav-group-label">Admin</div>

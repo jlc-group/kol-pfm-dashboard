@@ -110,7 +110,7 @@ function UserForm({ editing, agencyLinks, teams, onClose, onSaved }) {
                         - เพิ่มใหม่: admin/manager ระบบจัดทีมให้ตามสิทธิ์ · member ต้องเลือกว่าอยู่ทีมไหน */}
                     {isEdit && form.role !== 'agency' && (
                         <div className="field">
-                            <label>ทีม * <span className="dash-section-sub">เปลี่ยนทีมได้ ไม่กระทบสิทธิ์ — สิ่งที่มองเห็นขึ้นกับช่องสิทธิ์ด้านบน</span></label>
+                            <label>ทีม * <span className="dash-section-sub">สิ่งที่มองเห็นขึ้นกับช่องสิทธิ์ด้านบน · ทีม Ads แก้หน้า Products &amp; Targets ได้ (เฉพาะแบรนด์ที่ดูได้)</span></label>
                             <select value={anyTeamOk ? form.team_id : ''} onChange={e => update('team_id', e.target.value)} required>
                                 <option value="">— เลือกทีม —</option>
                                 {teams.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}

@@ -1,6 +1,7 @@
 import { Suspense } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { useAuth } from './auth/AuthContext.jsx';
+import { canManageCatalog } from './data/brands.js';
 import ProtectedRoute from './components/ProtectedRoute.jsx';
 import AgencyRoute from './components/AgencyRoute.jsx';
 import Layout from './components/Layout.jsx';
@@ -18,6 +19,11 @@ import {
 function AdminRoute({ children }) {
     const { isAdmin } = useAuth();
     return isAdmin ? children : <Navigate to="/" replace />;
+}
+// หน้า Products & Targets — admin + ทีม Ads (21 ต.ค. 2026 · server ตรวจซ้ำทุกการแก้)
+function CatalogRoute({ children }) {
+    const { user } = useAuth();
+    return canManageCatalog(user) ? children : <Navigate to="/" replace />;
 }
 
 export default function App() {
@@ -54,7 +60,7 @@ export default function App() {
                         <Route path="users" element={<AdminRoute><Users /></AdminRoute>} />
                         <Route path="teams" element={<AdminRoute><Teams /></AdminRoute>} />
                         {/* Products & Targets — Admin เพิ่มสินค้า / Target เอง (7 ต.ค. 2026) */}
-                        <Route path="catalog" element={<AdminRoute><Catalog /></AdminRoute>} />
+                        <Route path="catalog" element={<CatalogRoute><Catalog /></CatalogRoute>} />
                     </Route>
                     <Route path="*" element={<Navigate to="/" replace />} />
                 </Routes>

@@ -306,7 +306,7 @@ test('GET /targets/usage: admin อย่างเดียว · นับแ�
     const r = await call(1, 'GET', `/targets/usage?target=${encodeURIComponent(OLD)}&codes=L3,l10`);
     assert.equal(r.status, 200);
     assert.deepEqual(r.body.data, { count: 1, campaigns: [{ id: 7, name: 'แคมเปญ A', brand: "Jula's Herb" }], bundled: ['L8B'] });
-    assert.deepEqual(CALLS[0].slice(1), [['L3', 'L10'], OLD]);
+    assert.deepEqual(CALLS[0].slice(1), [['L3', 'L10'], OLD, null], 'admin = ไม่จำกัดแบรนด์ของแคมเปญ');
     assert.equal((await call(1, 'GET', `/targets/usage?target=&codes=L3`)).status, 400);
     assert.equal((await call(1, 'GET', `/targets/usage?target=X&codes=`)).status, 400);
 });

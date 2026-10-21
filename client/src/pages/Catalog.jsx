@@ -1,12 +1,14 @@
 import { useEffect, useMemo, useState } from 'react';
 import { api } from '../api/client.js';
 import Icon from '../components/Icon.jsx';
-import { BRANDS } from '../data/brands.js';
+import { BRANDS, visibleBrands } from '../data/brands.js';
+import { useAuth } from '../auth/AuthContext.jsx';
 import { productsByBrand, productInfo, targetEntriesOf, targetsForProduct, PRODUCT_CATALOG } from '../data/products.js';
 import { setCatalogFromServer } from '../data/catalogLoader.js';
 import { useCatalogVersion } from '../data/useCatalog.js';
 
-// ===== หน้า Products & Targets (เมนู ADMIN · ผู้ใช้สั่ง 7 ต.ค. 2026) =====
+// ===== หน้า Products & Targets (เมนู ADMIN · ผู้ใช้สั่ง 7 ต.ค. 2026 · ทีม Ads เข้าได้ด้วยตั้งแต่ 21 ต.ค. 2026) =====
+// ทีม Ads เห็น/แก้ได้เฉพาะแบรนด์ที่ตัวเองมีสิทธิ์ (server ตรวจซ้ำ routes/catalog.js) · admin ทุกแบรนด์
 // Admin เพิ่มสินค้าใหม่ / เพิ่ม Target / ซ่อน ได้เอง — เก็บเฉพาะส่วนต่างจากรายการตั้งต้นในโค้ด (server/src/store/pg/catalog.js)
 // ไม่มีการลบ (ซ่อนแทน แคมเปญเก่าไม่เสีย) · รหัสสินค้าแก้ไม่ได้ · ชื่อ Target ต้องตรงกับระบบยิงแอดทุกตัวอักษร
 // แบรนด์มีเท่าที่ data/brands.js กำหนด (ผูกกับสิทธิ์ผู้ใช้ — เพิ่มแบรนด์ใหม่ต้องแก้แยก)
@@ -64,7 +66,7 @@ function TargetNameField({ value, onChange, confirmed, onConfirm, autoFocus, ign
     );
 }
 
-function AddProductModal({ brand, onClose, onSaved }) {
+function AddProductModal({ brand, brands, onClose, onSaved }) {
     const [form, setForm] = useState({ brand, code: '', name: '' });
     const [picked, setPicked] = useState([]);          // Target ที่เลือก (จากของแบรนด์ หรือพิมพ์ใหม่)
     const [typed, setTyped] = useState('');
@@ -114,7 +116,7 @@ function AddProductModal({ brand, onClose, onSaved }) {
                 <div className="field">
                     <label>แบรนด์ *</label>
                     <select value={form.brand} onChange={e => { setForm(f => ({ ...f, brand: e.target.value })); setPicked([]); }} aria-label="แบรนด์">
-                        {BRANDS.map(b => <option key={b} value={b}>{b}</option>)}
+                        {brands.map(b => <option key={b} value={b}>{b}</option>)}
                     </select>
                 </div>
                 <div className="catg-row2">
@@ -364,7 +366,11 @@ function RenameModal({ product, onClose, onSaved }) {
 
 export default function Catalog() {
     useCatalogVersion();   // render ใหม่ทุกครั้งที่คลังเปลี่ยน
-    const [brand, setBrand] = useState(() => readLastBrand() || BRANDS[0]);
+    // แบรนด์ที่เห็นในหน้านี้ = ที่ตัวเองมีสิทธิ์ (admin ครบ · ทีม Ads ตามที่ admin กำหนด)
+    const { user } = useAuth();
+    const brands = visibleBrands(user);
+    const [picked, setBrand] = useState(() => readLastBrand());
+    const brand = brands.includes(picked) ? picked : (brands[0] || null);
     const [showHidden, setShowHidden] = useState(false);
     const [ready, setReady] = useState(null);     // null = กำลังเช็ค · false = ยังไม่ได้ setup-db
     const [modal, setModal] = useState(null);
@@ -404,11 +410,12 @@ export default function Catalog() {
             hide ? `ซ่อน Target ของ ${p.code} แล้ว` : `เอา Target ของ ${p.code} กลับมาแล้ว`);
     };
 
-    const all = productsByBrand(brand);
+    const all = brand ? productsByBrand(brand) : [];
     const rows = all.filter(p => showHidden || !p.hidden);
     const hiddenCount = all.filter(p => p.hidden).length;
-    const locked = ready === false;
-    const lockTip = locked ? 'ยังบันทึกไม่ได้ — ต้องรัน setup-db ก่อน' : undefined;
+    // ยังไม่ได้รับแบรนด์ (ทีม Ads ที่ admin ยังไม่กำหนดแบรนด์) = ดูหรือแก้อะไรไม่ได้
+    const locked = ready === false || !brand;
+    const lockTip = ready === false ? 'ยังบันทึกไม่ได้ — ต้องรัน setup-db ก่อน' : (!brand ? 'ยังไม่ได้รับสิทธิ์แบรนด์' : undefined);
 
     return (
         <div className="catg-page">
@@ -419,12 +426,13 @@ export default function Catalog() {
                 </div>
             </header>
 
-            {locked && <div className="catg-warn big" role="alert">⚠ ยังไม่ได้สร้างตารางของหน้านี้ในฐานข้อมูล (ต้องรัน setup-db) — ดูรายการได้ แต่ยังเพิ่ม/ซ่อนไม่ได้</div>}
+            {ready === false && <div className="catg-warn big" role="alert">⚠ ยังไม่ได้สร้างตารางของหน้านี้ในฐานข้อมูล (ต้องรัน setup-db) — ดูรายการได้ แต่ยังเพิ่ม/ซ่อนไม่ได้</div>}
+            {!brand && <div className="catg-warn big" role="alert">⚠ บัญชีนี้ยังไม่ได้รับสิทธิ์แบรนด์ — ติดต่อผู้ดูแลระบบให้กำหนดแบรนด์ที่ดูแลในหน้า Users</div>}
             {error && <div className="alert-error">{error}</div>}
             {note && <div className="agency-saved catg-note">✓ {note}</div>}
 
             <div className="catg-brands" role="tablist" aria-label="แบรนด์">
-                {BRANDS.map(b => {
+                {brands.map(b => {
                     const n = productsByBrand(b).filter(p => !p.hidden).length;
                     return (
                         <button type="button" key={b} role="tab" aria-selected={b === brand} className={'brand-chip' + (b === brand ? ' active' : '')} onClick={() => pickBrand(b)}>
@@ -508,7 +516,7 @@ export default function Catalog() {
             </div>
             <p className="catg-foot">กด ✎ ที่ Target = แก้ชื่อ (แคมเปญเดิมที่ใช้ชื่อนั้นเปลี่ยนตามด้วย) · กด × ที่ Target = ซ่อน (แคมเปญเก่าไม่เสีย กดเอากลับได้) · ซ่อนสินค้า = แคมเปญใหม่เลือกไม่ได้ · รหัสสินค้าแก้/ลบไม่ได้ · เพิ่มแบรนด์ใหม่ต้องแก้ในระบบ</p>
 
-            {modal && modal.kind === 'product' && <AddProductModal brand={brand} onClose={() => setModal(null)} onSaved={saved} />}
+            {modal && modal.kind === 'product' && <AddProductModal brand={brand} brands={brands} onClose={() => setModal(null)} onSaved={saved} />}
             {modal && modal.kind === 'target' && <AddTargetModal brand={brand} preset={modal.codes} onClose={() => setModal(null)} onSaved={saved} />}
             {modal && modal.kind === 'rename' && <RenameModal product={modal.product} onClose={() => setModal(null)} onSaved={saved} />}
             {modal && modal.kind === 'edit-target' && <EditTargetModal brand={brand} product={modal.product} target={modal.target} onClose={() => setModal(null)} onSaved={saved} />}

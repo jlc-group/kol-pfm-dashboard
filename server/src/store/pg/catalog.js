@@ -117,8 +117,10 @@ const catalog = {
 
     // แคมเปญที่ใช้ Target ชื่อนี้กับสินค้าที่เลือก (หน้าต่างแก้ไข Target บอกก่อนบันทึก) — อ่านอย่างเดียว · กติกาเดียวกับตอนแก้จริง
     // bundled = รหัสที่ไม่ได้เลือกแต่จะโดนด้วยเพราะอยู่ในชุดเดียวกับสินค้าที่เลือก
-    async targetUsage(codes, from) {
-        const rows = (await query(`SELECT id, name, brand, ad_groups FROM projects ORDER BY id`)).rows;
+    // scopeBrands = null ทุกแบรนด์ (admin) · [แบรนด์] = เฉพาะแคมเปญของแบรนด์ที่คนแก้มีสิทธิ์ (ทีม Ads · 21 ต.ค. 2026)
+    async targetUsage(codes, from, scopeBrands = null) {
+        const rows = (await query(`SELECT id, name, brand, ad_groups FROM projects WHERE $1::text[] IS NULL OR brand = ANY($1) ORDER BY id`,
+            [Array.isArray(scopeBrands) ? scopeBrands : null])).rows;
         const campaigns = [];
         const bundled = new Set();
         for (const r of rows) {
@@ -136,7 +138,7 @@ const catalog = {
     //   แคมเปญ: store/targetRename.js — ล็อกแคมเปญที่โดนทีละแถวเรียง id ก่อนเขียน (กันชนกับคนที่กำลังบันทึกฟอร์มแคมเปญ)
     //   keep = รหัสในคลังที่ยังใช้ชื่อเดิมหลังแก้ (ใช้ตัดสินบล็อกแบบเก่าที่ Target ก้อนเดียวใช้กับหลายสินค้า)
     //   ข้อจำกัด: คนที่เปิดฟอร์มแคมเปญค้างไว้ก่อนแก้แล้วกดบันทึกทีหลัง จะเขียนชื่อเดิมกลับ (ฟอร์มแคมเปญไม่มีเช็คชนกัน)
-    async renameTarget(codes, from, to, { byId, byName, keep } = {}) {
+    async renameTarget(codes, from, to, { byId, byName, keep, scopeBrands = null } = {}) {
         const sameKey = from.trim().toLowerCase() === to.trim().toLowerCase();
         try {
             return await withTransaction(async client => {
@@ -153,7 +155,8 @@ const catalog = {
                         await upsertTarget(client, code, to, false, byId, byName);
                     }
                 }
-                const all = (await client.query(`SELECT id, ad_groups FROM projects ORDER BY id`)).rows;
+                const all = (await client.query(`SELECT id, ad_groups FROM projects WHERE $1::text[] IS NULL OR brand = ANY($1) ORDER BY id`,
+                    [Array.isArray(scopeBrands) ? scopeBrands : null])).rows;
                 const ids = all.filter(r => usesTarget(r.ad_groups, codes, from)).map(r => r.id);
                 const campaigns = [];
                 for (const id of ids) {

@@ -17,6 +17,12 @@ function seesAllBrands(user) {
     return !!user && user.role === 'admin';
 }
 
+// แก้หน้า Products & Targets ได้: admin (ทุกแบรนด์) + คนในทีม Ads (เฉพาะแบรนด์ที่ตัวเองมีสิทธิ์ — routes/catalog.js ตรวจแบรนด์ของสินค้า)
+// ผู้ใช้สั่ง 21 ต.ค. 2026 "หน้านี้ขอให้ฝั่ง Ads เข้าถึงได้" · ดูทีมจากชื่อทีม (team_name จาก users JOIN teams) — ย้ายเข้า/ออกทีม Ads = ได้/เสียสิทธิ์ทันที
+// ต้องตรงกับ canManageCatalog ฝั่งหน้าเว็บ (client/src/data/brands.js)
+const isAdsTeam = user => !!user && user.role !== 'agency' && String(user.team_name || '').trim().toLowerCase() === 'ads';
+const canManageCatalog = user => !!user && (user.role === 'admin' || isAdsTeam(user));
+
 // บทบาทที่เก็บรายการแบรนด์ที่ดูได้ (admin กำหนดให้) — member + manager · admin เห็นทุกแบรนด์ / agency ไม่ใช้
 // ต้องตรงกับ hasBrandList ฝั่งหน้าเว็บ (client/src/data/brands.js)
 const hasBrandList = role => role === 'member' || role === 'manager';
@@ -46,4 +52,4 @@ const canSeeCostMetrics = user => !!user && (user.role === 'admin' || user.role 
 const STATUSES = ['pending', 'active', 'rejected'];
 const isApproved = user => !!user && (user.status || 'active') === 'active' && user.is_active !== false;
 
-module.exports = { ROLES, ROLE_LABEL, seesAllBrands, hasBrandList, allowedBrands, canSeeBrand, canSeeCostMetrics, normalizeRole, isAgency, STATUSES, isApproved };
+module.exports = { ROLES, ROLE_LABEL, seesAllBrands, hasBrandList, allowedBrands, canSeeBrand, canSeeCostMetrics, canManageCatalog, normalizeRole, isAgency, STATUSES, isApproved };

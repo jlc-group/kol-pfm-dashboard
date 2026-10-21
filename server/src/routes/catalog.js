@@ -1,12 +1,13 @@
 const express = require('express');
 const store = require('../store');
-const { requireRole } = require('../middleware/auth');
 const { CODE_SHAPE } = require('../store/productFamilies');
+const { canManageCatalog, seesAllBrands, canSeeBrand, allowedBrands } = require('../data/roles');
+const catalogBrands = require('../store/catalogBrands');
 
 // ===== หน้า Products & Targets (เมนู ADMIN · ผู้ใช้สั่ง 7 ต.ค. 2026) =====
 // เก็บเฉพาะส่วนต่างจากรายการตั้งต้นในโค้ด (client/src/data/products.js) — ดู store/pg/catalog.js
 // อ่าน: ทุกคนที่ล็อกอินแล้ว รวมบัญชีเอเจนซี่ (หน้าเอเจนซี่ใช้ชื่อสินค้าใหม่ด้วย) — app.js ผูกเส้นนี้โดยไม่มี blockAgency
-// แก้: admin เท่านั้น · ไม่มีการลบ (ซ่อนแทน) · ทุกการแก้ลง Activity Log · ทุกเส้นที่แก้ตอบส่วนต่างล่าสุดกลับไปทั้งก้อน
+// แก้: admin (ทุกแบรนด์) + ทีม Ads (เฉพาะสินค้าของแบรนด์ที่ตัวเองมีสิทธิ์ · ผู้ใช้สั่ง 21 ต.ค. 2026) · ไม่มีการลบ (ซ่อนแทน) · ทุกการแก้ลง Activity Log · ทุกเส้นที่แก้ตอบส่วนต่างล่าสุดกลับไปทั้งก้อน
 const router = express.Router();
 
 const actorName = req => (req.account && (req.account.nickname || req.account.full_name)) || (req.user && req.user.username) || null;
@@ -59,18 +60,37 @@ const fail = (res, status, message) => res.status(status).json({ status: 'error'
 const sendOverlay = async (res, status = 200) => res.status(status).json({ status: 'success', data: await store.catalog.overlay() });
 const handle = (err, res, next) => (err && err.status ? fail(res, err.status, err.message) : next(err));
 
+// ---- ใครแก้ได้ (roles.js canManageCatalog) — admin ทุกแบรนด์ · ทีม Ads เฉพาะสินค้าของแบรนด์ที่ตัวเองมีสิทธิ์ ----
+const requireCatalogEditor = (req, res, next) => (canManageCatalog(req.account)
+    ? next() : fail(res, 403, 'แก้หน้า Products & Targets ได้เฉพาะผู้ดูแลระบบและทีม Ads'));
+// ขอบเขตแบรนด์ของคนที่แก้ (null = admin ทุกแบรนด์) — ใช้กรองแคมเปญที่แก้ชื่อ Target ตามด้วย
+const scopeOf = req => allowedBrands(req.account);
+// ทีม Ads: ทุกรหัสต้องเป็นสินค้าของแบรนด์ที่ตัวเองมีสิทธิ์ · รหัสที่ไม่มีในคลัง = ไม่ผ่าน (ไม่เดาแบรนด์) · admin ไม่ต้องเช็ค
+// ตอบ 403 ไปแล้ว = true (route หยุด) · โหลดคลังตั้งต้นไม่ได้ = 503
+async function denyOtherBrands(req, res, codes) {
+    if (seesAllBrands(req.account)) return false;
+    let brands;
+    try { brands = await catalogBrands.brandsOf(codes, (await store.catalog.overlay()).products); }
+    catch { fail(res, 503, 'ตรวจแบรนด์ของสินค้าไม่ได้ในตอนนี้ — ลองใหม่อีกครั้ง'); return true; }
+    const bad = codes.filter(c => !brands.has(c) || !canSeeBrand(req.account, brands.get(c)));
+    if (!bad.length) return false;
+    fail(res, 403, `แก้ได้เฉพาะสินค้าของแบรนด์ที่คุณมีสิทธิ์ (${bad.join(', ')})`);
+    return true;
+}
+
 // GET /api/catalog — ส่วนต่างทั้งหมด { ready, products, targets }
 router.get('/', async (req, res, next) => {
     try { await sendOverlay(res); } catch (err) { handle(err, res, next); }
 });
 
 // POST /api/catalog/products — เพิ่มสินค้าใหม่ { code, name, brand, targets?: [ชื่อ Target] }
-router.post('/products', requireRole('admin'), async (req, res, next) => {
+router.post('/products', requireCatalogEditor, async (req, res, next) => {
     try {
         const b = req.body || {};
         const code = codeOf(b.code); if (code.error) return fail(res, 400, code.error);
         const name = textOf(b.name, 'ชื่อสินค้า', 200); if (name.error) return fail(res, 400, name.error);
         const brand = textOf(b.brand, 'แบรนด์', 100); if (brand.error) return fail(res, 400, brand.error);
+        if (!canSeeBrand(req.account, brand.value)) return fail(res, 403, `เพิ่มสินค้าได้เฉพาะแบรนด์ที่คุณมีสิทธิ์ (${brand.value})`);
         const targets = [];
         for (const t of Array.isArray(b.targets) ? b.targets : []) {
             const r = targetOf(t); if (r.error) return fail(res, 400, r.error);
@@ -89,10 +109,11 @@ router.post('/products', requireRole('admin'), async (req, res, next) => {
 
 // PATCH /api/catalog/products/:code — ซ่อน / เอากลับ { hidden } · แก้ชื่อสินค้าที่เพิ่มเอง { name }
 // สินค้าตั้งต้นที่ยังไม่มีแถว ต้องส่ง name + brand มาด้วย (เก็บไว้เป็นข้อมูลอ้างอิง — หน้าเว็บยึดชื่อตามโค้ด)
-router.patch('/products/:code', requireRole('admin'), async (req, res, next) => {
+router.patch('/products/:code', requireCatalogEditor, async (req, res, next) => {
     try {
         const b = req.body || {};
         const code = codeOf(req.params.code); if (code.error) return fail(res, 400, code.error);
+        if (await denyOtherBrands(req, res, [code.value])) return;
         const cur = await store.catalog.findProduct(code.value);
         if (b.hidden !== undefined) {
             // ซ่อน / เอากลับ — name / brand ใช้แค่ตอนสร้างแถวให้สินค้าตั้งต้นที่ยังไม่มีแถว (ไม่ใช่การแก้ชื่อ)
@@ -120,11 +141,12 @@ router.patch('/products/:code', requireRole('admin'), async (req, res, next) => 
 });
 
 // POST /api/catalog/targets — เพิ่ม Target ให้สินค้า (หลายตัวได้) { target, codes: [...] } · ชื่อเดิมที่ซ่อนไว้ = เอากลับมา
-router.post('/targets', requireRole('admin'), async (req, res, next) => {
+router.post('/targets', requireCatalogEditor, async (req, res, next) => {
     try {
         const b = req.body || {};
         const target = targetOf(b.target); if (target.error) return fail(res, 400, target.error);
         const codes = codesOf(b.codes); if (codes.error) return fail(res, 400, codes.error);
+        if (await denyOtherBrands(req, res, codes.value)) return;
         await store.catalog.setTargets(codes.value, target.value, false, by(req));
         await record(req, 'create', `เพิ่ม Target ${target.value} ให้ ${codes.value.join(', ')}`);
         await sendOverlay(res, 201);
@@ -132,12 +154,13 @@ router.post('/targets', requireRole('admin'), async (req, res, next) => {
 });
 
 // PATCH /api/catalog/targets — ซ่อน / เอากลับ Target ของสินค้า { code, target, hidden }
-router.patch('/targets', requireRole('admin'), async (req, res, next) => {
+router.patch('/targets', requireCatalogEditor, async (req, res, next) => {
     try {
         const b = req.body || {};
         const code = codeOf(b.code); if (code.error) return fail(res, 400, code.error);
         const target = targetOf(b.target); if (target.error) return fail(res, 400, target.error);
         if (typeof b.hidden !== 'boolean') return fail(res, 400, 'hidden ต้องเป็น true / false');
+        if (await denyOtherBrands(req, res, [code.value])) return;
         await store.catalog.setTargets([code.value], target.value, b.hidden, by(req));
         await record(req, 'update', `${b.hidden ? 'ซ่อน' : 'เอากลับ'} Target ${target.value} ของ ${code.value}`);
         await sendOverlay(res);
@@ -145,27 +168,29 @@ router.patch('/targets', requireRole('admin'), async (req, res, next) => {
 });
 
 // GET /api/catalog/targets/usage?target=&codes=L3,L10 — แคมเปญที่ใช้ Target นี้กับสินค้าที่เลือก (หน้าต่างแก้ไข Target บอกก่อนบันทึก)
-router.get('/targets/usage', requireRole('admin'), async (req, res, next) => {
+router.get('/targets/usage', requireCatalogEditor, async (req, res, next) => {
     try {
         const target = targetOf(req.query.target); if (target.error) return fail(res, 400, target.error);
         const codes = codesOf(String(req.query.codes || '').split(',').filter(Boolean)); if (codes.error) return fail(res, 400, codes.error);
-        const { campaigns, bundled } = await store.catalog.targetUsage(codes.value, target.value);
+        if (await denyOtherBrands(req, res, codes.value)) return;
+        const { campaigns, bundled } = await store.catalog.targetUsage(codes.value, target.value, scopeOf(req));
         res.json({ status: 'success', data: { count: campaigns.length, campaigns, bundled } });
     } catch (err) { handle(err, res, next); }
 });
 
 // POST /api/catalog/targets/rename — แก้ชื่อ Target ของสินค้าที่เลือก { from, to, codes: [...] } (21 ต.ค. 2026)
 // แคมเปญเดิมที่ใช้ชื่อเดิมกับสินค้านั้นเปลี่ยนตามด้วย (ผู้ใช้เลือก "เปลี่ยนตามด้วย") — ทำใน transaction เดียวกับคลัง
-router.post('/targets/rename', requireRole('admin'), async (req, res, next) => {
+router.post('/targets/rename', requireCatalogEditor, async (req, res, next) => {
     try {
         const b = req.body || {};
         const from = targetOf(b.from); if (from.error) return fail(res, 400, 'ชื่อเดิม: ' + from.error);
         const to = targetOf(b.to); if (to.error) return fail(res, 400, to.error);
         if (from.value === to.value) return fail(res, 400, 'ชื่อใหม่เหมือนชื่อเดิม');
         const codes = codesOf(b.codes); if (codes.error) return fail(res, 400, codes.error);
+        if (await denyOtherBrands(req, res, codes.value)) return;
         // keep (ไม่บังคับ) = รหัสในคลังที่ยังใช้ชื่อเดิม · ไม่ส่ง = ถือว่าสินค้าที่ไม่ได้เลือกยังใช้ชื่อเดิมทุกตัว (ปลอดภัยไว้ก่อน)
         const keep = Array.isArray(b.keep) ? b.keep.slice(0, 5000).map(codeOf).filter(r => !r.error).map(r => r.value) : undefined;
-        const { campaigns } = await store.catalog.renameTarget(codes.value, from.value, to.value, { ...by(req), keep });
+        const { campaigns } = await store.catalog.renameTarget(codes.value, from.value, to.value, { ...by(req), keep, scopeBrands: scopeOf(req) });
         await record(req, 'update', `แก้ชื่อ Target ${from.value} → ${to.value} ของ ${codes.value.join(', ')}`
             + (campaigns.length ? ` · เปลี่ยนในแคมเปญเดิม ${campaigns.length} แคมเปญ` : ''));
         // ประวัติของแต่ละแคมเปญที่โดน — ดูย้อนหลังได้ว่าชื่อ Target เปลี่ยนเพราะอะไร

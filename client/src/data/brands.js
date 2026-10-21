@@ -11,6 +11,11 @@ export const hasBrandList = role => role === 'member' || role === 'manager';
 // ตัวเลขต้นทุน (CPM / CPE / ค่าแอด) — admin + manager · ต้องตรงกับ canSeeCostMetrics ฝั่ง server (ไม่เกี่ยวกับแบรนด์)
 export const canSeeCostMetrics = user => !!user && (user.role === 'admin' || user.role === 'manager');
 
+// แก้หน้า Products & Targets ได้: admin + คนในทีม Ads (ผู้ใช้สั่ง 21 ต.ค. 2026 · ทีม Ads แก้ได้เฉพาะแบรนด์ที่ตัวเองมีสิทธิ์)
+// ดูจากชื่อทีม (team_name ที่ /auth/me ส่งมา) — ต้องตรงกับ canManageCatalog ฝั่ง server (server/src/data/roles.js)
+export const canManageCatalog = user => !!user && (user.role === 'admin'
+    || (user.role !== 'agency' && String(user.team_name || '').trim().toLowerCase() === 'ads'));
+
 // แบรนด์ที่ผู้ใช้คนนี้เห็นได้ — admin เห็นทุกแบรนด์
 // member / manager ที่ยังไม่ได้รับแบรนด์จะได้ [] (ไม่มีอะไรให้เลือก)
 export function visibleBrands(user) {
