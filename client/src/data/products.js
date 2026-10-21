@@ -118,7 +118,9 @@ function rebuildCatalog() {
     for (const r of OVERLAY.targets) {
         const list = tmap.get(r.product_code) || [];
         const i = list.findIndex(x => targetKey(x.target) === targetKey(r.target));
-        if (i >= 0) list[i] = { ...list[i], hidden: !!r.hidden };
+        // แถวที่ตรงกับ Target ตั้งต้น (ไม่สนตัวพิมพ์/ช่องว่าง) — ตัวสะกดตามที่ Admin แก้ล่าสุด (แก้ไข Target ตัวพิมพ์เล็ก-ใหญ่ · 21 ต.ค. 2026)
+        // แถวที่ซ่อนอยู่ใช้แค่ธงซ่อน (ซ่อนผ่าน API ด้วยตัวพิมพ์อื่นได้ — หน้าตาคงตัวสะกดตั้งต้น · tests/catalog.test.cjs)
+        if (i >= 0) list[i] = { ...list[i], hidden: !!r.hidden, ...(r.hidden ? {} : { target: r.target }) };
         else list.push({ target: r.target, hidden: !!r.hidden, builtin: false });
         tmap.set(r.product_code, list);
     }

@@ -38,9 +38,10 @@ function Modal({ title, onClose, children }) {
 }
 
 // ช่องชื่อ Target + เตือนชื่อคล้าย + ติ๊กยืนยันว่าตรงกับระบบยิงแอด
-function TargetNameField({ value, onChange, confirmed, onConfirm, autoFocus }) {
+// ignore = ชื่อเดิมตอนแก้ไข (แก้แค่ตัวพิมพ์ไม่ต้องเตือนว่าคล้ายชื่อตัวเอง)
+function TargetNameField({ value, onChange, confirmed, onConfirm, autoFocus, ignore }) {
     const name = value.trim();
-    const similar = name ? allTargetNames().filter(t => t !== name && loose(t) === loose(name)) : [];
+    const similar = name ? allTargetNames().filter(t => t !== name && t !== ignore && loose(t) === loose(name)) : [];
     return (
         <>
             <div className="field">
@@ -224,6 +225,112 @@ function AddTargetModal({ brand, preset, onClose, onSaved }) {
     );
 }
 
+// แก้ไขชื่อ Target (ผู้ใช้สั่ง 21 ต.ค. 2026) — ใช้กับสินค้าที่เลือก (ตั้งต้น = เฉพาะสินค้าที่กด · กดเพิ่มเป็นทุกสินค้าที่ใช้ชื่อนี้ได้)
+// ตั้งต้นไม่เลือกทั้งแบรนด์ เพราะชื่อเดียวกันใช้ได้ถึง 14 สินค้า — กด ✎ ที่แถวไหนควรเปลี่ยนแค่แถวนั้น เว้นแต่ตั้งใจขยายเอง
+// แคมเปญเดิมที่ใช้ชื่อเดิมกับสินค้านั้นเปลี่ยนตามด้วย (ผู้ใช้เลือก) — บอกจำนวนแคมเปญที่จะโดนก่อนบันทึก
+function EditTargetModal({ brand, product, target, onClose, onSaved }) {
+    // สินค้าซ่อนอยู่ก็นับ (แคมเปญเก่ายังใช้ได้) · สินค้าที่ซ่อนชื่อนี้ไปแล้วไม่นับ
+    const users = productsByBrand(brand).filter(p => p.code !== product.code && targetsForProduct(p.code).includes(target));
+    // สินค้าที่กดมาก่อนเสมอ (ถึงจะซ่อนอยู่ก็ยังแก้ได้)
+    const products = [product, ...users];
+    const [codes, setCodes] = useState(() => [product.code]);
+    const [name, setName] = useState(target);
+    const [confirmed, setConfirmed] = useState(false);
+    const [usage, setUsage] = useState(null);     // null = กำลังนับ · { count, campaigns, bundled } · { error }
+    const [retry, setRetry] = useState(0);
+    const [error, setError] = useState('');
+    const [saving, setSaving] = useState(false);
+    const t = name.trim();
+    const codesKey = codes.join(',');
+    useEffect(() => {
+        if (!codes.length) { setUsage({ count: 0, campaigns: [], bundled: [] }); return undefined; }
+        let live = true;
+        setUsage(null);
+        api(`/catalog/targets/usage?target=${encodeURIComponent(target)}&codes=${encodeURIComponent(codesKey)}`)
+            .then(res => { if (live) setUsage(res.data); })
+            .catch(err => { if (live) setUsage({ error: err.message }); });
+        return () => { live = false; };
+    }, [codesKey, target, retry]);
+    const sameName = (a, b) => a.trim().toLowerCase() === b.trim().toLowerCase();
+    // ชื่อใหม่มีอยู่แล้วในสินค้าที่เลือก (คนละตัวกับชื่อเดิม · ไม่สนตัวพิมพ์) = รวมเป็นอันเดียว และใช้ตัวสะกดที่มีอยู่
+    // ไม่งั้นพิมพ์ตัวเล็กทับชื่อตั้งต้น ตัวสะกดของชื่อนั้นในสินค้าอื่นจะเปลี่ยนตามไปด้วย
+    const existing = t && !sameName(t, target)
+        ? codes.flatMap(c => targetEntriesOf(c).filter(x => sameName(x.target, t)).map(x => x.target))[0] || null : null;
+    const to = existing || t;
+    const merging = existing ? codes.filter(c => targetEntriesOf(c).some(x => sameName(x.target, t))) : [];
+    const allOn = codes.length === products.length;
+    const problems = [];
+    if (!t) problems.push('ชื่อ Target');
+    else if (/[,，]/.test(t)) problems.push('ชื่อ Target ห้ามมีจุลภาค (,)');
+    else if (t === target) problems.push('ชื่อใหม่ยังเหมือนชื่อเดิม');
+    if (!codes.length) problems.push('เลือกสินค้าอย่างน้อย 1 ตัว');
+    if (t && t !== target && !confirmed) problems.push('ติ๊กยืนยันชื่อ Target');
+    const n = usage && !usage.error ? usage.count : null;
+    const bundled = (usage && !usage.error && usage.bundled) || [];
+    const close = () => { if (!saving) onClose(); };
+    async function submit(e) {
+        e.preventDefault();
+        if (saving) return;
+        if (problems.length) { setError('ยังไม่ครบ: ' + problems.join(', ')); return; }
+        if (n === null) { setError(usage && usage.error ? 'นับแคมเปญไม่สำเร็จ — กด "นับใหม่" ก่อน' : 'รอนับแคมเปญที่ใช้ชื่อนี้ให้เสร็จก่อน'); return; }
+        // สินค้าในคลัง (ทุกแบรนด์) ที่ยังใช้ชื่อเดิมหลังแก้ — server ใช้ตัดสินแคมเปญแบบเก่าที่ Target ก้อนเดียวใช้กับหลายสินค้า
+        const keep = PRODUCT_CATALOG.filter(p => !codes.includes(p.code) && targetEntriesOf(p.code).some(x => sameName(x.target, target))).map(p => p.code);
+        setError(''); setSaving(true);
+        try {
+            const res = await api('/catalog/targets/rename', { method: 'POST', body: { from: target, to, codes, keep } });
+            const done = (res.campaigns || []).length;
+            onSaved(res.data, `แก้ชื่อ Target เป็น ${to} แล้ว (${codes.length} สินค้า${done ? ` · เปลี่ยนในแคมเปญเดิม ${done} แคมเปญ` : ''})`);
+        } catch (err) { setError(err.message); }
+        finally { setSaving(false); }
+    }
+    return (
+        <Modal title={`แก้ไข Target · ${brand}`} onClose={close}>
+            {error && <div className="alert-error">{error}</div>}
+            <form onSubmit={submit}>
+                <div className="field">
+                    <label>ชื่อเดิม</label>
+                    <div className="catg-exact catg-old-name">{target}</div>
+                </div>
+                <TargetNameField value={name} onChange={v => { setName(v); setConfirmed(false); }}
+                    confirmed={confirmed} onConfirm={setConfirmed} autoFocus ignore={target} />
+                <div className="field">
+                    {/* ปุ่มอยู่นอก <label> — ไม่งั้นกดที่ตัวหนังสือ "แก้ให้สินค้า" ก็ไปกดปุ่มสลับสินค้าทั้งหมดด้วย */}
+                    <div className="catg-label-row">
+                        <label>แก้ให้สินค้า * <span className="catg-opt">{codes.length} / {products.length}</span></label>
+                        {products.length > 1 && (
+                            <button type="button" className="catg-link" onClick={() => setCodes(allOn ? [product.code] : products.map(p => p.code))}>
+                                {allOn ? `เฉพาะ ${product.code}` : `ทุกสินค้าที่ใช้ชื่อนี้ (${products.length})`}
+                            </button>
+                        )}
+                    </div>
+                    <div className="catg-pick">
+                        {products.map(p => (
+                            <button type="button" key={p.code} className={'catg-pick-item' + (codes.includes(p.code) ? ' on' : '')} aria-pressed={codes.includes(p.code)}
+                                title={p.name} onClick={() => setCodes(c => (c.includes(p.code) ? c.filter(x => x !== p.code) : [...c, p.code]))}>
+                                {codes.includes(p.code) ? '☑' : '☐'} {p.code}{p.hidden ? ' · ซ่อน' : ''}
+                            </button>
+                        ))}
+                    </div>
+                    {merging.length > 0 && <small className="catg-hint">{merging.join(', ')} มีชื่อ {existing} อยู่แล้ว — จะรวมเป็นอันเดียว{existing !== t ? ` (ใช้ตัวสะกด ${existing} ที่มีอยู่)` : ''}</small>}
+                </div>
+                {/* เนื้อหาห่อใน <span> — .catg-warn เป็น flex ข้อความกับตัวหนาจะแตกเป็นหลายคอลัมน์ */}
+                <div className="catg-warn catg-usage" role="status">
+                    {usage === null ? <span>กำลังนับแคมเปญที่ใช้ชื่อนี้…</span>
+                        : usage.error ? <span>นับแคมเปญไม่ได้: {usage.error} <button type="button" className="catg-link" onClick={() => setRetry(x => x + 1)}>นับใหม่</button></span>
+                        : usage.count === 0 ? <span>ยังไม่มีแคมเปญไหนใช้ชื่อนี้กับสินค้าที่เลือก — แก้แค่ในคลัง</span>
+                        : <span>แคมเปญเดิมที่ใช้ชื่อนี้กับสินค้าที่เลือก <b>{usage.count} แคมเปญ</b> จะเปลี่ยนเป็นชื่อใหม่ด้วย:{' '}
+                            {usage.campaigns.slice(0, 6).map(c => c.name).join(', ')}{usage.count > 6 ? ` และอีก ${usage.count - 6} แคมเปญ` : ''}
+                            {bundled.length > 0 && <> · <b>{bundled.join(', ')}</b> อยู่ในชุดเดียวกับสินค้าที่เลือก (รีวิวรวมคลิปเดียว) ในแคมเปญนั้น จะเปลี่ยนทั้งชุด — ส่วนในคลัง {bundled.join(', ')} ยังเป็นชื่อเดิม</>}</span>}
+                </div>
+                <div className="modal-actions">
+                    <button type="button" className="btn-ghost" onClick={close} disabled={saving}>ยกเลิก</button>
+                    <button type="submit" className="btn-primary" disabled={saving || n === null}>{saving ? 'กำลังบันทึก...' : 'บันทึก'}</button>
+                </div>
+            </form>
+        </Modal>
+    );
+}
+
 function RenameModal({ product, onClose, onSaved }) {
     const [name, setName] = useState(product.name);
     const [error, setError] = useState('');
@@ -360,6 +467,13 @@ export default function Catalog() {
                                                 {targets.map(t => (
                                                     <span key={t.target} className={'catg-chip' + (t.hidden ? ' off' : '') + (!t.builtin ? ' new' : '')} title={t.hidden ? 'ซ่อนอยู่' : t.target}>
                                                         {t.target}
+                                                        {!t.hidden && (
+                                                            <button type="button" className="catg-chip-edit" disabled={locked || !!busy} title={lockTip || 'แก้ไขชื่อ Target'}
+                                                                aria-label={`แก้ไข Target ${t.target} ของ ${p.code}`}
+                                                                onClick={() => setModal({ kind: 'edit-target', product: p, target: t.target })}>
+                                                                <Icon name="edit" size={11} />
+                                                            </button>
+                                                        )}
                                                         <button type="button" disabled={locked || !!busy} title={lockTip || (t.hidden ? 'เอากลับมาใช้' : 'ซ่อน Target นี้')}
                                                             aria-label={`${t.hidden ? 'เอากลับ' : 'ซ่อน'} Target ${t.target} ของ ${p.code}`} onClick={() => toggleTarget(p, t)}>
                                                             {t.hidden ? '↺' : '×'}
@@ -392,11 +506,12 @@ export default function Catalog() {
                     </table>
                 </div>
             </div>
-            <p className="catg-foot">กด × ที่ Target = ซ่อน (แคมเปญเก่าไม่เสีย กดเอากลับได้) · ซ่อนสินค้า = แคมเปญใหม่เลือกไม่ได้ · รหัสสินค้าแก้/ลบไม่ได้ · เพิ่มแบรนด์ใหม่ต้องแก้ในระบบ</p>
+            <p className="catg-foot">กด ✎ ที่ Target = แก้ชื่อ (แคมเปญเดิมที่ใช้ชื่อนั้นเปลี่ยนตามด้วย) · กด × ที่ Target = ซ่อน (แคมเปญเก่าไม่เสีย กดเอากลับได้) · ซ่อนสินค้า = แคมเปญใหม่เลือกไม่ได้ · รหัสสินค้าแก้/ลบไม่ได้ · เพิ่มแบรนด์ใหม่ต้องแก้ในระบบ</p>
 
             {modal && modal.kind === 'product' && <AddProductModal brand={brand} onClose={() => setModal(null)} onSaved={saved} />}
             {modal && modal.kind === 'target' && <AddTargetModal brand={brand} preset={modal.codes} onClose={() => setModal(null)} onSaved={saved} />}
             {modal && modal.kind === 'rename' && <RenameModal product={modal.product} onClose={() => setModal(null)} onSaved={saved} />}
+            {modal && modal.kind === 'edit-target' && <EditTargetModal brand={brand} product={modal.product} target={modal.target} onClose={() => setModal(null)} onSaved={saved} />}
         </div>
     );
 }

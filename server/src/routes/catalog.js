@@ -144,4 +144,43 @@ router.patch('/targets', requireRole('admin'), async (req, res, next) => {
     } catch (err) { handle(err, res, next); }
 });
 
+// GET /api/catalog/targets/usage?target=&codes=L3,L10 — แคมเปญที่ใช้ Target นี้กับสินค้าที่เลือก (หน้าต่างแก้ไข Target บอกก่อนบันทึก)
+router.get('/targets/usage', requireRole('admin'), async (req, res, next) => {
+    try {
+        const target = targetOf(req.query.target); if (target.error) return fail(res, 400, target.error);
+        const codes = codesOf(String(req.query.codes || '').split(',').filter(Boolean)); if (codes.error) return fail(res, 400, codes.error);
+        const { campaigns, bundled } = await store.catalog.targetUsage(codes.value, target.value);
+        res.json({ status: 'success', data: { count: campaigns.length, campaigns, bundled } });
+    } catch (err) { handle(err, res, next); }
+});
+
+// POST /api/catalog/targets/rename — แก้ชื่อ Target ของสินค้าที่เลือก { from, to, codes: [...] } (21 ต.ค. 2026)
+// แคมเปญเดิมที่ใช้ชื่อเดิมกับสินค้านั้นเปลี่ยนตามด้วย (ผู้ใช้เลือก "เปลี่ยนตามด้วย") — ทำใน transaction เดียวกับคลัง
+router.post('/targets/rename', requireRole('admin'), async (req, res, next) => {
+    try {
+        const b = req.body || {};
+        const from = targetOf(b.from); if (from.error) return fail(res, 400, 'ชื่อเดิม: ' + from.error);
+        const to = targetOf(b.to); if (to.error) return fail(res, 400, to.error);
+        if (from.value === to.value) return fail(res, 400, 'ชื่อใหม่เหมือนชื่อเดิม');
+        const codes = codesOf(b.codes); if (codes.error) return fail(res, 400, codes.error);
+        // keep (ไม่บังคับ) = รหัสในคลังที่ยังใช้ชื่อเดิม · ไม่ส่ง = ถือว่าสินค้าที่ไม่ได้เลือกยังใช้ชื่อเดิมทุกตัว (ปลอดภัยไว้ก่อน)
+        const keep = Array.isArray(b.keep) ? b.keep.slice(0, 5000).map(codeOf).filter(r => !r.error).map(r => r.value) : undefined;
+        const { campaigns } = await store.catalog.renameTarget(codes.value, from.value, to.value, { ...by(req), keep });
+        await record(req, 'update', `แก้ชื่อ Target ${from.value} → ${to.value} ของ ${codes.value.join(', ')}`
+            + (campaigns.length ? ` · เปลี่ยนในแคมเปญเดิม ${campaigns.length} แคมเปญ` : ''));
+        // ประวัติของแต่ละแคมเปญที่โดน — ดูย้อนหลังได้ว่าชื่อ Target เปลี่ยนเพราะอะไร
+        for (const c of campaigns) {
+            try {
+                await store.activity.log({
+                    user_id: req.user.id, team_id: c.team_id ?? req.user.team_id, action: 'update',
+                    project_id: c.id, project_name: c.name,
+                    summary: `แก้ชื่อ Target ${from.value} → ${to.value} (${codes.value.join(', ')}) จากหน้า Products & Targets`
+                });
+            } catch { /* บันทึกประวัติพลาดไม่ขวางงานหลัก */ }
+        }
+        res.json({ status: 'success', data: await store.catalog.overlay(),
+            campaigns: campaigns.map(c => ({ id: c.id, name: c.name, brand: c.brand })) });
+    } catch (err) { handle(err, res, next); }
+});
+
 module.exports = router;

@@ -7,7 +7,8 @@
  * ไม่มีการลบ — เอาออก = ซ่อน (แคมเปญเก่าที่เลือกไปแล้วยังอ่านได้) · รหัสสินค้าแก้ไม่ได้ (แคมเปญอ้างด้วยรหัส)
  * ตารางยังไม่ถูกสร้าง (ยังไม่รัน setup-db): อ่าน = ว่าง (ready: false) · เขียน = error 503 บอกให้รัน setup-db
  */
-const { query, withTransaction } = require('./_base');
+const { query, withTransaction, asJson } = require('./_base');
+const { renameTargetInGroups, previewRename, usesTarget } = require('../targetRename');
 
 const noTable = e => !!e && e.code === '42P01';
 const notReady = () => {
@@ -107,6 +108,64 @@ const catalog = {
                 if (name !== undefined) { vals.push(name); sets.push(`name = $${vals.length}`); }
                 const r = await client.query(`UPDATE catalog_products SET ${sets.join(', ')} WHERE code = $1 RETURNING ${PRODUCT_COLS}`, vals);
                 return r.rows[0];
+            });
+        } catch (e) {
+            if (noTable(e)) throw notReady();
+            throw e;
+        }
+    },
+
+    // แคมเปญที่ใช้ Target ชื่อนี้กับสินค้าที่เลือก (หน้าต่างแก้ไข Target บอกก่อนบันทึก) — อ่านอย่างเดียว · กติกาเดียวกับตอนแก้จริง
+    // bundled = รหัสที่ไม่ได้เลือกแต่จะโดนด้วยเพราะอยู่ในชุดเดียวกับสินค้าที่เลือก
+    async targetUsage(codes, from) {
+        const rows = (await query(`SELECT id, name, brand, ad_groups FROM projects ORDER BY id`)).rows;
+        const campaigns = [];
+        const bundled = new Set();
+        for (const r of rows) {
+            const p = previewRename(r.ad_groups, codes, from);
+            if (!p.changed) continue;
+            campaigns.push({ id: r.id, name: r.name, brand: r.brand });
+            p.bundled.forEach(c => bundled.add(c));
+        }
+        return { campaigns, bundled: [...bundled] };
+    },
+
+    // แก้ชื่อ Target ของสินค้าที่เลือก + แคมเปญเดิมที่ใช้ชื่อเดิมกับสินค้านั้น (ผู้ใช้สั่ง 21 ต.ค. 2026 "เปลี่ยนตามด้วย")
+    // transaction เดียว: คลังกับแคมเปญเปลี่ยนพร้อมกัน หรือไม่เปลี่ยนอะไรเลย
+    //   คลัง: ชื่อใหม่ต่างจากเดิมแค่ตัวพิมพ์/ช่องว่าง = แก้ตัวสะกดของแถวเดิม · ชื่ออื่น = ซ่อนชื่อเดิม + เพิ่มชื่อใหม่ (ชื่อใหม่มีอยู่แล้ว = รวมเป็นอันเดียว)
+    //   แคมเปญ: store/targetRename.js — ล็อกแคมเปญที่โดนทีละแถวเรียง id ก่อนเขียน (กันชนกับคนที่กำลังบันทึกฟอร์มแคมเปญ)
+    //   keep = รหัสในคลังที่ยังใช้ชื่อเดิมหลังแก้ (ใช้ตัดสินบล็อกแบบเก่าที่ Target ก้อนเดียวใช้กับหลายสินค้า)
+    //   ข้อจำกัด: คนที่เปิดฟอร์มแคมเปญค้างไว้ก่อนแก้แล้วกดบันทึกทีหลัง จะเขียนชื่อเดิมกลับ (ฟอร์มแคมเปญไม่มีเช็คชนกัน)
+    async renameTarget(codes, from, to, { byId, byName, keep } = {}) {
+        const sameKey = from.trim().toLowerCase() === to.trim().toLowerCase();
+        try {
+            return await withTransaction(async client => {
+                for (const code of codes) {
+                    if (sameKey) {
+                        await client.query(
+                            `INSERT INTO catalog_targets (product_code, target, hidden, created_by_id, created_by, updated_by)
+                             VALUES ($1, $2, false, $3, $4, $4)
+                             ON CONFLICT (product_code, (lower(btrim(target))))
+                             DO UPDATE SET target = EXCLUDED.target, hidden = false, updated_at = now(), updated_by = EXCLUDED.updated_by`,
+                            [code, to, intId(byId), byName || null]);
+                    } else {
+                        await upsertTarget(client, code, from, true, byId, byName);
+                        await upsertTarget(client, code, to, false, byId, byName);
+                    }
+                }
+                const all = (await client.query(`SELECT id, ad_groups FROM projects ORDER BY id`)).rows;
+                const ids = all.filter(r => usesTarget(r.ad_groups, codes, from)).map(r => r.id);
+                const campaigns = [];
+                for (const id of ids) {
+                    const r = (await client.query(`SELECT id, name, brand, team_id, ad_groups FROM projects WHERE id = $1 FOR UPDATE`, [id])).rows[0];
+                    if (!r) continue;
+                    const res = renameTargetInGroups(r.ad_groups, codes, from, to, { keep });
+                    if (!res.changed) continue;
+                    await client.query(`UPDATE projects SET ad_groups = $1, updated_by = $2, updated_at = now() WHERE id = $3`,
+                        [asJson(res.groups), intId(byId), r.id]);
+                    campaigns.push({ id: r.id, name: r.name, brand: r.brand, team_id: r.team_id, places: res.places });
+                }
+                return { campaigns };
             });
         } catch (e) {
             if (noTable(e)) throw notReady();
