@@ -7,6 +7,7 @@ import { CONTENT_FORMATS } from '../data/contentFormats.js';
 import MultiSelect from './MultiSelect.jsx';
 import { useAuth } from '../auth/AuthContext.jsx';
 import { visibleBrands } from '../data/brands.js';
+import { readProjectDraft, saveProjectDraft, clearProjectDraft, refreshDraftTargets, fileLabel } from '../utils/projectDraft.js';
 import {
     groupPlatforms, splitCsv, needTarget, contentTypesFor, campaignTypesFor,
     emptyTier, emptySet, emptyBlock, blocksKol, toBlocks, flattenBlocks,
@@ -146,35 +147,52 @@ const STATUS = [
     { value: 'Cancelled', label: 'ยกเลิก' }
 ];
 
+// ช่องบนของฟอร์ม (ตอนเปิดฟอร์ม / ตอนกด "ล้างฟอร์ม")
+const initForm = editing => ({
+    name: editing?.name || '',
+    brand: editing?.brand || '',
+    objective: editing?.objective || '',
+    brief_link: editing?.brief_link || '',
+    // ไม่เติมชื่อคนที่ล็อกอินให้อัตโนมัติแล้ว — ให้เลือกจากรายชื่อทีมงานเอง
+    // ช่องเดียว "Project Owner" (19 ต.ค. 2026: เดิมช่อง Project Creator) — แคมเปญเก่าที่ยังไม่มี owner ใช้ชื่อผู้สร้างเป็นค่าเริ่ม
+    owner: editing?.owner || editing?.creator || '',
+    creator: editing?.creator || '',
+    budget: editing?.budget ?? '',
+    kol_target: editing?.kol_target ?? '',
+    start_date: editing?.start_date || '',
+    end_date: editing?.end_date || '',
+    status: editing?.status || 'Draft'
+});
+
 // ฟอร์มสร้าง/แก้ไขแคมเปญ (ใช้ร่วมกันทั้งหน้า Projects และ ProjectDetail)
+// คลิกพื้นหลังไม่ปิดหน้าต่าง (ผู้ใช้สั่ง 21 ต.ค. 2026 — เผลอคลิกนอกกรอบแล้วข้อมูลหาย) ปิดได้ที่ × / ยกเลิก เท่านั้น
+// สร้างใหม่: ข้อมูลที่กรอกเก็บเป็นร่างตลอด (utils/projectDraft.js) — ปิดก่อนกดสร้าง แล้วกดสร้างใหม่ ข้อมูลเดิมกลับมา
 export default function ProjectForm({ editing, onClose, onSaved }) {
     const isEdit = !!editing;
-    const [form, setForm] = useState({
-        name: editing?.name || '',
-        brand: editing?.brand || '',
-        objective: editing?.objective || '',
-        brief_link: editing?.brief_link || '',
-        // ไม่เติมชื่อคนที่ล็อกอินให้อัตโนมัติแล้ว — ให้เลือกจากรายชื่อทีมงานเอง
-        // ช่องเดียว "Project Owner" (19 ต.ค. 2026: เดิมช่อง Project Creator) — แคมเปญเก่าที่ยังไม่มี owner ใช้ชื่อผู้สร้างเป็นค่าเริ่ม
-        owner: editing?.owner || editing?.creator || '',
-        creator: editing?.creator || '',
-        budget: editing?.budget ?? '',
-        kol_target: editing?.kol_target ?? '',
-        start_date: editing?.start_date || '',
-        end_date: editing?.end_date || '',
-        status: editing?.status || 'Draft'
+    // แบรนด์ให้เลือกเฉพาะที่ตัวเองมีสิทธิ์ (admin/manager เห็นครบ) — server ตรวจซ้ำอีกชั้นที่ routes/projects.js
+    const { user } = useAuth();
+    const uid = user ? user.id : null;
+    // ร่างที่กู้มาตอนเปิด (สร้างใหม่เท่านั้น) — null = เริ่มฟอร์มเปล่า
+    // Target ในร่างที่ Admin เปลี่ยนชื่อ/ซ่อนไปแล้วระหว่างนั้น เอาออก (แถวนั้นกลับเป็นยังไม่เลือก) แล้วบอกในป้าย
+    const [restored, setRestored] = useState(() => {
+        const d = isEdit ? null : readProjectDraft(uid);
+        if (!d) return null;
+        const { groups, dropped } = refreshDraftTargets(d.adGroups, targetsForProduct);
+        return { ...d, adGroups: groups, dropped };
     });
-    const [adGroups, setAdGroups] = useState(() => initGroups(editing));
+    const [form, setForm] = useState(() => (restored ? { ...initForm(null), ...restored.form } : initForm(editing)));
+    const [adGroups, setAdGroups] = useState(() => (restored ? restored.adGroups : initGroups(editing)));
     // รหัสสินค้าที่แคมเปญนี้บันทึกไว้ตอนเปิดฟอร์ม — สินค้าที่ Admin ซ่อนแล้วแต่แคมเปญนี้ใช้อยู่ เผลอติ๊กออกยังติ๊กกลับได้
-    const [savedCodes] = useState(() => [...new Set(adGroups.flatMap(g => [...(g.products || []), ...(g.blocks || []).flatMap(b => b.products || [])]))]);
+    // สร้างใหม่ (รวมร่างที่กู้มา) ไม่มี — สินค้าที่ซ่อนแล้วไม่ควรเข้าแคมเปญใหม่ (ที่ติ๊กอยู่ในร่างยังเห็นจนกว่าจะติ๊กออก)
+    const [savedCodes] = useState(() => (isEdit ? [...new Set(adGroups.flatMap(g => [...(g.products || []), ...(g.blocks || []).flatMap(b => b.products || [])]))] : []));
     // ชุดสินค้า: แถวที่ติ๊กไว้รอกด 🔗 รวมเป็นชุด — { 'คีย์กลุ่ม::Platform': [รหัส] } (ไม่ถูกบันทึก)
     const [bundlePick, setBundlePick] = useState({});
     // Platform ไม่ใช่ state แยกอีกแล้ว — อ่านจากกลุ่มสินค้าที่มีอยู่
     // (บรีฟหลัก/validate/ตอนบันทึก ยังใช้ตัวแปรชื่อเดิม จึงไม่ต้องแก้ที่อื่น)
     const platforms = [...new Set(adGroups.flatMap(g => splitCsv(g.platform)))];
-    const [briefFile, setBriefFile] = useState(null);
-    const [productBriefs, setProductBriefs] = useState(() => editing?.product_briefs || {}); // { code: { link, file } }
-    const [pbFiles, setPbFiles] = useState({}); // code -> File (รออัปโหลดหลังบันทึก)
+    const [briefFile, setBriefFile] = useState(() => (restored ? restored.briefFile : null));
+    const [productBriefs, setProductBriefs] = useState(() => (restored ? restored.productBriefs : (editing?.product_briefs || {}))); // { code: { link, file } }
+    const [pbFiles, setPbFiles] = useState(() => (restored ? restored.pbFiles : {})); // code -> File (รออัปโหลดหลังบันทึก)
     const setPbLink = (code, link) => { setProductBriefs(m => ({ ...m, [code]: { ...(m[code] || {}), link } })); setPbFiles(f => { const n = { ...f }; delete n[code]; return n; }); };
     const setPbFile = (code, file) => { setPbFiles(f => ({ ...f, [code]: file })); setProductBriefs(m => ({ ...m, [code]: { ...(m[code] || {}), link: '' } })); };
     // บรีฟต่อ Platform เลิกใช้แล้วทั้งหมด (ซ้ำกับบรีฟหลักของแคมเปญ) ไม่อ่านและไม่เขียนต่อ
@@ -188,8 +206,30 @@ export default function ProjectForm({ editing, onClose, onSaved }) {
             .catch(() => setOwners([]));
     }, []);
     const OWNERS = owners;
-    // แบรนด์ให้เลือกเฉพาะที่ตัวเองมีสิทธิ์ (admin/manager เห็นครบ) — server ตรวจซ้ำอีกชั้นที่ routes/projects.js
-    const { user } = useAuth();
+    // เก็บร่างทุกครั้งที่ฟอร์มเปลี่ยน (สร้างใหม่เท่านั้น) — ปิดหน้าต่าง / รีเฟรช / ปิดแท็บ เมื่อไหร่ก็ได้ ไม่ต้องกดอะไร
+    // created = สร้างสำเร็จแล้ว ห้ามเก็บซ้ำ (ไม่งั้นกดสร้างใหม่ได้ร่างของแคมเปญที่สร้างไปแล้ว)
+    // รอบแรกตอนเปิดไม่เก็บ — แค่เปิดดูแล้วปิด เวลาในป้าย/อายุร่างต้องเป็นของตอนกรอกจริง และรายชื่อไฟล์ที่ต้องเลือกใหม่ไม่หาย
+    // pending = ไฟล์จากร่างก่อนรีเฟรชที่ยังไม่ได้เลือกใหม่ — จำต่อไปจนกว่าจะเลือกไฟล์/ใส่ลิงก์แทน หรือกดล้างฟอร์ม
+    const created = useRef(false);
+    const mounted = useRef(false);
+    useEffect(() => {
+        if (!mounted.current) { mounted.current = true; return; }
+        if (isEdit || created.current) return;
+        saveProjectDraft(uid, { form, adGroups, productBriefs, briefFile, pbFiles, pending: restored ? restored.lostFiles : [] });
+    }, [isEdit, uid, form, adGroups, productBriefs, briefFile, pbFiles, restored]);
+    function clearForm() {
+        if (!window.confirm('ล้างข้อมูลที่กรอกไว้ทั้งหมด แล้วเริ่มกรอกใหม่?')) return;
+        clearProjectDraft(uid);
+        setForm(initForm(null));
+        setAdGroups([]);
+        setProductBriefs({});
+        setPbFiles({});
+        setBriefFile(null);
+        if (briefInputRef.current) briefInputRef.current.value = '';
+        setBundlePick({});
+        setError('');
+        setRestored(null);
+    }
     const brandOpts = visibleBrands(user);
     // ตอนแก้ไข ถ้าแบรนด์เดิมไม่อยู่ในรายการ (เช่นชื่อแบรนด์เก่า) ต้องโชว์ไว้ ไม่งั้นช่องจะว่างแล้วบันทึกไม่ผ่าน
     const keepBrand = isEdit && editing.brand && !brandOpts.includes(editing.brand) ? editing.brand : null;
@@ -478,6 +518,9 @@ export default function ProjectForm({ editing, onClose, onSaved }) {
             } else {
                 const res = await api('/projects', { method: 'POST', body });
                 saved = res.data;
+                // สร้างแล้ว = ลบร่างทันที (ก่อนอัปไฟล์) — กดสร้างใหม่ทีหลังต้องได้ฟอร์มเปล่า ไม่ใช่สร้างแคมเปญเดิมซ้ำ
+                created.current = true;
+                clearProjectDraft(uid);
             }
             const pid = isEdit ? editing.id : saved.id;
             // อัปโหลดไฟล์บรีฟหลักของแคมเปญ (ถ้าเลือกไฟล์ไว้)
@@ -504,12 +547,24 @@ export default function ProjectForm({ editing, onClose, onSaved }) {
     const canSubmit = isEdit ? editProblems.length === 0 : missing.length === 0;
 
     return (
-        <div className="modal-backdrop" onClick={onClose}>
+        // ไม่มี onClick ที่พื้นหลัง — คลิกนอกกรอบไม่ปิดหน้าต่าง (ผู้ใช้สั่ง 21 ต.ค. 2026)
+        <div className="modal-backdrop">
             <div className="modal wide" onClick={e => e.stopPropagation()}>
                 <div className="modal-head">
                     <h3>{isEdit ? 'แก้ไขแคมเปญ' : 'สร้างแคมเปญใหม่'}</h3>
-                    <button type="button" className="modal-x" onClick={onClose}>×</button>
+                    <button type="button" className="modal-x" onClick={onClose} disabled={saving}
+                        title={isEdit ? 'ปิด (ไม่บันทึกที่แก้)' : 'ปิด — ข้อมูลที่กรอกเก็บไว้ให้ กดสร้างใหม่จะกลับมา'}>×</button>
                 </div>
+                {restored && (
+                    <div className="form-draft-note" role="status">
+                        <span>
+                            กู้ข้อมูลที่กรอกค้างไว้ ({new Date(restored.at).toLocaleString('th-TH', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })} น.)
+                            {restored.lostFiles.length > 0 && <> · ไฟล์ที่เคยเลือกต้องเลือกใหม่: <b>{restored.lostFiles.map(fileLabel).join(', ')}</b></>}
+                            {restored.dropped.length > 0 && <> · Target ที่ถูกเปลี่ยนชื่อ/ซ่อนไปแล้ว เอาออกให้ (เลือกใหม่): <b>{restored.dropped.join(', ')}</b></>}
+                        </span>
+                        <button type="button" className="btn-ghost" onClick={clearForm}>ล้างฟอร์ม เริ่มใหม่</button>
+                    </div>
+                )}
                 {error && <div className="alert-error">{error}</div>}
                 <form onSubmit={handleSubmit}>
                     {/* ทีมใช้บัญชีเดียวร่วมกัน ระบบจึงบันทึกได้แค่ "System Admin" ต้องเลือกชื่อจริงเอง
@@ -1067,7 +1122,8 @@ export default function ProjectForm({ editing, onClose, onSaved }) {
                         <div className="form-missing-hint">⚠️ กรุณาแก้ให้ถูกต้องก่อนบันทึก: {editProblems.join(' · ')}</div>
                     )}
                     <div className="modal-actions">
-                        <button type="button" className="btn-ghost" onClick={onClose}>ยกเลิก</button>
+                        {!isEdit && <span className="form-draft-hint">ปิดได้ ข้อมูลที่กรอกเก็บไว้ให้ — กดสร้างแคมเปญใหม่จะกลับมา</span>}
+                        <button type="button" className="btn-ghost" onClick={onClose} disabled={saving}>ยกเลิก</button>
                         <button type="submit" className="btn-primary" disabled={saving || !canSubmit}>
                             {saving ? 'กำลังบันทึก...' : (isEdit ? 'บันทึกการแก้ไข' : 'สร้างแคมเปญ')}
                         </button>

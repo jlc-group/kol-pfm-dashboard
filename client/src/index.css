@@ -1788,6 +1788,12 @@ a.ads-thumb:focus-visible { outline: 2px solid var(--mint-dark); outline-offset:
 .chip-item button { border: none; background: transparent; color: var(--mint-dark); cursor: pointer; font-size: 14.5px; line-height: 1; padding: 0 2px; }
 .chip-item button:hover { color: var(--danger); }
 .form-missing-hint { background: #fff7e6; color: #b45309; border: 1px solid #fde68a; border-radius: 11px; padding: 10px 14px; font-size: 12.5px; line-height: 1.5; margin: 4px 0 14px; }
+/* ร่างฟอร์มสร้างแคมเปญ (21 ต.ค. 2026) — ป้ายกู้ข้อมูลที่กรอกค้าง + คำบอกข้างปุ่มยกเลิก */
+.form-draft-note { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px 12px; margin: 0 0 14px; padding: 9px 12px; border-radius: 11px; background: #ecfdf5; border: 1px solid #a7f3d0; color: #065f46; font-size: 12.5px; line-height: 1.5; }
+.form-draft-note > span { min-width: 0; flex: 1 1 260px; }
+.form-draft-note .btn-ghost { flex: none; padding: 5px 12px; font-size: 12px; white-space: nowrap; }
+.form-draft-hint { margin-right: auto; align-self: center; font-size: 11.5px; color: var(--muted); }
+@media (max-width: 560px) { .form-draft-hint { display: none; } }
 .chip-add { display: flex; gap: 8px; }
 .chip-add input { flex: 1; }
 .chip-add .btn-ghost { white-space: nowrap; padding: 11px 14px; }
