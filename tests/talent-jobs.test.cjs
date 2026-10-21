@@ -148,7 +148,7 @@ const ACCOUNTS = {
     2: { id: 2, username: 'praew', full_name: 'Praew Team', nickname: 'แพรว', role: 'member', status: 'active', is_active: true, team_id: 1, brands: ['Jdent'] },
     3: { id: 3, username: 'fon', full_name: 'Fon', nickname: 'ฝน', role: 'member', status: 'active', is_active: true, team_id: 2, brands: ['Beauterry'] },
     4: { id: 4, username: 'ag', full_name: 'Agency', role: 'agency', status: 'active', is_active: true, team_id: null, brands: [], agency_tokens: ['t1'] },
-    5: { id: 5, username: 'mgr', full_name: 'Manager', nickname: 'เมย์', role: 'manager', status: 'active', is_active: true, team_id: 1, brands: [] }
+    5: { id: 5, username: 'mgr', full_name: 'Manager', nickname: 'เมย์', role: 'manager', status: 'active', is_active: true, team_id: 1, brands: ['Jdent', 'Beauterry'] }
 };
 store.users.findById = async id => (ACCOUNTS[Number(id)] ? { ...ACCOUNTS[Number(id)] } : null);
 
@@ -277,7 +277,10 @@ test('ดูรายละเอียด: งานใหม่สุดก่
     assert.equal(asFon.editable, false);
 
     const asMgr = (await call(5, 'GET', `/hires/talents/${t.id}`)).body.data;
-    assert.equal(asMgr.jobs_count, 4, 'manager เห็นทุกแบรนด์');
+    // Manager เห็นเฉพาะแบรนด์ที่กำหนด (21 ต.ค. 2026 — เดิมทุกแบรนด์) · admin เห็นครบ
+    assert.deepEqual([...new Set(asMgr.jobs.map(j => j.brand))].sort(), ['Beauterry', 'Jdent']);
+    assert.equal(asMgr.jobs_count, asMgr.jobs.length);
+    assert.ok(asMgr.jobs_count < asAdmin.jobs_count, 'manager ไม่เห็นแบรนด์อื่นที่ admin เห็น');
     assert.ok(asMgr.jobs.every(j => !j.editable));
     assert.ok(!JSON.stringify(asAdmin).includes('created_by_id'), 'ไม่ส่ง id ผู้ใช้');
 });

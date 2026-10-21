@@ -6,7 +6,7 @@ import Icon from '../components/Icon.jsx';
 import { productLabel, asTargetArray, expandProductFamilies, clipProductLabels } from '../data/products.js';
 import ProductChips, { ProductSummary } from '../components/ProductChips.jsx';
 import { fmtDate } from '../utils/date.js';
-import { visibleBrands, seesAllBrands } from '../data/brands.js';
+import { visibleBrands, canSeeCostMetrics } from '../data/brands.js';
 import { useAuth } from '../auth/AuthContext.jsx';
 import { campaignIsCtype } from '../data/adGroups.js';
 import { stampAtOf, stampAtText, viewsReasonText } from '../data/stamp.js';
@@ -771,7 +771,7 @@ export default function Ads() {
                     </div>
                     <div className="ads-tbl-scroll" ref={bodyRef} onScroll={() => syncX(bodyRef, headRef)}>
                         <div className="ads-tbl">
-                            {rows.map(r => <AdRow key={r.sub_id} row={r} onSaved={load} canCost={seesAllBrands(user)} noAd={isNoAdRow(r)} />)}
+                            {rows.map(r => <AdRow key={r.sub_id} row={r} onSaved={load} canCost={canSeeCostMetrics(user)} noAd={isNoAdRow(r)} />)}
                         </div>
                     </div>
                     </>

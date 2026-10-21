@@ -96,7 +96,7 @@ router.put('/:subId', async (req, res, next) => {
     try {
         const ctx = await store.ads.subContext(req.params.subId);
         if (!ctx) return res.status(404).json({ status: 'error', message: 'ไม่พบโพสต์' });
-        // ตรวจสิทธิ์ตามแบรนด์: admin/manager ได้ทุกแบรนด์, member เฉพาะแบรนด์ตัวเอง
+        // ตรวจสิทธิ์ตามแบรนด์: admin ได้ทุกแบรนด์, manager / member เฉพาะแบรนด์ที่ได้รับ
         if (!canSeeBrand(req.account || req.user, ctx.brand)) {
             return res.status(403).json({ status: 'error', message: 'ไม่มีสิทธิ์แก้ไขข้อมูลของแบรนด์อื่น' });
         }

@@ -244,7 +244,19 @@ test('members can only create or move campaigns into brands they are assigned', 
     assert.equal((await request('/api/projects/31', adminToken, send('PUT', { status: 'Active' }))).status, 200);
     assert.equal((await request('/api/projects/31', adminToken, send('PUT', { name: 'x', brand: 'Jdent' }))).status, 200);
     assert.equal(updated, 2);
+    // Manager สร้าง/ย้ายได้เฉพาะแบรนด์ที่กำหนดเหมือน Member (ผู้ใช้สั่ง 21 ต.ค. 2026 — เดิมทุกแบรนด์) · ยังไม่กำหนด = ไม่ได้เลย
     user({ role: 'manager', team_id: 3, brands: [] });
+    assert.equal((await request('/api/projects', adminToken, send('POST', { name: 'x', brand: 'Code Lab' }))).status, 403);
+    assert.equal((await request('/api/projects/31', adminToken, send('PUT', { status: 'Active' }))).status, 403, 'แคมเปญ Jdent มองไม่เห็น');
+    user({ role: 'manager', team_id: 3, brands: ['Jdent'] });
+    assert.equal((await request('/api/projects', adminToken, send('POST', { name: 'x', brand: 'Code Lab' }))).status, 403);
+    assert.equal((await request('/api/projects/31', adminToken, send('PUT', { brand: 'Code Lab' }))).status, 403);
+    assert.equal(created, 1);
+    assert.equal(updated, 2);
+    assert.equal((await request('/api/projects', adminToken, send('POST', { name: 'x', brand: 'Jdent' }))).status, 201);
+    assert.equal((await request('/api/projects/31', adminToken, send('PUT', { status: 'Active' }))).status, 200);
+    // admin ยังทำได้ทุกแบรนด์
+    user({ role: 'admin', team_id: 1, brands: [] });
     assert.equal((await request('/api/projects', adminToken, send('POST', { name: 'x', brand: 'Code Lab' }))).status, 201);
     assert.equal((await request('/api/projects/31', adminToken, send('PUT', { brand: 'Code Lab' }))).status, 200);
 });
@@ -290,6 +302,12 @@ test('agency accounts get no team budgets, and only admin/manager get ad costs o
     assert.equal(member.submissions[0].budget, '5000.00');
     assert.equal('ad_spend' in member.submissions[0], false);
     assert.deepEqual(member.submissions[0].perf_stamp, { views: 1000, verdict: 'Pass' });
+    // Manager ที่ได้แบรนด์นี้ยังเห็นค่าแอด / CPM / CPE (เห็นเฉพาะแบรนด์ที่กำหนดตั้งแต่ 21 ต.ค. 2026 แต่สิทธิ์ตัวเลขต้นทุนเหมือนเดิม)
+    user({ role: 'manager', team_id: 3, brands: ['Jdent'] });
+    const manager = (await (await request('/api/agency/tok1')).json()).data;
+    assert.deepEqual(manager.platform_budgets, { TikTok: 90000 });
+    assert.equal(manager.submissions[0].ad_spend, '12000.00');
+    assert.equal(manager.submissions[0].perf_stamp.cpm, 17);
 });
 
 test('agency routes never write KOL fees', async () => {
@@ -660,7 +678,14 @@ test('staff can only open agency links of brands they may see', async () => {
     assert.equal((await request('/api/agency/tok1/messages')).status, 403);
     user({ role: 'member', team_id: 2, brands: ['Beauterry'] });
     assert.equal((await request('/api/agency/tok1')).status, 200);
+    // Manager เปิดได้เฉพาะลิงก์ของแบรนด์ที่กำหนด (21 ต.ค. 2026) · admin ทุกแบรนด์
     user({ role: 'manager', team_id: 3, brands: [] });
+    assert.equal((await request('/api/agency/tok1')).status, 403);
+    user({ role: 'manager', team_id: 3, brands: ['Jdent'] });
+    assert.equal((await request('/api/agency/tok1')).status, 403);
+    user({ role: 'manager', team_id: 3, brands: ['Beauterry'] });
+    assert.equal((await request('/api/agency/tok1')).status, 200);
+    user({ role: 'admin', team_id: 1, brands: [] });
     assert.equal((await request('/api/agency/tok1')).status, 200);
     user({ role: 'agency', agency_tokens: ['tok1'] });
     assert.equal((await request('/api/agency/tok1')).status, 200);

@@ -89,7 +89,7 @@ const TALENT_STATUS_LABEL = { Draft: 'กำลังทำ', Active: 'กำล
 async function canEditProject(req, projectId) {
     const proj = await store.projects.findByIdFull(projectId);
     if (!proj) return { ok: false, code: 404, message: 'ไม่พบ Project' };
-    // สิทธิ์แก้ไขยึดตามแบรนด์ของแคมเปญ (admin/manager แก้ได้ทุกแบรนด์)
+    // สิทธิ์แก้ไขยึดตามแบรนด์ของแคมเปญ (admin แก้ได้ทุกแบรนด์ · manager / member เฉพาะแบรนด์ที่ได้รับ)
     if (!canSeeBrand(req.account || req.user, proj.brand)) {
         return { ok: false, code: 403, message: 'ไม่มีสิทธิ์แก้ไขแคมเปญของแบรนด์อื่น' };
     }
@@ -189,7 +189,7 @@ function removeFileIfUnused(meta, items) {
     if (p) fs.unlink(p, () => {});
 }
 
-// GET /api/projects — รายการ Project (admin/manager เห็นหมด / member เห็นเฉพาะแบรนด์ตัวเอง)
+// GET /api/projects — รายการ Project (admin เห็นหมด / manager, member เห็นเฉพาะแบรนด์ที่ได้รับ)
 router.get('/', async (req, res, next) => {
     try {
         const scope = allowedBrands(req.account || req.user);

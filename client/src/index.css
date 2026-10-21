@@ -625,6 +625,8 @@ a { text-decoration: none; color: inherit; }
 /* ป้ายเตือนใต้ชื่อผู้ใช้ที่ยังไม่ได้สังกัดทีม — แทนคอลัมน์ "ทีม" ที่ถูกซ่อนไป
    วางไว้ในคอลัมน์เดิมจึงไม่ทำให้ตารางกว้างขึ้น */
 .user-noteam { margin-top: 3px; font-size: 10.5px; font-weight: 700; color: #b7791f; white-space: nowrap; }
+/* Member / Manager ที่ยังไม่ได้กำหนดแบรนด์ = ยังไม่เห็นข้อมูลใด ๆ (21 ต.ค. 2026 Manager ต้องกำหนดแบรนด์เหมือน Member) */
+.user-nobrand { font-size: 12px; font-weight: 700; color: #b7791f; white-space: nowrap; }
 .ag-add-row input, .ag-add-row select { width: 100%; padding: 9px 8px; border: 1px solid var(--border); border-radius: 9px; background: #fff; font-size: 12.5px; color: var(--text); }
 .ag-add-row input:focus, .ag-add-row select:focus { outline: none; border-color: var(--mint); box-shadow: 0 0 0 3px rgba(16,185,129,.12); }
 .ag-add-row .atr-name { display: flex; align-items: center; gap: 7px; }

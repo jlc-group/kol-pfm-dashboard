@@ -1,7 +1,8 @@
 /**
  * บทบาทผู้ใช้ — 3 ระดับ
  *   admin   = ผู้ดูแลระบบ เห็นทุกแบรนด์ + เข้าเมนูฝั่งผู้ดูแลระบบได้ (รอบทำจ่าย/ประวัติ/ผู้ใช้งาน/ทีม)
- *   manager = เห็นทุกแบรนด์ แต่เข้าเมนูฝั่งผู้ดูแลระบบไม่ได้
+ *   manager = เห็นเฉพาะแบรนด์ที่ admin กำหนดให้ (เหมือน member — ผู้ใช้สั่ง 21 ต.ค. 2026 เดิมเห็นทุกแบรนด์)
+ *             + เห็นตัวเลขต้นทุน (CPM / CPE / ค่าแอด) · เข้าเมนูฝั่งผู้ดูแลระบบไม่ได้
  *   member  = เห็นเฉพาะแบรนด์ที่ admin กำหนดให้ (เก็บได้หลายแบรนด์)
  *   agency  = เอเจนซี่ภายนอก ไม่เห็น dashboard เลย เข้าได้แค่หน้าลิงก์ของตัวเอง
  *
@@ -11,10 +12,14 @@
 const ROLES = ['admin', 'manager', 'member', 'agency'];
 const ROLE_LABEL = { admin: 'ผู้ดูแลระบบ', manager: 'Manager', member: 'Member', agency: 'Agency' };
 
-// เห็นข้อมูลได้ทุกแบรนด์ไหม
+// เห็นข้อมูลได้ทุกแบรนด์ไหม — admin เท่านั้น (Manager ไม่เห็นทุกแบรนด์แล้วตั้งแต่ 21 ต.ค. 2026)
 function seesAllBrands(user) {
-    return !!user && (user.role === 'admin' || user.role === 'manager');
+    return !!user && user.role === 'admin';
 }
+
+// บทบาทที่เก็บรายการแบรนด์ที่ดูได้ (admin กำหนดให้) — member + manager · admin เห็นทุกแบรนด์ / agency ไม่ใช้
+// ต้องตรงกับ hasBrandList ฝั่งหน้าเว็บ (client/src/data/brands.js)
+const hasBrandList = role => role === 'member' || role === 'manager';
 
 // แบรนด์ที่ผู้ใช้คนนี้ดูได้ — null = ทุกแบรนด์, [] = ยังไม่ได้รับแบรนด์ (ยังไม่เห็นอะไร)
 function allowedBrands(user) {
@@ -41,4 +46,4 @@ const canSeeCostMetrics = user => !!user && (user.role === 'admin' || user.role 
 const STATUSES = ['pending', 'active', 'rejected'];
 const isApproved = user => !!user && (user.status || 'active') === 'active' && user.is_active !== false;
 
-module.exports = { ROLES, ROLE_LABEL, seesAllBrands, allowedBrands, canSeeBrand, canSeeCostMetrics, normalizeRole, isAgency, STATUSES, isApproved };
+module.exports = { ROLES, ROLE_LABEL, seesAllBrands, hasBrandList, allowedBrands, canSeeBrand, canSeeCostMetrics, normalizeRole, isAgency, STATUSES, isApproved };

@@ -2,7 +2,7 @@ const express = require('express');
 const bcrypt = require('bcryptjs');
 const store = require('../store');
 const { authenticate, requireRole } = require('../middleware/auth');
-const { normalizeRole, STATUSES } = require('../data/roles');
+const { normalizeRole, STATUSES, hasBrandList } = require('../data/roles');
 
 const router = express.Router();
 router.use(authenticate);
@@ -54,8 +54,8 @@ router.post('/', requireRole('admin'), async (req, res, next) => {
         }
         const safeRole = normalizeRole(role);
         const password_hash = await bcrypt.hash(password, 10);
-        // admin/manager เห็นทุกแบรนด์อยู่แล้ว ไม่ต้องเก็บรายการแบรนด์ให้สับสน
-        const safeBrands = safeRole === 'member' && Array.isArray(brands) ? brands.filter(Boolean) : [];
+        // member / manager เก็บแบรนด์ที่ดูได้ · admin เห็นทุกแบรนด์อยู่แล้ว ไม่ต้องเก็บรายการแบรนด์ให้สับสน
+        const safeBrands = hasBrandList(safeRole) && Array.isArray(brands) ? brands.filter(Boolean) : [];
         const safeTokens = safeRole === 'agency' && Array.isArray(agency_tokens) ? agency_tokens.filter(Boolean) : [];
         // admin สร้างให้เอง = อนุมัติทันที ไม่ต้องรอ
         const data = await store.users.create({ username, password_hash, full_name, nickname, role: safeRole, team_id, brands: safeBrands, agency_tokens: safeTokens, status: 'active' });
@@ -75,8 +75,8 @@ router.put('/:id', requireRole('admin'), async (req, res, next) => {
         // สถานะบัญชี: pending (รออนุมัติ) / active (อนุมัติแล้ว) / rejected (ปฏิเสธ)
         if (status && STATUSES.includes(status)) fields.status = status;
         if (role) fields.role = normalizeRole(role);
-        // เปลี่ยนเป็น admin/manager = ล้างรายการแบรนด์ทิ้ง (เห็นทุกแบรนด์อยู่แล้ว)
-        if (fields.role && fields.role !== 'member') fields.brands = [];
+        // เปลี่ยนเป็น admin / agency = ล้างรายการแบรนด์ทิ้ง (admin เห็นทุกแบรนด์อยู่แล้ว) · member / manager เก็บแบรนด์ที่ส่งมา
+        if (fields.role && !hasBrandList(fields.role)) fields.brands = [];
         else if (Array.isArray(brands)) fields.brands = brands.filter(Boolean);
         if (fields.role && fields.role !== 'agency') fields.agency_tokens = [];
         else if (Array.isArray(agency_tokens)) fields.agency_tokens = agency_tokens.filter(Boolean);

@@ -4,10 +4,15 @@ export const BRANDS = ["Jula's Herb", 'Code Lab', 'Jdent', 'Jarvit', 'Beauterry'
 
 // ป้ายบทบาท — ต้องตรงกับ server/src/data/roles.js
 export const ROLE_LABEL = { admin: 'ผู้ดูแลระบบ', manager: 'Manager', member: 'Member', agency: 'Agency' };
-export const seesAllBrands = user => !!user && (user.role === 'admin' || user.role === 'manager');
+// เห็นทุกแบรนด์ = admin เท่านั้น (Manager เห็นเฉพาะแบรนด์ที่กำหนดเหมือน Member ตั้งแต่ 21 ต.ค. 2026) — ต้องตรงกับ server/src/data/roles.js
+export const seesAllBrands = user => !!user && user.role === 'admin';
+// บทบาทที่ admin ต้องกำหนดแบรนด์ให้ (หน้า Users) — ต้องตรงกับ hasBrandList ฝั่ง server
+export const hasBrandList = role => role === 'member' || role === 'manager';
+// ตัวเลขต้นทุน (CPM / CPE / ค่าแอด) — admin + manager · ต้องตรงกับ canSeeCostMetrics ฝั่ง server (ไม่เกี่ยวกับแบรนด์)
+export const canSeeCostMetrics = user => !!user && (user.role === 'admin' || user.role === 'manager');
 
-// แบรนด์ที่ผู้ใช้คนนี้เห็นได้ — admin/manager เห็นทุกแบรนด์
-// member ที่ยังไม่ได้รับแบรนด์จะได้ [] (ไม่มีอะไรให้เลือก)
+// แบรนด์ที่ผู้ใช้คนนี้เห็นได้ — admin เห็นทุกแบรนด์
+// member / manager ที่ยังไม่ได้รับแบรนด์จะได้ [] (ไม่มีอะไรให้เลือก)
 export function visibleBrands(user) {
     if (seesAllBrands(user)) return BRANDS;
     const own = Array.isArray(user?.brands) ? user.brands.filter(Boolean) : [];

@@ -3,8 +3,9 @@ import { useNavigate } from 'react-router-dom';
 import { api } from '../api/client.js';
 import Icon from '../components/Icon.jsx';
 import { fmtRange } from '../utils/date.js';
+import { visibleBrands } from '../data/brands.js';
+import { useAuth } from '../auth/AuthContext.jsx';
 
-const BRANDS = ["Jula's Herb", 'Code Lab', 'Jdent', 'Jarvit', 'Beauterry', 'Jernis', 'Dermiq', 'Minimii', 'Any Skin'];
 const MONTHS = [
     ['01', 'มกราคม'], ['02', 'กุมภาพันธ์'], ['03', 'มีนาคม'], ['04', 'เมษายน'],
     ['05', 'พฤษภาคม'], ['06', 'มิถุนายน'], ['07', 'กรกฎาคม'], ['08', 'สิงหาคม'],
@@ -14,6 +15,9 @@ const fmt = n => (Number(n) || 0).toLocaleString('th-TH');
 
 export default function Budget() {
     const navigate = useNavigate();
+    // ตัวเลือกแบรนด์ = เฉพาะที่ตัวเองดูได้ (Member / Manager — server กรองรายงานให้อยู่แล้ว ตัวเลือกต้องตรงกัน · 21 ต.ค. 2026)
+    const { user } = useAuth();
+    const BRANDS = visibleBrands(user);
     const [brand, setBrand] = useState('');
     const [year, setYear] = useState('');
     const [month, setMonth] = useState('');

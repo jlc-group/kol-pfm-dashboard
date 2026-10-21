@@ -19,6 +19,12 @@ function isPublicPath(pathname) {
     return pathname.endsWith('/stream') || pathname.endsWith('/image') || pathname.endsWith('/thumb');
 }
 
+// token ตัวเดียวกับที่ handler ใช้ — req.params.token ของ handler ถูก Express ถอด %xx แล้ว แต่ req.path ไม่ถอด
+// ถ้าเช็คด้วยตัวที่ยังไม่ถอด ส่ง %61%31... มาแทน a1... จะหลบด่านแบรนด์ได้ (รีวิว 21 ต.ค. 2026) · ถอดไม่ได้ = null
+function tokenOf(req) {
+    try { return decodeURIComponent(req.path.split('/')[1] || ''); } catch { return null; }
+}
+
 function requireAgencyAccess(req, res, next) {
     if (isPublicPath(req.path)) return next();
     authenticate(req, res, (error) => {
@@ -28,12 +34,15 @@ function requireAgencyAccess(req, res, next) {
         if ((req.account.status || 'active') !== 'active') {
             return res.status(403).json({ status: 'error', message: 'บัญชียังไม่ได้รับอนุมัติให้ใช้งาน', code: 'PENDING' });
         }
-        // ทีมเปิดดูได้เฉพาะลิงก์ของแบรนด์ที่ตัวเองมีสิทธิ์ — กติกาเดียวกับหน้าแคมเปญ (admin/manager ได้ทุกแบรนด์)
+        // ทีมเปิดดูได้เฉพาะลิงก์ของแบรนด์ที่ตัวเองมีสิทธิ์ — กติกาเดียวกับหน้าแคมเปญ (admin ได้ทุกแบรนด์ · manager / member เฉพาะแบรนด์ที่ได้รับ)
         // member ของแบรนด์อื่นที่ได้ token มา (เช่นจากรายชื่อเอเจนซี่) จะเปิดหรือแก้ข้อมูลผ่านลิงก์ไม่ได้
+        // ลิงก์ที่หาไม่เจอ = 404 ตรงนี้เลย (เดิมปล่อยผ่านให้ handler — ถ้า token ที่ด่านเห็นต่างจากของ handler จะหลุดด่าน)
+        const token = tokenOf(req);
+        if (!token) return res.status(404).json({ status: 'error', message: 'ลิงก์ไม่ถูกต้องหรือหมดอายุ' });
         if (u.role !== 'agency') {
-            const token = req.params.token || req.path.split('/')[1];
             return store.projects.resolveToken(token).then(resolved => {
-                if (resolved && !canSeeBrand(req.account || u, resolved.project.brand)) {
+                if (!resolved) return res.status(404).json({ status: 'error', message: 'ลิงก์ไม่ถูกต้องหรือหมดอายุ' });
+                if (!canSeeBrand(req.account || u, resolved.project.brand)) {
                     return res.status(403).json({ status: 'error', message: 'ไม่มีสิทธิ์เปิดลิงก์ของแบรนด์อื่น' });
                 }
                 next();
@@ -42,7 +51,7 @@ function requireAgencyAccess(req, res, next) {
         // บัญชีเอเจนซี่ เปิดได้เฉพาะลิงก์ที่ admin ผูกไว้ให้
         store.users.findById(u.id).then(acc => {
             const own = (acc && acc.agency_tokens) || [];
-            if (!own.includes(req.params.token || req.path.split('/')[1])) {
+            if (!own.includes(token)) {
                 return res.status(403).json({ status: 'error', message: 'ลิงก์นี้ไม่ใช่งานของบัญชีคุณ' });
             }
             next();

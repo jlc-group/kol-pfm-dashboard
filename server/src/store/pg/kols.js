@@ -120,7 +120,7 @@ const kols = {
     },
 
     // ดึง Influencer ที่ "ถูกใช้ในแคมเปญ" — รวมชื่อซ้ำเป็นรายเดียว + แนบแคมเปญ (ผลงาน) แต่ละอัน
-    // scopeBrands = null (admin/manager เห็นทุกแบรนด์) หรือ array ชื่อแบรนด์ (member เห็นเฉพาะแบรนด์ตัวเอง)
+    // scopeBrands = null (เห็นทุกแบรนด์) หรือ array ชื่อแบรนด์ (เห็นเฉพาะแบรนด์นั้น) — routes/kols.js ตั้งใจส่ง null ให้ทุกคน (หา KOL ง่าย · ผู้ใช้ยืนยัน 21 ต.ค. 2026)
     async usedWithCampaigns(scopeBrands = null) {
         const snap = await loadSnapshot(['projects', 'project_kols', 'teams', 'kols']);
         let projs = snap.projects;

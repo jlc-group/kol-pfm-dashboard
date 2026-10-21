@@ -3,7 +3,7 @@ import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext.jsx';
 import Icon from './Icon.jsx';
 import { api } from '../api/client.js';
-import { ROLE_LABEL } from '../data/brands.js';
+import { ROLE_LABEL, hasBrandList } from '../data/brands.js';
 import ChangePasswordModal from './ChangePasswordModal.jsx';
 import { useNavSection } from '../utils/navSection.js';
 import PageErrorBoundary from './PageErrorBoundary.jsx';
@@ -190,7 +190,7 @@ export default function Layout() {
                             <div className="user-name">{user?.full_name || user?.username}</div>
                             <div className="user-role">
                                 {ROLE_LABEL[user?.role] || user?.role}
-                                {user?.role === 'member' && (user?.brands || []).length > 0
+                                {hasBrandList(user?.role) && (user?.brands || []).length > 0
                                     ? ` · ${user.brands.join(', ')}`
                                     : ''}
                             </div>

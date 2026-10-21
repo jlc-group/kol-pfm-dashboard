@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { api } from '../api/client.js';
 import Icon from '../components/Icon.jsx';
 import Avatar from '../components/Avatar.jsx';
-import { BRANDS, ROLE_LABEL } from '../data/brands.js';
+import { BRANDS, ROLE_LABEL, hasBrandList } from '../data/brands.js';
 import PasswordInput from '../components/PasswordInput.jsx';
 import { useAuth } from '../auth/AuthContext.jsx';
 
@@ -39,7 +39,7 @@ function UserForm({ editing, agencyLinks, teams, onClose, onSaved }) {
     // ทีมที่เลือกไว้ต้องเป็นทีมที่ member เลือกได้จริง (ไม่ใช่ Admin/Manager ที่ติดมาจากสิทธิ์เดิม) ไม่งั้นบังคับเลือกใหม่
     const memberTeamOk = memberTeams(teams).some(t => String(t.id) === String(form.team_id));
     // ตอนแก้ไข เลือกทีมไหนก็ได้ — ทีมเป็นแค่สังกัด ไม่ได้กำหนดว่าเห็นอะไร
-    // เช่น Manager ที่อยู่ทีม Ads ก็ยังเห็นทุกอย่างแบบ Manager
+    // เช่น Manager ที่อยู่ทีม Ads ก็ยังเห็นแบรนด์ที่กำหนดให้ + ตัวเลขต้นทุนแบบ Manager
     const anyTeamOk = teams.some(t => String(t.id) === String(form.team_id));
 
     function update(k, v) { setForm(f => ({ ...f, [k]: v })); }
@@ -58,8 +58,8 @@ function UserForm({ editing, agencyLinks, teams, onClose, onSaved }) {
                     : teamForRole(teams, form.role, null);
             const body = {
                 role: form.role,
-                // admin/manager เห็นทุกแบรนด์ ไม่ต้องส่งรายการแบรนด์ไป
-                brands: form.role === 'member' ? form.brands : [],
+                // member / manager เห็นเฉพาะแบรนด์ที่เลือก · admin เห็นทุกแบรนด์ ไม่ต้องส่งรายการแบรนด์ไป
+                brands: hasBrandList(form.role) ? form.brands : [],
                 agency_tokens: form.role === 'agency' ? form.agency_tokens : [],
                 // เอเจนซี่ไม่เข้า dashboard จึงไม่ต้องมีทีม ที่เหลือต้องมี ไม่งั้นสร้างแคมเปญไม่ได้
                 team_id: form.role === 'agency' ? null : teamId,
@@ -100,7 +100,7 @@ function UserForm({ editing, agencyLinks, teams, onClose, onSaved }) {
                         <label>สิทธิ์</label>
                             <select value={form.role} onChange={e => update('role', e.target.value)}>
                                 <option value="member">Member — เห็นเฉพาะแบรนด์ที่กำหนด</option>
-                                <option value="manager">Manager — เห็นทุกแบรนด์</option>
+                                <option value="manager">Manager — เห็นเฉพาะแบรนด์ที่กำหนด + ตัวเลขต้นทุน</option>
                                 <option value="admin">ผู้ดูแลระบบ — เห็นทุกอย่าง</option>
                                 <option value="agency">Agency — เห็นเฉพาะลิงก์งานของตัวเอง</option>
                             </select>
@@ -149,7 +149,7 @@ function UserForm({ editing, agencyLinks, teams, onClose, onSaved }) {
                             )}
                         </div>
                     )}
-                    {form.role === 'member' && (
+                    {hasBrandList(form.role) && (
                         <div className="field">
                             <label>แบรนด์ที่ดูได้ <span className="dash-section-sub">เลือกได้หลายแบรนด์ · ไม่เลือกเลย = ยังไม่เห็นข้อมูลใด ๆ</span></label>
                             <div className="brand-pick">
@@ -222,14 +222,16 @@ export default function Users() {
         const who = u.nickname || u.full_name || u.username;
         // server ล้างข้อมูลพ่วงเมื่อเปลี่ยน role — เตือนก่อนเพราะกู้คืนเองไม่ได้
         const loss = [];
-        if (role !== 'member' && (u.brands || []).length) loss.push(`แบรนด์ที่กำหนดไว้ ${u.brands.length} แบรนด์`);
+        if (!hasBrandList(role) && (u.brands || []).length) loss.push(`แบรนด์ที่กำหนดไว้ ${u.brands.length} แบรนด์`);
         if (role !== 'agency' && (u.agency_tokens || []).length) loss.push(`ลิงก์งานเอเจนซี่ ${u.agency_tokens.length} ลิงก์`);
         const warn = loss.length ? `\n\n⚠ การเปลี่ยนนี้จะล้าง ${loss.join(' และ ')} ทิ้ง` : '';
-        const admin = role === 'admin' ? '\n\n⚠ ผู้ดูแลระบบเข้าถึงรอบทำจ่าย ผู้ใช้งาน และตั้งสิทธิ์คนอื่นได้' : '';
-        // admin/manager มี brands ว่างเสมอโดยการออกแบบ ลดลงมาเป็น member ตรง ๆ จะได้บัญชีที่ไม่เห็นข้อมูลอะไรเลย
-        const blind = (role === 'member' && !(u.brands || []).length)
-            ? '\n\n⚠ บัญชีนี้ยังไม่ได้กำหนดแบรนด์ — เปลี่ยนแล้วจะไม่เห็นข้อมูลใด ๆ จนกว่าจะไปกำหนดแบรนด์ให้ที่ปุ่มแก้ไข (✎)' : '';
-        if (!confirm(`เปลี่ยนสิทธิ์ "${who}"\nจาก ${ROLE_LABEL[u.role] || u.role} → ${ROLE_LABEL[role] || role}${admin}${warn}${blind}`)) return;
+        const admin = role === 'admin' ? '\n\n⚠ ผู้ดูแลระบบเข้าถึงรอบทำจ่าย ผู้ใช้งาน และตั้งสิทธิ์คนอื่นได้ และเห็นทุกแบรนด์' : '';
+        // admin มี brands ว่างเสมอโดยการออกแบบ — เปลี่ยนเป็น member / manager ตรง ๆ จะได้บัญชีที่ไม่เห็นข้อมูลอะไรเลย
+        // จึงเปิดฟอร์มแก้ไขให้เลือกแบรนด์ (และทีม) ในจังหวะเดียวแทน
+        const blind = hasBrandList(role) && !(u.brands || []).length;
+        const pick = blind ? '\n\n⚠ บัญชีนี้ยังไม่ได้กำหนดแบรนด์ — กดตกลงแล้วจะเปิดฟอร์มให้เลือกแบรนด์ที่ดูได้' : '';
+        if (!confirm(`เปลี่ยนสิทธิ์ "${who}"\nจาก ${ROLE_LABEL[u.role] || u.role} → ${ROLE_LABEL[role] || role}${admin}${warn}${pick}`)) return;
+        if (blind) { setModal({ editing: { ...u, role } }); return; }
         // เปลี่ยนสิทธิ์ไม่ย้ายทีม — ทีมเป็นสังกัดที่ตั้งเองได้ (เช่น Manager ที่อยู่ทีม Ads)
         // เติมทีมให้เฉพาะบัญชีที่ยังไม่มีทีม: admin/manager ได้ทีมตามสิทธิ์ · member ต้องเลือกเอง
         if (u.team_id || role === 'agency') { patchUser(u, { role }); return; }
@@ -325,11 +327,11 @@ export default function Users() {
                                 <td>
                                     {u.role === 'agency'
                                         ? <span className="cat-chip">{(u.agency_tokens || []).length} ลิงก์งาน</span>
-                                        : u.role !== 'member'
+                                        : !hasBrandList(u.role)
                                         ? <span className="muted">ทุกแบรนด์</span>
                                         : (u.brands || []).length > 0
                                             ? <span className="brand-chips-cell">{u.brands.map(b => <span className="cat-chip" key={b}>{b}</span>)}</span>
-                                            : <span className="muted">ยังไม่ได้กำหนด</span>}
+                                            : <span className="user-nobrand" title="ยังไม่เห็นข้อมูลใด ๆ — กดปุ่มแก้ไข (✎) เพื่อเลือกแบรนด์ที่ดูได้">⚠ ยังไม่ได้กำหนด</span>}
                                 </td>
                                 <td>
                                     {(u.status || 'active') === 'pending'

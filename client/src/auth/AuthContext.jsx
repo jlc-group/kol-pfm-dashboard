@@ -60,6 +60,29 @@ export function AuthProvider({ children }) {
         return () => { alive = false; };
     }, [attempt]);
 
+    // สิทธิ์ (role / แบรนด์ที่ดูได้) อัปเดตเองเมื่อกลับมาที่แท็บ — admin เพิ่งกำหนดแบรนด์ให้ Manager / Member
+    // ตัวเลือกแบรนด์ในหน้าเว็บจะตรงกับ server โดยไม่ต้องรีเฟรชเอง (21 ต.ค. 2026 · server อ่านสิทธิ์สดทุกคำขออยู่แล้ว)
+    // เงียบ ๆ ไม่ถี่กว่า 30 วินาที · พลาด (เน็ตหลุด / server รีสตาร์ต / 401) ไม่ทำอะไร — คำขอถัดไปจัดการตามเดิม · เหมือนเดิม = ไม่ render ใหม่
+    const uid = user ? user.id : null;
+    useEffect(() => {
+        if (uid == null) return undefined;
+        const my = gen.current;
+        let last = Date.now();
+        const refresh = () => {
+            if (document.visibilityState === 'hidden' || Date.now() - last < 30000) return;
+            last = Date.now();
+            api('/auth/me', { signal: timeoutSignal() })
+                .then(res => {
+                    if (gen.current !== my || !res || !res.user || res.user.id !== uid) return;
+                    setUser(prev => (JSON.stringify(prev) === JSON.stringify(res.user) ? prev : res.user));
+                })
+                .catch(() => {});
+        };
+        window.addEventListener('focus', refresh);
+        document.addEventListener('visibilitychange', refresh);
+        return () => { window.removeEventListener('focus', refresh); document.removeEventListener('visibilitychange', refresh); };
+    }, [uid]);
+
     function retry() {
         setAuthError('');
         setLoading(true);

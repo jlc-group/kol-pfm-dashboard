@@ -75,7 +75,7 @@ const users = {
                 role: role || 'member',
                 // pending = สมัครเองแล้วรออนุมัติ · active = ใช้งานได้ · rejected = ปฏิเสธ
                 status: status || 'active',
-                // แบรนด์ที่ member คนนี้ดูได้ (admin/manager ไม่ใช้ค่านี้ เห็นทุกแบรนด์อยู่แล้ว)
+                // แบรนด์ที่ member / manager คนนี้ดูได้ (admin ไม่ใช้ค่านี้ เห็นทุกแบรนด์อยู่แล้ว)
                 brands: asJson(Array.isArray(brands) ? brands.filter(Boolean) : []),
                 // เฉพาะ role agency — ลิงก์เอเจนซี่ที่บัญชีนี้เข้าได้ (1 เจ้าอาจมีหลายแคมเปญ)
                 agency_tokens: asJson(Array.isArray(agency_tokens) ? agency_tokens.filter(Boolean) : []),
