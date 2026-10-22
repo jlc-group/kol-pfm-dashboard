@@ -17,6 +17,7 @@ import PerfModal from '../components/PerfModal.jsx';
 import { adEvidence, hasAdSpend } from '../data/adEvidence.js';
 import { adTiming, timingLevel, timingTip, TIMING_OPTS } from '../data/adTiming.js';
 import { wxPfmBadge, isWxPlatform, WX_PFM_TITLE } from '../data/wxPfm.js';
+import { sortByPfm, pfmRatedCount } from '../data/pfmSort.js';
 
 
 // คอลัมน์ "สถานะ" กลับเป็นปุ่ม ✓ ยิงแล้ว / ยังไม่ยิง แบบเดิม (ผู้ใช้สั่ง 12 ต.ค. 2026 — เลิกช่อง "หลักฐานการเริ่มยิง" + หน้าต่างยืนยัน)
@@ -27,6 +28,8 @@ const fmtMoney = n => '฿' + (Number(n) || 0).toLocaleString('th-TH');
 // เกณฑ์ผ่าน/ไม่ผ่าน — ต้องตรงกับฝั่ง server (jsonStore.js)
 const GOOD_CPM = 28;
 const GOOD_CPE = 1.5;
+// เกณฑ์ที่ใช้คิดคะแนนเรียงคอลัมน์ PFM (data/pfmSort.js)
+const PFM_GOOD = { cpm: GOOD_CPM, cpe: GOOD_CPE };
 
 // ตัวเลข CPM/CPE พร้อมสีบอกผ่าน/ไม่ผ่าน — ใช้ร่วมกันทั้งช่องที่ล็อกและช่องปัจจุบัน
 // member ไม่ได้รับตัวเลขมา (เป็นข้อมูลลับ) จะเห็นเป็นป้าย Pass/Fail แทน
@@ -474,6 +477,8 @@ export default function Ads() {
     const [platform, setPlatform] = useState('');
     const [late, setLate] = useState('');   // '' | ontime | warn | bad
     const [missingPerf, setMissingPerf] = useState(false);
+    // เรียงตามคะแนน PFM (22 ต.ค. 2026) — คอลัมน์ STAMPED PFM 🔒 ('stamp') หรือ PFM ('live') ทีละคอลัมน์ · '' = ลำดับเดิม (วันลงงานใหม่สุดก่อน)
+    const [pfmSort, setPfmSort] = useState({ key: '', dir: '' });
     // ค้นหาชื่อ KOL / แคมเปญ / สินค้า / Gencode / ID Post — กรองฝั่งหน้าเว็บเหมือนตัวกรองอื่น (ดู data/adsSearch.js)
     const [search, setSearch] = useState('');
     // แท็บ ต้องยิงแอด / ไม่ต้องยิงแอด (5 ต.ค. 2026)
@@ -541,7 +546,8 @@ export default function Ads() {
     // ลำดับแถวตามที่ server ส่งมา (วันลงงานใหม่สุดก่อน แล้วตาม id) — ไม่เรียงตามสถานะแล้ว
     // กดเปลี่ยนเป็น "ยิงแล้ว" แถวต้องอยู่ที่เดิม เปลี่ยนแค่ป้ายสถานะ (เดิมเด้งลงไปท้ายตาราง ทีมหาแถวที่เพิ่งกดไม่เจอ)
     // อยากดูเฉพาะที่ยังไม่ยิง ใช้ปุ่มกรอง ▾ ที่หัวคอลัมน์สถานะแทน
-    const rows = tabRows.filter(r => matches(r));
+    // เรียงตามคะแนน PFM เมื่อเลือกที่หัวคอลัมน์ STAMPED PFM 🔒 / PFM (data/pfmSort.js) — ไม่เลือก = ลำดับเดิม
+    const rows = sortByPfm(tabRows.filter(r => matches(r)), pfmSort, PFM_GOOD);
     const reachRows = adRowsAll.filter(r => Number(r.ad_reach) > 0);
     const paidRows = adRowsAll.filter(r => Number(r.ad_spend) > 0);
     const measuredRows = paidRows.filter(r => Number(r.ad_reach) > 0);
@@ -554,8 +560,19 @@ export default function Ads() {
     const platformOptions = [...new Set(tabRows.map(r => r.platform).filter(Boolean))].sort();
     // ปุ่ม Platform: Platform ที่เลือกค้างไว้แต่แท็บนี้ไม่มีคลิป ยังต้องมีปุ่ม (ไม่งั้นแถบหายทั้งที่ยังกรองอยู่ กดออกไม่ได้)
     const platformPick = platform && !platformOptions.includes(platform) ? [...platformOptions, platform] : platformOptions;
-    const hasFilter = !!(platform || status || late || search.trim() || missingPerf);
-    const clearFilters = () => { setPlatform(''); setStatus(''); setLate(''); setSearch(''); setMissingPerf(false); };
+    const hasFilter = !!(platform || status || late || search.trim() || missingPerf || pfmSort.key);
+    const clearFilters = () => { setPlatform(''); setStatus(''); setLate(''); setSearch(''); setMissingPerf(false); setPfmSort({ key: '', dir: '' }); };
+    // ตัวเลือกเรียงของคอลัมน์ PFM — เลขบนตัวเลือก = จำนวนคลิปที่มีผลให้เรียง (ที่เหลืออยู่ท้ายตาราง)
+    const shownRowsAll = tabRows.filter(r => matches(r));
+    const pfmSortOptions = key => {
+        const rated = pfmRatedCount(shownRowsAll, key, PFM_GOOD);
+        return [
+            { value: '', label: 'ไม่เรียง (วันลงงานใหม่สุดก่อน)', count: shownRowsAll.length },
+            { value: 'asc', label: 'คะแนนน้อย → มาก (ดีสุดก่อน)', count: rated },
+            { value: 'desc', label: 'คะแนนมาก → น้อย (แย่สุดก่อน)', count: rated }
+        ];
+    };
+    const pickPfmSort = key => dir => setPfmSort(dir ? { key, dir } : { key: '', dir: '' });
     const ratedCount = tabRows.filter(r => r.performance).length;
     // ค่า insight เพิ่มเติม (คำนวณจากข้อมูลที่มี)
     const topBrand = s && s.by_brand && s.by_brand.length ? s.by_brand[0] : null;
@@ -763,8 +780,15 @@ export default function Ads() {
                                         options={[{ value: '', label: 'ทั้งหมด', count: countIf('late', () => true) },
                                         ...TIMING_OPTS.map(([v, l]) => ({ value: v, label: l, dot: v, count: countIf('late', r => lateBucket(r) === v) }))]} />
                                 </span>
-                                <span title="ผลที่ระบบล็อกไว้ตอนค่ายิงแอดสะสมถึงเกณฑ์ของแบรนด์นั้น — แก้ไม่ได้ (ชี้ที่ป้ายในแถวเพื่อดูตัวเลขของแบรนด์)">STAMPED PFM 🔒</span>
-                                <span title="คำนวณจากยอดที่แสดง — ตรวจแหล่งข้อมูลและเวลารับยอดก่อนใช้ตัดสินใจยิงแอด">PFM</span>
+                                {/* ▾ เรียงตามคะแนน PFM = CPM กับ CPE เทียบเกณฑ์ (CPM ÷ GOOD_CPM กับ CPE ÷ GOOD_CPE เฉลี่ยกัน) · ต่ำ = ดี · data/pfmSort.js */}
+                                <span title="ผลที่ระบบล็อกไว้ตอนค่ายิงแอดสะสมถึงเกณฑ์ของแบรนด์นั้น — แก้ไม่ได้ (ชี้ที่ป้ายในแถวเพื่อดูตัวเลขของแบรนด์) · ▾ เรียงตามคะแนน (CPM + CPE เทียบเกณฑ์)">STAMPED PFM 🔒
+                                    <ColumnFilter label="คะแนน PFM ที่ล็อก" value={pfmSort.key === 'stamp' ? pfmSort.dir : ''} onPick={pickPfmSort('stamp')}
+                                        options={pfmSortOptions('stamp')} />
+                                </span>
+                                <span title="คำนวณจากยอดที่แสดง — ตรวจแหล่งข้อมูลและเวลารับยอดก่อนใช้ตัดสินใจยิงแอด · ▾ เรียงตามคะแนน (CPM + CPE เทียบเกณฑ์)">PFM
+                                    <ColumnFilter label="คะแนน PFM ตอนนี้" value={pfmSort.key === 'live' ? pfmSort.dir : ''} onPick={pickPfmSort('live')}
+                                        options={pfmSortOptions('live')} />
+                                </span>
                                 <span>หมายเหตุ</span>
                             </div>
                         </div>
