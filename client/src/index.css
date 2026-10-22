@@ -3055,6 +3055,11 @@ a.ads-thumb:focus-visible { outline: 2px solid var(--mint-dark); outline-offset:
 .catg-toolbar .btn-primary, .catg-toolbar .btn-ghost { display: inline-flex; align-items: center; gap: 6px; }
 .catg-toolbar .btn-primary:disabled, .catg-toolbar .btn-ghost:disabled { opacity: .5; cursor: not-allowed; }
 .catg-showhidden { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--muted); cursor: pointer; }
+/* เรียงตามรหัส / ชื่อ + ตัวกรองตัวอักษรนำหน้าที่หัว "รหัส" (22 ต.ค. 2026) */
+.catg-sort { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--muted); }
+.catg-sort select { padding: 5px 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--card, #fff); color: var(--text); font-size: 12.5px; }
+.catg-code-th { white-space: nowrap; }
+.catg-code-th .colf { margin-left: 6px; }
 .catg-scroll { overflow-x: auto; }
 .catg-table { min-width: 720px; }
 .catg-table td { vertical-align: middle; }

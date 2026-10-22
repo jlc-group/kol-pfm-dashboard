@@ -3,6 +3,8 @@ import { api } from '../api/client.js';
 import Icon from '../components/Icon.jsx';
 import { BRANDS, visibleBrands } from '../data/brands.js';
 import { useAuth } from '../auth/AuthContext.jsx';
+import ColumnFilter from '../components/ColumnFilter.jsx';
+import { sortProducts, prefixOptions, codePrefix, SORT_MODES, isSortMode } from '../data/catalogSort.js';
 import { productsByBrand, productInfo, targetEntriesOf, targetsForProduct, PRODUCT_CATALOG } from '../data/products.js';
 import { setCatalogFromServer } from '../data/catalogLoader.js';
 import { useCatalogVersion } from '../data/useCatalog.js';
@@ -20,6 +22,10 @@ const loose = t => String(t || '').toLowerCase().replace(/[\s_-]+/g, '');
 const LAST_BRAND_KEY = 'kol:catalog-brand';
 const readLastBrand = () => { try { const b = localStorage.getItem(LAST_BRAND_KEY); return BRANDS.includes(b) ? b : null; } catch { return null; } };
 const saveLastBrand = b => { try { localStorage.setItem(LAST_BRAND_KEY, b); } catch { /* เปิดแบบไม่เก็บข้อมูล */ } };
+// วิธีเรียงตาราง (22 ต.ค. 2026) — จำไว้ให้เปิดมาครั้งหน้าเหมือนเดิม
+const SORT_KEY = 'kol:catalog-sort';
+const readSort = () => { try { const v = localStorage.getItem(SORT_KEY) || ''; return isSortMode(v) ? v : ''; } catch { return ''; } };
+const saveSort = v => { try { localStorage.setItem(SORT_KEY, v); } catch { /* เปิดแบบไม่เก็บข้อมูล */ } };
 
 // ทุกชื่อ Target ในคลัง (รวมทุกแบรนด์) — ไว้เตือนชื่อซ้ำ/คล้าย
 function allTargetNames() {
@@ -372,6 +378,9 @@ export default function Catalog() {
     const [picked, setBrand] = useState(() => readLastBrand());
     const brand = brands.includes(picked) ? picked : (brands[0] || null);
     const [showHidden, setShowHidden] = useState(false);
+    // เรียงตามรหัส / ชื่อ + กรองตัวอักษรนำหน้ารหัส (ผู้ใช้สั่ง 22 ต.ค. 2026 — data/catalogSort.js)
+    const [sortMode, setSortMode] = useState(readSort);
+    const [prefix, setPrefix] = useState('');   // '' = ทุกรหัส · เปลี่ยนแบรนด์แล้วล้าง (ตัวอักษรของแต่ละแบรนด์ไม่เหมือนกัน)
     const [ready, setReady] = useState(null);     // null = กำลังเช็ค · false = ยังไม่ได้ setup-db
     const [modal, setModal] = useState(null);
     const [error, setError] = useState('');
@@ -388,7 +397,8 @@ export default function Catalog() {
         const timer = setTimeout(() => setNote(''), 5000);
         return () => clearTimeout(timer);
     }, [note]);
-    const pickBrand = b => { setBrand(b); saveLastBrand(b); };
+    const pickBrand = b => { setBrand(b); saveLastBrand(b); setPrefix(''); };
+    const pickSort = v => { setSortMode(v); saveSort(v); };
     const saved = (data, msg) => { setCatalogFromServer(data); setModal(null); setError(''); setNote(msg); };
 
     async function patch(key, url, body, msg) {
@@ -411,7 +421,11 @@ export default function Catalog() {
     };
 
     const all = brand ? productsByBrand(brand) : [];
-    const rows = all.filter(p => showHidden || !p.hidden);
+    const visible = all.filter(p => showHidden || !p.hidden);
+    const prefixOpts = prefixOptions(visible);
+    // ตัวอักษรที่เลือกไว้ไม่มีในรายการแล้ว (เช่นเพิ่งปิด "แสดงที่ซ่อนไว้") = ถือว่าดูทุกรหัส ไม่ให้ตารางว่างค้าง
+    const curPrefix = prefixOpts.some(o => o.value === prefix) ? prefix : '';
+    const rows = sortProducts(visible.filter(p => !curPrefix || codePrefix(p.code) === curPrefix), sortMode);
     const hiddenCount = all.filter(p => p.hidden).length;
     // ยังไม่ได้รับแบรนด์ (ทีม Ads ที่ admin ยังไม่กำหนดแบรนด์) = ดูหรือแก้อะไรไม่ได้
     const locked = ready === false || !brand;
@@ -449,13 +463,26 @@ export default function Catalog() {
                     <input type="checkbox" checked={showHidden} onChange={e => setShowHidden(e.target.checked)} />
                     แสดงที่ซ่อนไว้{hiddenCount ? ` (${hiddenCount} สินค้า)` : ''}
                 </label>
+                <label className="catg-sort">
+                    <span>เรียงตาม</span>
+                    <select value={sortMode} onChange={e => pickSort(e.target.value)} aria-label="เรียงตาม">
+                        {SORT_MODES.map(m => <option key={m.value || 'none'} value={m.value}>{m.label}</option>)}
+                    </select>
+                </label>
             </div>
 
             <div className="panel no-pad catg-panel">
                 <div className="catg-scroll">
                     <table className="data-table catg-table">
                         <thead>
-                            <tr><th>รหัส</th><th>ชื่อสินค้า</th><th>Target</th><th className="actions">จัดการ</th></tr>
+                            <tr>
+                                <th className="catg-code-th">รหัส
+                                    {/* กรองตามตัวอักษรนำหน้ารหัส (L, C, BTA, JNP ...) — เลขบนตัวเลือก = จำนวนสินค้า */}
+                                    <ColumnFilter label="ตัวอักษรนำหน้ารหัส" value={curPrefix} onPick={setPrefix}
+                                        options={[{ value: '', label: 'ทุกรหัส', count: visible.length }, ...prefixOpts]} />
+                                </th>
+                                <th>ชื่อสินค้า</th><th>Target</th><th className="actions">จัดการ</th>
+                            </tr>
                         </thead>
                         <tbody>
                             {rows.length === 0 ? (
