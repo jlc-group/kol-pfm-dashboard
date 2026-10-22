@@ -560,7 +560,9 @@ export default function Ads() {
     const platformOptions = [...new Set(tabRows.map(r => r.platform).filter(Boolean))].sort();
     // ปุ่ม Platform: Platform ที่เลือกค้างไว้แต่แท็บนี้ไม่มีคลิป ยังต้องมีปุ่ม (ไม่งั้นแถบหายทั้งที่ยังกรองอยู่ กดออกไม่ได้)
     const platformPick = platform && !platformOptions.includes(platform) ? [...platformOptions, platform] : platformOptions;
-    const hasFilter = !!(platform || status || late || search.trim() || missingPerf || pfmSort.key);
+    // narrowed = มีตัวกรองที่ตัดแถวออกจริง (ใช้เลือกข้อความตอนตารางว่าง) · การเรียงไม่ตัดแถว แต่ปุ่มล้างตัวกรองล้างให้ด้วย
+    const narrowed = !!(platform || status || late || search.trim() || missingPerf);
+    const hasFilter = narrowed || !!pfmSort.key;
     const clearFilters = () => { setPlatform(''); setStatus(''); setLate(''); setSearch(''); setMissingPerf(false); setPfmSort({ key: '', dir: '' }); };
     // ตัวเลือกเรียงของคอลัมน์ PFM — เลขบนตัวเลือก = จำนวนคลิปที่มีผลให้เรียง (ที่เหลืออยู่ท้ายตาราง)
     const shownRowsAll = tabRows.filter(r => matches(r));
@@ -740,7 +742,7 @@ export default function Ads() {
                 ) : rows.length === 0 ? (
                     <div className="empty-illus">
                         <div className="empty-illus-icon"><Icon name="target" size={30} /></div>
-                        <div className="empty-illus-title">{hasFilter
+                        <div className="empty-illus-title">{narrowed
                             ? (search.trim() ? `ไม่เจอโพสต์ที่ตรงกับ "${search.trim()}"` : 'ไม่มีโพสต์ตรงกับตัวกรอง')
                             : tab === 'noads' ? 'ไม่มีคลิปในกลุ่มที่ไม่ใช้ Gencode' : 'ยังไม่มีโพสต์ที่ยิงแอด'}</div>
                         {otherTabHits > 0 && (
@@ -749,7 +751,7 @@ export default function Ads() {
                             </button>
                         )}
                         <p className="empty-illus-sub">
-                            {hasFilter
+                            {narrowed
                                 ? 'ลองกด "ล้างตัวกรอง" หรือเลือกเงื่อนไขอื่นดู'
                                 : tab === 'noads' ? 'คลิปที่อยู่ในกลุ่มที่ตั้งว่าไม่ใช้ Gencode (ขีด -) จะมาอยู่แท็บนี้เอง'
                                 : 'เมื่อ KOL ลงงานและทีมใส่ลิงก์โพสต์ในแท็บ On Process แล้ว โพสต์จะขึ้นมาที่นี่ให้ติดตามค่าแอดอัตโนมัติ'}

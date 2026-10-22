@@ -13,13 +13,28 @@ const live = (id, cpm, cpe, perf) => ({ id, content_cpm: cpm, content_cpe: cpe, 
 const ids = list => list.map(r => r.id);
 
 test('คะแนน = CPM และ CPE เทียบเกณฑ์เฉลี่ยกัน (น้ำหนักเท่ากัน) · มีตัวเดียวใช้ตัวนั้น · ไม่มีเลย = null', () => {
-    assert.equal(P.pfmScore(28, 1.5, GOOD), 1);
-    assert.equal(P.pfmScore(14, 3, GOOD), (0.5 + 2) / 2);
-    assert.equal(P.pfmScore(56, null, GOOD), 2);
-    assert.equal(P.pfmScore(null, 0.75, GOOD), 0.5);
+    assert.deepEqual(P.pfmScore(28, 1.5, GOOD), { zero: 0, score: 1 });
+    assert.deepEqual(P.pfmScore(14, 3, GOOD), { zero: 0, score: (0.5 + 2) / 2 });
+    assert.deepEqual(P.pfmScore(56, null, GOOD), { zero: 0, score: 2 });
+    assert.deepEqual(P.pfmScore(null, 0.75, GOOD), { zero: 0, score: 0.5 });
     assert.equal(P.pfmScore(null, undefined, GOOD), null);
     assert.equal(P.pfmScore('', 'x', GOOD), null);
-    assert.equal(P.pfmScore(0, 0, GOOD), 0, 'ศูนย์ = ดีสุด ไม่ใช่ไม่มีค่า');
+});
+
+test('ค่า 0 (ไม่มียอดวิว / ไม่มี engagement — server ตัดสินไม่ผ่านเสมอ) = แย่กว่าทุกค่าที่มีตัวเลข ไม่ใช่ดีสุด (ผลรีวิว 22 ต.ค.)', () => {
+    assert.deepEqual(P.pfmScore(30, 0, GOOD), { zero: 1, score: 30 / 28 });
+    assert.deepEqual(P.pfmScore(0, 0, GOOD), { zero: 2, score: 0 });
+    const rows = [
+        stamp('noeng', 30, 0, 'Fail'),       // CPE 0 = ไม่มี engagement
+        stamp('pass', 20, 1.2),
+        stamp('bad', 80, 5, 'Fail'),         // แย่มากแต่ยังมีตัวเลขครบ
+        stamp('none', 0, 0, 'Fail'),         // ไม่มีทั้งวิวและ engagement
+        { id: 'x' }
+    ];
+    assert.deepEqual(ids(P.sortByPfm(rows, { key: 'stamp', dir: 'asc' }, GOOD)), ['pass', 'bad', 'noeng', 'none', 'x']);
+    assert.deepEqual(ids(P.sortByPfm(rows, { key: 'stamp', dir: 'desc' }, GOOD)), ['none', 'noeng', 'bad', 'pass', 'x']);
+    const lv = [live('l0', 25, 0, 'Improve'), live('lok', 25, 1.4)];
+    assert.deepEqual(ids(P.sortByPfm(lv, { key: 'live', dir: 'asc' }, GOOD)), ['lok', 'l0']);
 });
 
 test('STAMPED PFM: น้อย→มาก ดีสุดก่อน · มาก→น้อย แย่สุดก่อน · CPM ต่ำแต่ CPE สูงมาก ไม่ได้ชนะเพราะ CPM อย่างเดียว · ยังไม่สแตมป์อยู่ท้ายเสมอ', () => {
