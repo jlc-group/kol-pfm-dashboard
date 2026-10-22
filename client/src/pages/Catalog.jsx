@@ -425,6 +425,8 @@ export default function Catalog() {
     const prefixOpts = prefixOptions(visible);
     // ตัวอักษรที่เลือกไว้ไม่มีในรายการแล้ว (เช่นเพิ่งปิด "แสดงที่ซ่อนไว้") = ถือว่าดูทุกรหัส ไม่ให้ตารางว่างค้าง
     const curPrefix = prefixOpts.some(o => o.value === prefix) ? prefix : '';
+    // ล้างค่าที่จำไว้ด้วย — ไม่งั้นติ๊ก "แสดงที่ซ่อนไว้" / เพิ่มสินค้าตัวอักษรนั้นทีหลัง ตัวกรองจะกลับมาเองทั้งที่ ▾ ขึ้นว่าทุกรหัส (ผลรีวิว 22 ต.ค.)
+    useEffect(() => { if (prefix && !curPrefix) setPrefix(''); }, [prefix, curPrefix]);
     const rows = sortProducts(visible.filter(p => !curPrefix || codePrefix(p.code) === curPrefix), sortMode);
     const hiddenCount = all.filter(p => p.hidden).length;
     // ยังไม่ได้รับแบรนด์ (ทีม Ads ที่ admin ยังไม่กำหนดแบรนด์) = ดูหรือแก้อะไรไม่ได้
