@@ -151,11 +151,13 @@ async function updateOne(client, subId, projectId, fields, byName, opts = {}) {
     const same = (a, b) => String(a ?? '').trim() === String(b ?? '').trim();
 
     // ยิงแอดไปแล้ว = ล็อกข้อมูลชุดนี้ ห้ามแก้ เพราะเป็นข้อมูลที่ใช้อ้างอิงกับแอดที่ยิงไปแล้ว
-    if (s.ad_status === 'ยิงแล้ว') {
+    // opts.adUnlock = คนแก้กดปุ่มปลดล็อก + ยืนยันคำเตือนในตาราง On Process แล้ว (ผู้ใช้สั่ง 22 ต.ค. 2026 — ทุกคนรวมเอเจนซี่ · ทั้ง 3 ช่อง)
+    // TikTok กดสถานะกลับเป็น "ยังไม่ยิง" ไม่ได้ (สถานะมาจาก PFM) จึงต้องมีทางนี้ · เอเจนซี่แก้ = ป้าย "แก้หลังยิงแอด" ให้ทีมตรวจ (nextPostCheck)
+    if (s.ad_status === 'ยิงแล้ว' && !(opts && opts.adUnlock === true)) {
         const blocked = LOCK_F.filter(f => fields[f] !== undefined && !same(fields[f], s[f]));
         if (blocked.length) {
             const LABEL = { post_url: 'ลิงก์คลิป', gencode: 'Gencode', id_post: 'ID Post' };
-            const e = new Error(`ยิงแอดไปแล้ว จึงแก้ ${blocked.map(f => LABEL[f]).join(' / ')} ไม่ได้ — ถ้าต้องแก้จริง ให้กดสถานะกลับเป็น "ยังไม่ยิง" ก่อน`);
+            const e = new Error(`ยิงแอดไปแล้ว จึงแก้ ${blocked.map(f => LABEL[f]).join(' / ')} ไม่ได้ — กดปุ่ม 🔓 ในตาราง On Process เพื่อปลดล็อกก่อน (หน้าที่เปิดค้างไว้ให้รีเฟรชก่อน)`);
             e.status = 409;
             throw e;
         }
@@ -371,8 +373,8 @@ const submissions = {
     },
     // อัปเดตได้ทั้งสถานะคัดเลือก + ข้อมูลดราฟงาน
     async update(subId, projectId, fields, byName, opts = {}) {
-        // ส่งต่อเฉพาะ actor — allowFee เปิดได้ทางเดียวคือ setFees
-        return withTransaction(client => updateOne(client, subId, projectId, fields, byName, { actor: opts.actor, performanceSource: opts.performanceSource }));
+        // ส่งต่อเฉพาะ actor / adUnlock — allowFee เปิดได้ทางเดียวคือ setFees
+        return withTransaction(client => updateOne(client, subId, projectId, fields, byName, { actor: opts.actor, performanceSource: opts.performanceSource, adUnlock: opts.adUnlock === true }));
     },
     // ทีมตัดสินผลตรวจข้อมูลโพสต์ — action 'ok' ยืนยัน (ขึ้นหน้า Ads) | 'return' ส่งกลับให้เอเจนซี่แก้ (note = เหตุผล)
     // seenAt = post_check_at ที่หน้าเว็บเห็นตอนกด — เอเจนซี่แก้แทรกระหว่างนั้น (เวลาไม่ตรง) = 409 ห้ามยืนยันค่าที่ทีมยังไม่เห็น

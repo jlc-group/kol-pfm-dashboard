@@ -1526,8 +1526,12 @@ router.put('/:id/submissions/:subId', async (req, res, next) => {
             views: views !== undefined ? Number(views) : undefined, likes: likes !== undefined ? Number(likes) : undefined, comments: comments !== undefined ? Number(comments) : undefined, saves: saves !== undefined ? Number(saves) : undefined, shares: shares !== undefined ? Number(shares) : undefined,
             reposts: reposts !== undefined ? Number(reposts) : undefined,
             perf_from: req.body.perf_from, perf_mode: req.body.perf_mode, perf_evidence_from: req.body.perf_evidence_from
-        }, byName, { actor: 'team' });   // ทีมแก้ข้อมูลโพสต์เอง = นับว่าตรวจแล้ว
+        }, byName, { actor: 'team', adUnlock: req.body.ad_unlock === true });   // ทีมแก้ข้อมูลโพสต์เอง = นับว่าตรวจแล้ว
         if (!data) return res.status(404).json({ status: 'error', message: 'ไม่พบรายการ' });
+        // แก้ลิงก์ / Gencode / ID Post ของคลิปที่ยิงแอดแล้ว (ปลดล็อก + ยืนยันคำเตือน · 22 ต.ค. 2026) — ลงประวัติของแคมเปญไว้ย้อนดู
+        if (req.body.ad_unlock === true && data.ad_status === 'ยิงแล้ว' && [post_url, gencode, id_post].some(v => v !== undefined)) {
+            await record(req, req.params.id, 'update_kol', `แก้ข้อมูลโพสต์หลังยิงแอด: ${data.account_name} · ลิงก์ ${data.post_url || '—'} · Gencode ${data.gencode || '—'} · ID Post ${data.id_post || '—'}`);
+        }
         if (status !== undefined) {
             const label = status === 'confirmed' ? 'คัดเลือก KOL' : status === 'rejected' ? 'ไม่เลือก KOL' : 'รีเซ็ตสถานะ KOL';
             await record(req, req.params.id, 'select_kol', `${label}: ${data.account_name}`);

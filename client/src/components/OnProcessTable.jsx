@@ -51,6 +51,8 @@ function ProcessRow({ sub, putSubmission, reload, showAds = false, group = null,
     const [saving, setSaving] = useState(false);
     const [saved, setSaved] = useState(false);
     const [editing, setEditing] = useState(false); // false = ล็อก (อ่านอย่างเดียว), true = กำลังแก้ไข
+    // ปลดล็อกลิงก์ / Gencode / ID Post ของคลิปที่ยิงแอดแล้ว (ผู้ใช้สั่ง 22 ต.ค. 2026 — ทุกคนรวมเอเจนซี่ · ต้องยืนยันคำเตือนก่อน)
+    const [adUnlock, setAdUnlock] = useState(false);
     useEffect(() => {
         const prev = serverVals.current;
         const next = { post_url: sub.post_url || '', post_date: sub.post_date || '', gencode: sub.gencode || '', id_post: sub.id_post || '', code_expire: Number(sub.code_expire) || 60 };
@@ -89,11 +91,18 @@ function ProcessRow({ sub, putSubmission, reload, showAds = false, group = null,
     const media = group ? mediaFor(group, sub.platform, ctype) : { media_type: null, content_format: null };
     // Target ตามสินค้าของคลิปนี้ (แคมเปญที่ตั้ง Target ต่อสินค้า) — ไม่รู้สินค้าก็ใช้ Target รวมของ Platform
     const tgt = group ? asTargetArray(targetFor(group, sub.platform, sub.product)) : [];
-    // ยิงแอดไปแล้ว = ล็อก ลิงก์โพสต์ / Gencode / ID Post ห้ามแก้
-    // เพราะเป็นข้อมูลที่แอดที่ยิงไปแล้วอ้างอิงอยู่ (ฝั่ง server ปฏิเสธซ้ำอีกชั้น)
+    // ยิงแอดไปแล้ว = ล็อก ลิงก์โพสต์ / Gencode / ID Post ไว้ก่อน เพราะเป็นข้อมูลที่แอดที่ยิงไปแล้วอ้างอิงอยู่
+    // แก้ได้เมื่อกดปุ่มปลดล็อก (🔓) + ยืนยันคำเตือน — บันทึกส่ง ad_unlock ไปด้วย (server ไม่มีธงนี้ = ปฏิเสธเหมือนเดิม)
     const adLocked = sub.ad_status === 'ยิงแล้ว';
-    const canEditPost = unlocked && !adLocked;
-    const lockTip = 'ยิงแอดไปแล้ว แก้ไม่ได้ — ถ้าต้องแก้จริง ให้กดสถานะกลับเป็น "ยังไม่ยิง" ที่หน้า ADS ก่อน';
+    const canEditPost = unlocked && (!adLocked || adUnlock);
+    const lockTip = adUnlock ? 'ปลดล็อกแล้ว — แก้ได้ (คลิปนี้ยิงแอดไปแล้ว)' : 'ยิงแอดไปแล้ว ช่องนี้ถูกล็อก — กดปุ่ม 🔓 ช่องจัดการเพื่อปลดล็อกแก้';
+    function unlockAd() {
+        if (!window.confirm('คลิปนี้ยิงแอดไปแล้ว — แอดที่วิ่งอยู่อ้างอิงลิงก์โพสต์ / Gencode / ID Post ชุดเดิม\n'
+            + 'ถ้าเปลี่ยนเป็นโพสต์ใหม่ ยอดวิว / Engagement / ผล 🔒 ของโพสต์เดิมจะยังค้างอยู่จนกว่ายอดของโพสต์ใหม่จะแซง'
+            + (directEdit ? '\nแก้แล้วขึ้นป้าย "แก้หลังยิงแอด" ให้ทีมตรวจ' : '') + '\n\nยืนยันจะปลดล็อกเพื่อแก้?')) return;
+        setAdUnlock(true);
+        if (!directEdit) setEditing(true);
+    }
     // ลิงก์ที่กดเปิดได้จริง — อ่านจากช่องกรอกสด ๆ จะได้เช็คได้ทันทีตั้งแต่ยังไม่กดบันทึก
     // รับเฉพาะ http/https: ค่านี้มาจากช่องกรอก ถ้าปล่อยผ่านจะเปิด javascript: ที่ฝังสคริปต์มาได้
     const openablePostUrl = (() => {
@@ -147,11 +156,12 @@ function ProcessRow({ sub, putSubmission, reload, showAds = false, group = null,
         setIdPost(sub.id_post || '');
         setCodeExpire(sub.code_expire || 60);
         setEditing(false);
+        setAdUnlock(false);
     }
 
     // บันทึกเฉพาะฟิลด์ในตาราง (โพสต์/วันที่/gencode/id/หมดอายุ) — ต้องกดบันทึกเอง ข้อมูลถึงจะขึ้นฝั่ง Dashboard
     async function save() {
-        if (!dirty) { setEditing(false); return; }
+        if (!dirty) { setEditing(false); setAdUnlock(false); return; }   // ไม่ได้แก้อะไร = ล็อกกลับด้วย (ไม่งั้นกด ✎ ครั้งหน้าแก้ 3 ช่องได้โดยไม่มีคำเตือน)
         if (missing.length) return;   // ปุ่มปิดอยู่แล้ว — กันกดผ่านทางอื่น
         setSaving(true); setSaved(false);
         try {
@@ -160,9 +170,11 @@ function ProcessRow({ sub, putSubmission, reload, showAds = false, group = null,
                 post_date: postDate || null,
                 gencode: gencode || null,
                 id_post: noIdPost ? null : (idPost || null),
-                code_expire: Number(codeExpire) || 60
+                code_expire: Number(codeExpire) || 60,
+                // ปลดล็อกแก้คลิปที่ยิงแอดแล้ว — ไม่ส่ง = server ปฏิเสธการแก้ 3 ช่องที่ล็อกเหมือนเดิม
+                ...(adLocked && adUnlock ? { ad_unlock: true } : {})
             });
-            setSaved(true); setEditing(false); reload();
+            setSaved(true); setEditing(false); setAdUnlock(false); reload();
             setTimeout(() => setSaved(false), 1800);
         } catch (err) { alert(err.message); }
         finally { setSaving(false); }
@@ -238,13 +250,22 @@ function ProcessRow({ sub, putSubmission, reload, showAds = false, group = null,
                     {EXPIRE_OPTS.map(d => <option key={d} value={d}>{d}</option>)}
                 </select>}</div>
             <div className="proc-cell proc-act-cell">
+                {/* คลิปที่ยิงแอดแล้ว: ปุ่มปลดล็อกลิงก์ / Gencode / ID Post (ยืนยันคำเตือนก่อน) */}
+                {adLocked && !adUnlock && !saving && (
+                    <button type="button" className="proc-ibtn unlock" onClick={unlockAd}
+                        title="ยิงแอดแล้ว — ปลดล็อกเพื่อแก้ลิงก์โพสต์ / Gencode / ID Post" aria-label="ปลดล็อกแก้ลิงก์โพสต์ Gencode ID Post">🔓</button>
+                )}
                 {directEdit ? (
                     saved ? (
                         <button type="button" className="proc-ibtn done" disabled title="บันทึกแล้ว"><Icon name="check" size={16} /></button>
                     ) : (
                         // กรอกไม่ครบ = กดไม่ได้ · tooltip บอกว่าขาดช่องไหน (ช่องที่ขาดมีกรอบแดง)
-                        <button type="button" className="proc-ibtn ok" onClick={save} disabled={saving || !dirty || missing.length > 0}
-                            title={dirty && missing.length ? 'ยังกรอกไม่ครบ ขาด: ' + missing.join(', ') : 'บันทึก'}><Icon name="check" size={16} /></button>
+                        <>
+                            <button type="button" className="proc-ibtn ok" onClick={save} disabled={saving || !dirty || missing.length > 0}
+                                title={dirty && missing.length ? 'ยังกรอกไม่ครบ ขาด: ' + missing.join(', ') : 'บันทึก'}><Icon name="check" size={16} /></button>
+                            {/* ปลดล็อกอยู่ = มีปุ่มยกเลิก (คืนค่าเดิม + ล็อกกลับ) */}
+                            {adUnlock && <button type="button" className="proc-ibtn x" onClick={cancelEdit} disabled={saving} title="ยกเลิก — คืนค่าเดิมและล็อกกลับ">✕</button>}
+                        </>
                     )
                 ) : editing ? (
                     <>

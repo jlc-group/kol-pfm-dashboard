@@ -363,7 +363,9 @@ router.put('/:token/submissions/:subId', async (req, res, next) => {
             post_url, post_date, id_post, code_expire,
             views: views !== undefined ? (Number(views) || 0) : undefined, likes: likes !== undefined ? (Number(likes) || 0) : undefined, comments: comments !== undefined ? (Number(comments) || 0) : undefined, saves: saves !== undefined ? (Number(saves) || 0) : undefined, shares: shares !== undefined ? (Number(shares) || 0) : undefined,
             reposts: reposts !== undefined ? (Number(reposts) || 0) : undefined
-        }, byName, { actor });
+            // ad_unlock = กดปลดล็อก + ยืนยันคำเตือน แก้ลิงก์ / Gencode / ID Post ของคลิปที่ยิงแอดแล้วได้ (22 ต.ค. 2026 · ทุกคนรวมเอเจนซี่)
+            // เอเจนซี่แก้ = ป้าย "แก้หลังยิงแอด" พร้อมรายการเดิม→ใหม่ ให้ทีมตรวจ (store/logic.js nextPostCheck)
+        }, byName, { actor, adUnlock: req.body.ad_unlock === true });
         if (!data) return res.status(404).json({ status: 'error', message: 'ไม่พบรายการ' });
         res.json({ status: 'success', data: rowsFor(req, [data])[0] });
     } catch (err) { next(err); }

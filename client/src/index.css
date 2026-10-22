@@ -1242,6 +1242,11 @@ a { text-decoration: none; color: inherit; }
 .proc-ibtn.x { color: var(--danger); background: #fdecef; border-color: #f7cdd6; }
 .proc-ibtn.x:hover:not(:disabled) { background: #fbd5dc; }
 .proc-ibtn.done { color: var(--mint-dark); background: #d1fae5; border-color: transparent; cursor: default; }
+/* ปลดล็อกลิงก์ / Gencode / ID Post ของคลิปที่ยิงแอดแล้ว (22 ต.ค. 2026) */
+.proc-ibtn.unlock { background: #fff8e6; border-color: #f5d38a; font-size: 14px; }
+.proc-ibtn.unlock:hover { background: #fdecc8; }
+/* ปุ่มเกินที่ช่องจัดการ (เช่น 🔓 + ✓ ในตารางหน้าเอเจนซี่ที่ช่องนี้แคบ) = ขึ้นบรรทัดใหม่ ไม่ล้นออกนอกแถว */
+.proc-act-cell { flex-wrap: wrap; row-gap: 4px; }
 .proc-ibtn:disabled { opacity: .6; cursor: default; }
 /* ฝั่งเอเจนซี่: ช่องบังคับที่ยังว่าง (ลิงก์โพสต์ / วันที่โพสต์ / Gencode) — กรอบแดงตอนเริ่มแก้แถว ปุ่ม ✓ กดไม่ได้จนครบ (6 ต.ค. 2026) */
 .proc-cell.need input, .proc-cell.need .dp-trigger { border-color: #f87171; background: #fff5f5; }
