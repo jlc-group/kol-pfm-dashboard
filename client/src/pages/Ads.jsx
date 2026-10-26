@@ -14,6 +14,7 @@ import { matchAdsSearch } from '../data/adsSearch.js';
 import PostThumb from '../components/PostThumb.jsx';
 import { performanceSourceInfo } from '../data/performanceSources.js';
 import PerfModal from '../components/PerfModal.jsx';
+import WxPostFinder from '../components/WxPostFinder.jsx';
 import { adEvidence, hasAdSpend } from '../data/adEvidence.js';
 import { adTiming, timingLevel, timingTip, TIMING_OPTS } from '../data/adTiming.js';
 import { wxPfmBadge, isWxPlatform, WX_PFM_TITLE } from '../data/wxPfm.js';
@@ -222,6 +223,8 @@ function AdRow({ row, onSaved, canCost, noAd = false }) {
     const [end, setEnd] = useState(row.ad_end || '');
     const [note, setNote] = useState(row.ad_note || '');
     const [perfOpen, setPerfOpen] = useState(false);
+    // หน้าต่างหาโพสต์จาก WeBoostX (IG / FB ที่ยังไม่มี ID POST · 26 ต.ค. 2026 — components/WxPostFinder.jsx)
+    const [findOpen, setFindOpen] = useState(false);
     useEffect(() => { setAdStatus(row.ad_status || 'ยังไม่ยิง'); }, [row.ad_status]);
     useEffect(() => { setEnd(row.ad_end || ''); }, [row.ad_end]);
     // ค่าแอดสะสม: โพสต์ TikTok ที่มี ID Post ระบบ PFM ซิงก์ให้เอง (แก้ไม่ได้) · โพสต์อื่นกรอกเองได้ (เฉพาะคนที่เห็นต้นทุน)
@@ -368,7 +371,16 @@ function AdRow({ row, onSaved, canCost, noAd = false }) {
             {/* GENCODE — โค้ดยาว 65 ตัว แสดงไม่ครบแน่นอน จึงตัดด้วย ... แล้วให้กดปุ่มคัดลอกเอาไปใช้แทน */}
             <div className="ads-cell"><CopyCode value={row.gencode} none={row.no_gencode === true} label="Gencode" /></div>
             {/* ID POST — ตัวเลขยาว ~19 หลัก มักโดนตัด ... จึงมีปุ่มคัดลอกแบบเดียวกับ Gencode */}
-            <div className="ads-cell"><CopyCode value={row.id_post} empty="ยังไม่มี" full label="ID Post" /></div>
+            {/* IG / FB ที่ยังไม่มี ID POST: ปุ่มหาโพสต์จากรายการของ WeBoostX (Gencode อย่างเดียวจับคู่ไม่ได้ — คนเลือกแล้วยืนยัน) */}
+            <div className="ads-cell ads-stack">
+                <CopyCode value={row.id_post} empty="ยังไม่มี" full label="ID Post" />
+                {!String(row.id_post || '').trim() && isWxPlatform(row.platform) && (
+                    <button type="button" className="ads-wx-find" onClick={() => setFindOpen(true)}
+                        title="หาโพสต์จากรายการโพสต์ KOL ที่แอดของเราโปรโมต (WeBoostX) แล้วกดยืนยันเพื่อเก็บ ID POST">
+                        🔍 หาจาก WeBoostX
+                    </button>
+                )}
+            </div>
             {/* วันลงงาน — ป้าย "แจ้งช้า" อยู่ช่องนี้เพราะเป็นเรื่องของวันลงงานโดยตรง (ลงจริงวันหนึ่ง แต่เพิ่งแจ้งอีกวันหนึ่ง) */}
             <div className="ads-cell ads-stack">
                 {row.post_date ? <span className="ads-postdate">{fmtDate(row.post_date)}</span> : <span className="muted">—</span>}
@@ -454,6 +466,7 @@ function AdRow({ row, onSaved, canCost, noAd = false }) {
                 <input value={note} onChange={e => setNote(e.target.value)} onBlur={saveNote}
                     placeholder="เช่น Gencode ใช้ไม่ได้ / ยิงไม่ได้" title={note || 'หมายเหตุจากทีมยิงแอด'} />
             </div>
+            {findOpen && <WxPostFinder row={row} canCost={canCost} onClose={() => setFindOpen(false)} onSaved={onSaved} />}
             {perfOpen && <PerfModal sub={{ ...row, id: row.sub_id }} onClose={() => setPerfOpen(false)}
                 fetchUrl={`/projects/${row.project_id}/submissions/${row.sub_id}/fetch-tiktok`}
                 notice={row.perf_stamp

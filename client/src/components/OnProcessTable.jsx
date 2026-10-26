@@ -169,7 +169,9 @@ function ProcessRow({ sub, putSubmission, reload, showAds = false, group = null,
                 post_url: postUrl || null,
                 post_date: postDate || null,
                 gencode: gencode || null,
-                id_post: noIdPost ? null : (idPost || null),
+                // แพลตฟอร์มที่ไม่ใช้ช่อง ID Post (Facebook ...) = ไม่ส่งเลย ไม่แตะค่าเดิม — เดิมส่ง null ทุกครั้งที่บันทึก
+                // ทำให้ ID POST ของ Facebook ที่คนยืนยันจาก WeBoostX (หน้า Ads) / ที่ซิงก์เติมไว้ หายทุกครั้ง (ผลรีวิว 26 ต.ค. 2026)
+                id_post: noIdPost ? undefined : (idPost || null),
                 code_expire: Number(codeExpire) || 60,
                 // ปลดล็อกแก้คลิปที่ยิงแอดแล้ว — ไม่ส่ง = server ปฏิเสธการแก้ 3 ช่องที่ล็อกเหมือนเดิม
                 ...(adLocked && adUnlock ? { ad_unlock: true } : {})

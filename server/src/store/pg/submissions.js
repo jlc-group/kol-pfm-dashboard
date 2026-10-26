@@ -13,7 +13,7 @@ const { now, maybeStamp, stampAtFor, AD_STAMP_AT, AD_STAMP_BY_BRAND, nextPostChe
 
 const { METRIC_KEYS, manualEvidence, apiSelection, recordApi } = require('../performanceSources');
 const { selectable: isolatedSelectable } = require('../tiktokEvidence');
-const { itemIdFor: wxItemIdFor, platformOf: wxPlatformOf } = require('../../services/weboostxMetrics');
+const { itemIdFor: wxItemIdFor, idKeyOf: wxIdKeyOf, platformOf: wxPlatformOf } = require('../../services/weboostxMetrics');
 // คอลัมน์ข้อมูลจาก WeBoostX KOL Studio ของโพสต์ (คะแนน / เกรด / รูปปก) — ล้างเมื่อตัวตนโพสต์เปลี่ยน (ดู updateOne)
 const STUDIO_DATA = ['weboostx_pfm', 'weboostx_pfm_grade', 'weboostx_thumbnail_path', 'thumbnail_local', 'thumbnail_fetched_at', 'thumbnail_error'];
 
@@ -153,8 +153,17 @@ async function updateOne(client, subId, projectId, fields, byName, opts = {}) {
     // ยิงแอดไปแล้ว = ล็อกข้อมูลชุดนี้ ห้ามแก้ เพราะเป็นข้อมูลที่ใช้อ้างอิงกับแอดที่ยิงไปแล้ว
     // opts.adUnlock = คนแก้กดปุ่มปลดล็อก + ยืนยันคำเตือนในตาราง On Process แล้ว (ผู้ใช้สั่ง 22 ต.ค. 2026 — ทุกคนรวมเอเจนซี่ · ทั้ง 3 ช่อง)
     // TikTok กดสถานะกลับเป็น "ยังไม่ยิง" ไม่ได้ (สถานะมาจาก PFM) จึงต้องมีทางนี้ · เอเจนซี่แก้ = ป้าย "แก้หลังยิงแอด" ให้ทีมตรวจ (nextPostCheck)
+    // opts.fillEmpty = ช่องที่ "เติมได้เฉพาะตอนยังว่าง" (หน้า Ads เก็บ ID POST ที่คนยืนยันจากรายการโพสต์ของ WeBoostX · 26 ต.ค. 2026)
+    // มีค่าอยู่แล้ว (มีคนกรอก / ซิงก์เติมระหว่างเปิดหน้าต่าง) = 409 ไม่เขียนทับ · ยังว่าง = เติมได้แม้ยิงแอดแล้ว (แบบเดียวกับที่ซิงก์เติม ID POST ให้เอง)
+    const fillEmpty = (opts && Array.isArray(opts.fillEmpty) ? opts.fillEmpty : []).filter(f => fields[f] !== undefined);
+    const taken = fillEmpty.filter(f => filled(s[f]));
+    if (taken.length) {
+        const e = new Error('แถวนี้มี ID POST แล้ว (เพิ่งมีคนกรอกหรือระบบซิงก์เข้ามา) — โหลดหน้าใหม่แล้วดูอีกครั้ง');
+        e.status = 409;
+        throw e;
+    }
     if (s.ad_status === 'ยิงแล้ว' && !(opts && opts.adUnlock === true)) {
-        const blocked = LOCK_F.filter(f => fields[f] !== undefined && !same(fields[f], s[f]));
+        const blocked = LOCK_F.filter(f => fields[f] !== undefined && !same(fields[f], s[f]) && !fillEmpty.includes(f));
         if (blocked.length) {
             const LABEL = { post_url: 'ลิงก์คลิป', gencode: 'Gencode', id_post: 'ID Post' };
             const e = new Error(`ยิงแอดไปแล้ว จึงแก้ ${blocked.map(f => LABEL[f]).join(' / ')} ไม่ได้ — กดปุ่ม 🔓 ในตาราง On Process เพื่อปลดล็อกก่อน (หน้าที่เปิดค้างไว้ให้รีเฟรชก่อน)`);
@@ -249,8 +258,10 @@ async function updateOne(client, subId, projectId, fields, byName, opts = {}) {
     // ตัวตนโพสต์ IG / FB ที่ใช้ถาม WeBoostX เปลี่ยน (แก้ลิงก์ / ID Post / Gencode / Platform) — คะแนน KOL PFM / เกรด / รูปปก
     // เป็นของโพสต์เดิม ต้องไม่ค้างโชว์กับโพสต์ใหม่ (19 ต.ค. 2026) → ล้างทิ้ง รอบซิงก์ถัดไปเติมของโพสต์ใหม่ให้ (ถ้า WeBoostX รู้จัก)
     // path เดิมกลับมา = ไฟล์เดิมในเครื่องถูกใช้ซ้ำ ไม่ต้องโหลดใหม่ · ฐานที่ยังไม่มีคอลัมน์ (ยังไม่ setup-db) = ข้าม
+    // ตั้งแต่ 26 ต.ค. 2026 ซิงก์ส่งทุกคีย์ (ลิงก์ → ID POST → Gencode) แล้วใช้ตัวแรกที่เจอ — แถวที่ลิงก์จับไม่ได้จะได้ข้อมูลผ่าน ID POST
+    // จึงนับการแก้ ID POST ที่ใช้เป็นคีย์อยู่ (idKeyOf — ไม่นับ ID ที่ซิงก์เติมเองบนแถวที่มีลิงก์) เป็นตัวตนเปลี่ยนด้วย · เติม Gencode ทั้งที่มีลิงก์ = ไม่แตะ
     if ('weboostx_pfm' in prevRow && STUDIO_DATA.some(k => prevRow[k] != null)
-        && (wxItemIdFor(prevRow) !== wxItemIdFor(s) || wxPlatformOf(prevRow.platform) !== wxPlatformOf(s.platform))) {
+        && (wxItemIdFor(prevRow) !== wxItemIdFor(s) || wxIdKeyOf(prevRow) !== wxIdKeyOf(s) || wxPlatformOf(prevRow.platform) !== wxPlatformOf(s.platform))) {
         STUDIO_DATA.forEach(k => { if (prevRow[k] != null) { s[k] = null; patch[k] = null; } });
     }
 
@@ -374,7 +385,8 @@ const submissions = {
     // อัปเดตได้ทั้งสถานะคัดเลือก + ข้อมูลดราฟงาน
     async update(subId, projectId, fields, byName, opts = {}) {
         // ส่งต่อเฉพาะ actor / adUnlock — allowFee เปิดได้ทางเดียวคือ setFees
-        return withTransaction(client => updateOne(client, subId, projectId, fields, byName, { actor: opts.actor, performanceSource: opts.performanceSource, adUnlock: opts.adUnlock === true }));
+        return withTransaction(client => updateOne(client, subId, projectId, fields, byName, { actor: opts.actor, performanceSource: opts.performanceSource, adUnlock: opts.adUnlock === true,
+            fillEmpty: Array.isArray(opts.fillEmpty) ? opts.fillEmpty : undefined }));
     },
     // ทีมตัดสินผลตรวจข้อมูลโพสต์ — action 'ok' ยืนยัน (ขึ้นหน้า Ads) | 'return' ส่งกลับให้เอเจนซี่แก้ (note = เหตุผล)
     // seenAt = post_check_at ที่หน้าเว็บเห็นตอนกด — เอเจนซี่แก้แทรกระหว่างนั้น (เวลาไม่ตรง) = 409 ห้ามยืนยันค่าที่ทีมยังไม่เห็น

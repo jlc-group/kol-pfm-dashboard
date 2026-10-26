@@ -105,7 +105,7 @@ test('single-flight skips overlapping runs and recovers after failure', async ()
 });
 test('candidate query excludes rows without a supported identity', async () => {
     itemRows = [{ id: 1, platform: 'Instagram', post_url: igLink }, { id: 2, platform: 'Instagram' }];
-    assert.deepEqual(await dbStore.items(), [{ submission_id: 1, platform: 'instagram', item_id: igLink }]);
+    assert.deepEqual(await dbStore.items(), [{ submission_id: 1, platform: 'instagram', item_id: igLink, item_ids: [igLink] }]);
 });
 test('store locks current row and does not write if a person changed the link/platform', async () => {
     currentRows = [{ id: 1, platform: 'Instagram', post_url: 'https://instagram.com/p/Changed/' },

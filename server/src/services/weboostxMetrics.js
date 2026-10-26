@@ -3,9 +3,19 @@ function platformOf(value) {
     const p = String(value || '').trim().toLowerCase();
     return ['facebook', 'instagram'].includes(p) ? p : null;
 }
-function itemIdFor(row) {
+// ทุกคีย์ของแถวที่ถาม WeBoostX ได้ เรียงตามลำดับที่ใช้: ลิงก์โพสต์ → ID POST → Gencode (26 ต.ค. 2026)
+// เดิมส่งแค่คีย์แรก — แถวที่มีลิงก์แต่ WeBoostX จับลิงก์ไม่ได้ (Meta ยืนยันลิงก์ต้นฉบับไม่ได้ / ลิงก์ของโพสต์อื่น)
+// จึงไม่ได้ตัวเลขเลยแม้ ID POST ถูก · ตอนนี้ส่งทุกคีย์แล้วใช้ผลของคีย์แรกที่เจอ (ลิงก์เจอ = เหมือนเดิมทุกอย่าง)
+// คีย์ห้ามมีช่องว่าง / อักขระควบคุม — WeBoostX (Python strip) ตัดต่างจาก JS trim แล้วตอบ item_id ไม่ตรงที่ส่ง = ซิงก์ล้มทั้งรอบ (ผลรีวิว 26 ต.ค.)
+const SAFE_KEY = /^[^\s\u0000-\u001f\u007f-\u009f​﻿]{1,500}$/;
+// ID POST ที่ซิงก์เติมให้เอง (patchFor ไม่ลงชื่อคน) บนแถวที่ WeBoostX เคยจับได้ = ได้มาจากลิงก์ตอนนั้น
+// แถวที่มีลิงก์จึงไม่ใช้เป็นคีย์สำรอง — ไม่งั้นแก้ลิงก์เป็นโพสต์ใหม่ที่ WeBoostX ยังหาไม่เจอ ข้อมูลของโพสต์เก่าจะกลับมาเขียนทับ (ผลรีวิว 26 ต.ค.)
+// ID ที่คนกรอก / ยืนยันจากรายการโพสต์ (มี id_post_by) หรือแถวที่ยังไม่เคยจับได้ = ใช้ได้
+const syncFilledId = row => !String(row.id_post_by || '').trim() && !!row.ad_synced_at;
+function itemKeysFor(row) {
     const platform = platformOf(row.platform);
-    if (!platform) return null;
+    if (!platform) return [];
+    const keys = [];
     const link = String(row.post_url || '').trim();
     try {
         const url = new URL(link);
@@ -15,12 +25,22 @@ function itemIdFor(row) {
                 && /^\/(?:[A-Za-z0-9_.]+\/)?(?:p|reels?|tv)\/[A-Za-z0-9_-]+\/?$/.test(url.pathname)
             : /^(www\.|m\.|web\.)?facebook\.com$/.test(host)
                 && (/\/(posts|videos|permalink)\//.test(url.pathname) || url.searchParams.has('story_fbid'));
-        if (valid && url.protocol === 'https:' && link.length <= 500) return link;
-    } catch { /* Prefer a supported ID/code when no post URL is available. */ }
+        if (valid && url.protocol === 'https:' && link.length <= 500) keys.push(link);
+    } catch { /* ลิงก์ไม่ใช่ URL — ใช้ ID / โค้ดแทน */ }
     const id = String(row.id_post || '').trim();
-    if (/^\d{1,50}(?:_\d{1,50})?$/.test(id)) return id;
+    if (/^\d{1,50}(?:_\d{1,50})?$/.test(id) && !(keys.length && syncFilledId(row))) keys.push(id);
     const code = String(row.gencode || '').trim();
-    return code && code.length <= 500 ? code : null;
+    if (code && code.length <= 500) keys.push(code);
+    return [...new Set(keys)].filter(k => SAFE_KEY.test(k));
+}
+// คีย์หลักของแถว (ตัวแรกของ itemKeysFor)
+function itemIdFor(row) {
+    return itemKeysFor(row)[0] || null;
+}
+// ID POST ของแถวนี้ ถ้าใช้เป็นคีย์ถาม WeBoostX อยู่ (ไม่ใช่ = null) — ใช้ตัดสินว่าตัวตนโพสต์เปลี่ยนไหม (store/pg/submissions.js)
+function idKeyOf(row) {
+    const id = String(row.id_post || '').trim();
+    return id && itemKeysFor(row).includes(id) ? id : null;
 }
 function metricNumber(value) {
     if (value === null || value === undefined || value === '' || typeof value === 'boolean') return undefined;
@@ -93,4 +113,4 @@ function patchFor(current, row) {
 }
 // คอลัมน์ใหม่ที่ patchFor อาจเขียน — ฐานที่ยังไม่ได้รัน setup-db ไม่มีคอลัมน์พวกนี้ (store/pg/weboostxSync.js ตัดทิ้งก่อนเขียน)
 const STUDIO_COLUMNS = ['weboostx_pfm', 'weboostx_pfm_grade', 'weboostx_thumbnail_path'];
-module.exports = { platformOf, itemIdFor, sanitizeRow, patchFor, studioFields, thumbPathOf, THUMB_PATH_RE, PFM_GRADES, STUDIO_COLUMNS };
+module.exports = { platformOf, itemIdFor, itemKeysFor, idKeyOf, sanitizeRow, patchFor, studioFields, thumbPathOf, THUMB_PATH_RE, PFM_GRADES, STUDIO_COLUMNS };

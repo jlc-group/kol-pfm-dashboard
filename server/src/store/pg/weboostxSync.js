@@ -1,11 +1,14 @@
 const { query, withTransaction, updateRow, asJson } = require('./_base');
-const { platformOf, itemIdFor, patchFor, STUDIO_COLUMNS } = require('../../services/weboostxMetrics');
+const { platformOf, itemKeysFor, patchFor, STUDIO_COLUMNS } = require('../../services/weboostxMetrics');
 const { maybeStamp, stampAtFor } = require('../logic');
+// item_ids = ทุกคีย์ของแถว (ลิงก์ → ID POST → Gencode) · item_id = ตัวแรก (26 ต.ค. 2026 — services/weboostxMetrics.js itemKeysFor)
 async function items() {
-    const result = await query(`SELECT id, platform, post_url, id_post, gencode FROM submissions
+    const result = await query(`SELECT id, platform, post_url, id_post, id_post_by, ad_synced_at, gencode FROM submissions
         WHERE lower(btrim(platform)) IN ('instagram', 'facebook') ORDER BY id`);
-    return result.rows.map(row => ({ submission_id: row.id, platform: platformOf(row.platform),
-        item_id: itemIdFor(row) })).filter(row => row.item_id);
+    return result.rows.map(row => {
+        const keys = itemKeysFor(row);
+        return { submission_id: row.id, platform: platformOf(row.platform), item_id: keys[0] || null, item_ids: keys };
+    }).filter(row => row.item_id);
 }
 async function apply(rows) {
     const result = { updated: 0, stamped: 0, skipped: 0 };
@@ -17,7 +20,8 @@ async function apply(rows) {
                 p.campaign_type AS sync_campaign_type FROM submissions s
                 JOIN projects p ON p.id = s.project_id WHERE s.id = $1 FOR UPDATE OF s`,
             [row.submission_id])).rows[0];
-            if (!current || platformOf(current.platform) !== row.platform || itemIdFor(current) !== row.item_id) {
+            // คีย์ที่จับได้ต้องยังเป็นคีย์หนึ่งของแถวนี้ (ระหว่างรอบมีคนแก้ลิงก์ / ID POST / Gencode = ข้ามไปรอบหน้า)
+            if (!current || platformOf(current.platform) !== row.platform || !itemKeysFor(current).includes(row.item_id)) {
                 result.skipped++;
                 continue;
             }
@@ -38,6 +42,15 @@ async function apply(rows) {
         }
     });
     return result;
+}
+// แถวที่ใช้ ID POST เหล่านี้อยู่แล้ว (หน้าต่างหาโพสต์บอกว่าโพสต์ไหนผูกกับคลิปอื่นไปแล้ว · 26 ต.ค. 2026)
+async function idPostUsers(ids) {
+    const list = [...new Set((ids || []).map(v => String(v || '').trim()).filter(Boolean))];
+    if (!list.length) return [];
+    const r = await query(`SELECT s.id, btrim(s.id_post) AS id_post, s.account_name, p.brand
+        FROM submissions s JOIN projects p ON p.id = s.project_id
+        WHERE btrim(s.id_post) = ANY($1::text[]) ORDER BY s.id`, [list]);
+    return r.rows;
 }
 // ===== รูปปกโพสต์จาก WeBoostX (services/weboostxThumbs.js) =====
 // แถวที่มี path รูปจาก WeBoostX ทั้งหมด (โพสต์เดียวกันหลายคลิป = path เดียวกัน · ตัวดาวน์โหลดจัดกลุ่มเอง)
@@ -67,4 +80,4 @@ async function thumbFailed(thumbPath, reason) {
         [thumbPath, String(reason || 'error').slice(0, 120)]);
     return r.rowCount || 0;
 }
-module.exports = { items, apply, thumbRows, thumbSaved, thumbFailed };
+module.exports = { items, apply, idPostUsers, thumbRows, thumbSaved, thumbFailed };

@@ -34,6 +34,26 @@ async function fetchBatch(ids, { fetchImpl = fetch, env = process.env } = {}) {
     }
     return rows;
 }
+// คีย์ทุกตัวของแถว (store รุ่นก่อน / ตัวทดสอบที่ส่งแค่ item_id = คีย์เดียว)
+const keysOf = item => (Array.isArray(item.item_ids) && item.item_ids.length ? item.item_ids : [item.item_id]).filter(Boolean);
+// แบ่งชุดละไม่เกิน MAX_KEYS คีย์ — คีย์ทุกตัวของแถวเดียวกันอยู่ชุดเดียวกันเสมอ (ไม่งั้นแถวที่ลิงก์อยู่ชุดหนึ่ง ID อยู่อีกชุดจะตัดสินผิด)
+const MAX_KEYS = 2000;
+function batchItems(items) {
+    const batches = [];
+    let cur = null;
+    for (const item of items) {
+        const keys = keysOf(item);
+        if (!keys.length) continue;
+        const fresh = cur ? keys.filter(k => !cur.set.has(k)).length : keys.length;
+        if (!cur || (cur.items.length && cur.set.size + fresh > MAX_KEYS)) {
+            cur = { items: [], set: new Set() };
+            batches.push(cur);
+        }
+        cur.items.push(item);
+        keys.forEach(k => cur.set.add(k));
+    }
+    return batches.map(b => ({ items: b.items, ids: [...b.set] }));
+}
 async function runSync({ storeImpl = store, fetchImpl = fetch, env = process.env } = {}) {
     const settings = config(env);
     if (!settings.enabled || !settings.apiKey) return { skipped: true, reason: 'disabled_or_unconfigured' };
@@ -42,15 +62,14 @@ async function runSync({ storeImpl = store, fetchImpl = fetch, env = process.env
     const startedAt = new Date().toISOString();
     try {
         const items = await storeImpl.items();
-        const ids = [...new Set(items.map(item => item.item_id))];
         const result = { requested: items.length, received: 0, updated: 0, stamped: 0, skipped: 0,
             source_not_found: [], started_at: startedAt };
-        for (let offset = 0; offset < ids.length; offset += 2000) {
-            const batch = ids.slice(offset, offset + 2000);
-            const rows = await fetchBatch(batch, { fetchImpl, env });
+        for (const batch of batchItems(items)) {
+            const rows = await fetchBatch(batch.ids, { fetchImpl, env });
             const mapped = [];
-            for (const item of items.filter(item => batch.includes(item.item_id))) {
-                const row = rows.find(row => row.item_id === item.item_id && row.platform === item.platform);
+            for (const item of batch.items) {
+                // คีย์แรกที่ WeBoostX เจอ (ลิงก์ก่อน แล้ว ID POST แล้ว Gencode) — 26 ต.ค. 2026
+                const row = keysOf(item).map(key => rows.find(r => r.item_id === key && r.platform === item.platform)).find(Boolean);
                 if (row) mapped.push({ ...row, submission_id: item.submission_id });
                 else result.source_not_found.push(item.submission_id);
             }
@@ -100,4 +119,4 @@ function startScheduler({ logger = console, env = process.env } = {}) {
     initial.unref(); interval.unref();
     return () => { clearTimeout(initial); clearInterval(interval); };
 }
-module.exports = { config, fetchBatch, runSync, runCycle, getStatus, startScheduler };
+module.exports = { config, fetchBatch, batchItems, runSync, runCycle, getStatus, startScheduler };

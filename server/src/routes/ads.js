@@ -8,6 +8,10 @@ const { authenticate } = require('../middleware/auth');
 const { allowedBrands, canSeeBrand, canSeeCostMetrics } = require('../data/roles');
 const { cleanFee, pfmManagedSpend, postCheckWaiting, adStatusAuto } = require('../store/logic');
 const { getOrganicMetricStatus } = require('../services/beauterryPfmSync');
+const wxSync = require('../services/weboostxPfmSync');
+const wxPosts = require('../services/weboostxPosts');
+const wxStore = require('../store/pg/weboostxSync');
+const { platformOf: wxPlatformOf } = require('../services/weboostxMetrics');
 
 // ค่ายิงแอดเป็นข้อมูลลับ — คนที่ไม่ใช่ admin/manager ไม่ได้รับตัวเลขไปเลย
 // (CPM ถอดกลับเป็นค่าแอดได้ จึงต้องปิดด้วย) แต่ยังเห็นผล Pass/Fail ตามปกติ
@@ -88,6 +92,111 @@ router.get('/:subId/thumb', async (req, res, next) => {
         // รูปของคลิปเดิมไม่เปลี่ยน (เปลี่ยนลิงก์โพสต์ = ?v= ใหม่) — ให้เบราว์เซอร์เก็บไว้ 7 วัน เฉพาะเครื่องคนนั้น
         // ใส่ผ่าน headers ของ sendFile = ตั้งเฉพาะตอนส่งไฟล์สำเร็จ (ส่งไม่ได้ยังเป็น no-store ข้างบน)
         res.sendFile(fp, { cacheControl: false, headers: { 'Cache-Control': 'private, max-age=604800' } });
+    } catch (err) { next(err); }
+});
+
+// ===== หาโพสต์ IG / FB จาก WeBoostX ให้แถวที่ยังไม่มี ID POST (26 ต.ค. 2026 · services/weboostxPosts.js) =====
+// Gencode อย่างเดียวจับคู่ไม่ได้ (โพสต์ที่ทีมยิงใน Ads Manager ไม่มีโค้ดในระบบ WeBoostX) และบางโพสต์ WeBoostX จับด้วยลิงก์ไม่ได้
+// → ดึงรายการโพสต์ที่แอดของเราโปรโมต มาเรียงตามชื่อ KOL / วันลงโพสต์ / สินค้า ให้คนเปิดดูแล้วกดยืนยัน (ห้ามจับคู่เอง — สัญญาข้อ 2)
+// หน้า Ads ปิดเอเจนซี่ทั้งเส้น (app.js blockAgency) · สิทธิ์ตามแบรนด์ · ค่าแอดของตัวเลือกเห็นเฉพาะคนที่เห็นต้นทุน
+const wxPostsCache = wxPosts.createPostsCache();
+// แถวที่หาโพสต์ได้: IG / FB · ยังไม่มี ID POST · ไม่ได้รอทีมตรวจ — คืน { status, message } ถ้าหาไม่ได้
+function wxFindBlock(ctx, viewer) {
+    if (!ctx) return { status: 404, message: 'ไม่พบโพสต์' };
+    if (!canSeeBrand(viewer, ctx.brand)) return { status: 403, message: 'ไม่มีสิทธิ์ดูข้อมูลของแบรนด์อื่น' };
+    if (!wxPlatformOf(ctx.submission.platform)) return { status: 400, message: 'หาโพสต์จาก WeBoostX ได้เฉพาะ Instagram / Facebook' };
+    if (String(ctx.submission.id_post || '').trim()) return { status: 409, message: 'แถวนี้มี ID POST แล้ว — โหลดหน้าใหม่แล้วดูอีกครั้ง' };
+    if (postCheckWaiting(ctx.submission)) return { status: 409, message: 'เอเจนซี่เพิ่งแก้ข้อมูลโพสต์นี้ รอทีมตรวจก่อน' };
+    if (!wxSync.config().apiKey) return { status: 503, message: 'server ยังไม่ได้ตั้งค่าการเชื่อม WeBoostX' };
+    return null;
+}
+// รายการโพสต์ของ Platform นี้จาก WeBoostX (เก็บไว้ 10 นาที) — กรองแบรนด์ทีหลังตอนเรียง / ตอนยืนยัน
+function wxPostsFor(s) {
+    const platform = wxPlatformOf(s.platform);
+    const since = wxPosts.sinceFor(s.post_date);
+    return wxPostsCache.get(`${platform}|${since}`, () => wxPosts.fetchPosts({ platform, since }));
+}
+
+// GET /api/ads/:subId/wx-posts?q= — ตัวเลือกโพสต์ (ไม่ค้น = ที่ชื่อ/วันที่/สินค้าใกล้เคียง · q = ค้นชื่อในแอด / ID)
+router.get('/:subId/wx-posts', async (req, res, next) => {
+    try {
+        const viewer = req.account || req.user;
+        const ctx = await store.ads.subContext(req.params.subId);
+        const block = wxFindBlock(ctx, viewer);
+        if (block) return res.status(block.status).json({ status: 'error', message: block.message });
+        const s = ctx.submission;
+        let posts;
+        try { posts = await wxPostsFor(s); } catch (e) {
+            console.error(`WeBoostX posts failed: ${e.message}`);
+            return res.status(502).json({ status: 'error', message: 'ดึงรายการโพสต์จาก WeBoostX ไม่ได้ตอนนี้ — ลองใหม่อีกครั้ง' });
+        }
+        const since = wxPosts.sinceFor(s.post_date);
+        const q = String(req.query.q || '').trim().slice(0, 100);
+        const clip = { platform: s.platform, brand: ctx.brand, account_name: s.account_name, link_account: s.link_account, post_date: s.post_date, product: s.product };
+        const ranked = wxPosts.rankPosts(clip, posts, { q });
+        // โพสต์ที่ผูกกับคลิปอื่นแล้ว (ชื่อคลิปของแบรนด์ที่ไม่มีสิทธิ์ = ไม่บอกชื่อ)
+        const users = await wxStore.idPostUsers(ranked.flatMap(p => [p.id_post, p.fb_story_id]).filter(Boolean));
+        const showCost = canSeeCostMetrics(viewer);
+        const candidates = ranked.map(p => ({
+            id_post: p.id_post, fb_story_id: p.fb_story_id, permalink: p.permalink,
+            creator: p.creator, post_date: p.post_date, sku_codes: p.sku_codes, brand: p.brand,
+            first_ad_date: p.first_ad_date, last_ad_date: p.last_ad_date, ads_count: p.ads_count, ad_reach: p.ad_reach,
+            ad_spend: showCost ? p.ad_spend : null,
+            score: p.score, level: p.level, reasons: p.reasons,
+            used_by: users.filter(u => u.id !== s.id && (u.id_post === p.id_post || u.id_post === p.fb_story_id))
+                .map(u => ({ sub_id: u.id, account_name: canSeeBrand(viewer, u.brand) ? u.account_name : null }))
+        }));
+        res.json({ status: 'success', data: { total: posts.filter(p => wxPosts.brandMatches(ctx.brand, p)).length, since, query: q, candidates } });
+    } catch (err) { next(err); }
+});
+
+// POST /api/ads/:subId/wx-confirm { id_post, fb_story_id? } — คนเลือกโพสต์แล้วยืนยัน
+// ถาม WeBoostX ซ้ำว่า ID นี้เป็นโพสต์ที่แอดเราโปรโมตจริง (ไม่เชื่อค่าจากเบราว์เซอร์) → เก็บ ID POST (เฉพาะตอนยังว่าง) → ลงค่าแอดให้ทันที
+router.post('/:subId/wx-confirm', async (req, res, next) => {
+    try {
+        const viewer = req.account || req.user;
+        const ctx = await store.ads.subContext(req.params.subId);
+        const block = wxFindBlock(ctx, viewer);
+        if (block) return res.status(block.status).json({ status: 'error', message: block.message });
+        const platform = wxPlatformOf(ctx.submission.platform);
+        const id = String(req.body.id_post ?? '').trim();
+        const story = String(req.body.fb_story_id ?? '').trim();
+        if (!/^\d{1,50}$/.test(id) || (story && (platform !== 'facebook' || !/^\d{1,50}_\d{1,50}$/.test(story) || story.split('_')[1] !== id))) {
+            return res.status(400).json({ status: 'error', message: 'ID POST ไม่ถูกต้อง' });
+        }
+        // FB เก็บแบบ <page>_<post> (แม่นที่สุดตามสัญญา) · IG เก็บ media id
+        const value = story || id;
+        let found;
+        try {
+            // ต้องเป็นโพสต์ในรายการของแบรนด์เดียวกับคลิป (ที่หน้าต่างให้เลือก) — กันยิงตรงเอา ID ของแบรนด์อื่น / ที่ไม่ได้อยู่ในรายการมาเก็บ
+            const listed = (await wxPostsFor(ctx.submission)).find(p => p.id_post === id && wxPosts.brandMatches(ctx.brand, p)
+                && (!story || p.fb_story_id === story));
+            if (!listed) return res.status(409).json({ status: 'error', message: `โพสต์นี้ไม่อยู่ในรายการโพสต์ของ ${ctx.brand || 'แบรนด์นี้'} — เลือกใหม่อีกครั้ง` });
+            const rows = await wxSync.fetchBatch([value]);
+            found = rows.find(r => r.item_id === value && r.platform === platform && r.id_post === id);
+        } catch (e) {
+            console.error(`WeBoostX confirm check failed: ${e.message}`);
+            return res.status(502).json({ status: 'error', message: 'ตรวจกับ WeBoostX ไม่ได้ตอนนี้ — ลองใหม่อีกครั้ง' });
+        }
+        if (!found) return res.status(409).json({ status: 'error', message: 'WeBoostX ไม่พบโพสต์นี้ (หรือเป็นคนละ Platform) — เลือกใหม่อีกครั้ง' });
+        const user = await store.users.findById(req.user.id);
+        const byName = user ? (user.full_name || user.username) : null;
+        const saved = await store.submissions.update(ctx.submission.id, null, { id_post: value }, byName, { fillEmpty: ['id_post'] });
+        if (!saved) return res.status(404).json({ status: 'error', message: 'ไม่พบโพสต์' });
+        // ลงค่าแอด / Reach / วันยิงแอดของโพสต์นี้ทันที (ล้มก็ไม่เป็นไร — รอบซิงก์ทุกชั่วโมงเติมให้)
+        let synced = false;
+        try {
+            const r = await wxStore.apply([{ ...found, submission_id: ctx.submission.id }]);
+            synced = (r.updated || 0) > 0;
+        } catch (e) { console.error(`WeBoostX confirm apply failed: ${e.message}`); }
+        try {
+            await store.activity.log({
+                user_id: req.user.id, team_id: ctx.team_id ?? req.user.team_id, action: 'ad',
+                project_id: ctx.project_id, project_name: ctx.project_name,
+                summary: `เก็บ ID POST จากรายการโพสต์ WeBoostX: ${ctx.account_name} · ${value}`
+            });
+        } catch { /* เงียบไว้ */ }
+        res.json({ status: 'success', data: { id_post: value, synced } });
     } catch (err) { next(err); }
 });
 
