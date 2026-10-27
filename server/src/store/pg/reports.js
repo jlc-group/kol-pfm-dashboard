@@ -76,7 +76,7 @@ const reports = {
             const reach = Number(s.ad_reach) || 0;
             // CPM/CPE คิดจากยอดคอนเทนต์จริง (เดิมใช้ reach และเดา engagement เป็น 2% ของ reach)
             // CPM/CPE คิดจากค่าตัวอย่างเดียว (cost = ค่าตัว + ค่าแอด ไว้โชว์) · ยังไม่ใส่ค่าตัว = cpm/cpe เป็น null (ดู clipCostMetrics)
-            const { fee_missing, cost, cpm, cpe } = clipCostMetrics({ fee, adSpend, views, engagement, campaignType: p.campaign_type });
+            const { fee_missing, fee_free, cost, cpm, cpe } = clipCostMetrics({ fee, adSpend, views, engagement, campaignType: p.campaign_type, feeFree: s.fee_free });
             const posted = !!(s.post_url && String(s.post_url).trim());
             const boosted = s.ad_status === 'ยิงแล้ว';
             // เกณฑ์ผ่าน/ไม่ผ่าน (perfVerdict) ใช้ร่วมกับหน้า Influencer และหน้า Ads (หน้า Dashboard ใช้คะแนนไล่ระดับแทน)
@@ -85,7 +85,7 @@ const reports = {
             return {
                 idx: i + 1, name: s.account_name, platform: s.platform || null,
                 product: s.product || null, agency: s.agency || null,
-                cost: fee, ad_spend: adSpend, total_cost: cost, reach, fee_missing,
+                cost: fee, ad_spend: adSpend, total_cost: cost, reach, fee_missing, fee_free: fee_free === true,
                 link: s.post_url || s.link_account || null,
                 cpm, cpe, performance, posted, boosted,
                 views, likes, comments, saves, shares, engagement, er,

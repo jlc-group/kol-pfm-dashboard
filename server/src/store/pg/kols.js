@@ -234,14 +234,14 @@ const kols = {
                 // ยังไม่ใส่ค่าตัว = cpm/cpe เป็น null (กฎเดียวกับหน้า Report — ดู clipCostMetrics)
                 // KOL รายคน: ค่าตัว 0 = ได้ฟรี ไม่ใช่ "รอค่าตัว" (ส่งประเภทแคมเปญให้ทั้งการคิดต้นทุนและเหตุที่รอสแตมป์)
                 const campaignType = p ? p.campaign_type : undefined;
-                const { fee_missing, cost: totalCost, cpm, cpe } = clipCostMetrics({ fee: s.budget, adSpend: s.ad_spend, views, engagement, campaignType });
+                const { fee_missing, fee_free, cost: totalCost, cpm, cpe } = clipCostMetrics({ fee: s.budget, adSpend: s.ad_spend, views, engagement, campaignType, feeFree: s.fee_free });
                 const er = views > 0 ? Number(((engagement / views) * 100).toFixed(2)) : 0;
                 const spendNow = Number(s.ad_spend) || 0;
                 const stampAt = stampAtFor(p && p.brand);
                 const waitReason = stampWaitReason(s, stampAt, campaignType);
                 const perf = {
                     views, likes, comments, saves, shares, reposts, engagement, er,
-                    ad_spend: spendNow, total_cost: totalCost, cpm, cpe, fee_missing,
+                    ad_spend: spendNow, total_cost: totalCost, cpm, cpe, fee_missing, fee_free: fee_free === true,
                     // ยังไม่กรอกผลงาน หรือยังไม่ใส่ค่าตัว = ยังตัดสินไม่ได้ (null) · หน้าเว็บเช็ค fee_missing ก่อนเพื่อขึ้น "รอค่าตัว"
                     performance: views > 0 ? perfVerdict({ fee_missing, views, cpm, cpe }) : null,
                     // ผลที่ล็อกไว้ตอนค่าแอดถึงเกณฑ์ (ถ้ายังไม่ถึงจะเป็น null)

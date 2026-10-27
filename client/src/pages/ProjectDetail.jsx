@@ -616,6 +616,15 @@ export default function ProjectDetail() {
     // ช่องเดียวต่อคน = ยอดต่อคลิป เขียนลงทุกคลิปของคนนั้นในคำขอเดียว
     // ส่ง from = ค่าที่หน้าเว็บเห็นอยู่ ถ้ามีคนแก้ไปก่อน server ตอบ 409 จะได้ไม่ทับกัน
     async function saveFee(clips, value) {
+        // พิมพ์ 0 = ถามก่อนว่าคนนี้ได้มาฟรีใช่ไหม (27 ต.ค. 2026) — ตอบตกลง = ยืนยันฟรีทั้งคน ไม่ขึ้น "ยังไม่ใส่ค่าตัว" อีก
+        if (value === 0 && !clips.every(c => c.fee_free === true)) {
+            const name = (clips[0] && clips[0].account_name) || 'KOL คนนี้';
+            if (!window.confirm(`${name} ได้มาฟรี ไม่มีค่าตัว / ค่าใช้จ่ายใช่ไหม?
+ยืนยันแล้วจะขึ้นว่า "ได้ฟรี" แทน "ยังไม่ใส่ค่าตัว"`)) {
+                const cancelled = new Error('ยกเลิก'); cancelled.cancelled = true; throw cancelled;
+            }
+            return setFeeFree(clips, true);
+        }
         const items = clips.filter(c => feeOf(c) !== value).map(c => ({ sub_id: c.id, budget: value, from: feeOf(c) }));
         if (!items.length) return;
         // คลิปที่ค่าแอดถึงเกณฑ์แล้วแต่ยังไม่ล็อกผล — บันทึกแล้วผลคุ้ม/ไม่คุ้มจะล็อกทันทีและแก้ย้อนหลังไม่ได้ จึงถามยืนยันก่อน
@@ -639,6 +648,33 @@ export default function ProjectDetail() {
             throw err;
         }
     }
+
+    // ได้มาฟรี / ไม่มีค่าตัว ทั้งคน (27 ต.ค. 2026) — free = false คือเอาป้ายฟรีออก (กลับเป็นยังไม่ใส่ค่าตัว)
+    async function setFeeFree(clips, free) {
+        try {
+            const res = await api(`/projects/${id}/fee-free`, { method: 'PUT', body: { free, items: clips.map(c => ({ sub_id: c.id, from: feeOf(c) })) } });
+            const rows = (res && res.data && res.data.rows) || [];
+            if (rows.length) {
+                const byId = new Map(rows.map(r => [r.id, r]));
+                setSubmissions(list => list.map(x => byId.get(x.id) || x));
+            }
+            loadSubs();
+        } catch (err) {
+            if (err.status === 409) { loadSubs(); throw new Error('มีคนแก้ไปแล้ว — โหลดค่าล่าสุดให้แล้ว'); }
+            throw err;
+        }
+    }
+    const askFeeFree = async (clips, free) => {
+        const name = (clips[0] && clips[0].account_name) || 'KOL คนนี้';
+        const paid = clips.filter(c => feeOf(c) > 0);
+        const msg = free
+            ? `${name} ได้มาฟรี ไม่มีค่าตัว / ค่าใช้จ่ายใช่ไหม?${paid.length ? `
+ค่าตัวที่ใส่ไว้ (฿${feeOf(paid[0]).toLocaleString('th-TH')} ต่อคลิป) จะกลายเป็น 0` : ''}`
+            : `ยกเลิก "ได้ฟรี" ของ ${name}?
+จะกลับไปเป็น "ยังไม่ใส่ค่าตัว"`;
+        if (!window.confirm(msg)) return;
+        try { await setFeeFree(clips, free); } catch (err) { alert(err.message); }
+    };
 
     // เปลี่ยนสถานะแคมเปญแบบเร็ว
     async function changeStatus(status) {
@@ -687,7 +723,8 @@ export default function ProjectDetail() {
     const matchScope = s => (listPlat === 'all' || s.platform === listPlat)
         && (listCtype === 'all' || s.content_type === listCtype);
     // คนที่ยังไม่ใส่ค่าตัว = มีคลิปที่ไม่ได้ถูก "ไม่เลือก" แต่ค่าตัวยังเป็น 0 — นับเป็นคน ไม่ใช่คลิป
-    const missingFee = s => s.status !== 'rejected' && feeOf(s) <= 0;
+    // ได้มาฟรี (fee_free) ไม่ใช่ยังไม่ใส่ค่าตัว (27 ต.ค. 2026)
+    const missingFee = s => s.status !== 'rejected' && feeOf(s) <= 0 && !s.fee_free;
     const feeMissingKeys = new Set(submissions.filter(missingFee).map(personKeyOf));
     const feeMissingCount = countPeople(submissions.filter(s => matchScope(s) && missingFee(s)));
     // กรองทั้งคน (ทุกคลิป) ไม่ใช่เฉพาะคลิปที่เป็น 0 — ช่องค่าตัวต่อคนจะได้เห็นครบ
@@ -740,18 +777,29 @@ export default function ProjectDetail() {
                     const first = feeOf(clips[0] || s);
                     const uneven = clips.some(c => feeOf(c) !== first);
                     // คนที่ "ไม่เลือก" ไม่ต้องเตือน และไม่นับคลิปที่ "ไม่เลือก" — ให้ตรงกับตัวนับในแถบกลุ่มและตัวกรอง
-                    const nudge = s.status !== 'rejected' && clips.some(c => c.status !== 'rejected' && feeOf(c) <= 0);
+                    const nudge = s.status !== 'rejected' && clips.some(c => c.status !== 'rejected' && feeOf(c) <= 0 && !c.fee_free);
+                    // ได้มาฟรีทั้งคน (ทีมยืนยันแล้ว · 27 ต.ค. 2026) — ช่องโชว์ 0 ไม่เตือน
+                    const free = clips.length > 0 && clips.every(c => c.fee_free === true);
                     // คลิปไม่เท่ากันหรือยังมีคลิปที่เป็น 0 — พิมพ์ยอดเดียวกับคลิปแรกก็ต้องบันทึกได้ ไม่งั้นแก้ให้เท่ากันไม่ได้
-                    const dirty = uneven || clips.some(c => feeOf(c) <= 0);
+                    const dirty = uneven || clips.some(c => feeOf(c) <= 0 && !c.fee_free);
                     // ใช้จับว่าระหว่างพิมพ์มีคนแก้ค่าตัวคนนี้ไปแล้วหรือยัง
                     const version = clips.map(c => `${c.id}:${feeOf(c)}`).join('|');
                     return <>
-                        <FeeInput value={first} missing={nudge} dirty={dirty} version={version} onSave={v => saveFee(clips, v)} />
+                        <FeeInput value={first} missing={nudge} dirty={dirty} version={version} allowZero={free} onSave={v => saveFee(clips, v)} />
                         {clips.length > 1 && (
                             <small className="sub-budget-split">× {clips.length} คลิป = ฿{clips.reduce((n, c) => n + feeOf(c), 0).toLocaleString('th-TH')}</small>
                         )}
                         {uneven && <small className="fee-uneven">แต่ละคลิปไม่เท่ากัน — แก้แล้วทุกคลิปจะเป็นยอดนี้</small>}
                         {nudge && <span className="fee-missing-chip">ยังไม่ใส่ค่าตัว</span>}
+                        {/* ได้มาฟรี: ยืนยันได้ตรงนี้ (หรือพิมพ์ 0) · ยืนยันแล้วกด × ยกเลิกได้ · ใส่ค่าตัว > 0 = ไม่ฟรีเอง */}
+                        {free ? (
+                            <span className="fee-free-chip" title="ทีมยืนยันแล้วว่าได้มาฟรี ไม่มีค่าตัว / ค่าใช้จ่าย — ใส่ค่าตัวเมื่อไหร่จะไม่ฟรีเอง">
+                                🎁 ได้ฟรี
+                                <button type="button" className="fee-free-x" aria-label={`ยกเลิกได้ฟรีของ ${s.account_name}`} title="ยกเลิกได้ฟรี" onClick={() => askFeeFree(clips, false)}>×</button>
+                            </span>
+                        ) : s.status !== 'rejected' && clips.every(c => feeOf(c) <= 0) && (
+                            <button type="button" className="fee-free-btn" title="KOL คนนี้ได้มาฟรี ไม่มีค่าตัว / ค่าใช้จ่าย" onClick={() => askFeeFree(clips, true)}>🎁 ได้ฟรี?</button>
+                        )}
                     </>;
                 })()}
             </td>
@@ -921,7 +969,8 @@ export default function ProjectDetail() {
         const feeBudget = plats.reduce((n, p) => n + feeBudgetFor(project, g, p), 0);
         const feeRows = plats.flatMap(p => feeEligible(submissions, g, p));
         const feeSet = feeRows.reduce((n, s) => n + feeOf(s), 0);
-        const feeMissing = countPeople(feeRows.filter(s => feeOf(s) <= 0));
+        const feeMissing = countPeople(feeRows.filter(s => feeOf(s) <= 0 && !s.fee_free));
+        const feeFreeCount = countPeople(feeRows.filter(s => s.fee_free === true));
         // จำนวน KOL แยกต่อสินค้า (บล็อกที่ทีมเปิดแยกไว้) — ส่งแล้ว / ต้องการ ของแต่ละสินค้า ตาม Platform ที่กรองอยู่
         // นับทุกรายชื่อของกลุ่ม (ไม่ขึ้นกับตัวกรอง Content Type / สินค้า / ค่าตัว) ไม่นับคนที่ "ไม่เลือก" — หน้าตาเดียวกับหน้าเอเจนซี่
         const productNeeds = productKolProgress(g, submissions, plats);
@@ -949,6 +998,7 @@ export default function ProjectDetail() {
                                 : feeMissing > 0
                                     ? <span className="fee-missing-txt">ยังไม่ใส่ค่าตัว {feeMissing} คน</span>
                                     : <span className="fee-done-txt">✓ ใส่ค่าตัวครบ</span>}
+                            {feeFreeCount > 0 && <span className="fee-free-txt"> · ได้ฟรี {feeFreeCount} คน</span>}
                             {listPlat !== 'all' && <span className="muted"> ({listPlat})</span>}
                         </span>
                         <div className="ag-budget-actions">
@@ -1021,7 +1071,7 @@ export default function ProjectDetail() {
                         const spent = submissions.filter(s => s.status === 'confirmed').reduce((n, s) => n + (Number(s.budget) || 0), 0);
                         const extra = Math.max(0, spent - planned);
                         // คนที่คัดเลือกแล้วแต่ค่าตัวยังเป็น 0 — ยอดงบด้านบนยังไม่รวมคนกลุ่มนี้
-                        const feeWait = countPeople(submissions.filter(s => s.status === 'confirmed' && feeOf(s) <= 0));
+                        const feeWait = countPeople(submissions.filter(s => s.status === 'confirmed' && feeOf(s) <= 0 && !s.fee_free));
                         return (
                             <div>
                                 <div className="pd-metric-label">งบประมาณ</div>

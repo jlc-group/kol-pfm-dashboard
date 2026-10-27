@@ -199,7 +199,8 @@ function withoutAdCost(row) {
 // ค่าตัว KOL ของบัญชีเอเจนซี่ = null
 // ต้องคงคีย์ไว้ ห้ามลบทิ้ง: แท็บเก่าที่เปิดค้างทำ Number(s.budget) — ไม่มีคีย์จะขึ้น ฿NaN ส่วน null ได้ ฿0
 function withoutFee(row) {
-    return row ? { ...row, budget: null } : row;
+    // fee_free (ได้มาฟรี · 27 ต.ค. 2026) เป็นเรื่องค่าตัวเหมือนกัน — บัญชีเอเจนซี่ไม่ได้รับ
+    return row ? { ...row, budget: null, fee_free: null } : row;
 }
 // ต้นทุนแอดใช้กติกาเดียวกับหน้าโฆษณา/KOL Analytics — เห็นเฉพาะ admin/manager (member และเอเจนซี่ไม่เห็น)
 // ต่างจากงบที่ทีมตั้งและค่าตัว KOL ซึ่งซ่อนเฉพาะบัญชีเอเจนซี่ (member ที่เปิดดูลิงก์ยังเห็น)

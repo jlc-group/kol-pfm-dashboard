@@ -513,3 +513,8 @@ ALTER TABLE submissions ADD COLUMN IF NOT EXISTS reviewer_id INTEGER;
 ALTER TABLE submissions ADD COLUMN IF NOT EXISTS draft_checked_by_id INTEGER;
 ALTER TABLE submissions ADD COLUMN IF NOT EXISTS draft_checked_by VARCHAR(255);
 ALTER TABLE submissions ADD COLUMN IF NOT EXISTS draft_checked_at TIMESTAMPTZ;
+
+-- ===== KOL ที่ได้มาฟรี / ไม่มีค่าตัว (27 ต.ค. 2026) =====
+-- แคมเปญ KOL: ค่าตัว 0 + fee_free = ทีมยืนยันว่าได้ฟรี (ไม่ใช่ "ยังไม่ใส่ค่าตัว") · ตั้งพร้อมกันทุกคลิปของคน · ใส่ค่าตัว > 0 = ไม่ฟรีแล้ว
+-- KOL รายคน (solo) ไม่ใช้คอลัมน์นี้ (ค่าตัว 0 = ได้ฟรีอยู่แล้ว)
+ALTER TABLE submissions ADD COLUMN IF NOT EXISTS fee_free BOOLEAN NOT NULL DEFAULT FALSE;

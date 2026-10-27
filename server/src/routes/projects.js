@@ -1731,7 +1731,7 @@ router.put('/:id/fees', async (req, res, next) => {
         }
         const user = await store.users.findById(req.user.id);
         const byName = user ? (user.full_name || user.username) : null;
-        const { rows, changed } = await store.submissions.setFees(req.params.id, parsed.items, byName);
+        const { rows, changed } = await store.submissions.setFees(req.params.id, parsed.items, byName, { protectFree: parsed.reason !== 'manual' });
         // KOL รายคน: งบของรายการ = ผลรวมค่าตัว → อัปเดตตามทันที
         if (changed.length && isSoloProject(check.project)) await store.projects.syncSoloBudget(req.params.id);
         // บันทึกประวัติครั้งเดียวต่อคำขอ (ส่งค่าเดิมมาทั้งชุด = ไม่มีอะไรเปลี่ยน ไม่ต้องบันทึก)
@@ -1742,6 +1742,38 @@ router.put('/:id/fees', async (req, res, next) => {
         if (err.status === 400 || err.status === 409) {
             return res.status(err.status).json({ status: 'error', message: err.message });
         }
+        next(err);
+    }
+});
+
+// PUT /api/projects/:id/fee-free { items: [{ sub_id, from? }], free: true | false } — KOL ที่ได้มาฟรี / ไม่มีค่าตัว (27 ต.ค. 2026)
+// true = ค่าตัว 0 + ยืนยันว่าฟรี (ไม่ขึ้น "ยังไม่ใส่ค่าตัว") · false = เอาป้ายฟรีออก · หน้าเว็บส่งทุกคลิปของคนนั้นมาพร้อมกัน
+// KOL รายคนไม่ใช้เส้นนี้ (ค่าตัว 0 = ได้ฟรีอยู่แล้ว) · ใส่ค่าตัว > 0 ทีหลังที่ช่องค่าตัว = ไม่ฟรีแล้วเอง (setFees)
+router.put('/:id/fee-free', async (req, res, next) => {
+    try {
+        const check = await canEditProject(req, req.params.id);
+        if (!check.ok) return res.status(check.code).json({ status: 'error', message: check.message });
+        if (isSoloProject(check.project)) return res.status(400).json({ status: 'error', message: 'KOL รายคน: ได้ฟรีให้พิมพ์ค่าตัว 0 ที่ช่องค่าตัวในหน้าของ KOL คนนั้น' });
+        const { items, free } = req.body || {};
+        if (typeof free !== 'boolean' || !Array.isArray(items) || items.length < 1 || items.length > FEE_BATCH_MAX
+            || items.some(it => !it || !Number.isInteger(it.sub_id) || it.sub_id <= 0 || (it.from !== undefined && (typeof it.from !== 'number' || !Number.isFinite(it.from))))) {
+            return res.status(400).json({ status: 'error', message: 'รายการไม่ถูกต้อง' });
+        }
+        const user = await store.users.findById(req.user.id);
+        const byName = user ? (user.full_name || user.username) : null;
+        const { rows, changed } = await store.submissions.setFeeFree(req.params.id, items.map(it => ({ sub_id: it.sub_id, from: it.from })), free, byName);
+        if (changed.length) {
+            const names = [...new Set(changed.map(c => c.account_name).filter(Boolean))];
+            const wasFee = changed.filter(c => c.from > 0);
+            await record(req, req.params.id, 'fee',
+                (free ? 'ได้มาฟรี (ไม่มีค่าตัว): ' : 'ยกเลิกได้มาฟรี: ') + names.slice(0, 10).join(', ')
+                + (changed.length > names.length ? ` (${changed.length} คลิป)` : '')
+                + (free && wasFee.length ? ` · ค่าตัวเดิม ${[...new Set(wasFee.map(c => baht(c.from)))].join('/')} → ฿0` : ''),
+                check.project.name, check.project.team_id);
+        }
+        res.json({ status: 'success', data: { changed, rows } });
+    } catch (err) {
+        if (err.status === 400 || err.status === 409 || err.status === 503) return res.status(err.status).json({ status: 'error', message: err.message });
         next(err);
     }
 });

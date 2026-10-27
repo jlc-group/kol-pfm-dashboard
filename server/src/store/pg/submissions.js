@@ -39,7 +39,9 @@ const UPDATABLE = [
     'ad_status', 'ad_spend', 'ad_reach', 'ad_start', 'ad_end', 'ad_note',
     'team_note', 'agency_note', 'content_type',
     'views', 'likes', 'comments', 'saves', 'shares', 'reposts',
-    'content_format', 'perf_synced_at'
+    'content_format', 'perf_synced_at',
+    // ได้มาฟรี / ไม่มีค่าตัว (27 ต.ค. 2026) — เขียนได้ทางเดียวกับค่าตัว (allowFee: setFees / setFeeFree) · ฐานที่ยังไม่มีคอลัมน์ = ตัดทิ้งใน updateOne
+    'fee_free'
 ];
 
 // คอลัมน์ตัวเลข NOT NULL — ฟอร์มส่ง '' มาได้ ต้องกลายเป็น 0 ไม่งั้น PostgreSQL ปฏิเสธ
@@ -49,7 +51,7 @@ const NUM_COLS = new Set(['followers', 'budget', 'ad_spend', 'ad_reach',
 const coerceCol = (k, v) => {
     if (NUM_COLS.has(k)) return asNum(v, 0);
     if (k === 'code_expire') return asNum(v, 60);
-    if (k === 'approved') return asBool(v);
+    if (k === 'approved' || k === 'fee_free') return asBool(v);
     return v === undefined ? null : v;
 };
 
@@ -126,7 +128,7 @@ async function stampCtxOf(client, projectId, opts) {
 async function updateOne(client, subId, projectId, fields, byName, opts = {}) {
     // คัดลอกก่อนตัดคีย์ ไม่แก้อ็อบเจกต์ของผู้เรียก (updatePerson ส่งอ็อบเจกต์เดียวกันวนเขียนทุกคลิป)
     fields = { ...fields };
-    if (!opts || opts.allowFee !== true) delete fields.budget;
+    if (!opts || opts.allowFee !== true) { delete fields.budget; delete fields.fee_free; }
 
     const id = numOr(subId);
     if (id === null) return null;
@@ -140,6 +142,7 @@ async function updateOne(client, subId, projectId, fields, byName, opts = {}) {
         pid === null ? [id] : [id, pid]);
     const s = r.rows[0];
     if (!s) return null;
+    if (!('fee_free' in s)) delete fields.fee_free;   // ยังไม่ได้ setup-db (27 ต.ค. 2026) — ไม่เขียนคอลัมน์ที่ไม่มี
 
     // ช่องที่บันทึกว่าใครแก้ล่าสุดเมื่อไหร่
     // post_date อยู่ในนี้ด้วย เพราะต้องรู้ว่า "แจ้งวันลงงานเข้าระบบตอนไหน"
@@ -464,7 +467,8 @@ const submissions = {
      * คืน { rows: แถวล่าสุดเรียงตามที่ส่งมา, changed: เฉพาะแถวที่ค่าตัวเปลี่ยนจริง }
      * error ที่ตั้งใจโยน: status 400 = มีแถวที่ไม่ใช่ของแคมเปญนี้ · 409 = มีคนแก้ค่าตัวแทรกไปแล้ว
      */
-    async setFees(projectId, items, byName) {
+    // opts.protectFree = หาร / ล้างค่าตัวของกลุ่ม — คนที่ยืนยันว่าได้มาฟรีแล้วห้ามโดนทับ (หน้าเว็บที่เปิดค้างยังไม่เห็นว่าฟรี · ผลรีวิว 27 ต.ค.)
+    async setFees(projectId, items, byName, opts = {}) {
         const fail = (status, message) => { const e = new Error(message); e.status = status; return e; };
         const pid = numOr(projectId);
         const list = Array.isArray(items) ? items : [];
@@ -493,6 +497,10 @@ const submissions = {
                     throw fail(409, 'มีคนแก้ค่าตัวนี้ไปแล้ว กรุณารีเฟรช');
                 }
             });
+            // ค่าตัว 0 เท่าเดิม แต่มีคนยืนยันว่าได้มาฟรีไปแล้ว — ตัวกันข้างบนเทียบแค่ค่าตัวจึงไม่เห็น
+            if (opts.protectFree && r.rows.some(s => s.fee_free === true)) {
+                throw fail(409, 'มีคนตั้งว่าได้มาฟรีไปแล้ว (ไม่หาร / ล้างค่าตัวให้คนที่ได้ฟรี) กรุณารีเฟรช');
+            }
 
             // หาเกณฑ์สแตมป์ครั้งเดียวต่อคำขอ — ทุกแถวในชุดนี้อยู่แคมเปญเดียวกัน
             const { at: stampAt, campaignType } = await stampCtxOf(client, pid, {});
@@ -504,7 +512,10 @@ const submissions = {
                 // ค่าเท่าเดิมไม่ต้องเขียน — ไม่งั้นประวัติจะมีรายการ "เปลี่ยน" ที่ไม่ได้เปลี่ยนอะไร
                 if (cents(cur.budget) === cents(fees[i])) { after.set(cur.id, cur); continue; }
                 // ทางเดียวที่เขียนค่าตัวได้ (allowFee) — ดูคำอธิบายที่ updateOne
-                const row = await updateOne(client, cur.id, pid, { budget: fees[i] }, byName, { allowFee: true, stampAt, campaignType });
+                // ใส่ค่าตัว > 0 ให้คนที่เคยยืนยันว่าได้มาฟรี = ไม่ฟรีแล้ว (27 ต.ค. 2026)
+                const set = { budget: fees[i] };
+                if (fees[i] > 0 && cur.fee_free === true) set.fee_free = false;
+                const row = await updateOne(client, cur.id, pid, set, byName, { allowFee: true, stampAt, campaignType });
                 after.set(cur.id, row);
                 diff.set(cur.id, {
                     id: cur.id, account_name: cur.account_name, clip_no: cur.clip_no,
@@ -515,6 +526,39 @@ const submissions = {
                 rows: ids.map(id => after.get(id)),
                 changed: ids.filter(id => diff.has(id)).map(id => diff.get(id))
             };
+        });
+    },
+    // ได้มาฟรี / ไม่มีค่าตัว (27 ต.ค. 2026 — แคมเปญ KOL) · items = [{ sub_id, from? }] ทุกคลิปของคนนั้น
+    // free = true → ค่าตัว 0 + fee_free (ไม่ขึ้น "ยังไม่ใส่ค่าตัว" · CPM/CPE ไม่มีตัวเลขให้ตัดสิน เหมือน KOL รายคนที่ได้ฟรี)
+    // free = false → เอาป้ายได้ฟรีออก (ค่าตัวคง 0 = กลับไปเป็น "ยังไม่ใส่ค่าตัว")
+    // from = ค่าตัวที่หน้าเว็บเห็น · ในฐานไม่ตรงแล้ว (มีคนใส่ค่าตัวแทรก) = 409 ไม่ทับ · ทรานแซกชันเดียว ล็อกเรียง id
+    async setFeeFree(projectId, items, free, byName) {
+        const fail = (status, message) => { const e = new Error(message); e.status = status; return e; };
+        const pid = numOr(projectId);
+        const list = Array.isArray(items) ? items : [];
+        if (pid === null || !list.length || typeof free !== 'boolean') throw fail(400, 'รายการไม่ถูกต้อง');
+        const ids = list.map(it => numOr(it && it.sub_id));
+        if (ids.some(id => !Number.isInteger(id) || id <= 0) || new Set(ids).size !== ids.length) throw fail(400, 'รายการไม่ถูกต้อง');
+        const cents = v => Math.round((Number(v) || 0) * 100);
+        return withTransaction(async (client) => {
+            const r = await client.query('SELECT * FROM submissions WHERE project_id = $1 AND id = ANY($2::int[]) ORDER BY id FOR UPDATE', [pid, ids]);
+            const locked = new Map(r.rows.map(s => [s.id, s]));
+            if (locked.size !== ids.length) throw fail(400, 'มีรายการที่ไม่ได้อยู่ในแคมเปญนี้ กรุณารีเฟรช');
+            if (r.rows.some(s => !('fee_free' in s))) throw fail(503, 'ยังไม่ได้เพิ่มคอลัมน์ "ได้มาฟรี" ในฐานข้อมูล — ต้องรัน setup-db ก่อน');
+            list.forEach((it, i) => {
+                if (it.from !== undefined && cents(locked.get(ids[i]).budget) !== cents(it.from)) throw fail(409, 'มีคนแก้ค่าตัวนี้ไปแล้ว กรุณารีเฟรช');
+            });
+            const { at: stampAt, campaignType } = await stampCtxOf(client, pid, {});
+            const rows = [], changed = [];
+            for (const id of [...ids].sort((a, b) => a - b)) {
+                const cur = locked.get(id);
+                const set = free ? { budget: 0, fee_free: true } : { fee_free: false };
+                if (cur.fee_free === free && (!free || cents(cur.budget) === 0)) { rows.push(cur); continue; }
+                const row = await updateOne(client, id, pid, set, byName, { allowFee: true, stampAt, campaignType });
+                rows.push(row);
+                changed.push({ id, account_name: cur.account_name, clip_no: cur.clip_no, from: Number(cur.budget) || 0 });
+            }
+            return { rows, changed };
         });
     },
     async countPending(projectId) {

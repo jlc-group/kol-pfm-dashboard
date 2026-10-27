@@ -3593,6 +3593,13 @@ button { color: inherit; }
 /* แถบสรุปค่าตัวใต้หัวกลุ่ม */
 .fee-missing-txt { color: #b45309; font-weight: 800; }
 .fee-done-txt { color: var(--mint-dark); font-weight: 800; }
+/* KOL ที่ได้มาฟรี / ไม่มีค่าตัว (27 ต.ค. 2026) — ป้ายยืนยันแล้ว + ปุ่มยืนยัน · แยกสีจาก "ยังไม่ใส่ค่าตัว" (ส้ม) */
+.fee-free-chip { display: inline-flex; align-items: center; gap: 4px; margin-top: 4px; padding: 2px 4px 2px 9px; border-radius: 999px; background: #ede9fe; color: #6d28d9; border: 1px solid #ddd6fe; font-size: 11px; font-weight: 800; white-space: nowrap; }
+.fee-free-x { border: none; background: transparent; color: #7c3aed; font-size: 14px; line-height: 1; padding: 0 4px; cursor: pointer; border-radius: 999px; }
+.fee-free-x:hover { background: #ddd6fe; }
+.fee-free-btn { display: inline-block; margin-top: 4px; margin-left: 4px; padding: 2px 8px; border: 1px dashed #c4b5fd; border-radius: 999px; background: #fff; color: #6d28d9; font-size: 11px; font-weight: 700; cursor: pointer; white-space: nowrap; }
+.fee-free-btn:hover { background: #f5f3ff; }
+.fee-free-txt { color: #6d28d9; font-weight: 800; }
 /* ชิปกรอง "ยังไม่ใส่ค่าตัว" — ยังมีคนค้างอยู่ให้ขอบประสีอำพันดึงสายตา */
 .fee-filter-row { margin-top: -4px; }
 .proc-plat-chip.fee-filter-chip.has:not(.on) { border-style: dashed; border-color: #f59e0b; background: #fffbeb; color: #b45309; }

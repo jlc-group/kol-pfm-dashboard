@@ -27,7 +27,7 @@ export function splitPlan({ budget = 0, quota = 0, clips = 1, rows = [], personK
     }
     const ownPeople = new Set(own.map(personKey)).size;
     const ownFees = own.reduce((n, s) => n + fee(s), 0);
-    const ownMissing = own.filter(s => fee(s) <= 0).length;
+    const ownMissing = own.filter(s => fee(s) <= 0 && s.fee_free !== true).length;   // ได้มาฟรี ≠ ยังไม่ใส่ (27 ต.ค.)
     const budgetLeft = b - ownFees;
     const quotaLeft = Math.max(0, q - ownPeople);
     const divisor = quotaLeft * c;

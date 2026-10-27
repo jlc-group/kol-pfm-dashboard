@@ -281,7 +281,7 @@ export default function Dashboard() {
                                     <td className="num">
                                         {k.fee_missing
                                             ? <span className="fee-missing-chip in-cell" title="ทีมยังไม่ได้ใส่ค่าตัว KOL คลิปนี้ — ใส่ที่หน้าแคมเปญ">รอค่าตัว</span>
-                                            : fmtMoney(k.fee)}
+                                            : k.fee_free ? <span className="fee-free-txt" title="ได้มาฟรี ไม่มีค่าตัว">ได้ฟรี</span> : fmtMoney(k.fee)}
                                     </td>
                                     <td className="num">{fmtNum(k.views)}</td>
                                     <td className="num">{fmtNum(k.likes)}</td>

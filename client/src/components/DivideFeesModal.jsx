@@ -53,7 +53,8 @@ function planFor(project, group, platform, subs, mode, overwrite) {
     const divisor = split.divisor;
     const perClip = isClear ? 0 : split.perClip;
     const to = isClear ? 0 : perClip;
-    const pool = split.targetRows;
+    // คนที่ได้มาฟรี (ทีมยืนยันแล้ว · 27 ต.ค. 2026) ไม่ถูกหาร / ทับ / ล้าง — ค่าตัว 0 ของเขาตั้งใจ ไม่ใช่ยังไม่ใส่
+    const pool = split.targetRows.filter(s => s.fee_free !== true);
 
     let targets = [];
     if (isClear) targets = pool.filter(s => feeOf(s) > 0);

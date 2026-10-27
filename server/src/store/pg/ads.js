@@ -229,7 +229,7 @@ const ads = {
                 // Content Type ผูกกับคน (1 Platform ในกลุ่มเดียวมีได้หลายอย่าง) แถวเก่าค่อยถอยไปใช้ของกลุ่ม
                 const ct = s.content_type || resolveGroupCtype(grp, s.platform);
                 const media = resolveGroupMedia(grp, s.platform, ct);
-                costIn.set(s.id, { fee: s.budget, adSpend: spend, engagement: engagementOf(s), campaignType });
+                costIn.set(s.id, { fee: s.budget, adSpend: spend, engagement: engagementOf(s), campaignType, feeFree: s.fee_free });
                 return {
                     sub_id: s.id,
                     account_name: s.account_name,
@@ -298,9 +298,9 @@ const ads = {
                         const views = Number(s.views) || 0;
                         const eng = engagementOf(s);
                         // ยังไม่ใส่ค่าตัว = content_cpm/cpe เป็น null และยังไม่ตัดสิน (กฎเดียวกับหน้า Report — ดู clipCostMetrics)
-                        const { fee_missing, cpm: cCpm, cpe: cCpe } = clipCostMetrics({ fee: s.budget, adSpend: spend, views, engagement: eng, campaignType });
+                        const { fee_missing, fee_free, cpm: cCpm, cpe: cCpe } = clipCostMetrics({ fee: s.budget, adSpend: spend, views, engagement: eng, campaignType, feeFree: s.fee_free });
                         return {
-                            views, engagement: eng, fee_missing,
+                            views, engagement: eng, fee_missing, fee_free: fee_free === true,
                             content_cpm: cCpm, content_cpe: cCpe,
                             performance: views > 0 ? perfVerdict({ fee_missing, views, cpm: cCpm, cpe: cCpe }) : null,
                             perf_stamp: s.perf_stamp ? normalizeStamp(clone(s.perf_stamp)) : null,
@@ -314,9 +314,9 @@ const ads = {
                         const views = Number(s.views) || 0;
                         const eng = engagementOf(s);
                         // ยังไม่ใส่ค่าตัว = content_cpm/cpe เป็น null และยังไม่ตัดสิน (กฎเดียวกับหน้า Report — ดู clipCostMetrics)
-                        const { fee_missing, cpm: cCpm, cpe: cCpe } = clipCostMetrics({ fee: s.budget, adSpend: spend, views, engagement: eng, campaignType });
+                        const { fee_missing, fee_free, cpm: cCpm, cpe: cCpe } = clipCostMetrics({ fee: s.budget, adSpend: spend, views, engagement: eng, campaignType, feeFree: s.fee_free });
                         return {
-                            views, engagement: eng, fee_missing,
+                            views, engagement: eng, fee_missing, fee_free: fee_free === true,
                             content_cpm: cCpm, content_cpe: cCpe,
                             performance: views > 0 ? perfVerdict({ fee_missing, views, cpm: cCpm, cpe: cCpe }) : null,
                             perf_stamp: s.perf_stamp ? normalizeStamp(clone(s.perf_stamp)) : null,

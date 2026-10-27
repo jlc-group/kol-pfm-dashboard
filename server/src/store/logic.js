@@ -1021,9 +1021,9 @@ function maybeStamp(s, at = AD_STAMP_AT, campaignType) {
     if (views <= 0 || sourceUnavailable(s)) return null;
     // ยังไม่ได้ใส่ค่าตัว -> รอไว้ก่อน ไม่งั้นต้นทุนรวมเหลือแค่ค่าแอด CPM/CPE ต่ำเกินจริงแล้วล็อกค้างถาวร
     // (ใส่ค่าตัวเมื่อไหร่ submissions.updateOne เรียกฟังก์ชันนี้ซ้ำ แล้วสแตมป์ตอนนั้นเอง)
-    if (feeMissing(s.budget, campaignType)) return null;
+    if (feeMissing(s.budget, campaignType, s.fee_free)) return null;
     const engagement = engagementOf(s);
-    const m = clipCostMetrics({ fee: s.budget, adSpend: spend, views, engagement, campaignType });
+    const m = clipCostMetrics({ fee: s.budget, adSpend: spend, views, engagement, campaignType, feeFree: s.fee_free });
     if (m.cpm == null) return null;                            // ได้ฟรี — ไม่มีค่าตัวให้คิด CPM/CPE
     const { cpm, cpe } = m;
     s.perf_stamp = {
@@ -1080,7 +1080,7 @@ function stampWaitReason(s, at = AD_STAMP_AT, campaignType) {
     if ((Number(s.ad_spend) || 0) < (Number(at) || AD_STAMP_AT)) return null;
     if ((Number(s.views) || 0) <= 0) return 'views';
     if (sourceUnavailable(s)) return 'source';
-    if (feeMissing(s.budget, campaignType)) return 'fee';
+    if (feeMissing(s.budget, campaignType, s.fee_free)) return 'fee';
     return null;
 }
 
@@ -1090,8 +1090,9 @@ function stampWaitReason(s, at = AD_STAMP_AT, campaignType) {
 // ซึ่งดูถูกเกินจริง จึงตัดออกจากค่าเฉลี่ย CPM/CPE, แกนคะแนน CPM/CPE และการตัดสิน Good/Improve
 // campaignType = projects.campaign_type — KOL รายคน ('solo') ค่าตัวบังคับตอนเพิ่ม 0 จึงแปลว่า "ได้ฟรี" ไม่ใช่ "ยังไม่ใส่" (รอบ 4)
 // ไม่ส่งมา = แคมเปญ KOL ตามเดิม
-function feeMissing(budget, campaignType) {
-    if (campaignType === 'solo') return false;
+// feeFree = submissions.fee_free — แคมเปญ KOL ที่ทีมยืนยันว่าคนนี้ "ได้มาฟรี / ไม่มีค่าตัว" (27 ต.ค. 2026) = ไม่ใช่ยังไม่ใส่ ใช้กติกาเดียวกับ KOL รายคนที่ได้ฟรี
+function feeMissing(budget, campaignType, feeFree) {
+    if (campaignType === 'solo' || feeFree === true) return false;
     return (Number(budget) || 0) <= 0;
 }
 
@@ -1099,12 +1100,12 @@ function feeMissing(budget, campaignType) {
 //   CPM = ค่าตัว ÷ (ยอดวิว ÷ 1,000) · CPE = ค่าตัว ÷ engagement — ค่าแอดสะสมไม่ทำให้ CPM/CPE แพงขึ้นเองตามเวลาอีก
 // cost = ค่าตัว + ค่าแอด (ยอดเงินที่จ่ายจริง ใช้โชว์ / total_cost) — ไม่ได้ใช้คิด CPM/CPE แล้ว
 // ยังไม่ใส่ค่าตัว = cpm/cpe เป็น null (ห้ามคืน 0 เพราะจะดูคุ้มเกินจริง)
-// KOL รายคน: คืน fee_free ด้วย · ได้ฟรี (ค่าตัว 0) = cpm/cpe เป็น null "ไม่มีค่าตัวให้ตัดสิน" ไม่ใช่ 0 ที่ดูคุ้มสุด
-function clipCostMetrics({ fee, adSpend, views, engagement, campaignType }) {
+// KOL รายคน / คลิปที่ยืนยันว่าได้มาฟรี (feeFree): คืน fee_free ด้วย · ได้ฟรี (ค่าตัว 0) = cpm/cpe เป็น null "ไม่มีค่าตัวให้ตัดสิน" ไม่ใช่ 0 ที่ดูคุ้มสุด
+function clipCostMetrics({ fee, adSpend, views, engagement, campaignType, feeFree }) {
     const f = Number(fee) || 0;
     const cost = f + (Number(adSpend) || 0);
-    if (feeMissing(f, campaignType)) return { fee_missing: true, cost, cpm: null, cpe: null };
-    const free = campaignType === 'solo' ? { fee_free: f <= 0 } : {};
+    if (feeMissing(f, campaignType, feeFree)) return { fee_missing: true, cost, cpm: null, cpe: null };
+    const free = campaignType === 'solo' || feeFree === true ? { fee_free: f <= 0 } : {};
     if (f <= 0) return { fee_missing: false, ...free, cost, cpm: null, cpe: null };
     return {
         fee_missing: false, ...free, cost,
@@ -1151,7 +1152,7 @@ function pooledCpe(items) {
         if (!it) continue;
         const e = Number(it.engagement) || 0;
         if (e <= 0) continue;
-        const m = clipCostMetrics({ fee: it.fee, adSpend: it.adSpend, views: 0, engagement: e, campaignType: it.campaignType });
+        const m = clipCostMetrics({ fee: it.fee, adSpend: it.adSpend, views: 0, engagement: e, campaignType: it.campaignType, feeFree: it.feeFree });
         if (m.fee_missing || m.cpe == null) continue;
         fee += Number(it.fee) || 0; eng += e; clips += 1;
     }

@@ -46,7 +46,7 @@ const dashboard = {
         // นับจากชุด subs เดียวกับยอดรวม (คัดเลือกแล้ว + ตามสิทธิ์/ตัวกรอง/ช่วงวันลงงาน)
         // KOL รายคน: ค่าตัว 0 = ได้ฟรี ไม่นับเป็น "ยังไม่ใส่ค่าตัว" (feeMissing รู้จากประเภทแคมเปญ)
         const typeOfSub = s => (projById[s.project_id] || {}).campaign_type;
-        const feeMissingClips = subs.filter(s => feeMissing(s.budget, typeOfSub(s))).length;
+        const feeMissingClips = subs.filter(s => feeMissing(s.budget, typeOfSub(s), s.fee_free)).length;
         // 1 แถว = 1 คลิป — คนเดียวกันอาจมีหลายคลิป จึงนับ "คน" จาก person_key
         const totalKols = new Set(subs.map(s => s.person_key || ('sub:' + s.id))).size;
         const totalClips = subs.length;
@@ -76,13 +76,13 @@ const dashboard = {
 
         // 5) ตัวชี้วัดความคุ้มค่า
         // CPM รวมคิดเฉพาะคลิปที่ใส่ค่าตัวแล้ว — คลิปที่ยังไม่ใส่มี reach แต่ค่าตัวเป็น 0 ถ้านับด้วยจะกด CPM ให้ต่ำเกินจริง
-        const feeSubs = subs.filter(s => !feeMissing(s.budget, typeOfSub(s)));
+        const feeSubs = subs.filter(s => !feeMissing(s.budget, typeOfSub(s), s.fee_free));
         const feeSum = feeSubs.reduce((a, s) => a + (Number(s.budget) || 0), 0);
         const feeReach = feeSubs.reduce((a, s) => a + (Number(s.ad_reach) || 0), 0);
         const cpm = feeReach > 0 ? Math.round(feeSum / (feeReach / 1000)) : 0;
         // CPE รวม (2 ต.ค. 2026 — เดิมเป็น 0 ตายตัว) = ค่าตัว ÷ engagement รวม ของคลิปที่ใส่ค่าตัวแล้วและมี engagement (ไม่รวมค่าแอด · 5 ต.ค.)
         // สูตรเดียวกับ CPE รายคลิปด้านล่าง (clipCostMetrics) · ยังไม่มีคลิปให้คิด = null (หน้าเว็บขึ้น "—")
-        const cpe = pooledCpe(subs.map(s => ({ fee: s.budget, adSpend: s.ad_spend, engagement: engagementOf(s), campaignType: typeOfSub(s) }))).cpe;
+        const cpe = pooledCpe(subs.map(s => ({ fee: s.budget, adSpend: s.ad_spend, engagement: engagementOf(s), campaignType: typeOfSub(s), feeFree: s.fee_free }))).cpe;
 
         // 6) Top KOLs — ส่ง 20 อันดับ (หน้าเว็บโชว์ 5 อันดับแรก ที่เหลือกดดูเพิ่มได้)
         //
@@ -111,13 +111,13 @@ const dashboard = {
             const fee = Number(s.budget) || 0;
             const adSpend = Number(s.ad_spend) || 0;
             // CPM/CPE คิดจากค่าตัวอย่างเดียว (cost = ค่าตัว + ค่าแอด ไว้โชว์) · ยังไม่ใส่ค่าตัว = cpm/cpe เป็น null (ดู clipCostMetrics)
-            const { fee_missing, cost, cpm, cpe } = clipCostMetrics({ fee, adSpend, views, engagement: engagementTotal, campaignType: typeOfSub(s) });
+            const { fee_missing, fee_free, cost, cpm, cpe } = clipCostMetrics({ fee, adSpend, views, engagement: engagementTotal, campaignType: typeOfSub(s), feeFree: s.fee_free });
             return {
                 kol_id: s.id, name: s.account_name, platform: s.platform || null,
                 brand: (projById[s.project_id] || {}).brand || null,   // แบรนด์มาจากแคมเปญที่ KOL คนนี้สังกัด
                 product: s.product || null,
                 post_url: s.post_url || null,
-                fee, fee_missing, ad_spend: adSpend, cost,
+                fee, fee_missing, fee_free: fee_free === true, ad_spend: adSpend, cost,
                 views,                                  // ยอดวิวคอนเทนต์ ไม่ใช่ reach จากแอด
                 ad_reach: Number(s.ad_reach) || 0,      // เก็บไว้เทียบ ไม่ได้ใช้จัดอันดับ
                 likes, comments, saves, shares, reposts,

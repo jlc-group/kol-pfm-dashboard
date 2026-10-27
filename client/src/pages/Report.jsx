@@ -287,7 +287,7 @@ export default function Report() {
                                     <td className="num">
                                         {k.fee_missing
                                             ? <span className="fee-missing-chip in-cell" title="ทีมยังไม่ได้ใส่ค่าตัว KOL คลิปนี้ — ใส่ที่หน้าแคมเปญ">รอค่าตัว</span>
-                                            : B(k.cost)}
+                                            : k.fee_free ? <span className="fee-free-txt" title="ได้มาฟรี ไม่มีค่าตัว (ทีมยืนยันแล้ว)">ได้ฟรี</span> : B(k.cost)}
                                     </td>
                                     <td>{k.link ? <a className="work-link" href={k.link} target="_blank" rel="noreferrer"><Icon name="eye" size={12} /> เปิด</a> : '-'}</td>
                                     {/* KOL รายคนได้ฟรี (ค่าตัว 0) = ไม่มีค่าตัวให้คิด CPM/CPE เป็น null — ขึ้นขีด ไม่ใช่ช่องว่าง */}
