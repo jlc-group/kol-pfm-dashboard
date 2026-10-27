@@ -369,6 +369,33 @@ const submissions = {
             return { removed: d.rowCount, account_name: target.account_name };
         });
     },
+    // คัดเลือก / ไม่เลือก / คืนสถานะ "ทั้งคน" ทีเดียว (ผู้ใช้สั่ง 27 ต.ค. 2026 — คนทำ 10 คลิปเดิมต้องกดเลือกชื่อเดิม 10 รอบ)
+    // แถวคลิปของคนนี้มีครบตามจำนวนคลิปที่แคมเปญกำหนดตั้งแต่ตอนเพิ่มคน (addPerson) — เปลี่ยนทุกคลิปที่ยังอยู่สถานะ fromStatus (สถานะที่หน้าเว็บเห็น)
+    // คลิปที่อยู่สถานะอื่น (เช่นไม่เลือกไปแล้วบางคลิป) ไม่แตะ · ไม่มีคลิปในสถานะนั้นแล้ว (มีคนกดไปก่อน) = 409
+    // ทรานแซกชันเดียว ล็อกทุกคลิปเรียง id ก่อนเขียน (สำเร็จทั้งคน หรือไม่เปลี่ยนเลย)
+    async setPersonStatus(subId, projectId, status, fromStatus, byName, opts = {}) {
+        const id = numOr(subId), pid = numOr(projectId);
+        if (id === null || pid === null) return null;
+        return withTransaction(async (client) => {
+            const t = await client.query('SELECT id, person_key FROM submissions WHERE id = $1 AND project_id = $2', [id, pid]);
+            const target = t.rows[0];
+            if (!target) return null;
+            const sibs = (await client.query(target.person_key
+                ? 'SELECT id, status FROM submissions WHERE person_key = $1 AND project_id = $2 ORDER BY id FOR UPDATE'
+                : 'SELECT id, status FROM submissions WHERE id = $1 AND project_id = $2 FOR UPDATE',
+            [target.person_key || id, pid])).rows;
+            const todo = sibs.filter(s => (s.status || 'submitted') === fromStatus);
+            if (!todo.length) {
+                const e = new Error('สถานะของคนนี้เพิ่งถูกเปลี่ยน (มีคนกดไปก่อน) — โหลดหน้าใหม่แล้วดูอีกครั้ง');
+                e.status = 409;
+                throw e;
+            }
+            const { at: stampAt, campaignType } = await stampCtxOf(client, pid, {});
+            const out = [];
+            for (const s of todo) out.push(await updateOne(client, s.id, projectId, { status }, byName, { actor: opts.actor, stampAt, campaignType }));
+            return out;
+        });
+    },
     // แก้ข้อมูล "ตัวคน" ให้ทุกคลิปพร้อมกัน (ชื่อ/ยอดฟอล/Platform/สินค้า/ลิงก์ช่อง/ผู้ติดต่อ)
     // opts.actor = 'team' | 'agency' — ใครแก้ข้อมูลโพสต์ (ตัดสินว่าต้องให้ทีมตรวจก่อนขึ้นหน้า Ads ไหม)
     async updatePerson(subId, projectId, fields, byName, opts = {}) {

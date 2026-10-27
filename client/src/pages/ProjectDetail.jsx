@@ -586,10 +586,18 @@ export default function ProjectDetail() {
     function copyLink(token) {
         navigator.clipboard.writeText(linkUrl(token)).then(() => { setCopiedToken(token); setTimeout(() => setCopiedToken(''), 2000); });
     }
-    async function decideSub(subId, status) {
-        try { await api(`/projects/${id}/submissions/${subId}`, { method: 'PUT', body: { status } }); loadSubs(); }
-        catch (err) { alert(err.message); }
+    // เลือก / ไม่เลือก / ยกเลิก / คืนกลับ = ทั้งคนทีเดียว (ผู้ใช้สั่ง 27 ต.ค. 2026 — คนทำ 10 คลิปเดิมต้องกดชื่อเดิม 10 รอบ)
+    // server เปลี่ยนทุกคลิปของคนนี้ที่ยังอยู่สถานะเดียวกับแถวที่กด (from_status) ในคำขอเดียว
+    const [deciding, setDeciding] = useState(null);
+    async function decideSub(s, status) {
+        setDeciding(s.id);
+        try {
+            await api(`/projects/${id}/submissions/${s.id}/person-status`, { method: 'PUT', body: { status, from_status: s.status || 'submitted' } });
+        } catch (err) { alert(err.message); }
+        finally { setDeciding(null); loadSubs(); }
     }
+    // จำนวนคลิปของคนนี้ที่ปุ่มจะเปลี่ยน (คลิปที่อยู่สถานะเดียวกับแถว) — บอกในปุ่ม
+    const clipsToDecide = s => submissions.filter(x => personKeyOf(x) === personKeyOf(s) && (x.status || 'submitted') === (s.status || 'submitted')).length;
     // ลบรายชื่อออกถาวร — "ยกเลิก/ไม่เลือก" แค่เปลี่ยนสถานะ แถวยังอยู่ในระบบและยังไปโผล่ที่อื่น
     async function deleteSub(s) {
         if (!confirm(`ลบ "${s.account_name}" ออกจากแคมเปญนี้ถาวร?
@@ -755,16 +763,22 @@ export default function ProjectDetail() {
                 {s.agency_note && <div className="sub-note-from-agency" title={s.agency_note}>💬 {s.agency_note}</div>}
             </td>
             <td className="actions">
-                {s.status === 'confirmed' ? (
-                    <button className="btn-ghost" onClick={() => decideSub(s.id, 'submitted')}>ยกเลิก</button>
-                ) : s.status === 'rejected' ? (
-                    <button className="btn-ghost" onClick={() => decideSub(s.id, 'submitted')}>↩ คืนกลับ</button>
-                ) : (
-                    <div className="sub-decide">
-                        <button className="btn-primary" style={{ padding: '6px 12px' }} onClick={() => decideSub(s.id, 'confirmed')}>✓ เลือก</button>
-                        <button className="btn-reject" onClick={() => decideSub(s.id, 'rejected')}>✕ ไม่เลือก</button>
-                    </div>
-                )}
+                {/* กดทีเดียว = ทุกคลิปของคนนี้ในสถานะนี้ (บอกจำนวนคลิปใน title) */}
+                {(() => {
+                    const n = clipsToDecide(s);
+                    const tip = verb => (n > 1 ? `${verb}ทั้ง ${n} คลิปของ ${s.account_name}` : undefined);
+                    const busy = deciding === s.id;
+                    return s.status === 'confirmed' ? (
+                        <button className="btn-ghost" disabled={busy} title={tip('ยกเลิกการเลือก')} onClick={() => decideSub(s, 'submitted')}>ยกเลิก</button>
+                    ) : s.status === 'rejected' ? (
+                        <button className="btn-ghost" disabled={busy} title={tip('คืนกลับ')} onClick={() => decideSub(s, 'submitted')}>↩ คืนกลับ</button>
+                    ) : (
+                        <div className="sub-decide">
+                            <button className="btn-primary" style={{ padding: '6px 12px' }} disabled={busy} title={tip('เลือก')} onClick={() => decideSub(s, 'confirmed')}>✓ เลือก</button>
+                            <button className="btn-reject" disabled={busy} title={tip('ไม่เลือก')} onClick={() => decideSub(s, 'rejected')}>✕ ไม่เลือก</button>
+                        </div>
+                    );
+                })()}
                 {/* รายชื่อจากเอเจนซี่ให้เจ้าของลิงก์ลบเอง ฝั่งทีมใช้ "ไม่เลือก" แทน
                     ยกเว้นลิงก์ถูกลบไปแล้ว = แถวกำพร้า ทีมต้องเก็บกวาดเองได้ */}
                 {(!s.agency_token || !liveTokens.has(s.agency_token)) && (

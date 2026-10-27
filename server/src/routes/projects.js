@@ -1573,6 +1573,30 @@ router.get('/:id/submissions', async (req, res, next) => {
 });
 
 // PUT /api/projects/:id/submissions/:subId — คัดเลือก/ไม่เลือก (confirmed | rejected | submitted)
+// PUT /api/projects/:id/submissions/:subId/person-status { status, from_status }
+// เลือก / ไม่เลือก / คืนสถานะ "ทั้งคน" ทีเดียว (ผู้ใช้สั่ง 27 ต.ค. 2026) — ทุกคลิปของคนนี้ที่ยังอยู่สถานะ from_status (ที่หน้าเว็บเห็น)
+// คนทำ 10 คลิป = แถวคลิปมีครบ 10 แถวตามที่แคมเปญกำหนดตั้งแต่เพิ่มคน · ลงประวัติครั้งเดียวพร้อมจำนวนคลิป
+const PERSON_STATUSES = ['confirmed', 'rejected', 'submitted'];
+router.put('/:id/submissions/:subId/person-status', async (req, res, next) => {
+    try {
+        const check = await canEditProject(req, req.params.id);
+        if (!check.ok) return res.status(check.code).json({ status: 'error', message: check.message });
+        const { status, from_status: from } = req.body || {};
+        if (!PERSON_STATUSES.includes(status) || !PERSON_STATUSES.includes(from) || status === from) {
+            return res.status(400).json({ status: 'error', message: 'สถานะไม่ถูกต้อง' });
+        }
+        if (isSoloProject(check.project)) return res.status(400).json({ status: 'error', message: SOLO_ONLY_MSG });
+        const user = await store.users.findById(req.user.id);
+        const byName = user ? (user.full_name || user.username) : null;
+        const rows = await store.submissions.setPersonStatus(req.params.subId, req.params.id, status, from, byName, { actor: 'team' });
+        if (!rows) return res.status(404).json({ status: 'error', message: 'ไม่พบรายการ' });
+        const label = status === 'confirmed' ? 'คัดเลือก KOL' : status === 'rejected' ? 'ไม่เลือก KOL' : 'รีเซ็ตสถานะ KOL';
+        await record(req, req.params.id, 'select_kol', `${label}: ${rows[0].account_name}${rows.length > 1 ? ` (${rows.length} คลิป)` : ''}`,
+            check.project.name, check.project.team_id);
+        res.json({ status: 'success', data: rows });
+    } catch (err) { next(err); }
+});
+
 router.put('/:id/submissions/:subId', async (req, res, next) => {
     try {
         const check = await canEditProject(req, req.params.id);
