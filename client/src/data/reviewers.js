@@ -58,7 +58,7 @@ export const WORK_BUCKETS = [
 // ที่มาของคนตรวจ (ป้ายในตาราง On Process)
 export const FROM_LABEL = { clip: 'เฉพาะคลิปนี้', group: 'ตามกลุ่ม', campaign: 'ตามแคมเปญ' };
 
-// รอมานานแค่ไหน (ป้ายหน้า "งานของฉัน") → { text, level } · level: '' < 1 วัน · 'warn' 1-2 วัน · 'bad' > 2 วัน
+// ผ่านมานานแค่ไหน (หน้า "งานของฉัน": "Approve โดย ... · 2 ชม.ที่แล้ว") → { text, level } · level: '' < 1 วัน · 'warn' 1-2 วัน · 'bad' > 2 วัน
 export function waitedText(iso, now = Date.now()) {
     const t = Date.parse(iso || '');
     if (!Number.isFinite(t)) return { text: '—', level: '' };

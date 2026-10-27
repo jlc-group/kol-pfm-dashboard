@@ -962,9 +962,6 @@ a { text-decoration: none; color: inherit; }
 .mywork-kol { flex-basis: 100%; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: 12.5px; min-width: 0; overflow-wrap: anywhere; }
 .mywork-meta { display: flex; flex-wrap: wrap; gap: 4px 10px; font-size: 12px; color: var(--muted); min-width: 0; overflow-wrap: anywhere; }
 .mywork-status { font-size: 12px; min-width: 0; }
-.mywork-wait { display: inline-block; padding: 2px 9px; border-radius: 999px; background: var(--bg-soft); color: var(--muted); font-weight: 700; white-space: nowrap; }
-.mywork-wait.warn { background: #fef3c7; color: #b45309; }
-.mywork-wait.bad { background: #fde2e2; color: #c0271f; }
 .mywork-btn { padding: 7px 14px; font-size: 12.5px; white-space: nowrap; }
 @media (max-width: 720px) {
     .mywork-row { grid-template-columns: minmax(0, 1fr) auto; }

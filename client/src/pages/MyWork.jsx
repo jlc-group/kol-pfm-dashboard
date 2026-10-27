@@ -92,10 +92,8 @@ export default function MyWork() {
     }
 
     const statusText = r => {
-        if (r.bucket === 'review') {
-            const w = ago(r.draft_updated_at);
-            return <span className={'mywork-wait ' + w.level} title={r.draft_updated_at ? `ส่งดราฟเมื่อ ${new Date(r.draft_updated_at).toLocaleString('th-TH')}` : undefined}>รอมา {w.text}</span>;
-        }
+        // รอตรวจ: ไม่มีป้าย "รอมา ..." (ผู้ใช้สั่งเอาออก 27 ต.ค.) — ลำดับยังรอนานสุดขึ้นก่อน
+        if (r.bucket === 'review') return null;
         if (r.bucket === 'posted') return <span className="muted">ลงงาน {r.post_date ? fmtDate(r.post_date) : '—'}</span>;
         const verb = r.bucket === 'revise' ? 'ขอแก้ไข' : 'Approve';
         return <span className="muted">{verb}{r.draft_checked_by ? ` โดย ${r.draft_checked_by}` : ''}{r.draft_checked_at ? ` · ${ago(r.draft_checked_at).text}ที่แล้ว` : ''}</span>;
