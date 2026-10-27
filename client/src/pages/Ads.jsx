@@ -18,7 +18,7 @@ import WxPostFinder from '../components/WxPostFinder.jsx';
 import { adEvidence, hasAdSpend } from '../data/adEvidence.js';
 import { adTiming, timingLevel, timingTip, TIMING_OPTS } from '../data/adTiming.js';
 import { wxPfmBadge, isWxPlatform, WX_PFM_TITLE } from '../data/wxPfm.js';
-import { sortByPfm, pfmRatedCount } from '../data/pfmSort.js';
+import { sortByPfm } from '../data/pfmSort.js';
 
 
 // คอลัมน์ "สถานะ" กลับเป็นปุ่ม ✓ ยิงแล้ว / ยังไม่ยิง แบบเดิม (ผู้ใช้สั่ง 12 ต.ค. 2026 — เลิกช่อง "หลักฐานการเริ่มยิง" + หน้าต่างยืนยัน)
@@ -31,6 +31,22 @@ const GOOD_CPM = 28;
 const GOOD_CPE = 1.5;
 // เกณฑ์ที่ใช้คิดคะแนนเรียงคอลัมน์ PFM (data/pfmSort.js)
 const PFM_GOOD = { cpm: GOOD_CPM, cpe: GOOD_CPE };
+
+// ปุ่มเรียงคะแนน PFM ที่หัวคอลัมน์ — กดทีเดียวเปลี่ยนลำดับเลย ไม่ต้องเลือกจากเมนู (ผู้ใช้สั่ง 27 ต.ค. 2026)
+// ไม่เรียง ↕ → น้อย → มาก ↑ (ดีสุดก่อน) → มาก → น้อย ↓ (แย่สุดก่อน) → ไม่เรียง · เรียงได้ทีละคอลัมน์ (กดอีกคอลัมน์ = เริ่ม ↑ ที่คอลัมน์นั้น)
+const PFM_SORT_NEXT = { '': 'asc', asc: 'desc', desc: '' };
+const PFM_SORT_TEXT = { '': 'ไม่เรียง (วันลงงานใหม่สุดก่อน)', asc: 'คะแนนน้อย → มาก (ดีสุดก่อน)', desc: 'คะแนนมาก → น้อย (แย่สุดก่อน)' };
+function PfmSortButton({ label, dir = '', onChange }) {
+    const now = PFM_SORT_TEXT[dir] ? dir : '';
+    const next = PFM_SORT_NEXT[now];
+    return (
+        <button type="button" className={'pfm-sort-btn' + (now ? ' on' : '')} onClick={() => onChange(next)}
+            title={`${label}: ${PFM_SORT_TEXT[now]} — กดเพื่อเปลี่ยนเป็น ${PFM_SORT_TEXT[next]}`}
+            aria-label={`เรียง${label} ตอนนี้ ${PFM_SORT_TEXT[now]}`}>
+            {now === 'asc' ? '↑' : now === 'desc' ? '↓' : '↕'}
+        </button>
+    );
+}
 
 // ตัวเลข CPM/CPE พร้อมสีบอกผ่าน/ไม่ผ่าน — ใช้ร่วมกันทั้งช่องที่ล็อกและช่องปัจจุบัน
 // member ไม่ได้รับตัวเลขมา (เป็นข้อมูลลับ) จะเห็นเป็นป้าย Pass/Fail แทน
@@ -577,16 +593,6 @@ export default function Ads() {
     const narrowed = !!(platform || status || late || search.trim() || missingPerf);
     const hasFilter = narrowed || !!pfmSort.key;
     const clearFilters = () => { setPlatform(''); setStatus(''); setLate(''); setSearch(''); setMissingPerf(false); setPfmSort({ key: '', dir: '' }); };
-    // ตัวเลือกเรียงของคอลัมน์ PFM — เลขบนตัวเลือก = จำนวนคลิปที่มีผลให้เรียง (ที่เหลืออยู่ท้ายตาราง)
-    const shownRowsAll = tabRows.filter(r => matches(r));
-    const pfmSortOptions = key => {
-        const rated = pfmRatedCount(shownRowsAll, key, PFM_GOOD);
-        return [
-            { value: '', label: 'ไม่เรียง (วันลงงานใหม่สุดก่อน)', count: shownRowsAll.length },
-            { value: 'asc', label: 'คะแนนน้อย → มาก (ดีสุดก่อน)', count: rated },
-            { value: 'desc', label: 'คะแนนมาก → น้อย (แย่สุดก่อน)', count: rated }
-        ];
-    };
     const pickPfmSort = key => dir => setPfmSort(dir ? { key, dir } : { key: '', dir: '' });
     const ratedCount = tabRows.filter(r => r.performance).length;
     // ค่า insight เพิ่มเติม (คำนวณจากข้อมูลที่มี)
@@ -795,14 +801,12 @@ export default function Ads() {
                                         options={[{ value: '', label: 'ทั้งหมด', count: countIf('late', () => true) },
                                         ...TIMING_OPTS.map(([v, l]) => ({ value: v, label: l, dot: v, count: countIf('late', r => lateBucket(r) === v) }))]} />
                                 </span>
-                                {/* ▾ เรียงตามคะแนน PFM = CPM กับ CPE เทียบเกณฑ์ (CPM ÷ GOOD_CPM กับ CPE ÷ GOOD_CPE เฉลี่ยกัน) · ต่ำ = ดี · data/pfmSort.js */}
-                                <span title="ผลที่ระบบล็อกไว้ตอนค่ายิงแอดสะสมถึงเกณฑ์ของแบรนด์นั้น — แก้ไม่ได้ (ชี้ที่ป้ายในแถวเพื่อดูตัวเลขของแบรนด์) · ▾ เรียงตามคะแนน (CPM + CPE เทียบเกณฑ์)">STAMPED PFM 🔒
-                                    <ColumnFilter label="คะแนน PFM ที่ล็อก" value={pfmSort.key === 'stamp' ? pfmSort.dir : ''} onPick={pickPfmSort('stamp')}
-                                        options={pfmSortOptions('stamp')} />
+                                {/* ปุ่มเรียงตามคะแนน PFM = CPM กับ CPE เทียบเกณฑ์ (CPM ÷ GOOD_CPM กับ CPE ÷ GOOD_CPE เฉลี่ยกัน) · ต่ำ = ดี · data/pfmSort.js */}
+                                <span title="ผลที่ระบบล็อกไว้ตอนค่ายิงแอดสะสมถึงเกณฑ์ของแบรนด์นั้น — แก้ไม่ได้ (ชี้ที่ป้ายในแถวเพื่อดูตัวเลขของแบรนด์) · กดปุ่มลูกศรเพื่อเรียงตามคะแนน (CPM + CPE เทียบเกณฑ์)">STAMPED PFM 🔒
+                                    <PfmSortButton label="คะแนน PFM ที่ล็อก" dir={pfmSort.key === 'stamp' ? pfmSort.dir : ''} onChange={pickPfmSort('stamp')} />
                                 </span>
-                                <span title="คำนวณจากยอดที่แสดง — ตรวจแหล่งข้อมูลและเวลารับยอดก่อนใช้ตัดสินใจยิงแอด · ▾ เรียงตามคะแนน (CPM + CPE เทียบเกณฑ์)">PFM
-                                    <ColumnFilter label="คะแนน PFM ตอนนี้" value={pfmSort.key === 'live' ? pfmSort.dir : ''} onPick={pickPfmSort('live')}
-                                        options={pfmSortOptions('live')} />
+                                <span title="คำนวณจากยอดที่แสดง — ตรวจแหล่งข้อมูลและเวลารับยอดก่อนใช้ตัดสินใจยิงแอด · กดปุ่มลูกศรเพื่อเรียงตามคะแนน (CPM + CPE เทียบเกณฑ์)">PFM
+                                    <PfmSortButton label="คะแนน PFM ตอนนี้" dir={pfmSort.key === 'live' ? pfmSort.dir : ''} onChange={pickPfmSort('live')} />
                                 </span>
                                 <span>หมายเหตุ</span>
                             </div>

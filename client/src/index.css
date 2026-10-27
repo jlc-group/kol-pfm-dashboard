@@ -1302,6 +1302,16 @@ a { text-decoration: none; color: inherit; }
 .colf-btn:hover { border-color: var(--mint); color: var(--mint-dark); }
 .colf-btn:focus-visible { outline: 2px solid var(--mint); outline-offset: 1px; }
 .colf-btn.on { background: var(--mint); border-color: var(--mint); color: #fff; }
+/* ปุ่มเรียงคะแนน PFM หน้า Ads — กดแล้วเรียงเลย ↕ / ↑ / ↓ (27 ต.ค. 2026) · ขนาดเดียวกับปุ่ม ▾ */
+.pfm-sort-btn {
+    margin-inline-start: 4px; width: 17px; height: 17px; padding: 0; line-height: 1; vertical-align: middle;
+    border: 1px solid var(--border); border-radius: 5px; background: #fff;
+    color: var(--muted); font-size: 11px; font-weight: 800; cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center;
+}
+.pfm-sort-btn:hover { border-color: var(--mint); color: var(--mint-dark); }
+.pfm-sort-btn:focus-visible { outline: 2px solid var(--mint); outline-offset: 1px; }
+.pfm-sort-btn.on { background: var(--mint); border-color: var(--mint); color: #fff; }
 .colf-menu {
     position: fixed; z-index: 60; min-width: 190px; padding: 5px;
     background: #fff; border: 1px solid var(--border-str, var(--border)); border-radius: 10px;
