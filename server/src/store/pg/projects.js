@@ -28,6 +28,7 @@ const {
 } = require('./_snapshot');
 const { now, clone, inScope, scopeProjects, linkGroupPlatforms, hireRowFee, sameInstant, normCampaignType, updateLatest } = require('../logic');
 const { soloSummary, soloClipLive, soloClipEmpty, withSoloBudgets } = require('../soloKol');
+const { normalizeAssign } = require('../../data/reviewers');
 
 // KOL รายคน: ผลรวมค่าตัวต่อ Platform ของคลิปที่ไม่ถูกปฏิเสธ (งบของแต่ละบล็อกในกลุ่ม)
 const SOLO_SUMS_SQL = "SELECT platform, COALESCE(SUM(budget), 0) AS total FROM submissions WHERE project_id = $1 AND status <> 'rejected' GROUP BY platform";
@@ -522,6 +523,25 @@ const projects = {
             await c.query('UPDATE projects SET product_briefs = $1, updated_at = $2 WHERE id = $3',
                 [asJson(briefs, {}), now(), n]);
             return clone(briefs[code]);
+        });
+    },
+
+    // คนตรวจคลิปทั้งแคมเปญ / รายกลุ่ม (27 ต.ค. 2026 — projects.review_assign) · patch = { default?, groups?: { key: id|null } }
+    // ส่งมาเฉพาะส่วนที่เปลี่ยน (ไม่ส่ง = คงเดิม · null = ล้าง) · ไม่ขยับ updated_at (ไม่ใช่การแก้ตัวแคมเปญ ไม่ต้องเด้งป้ายอัปเดตใหม่)
+    async setReviewAssign(id, patch) {
+        const n = intId(id);
+        if (n === null) return null;
+        return await withTransaction(async (c) => {
+            const r = await c.query('SELECT review_assign FROM projects WHERE id = $1 FOR UPDATE', [n]);
+            if (!r.rows.length) return null;
+            const cur = normalizeAssign(r.rows[0].review_assign);
+            const next = { default: cur.default, groups: { ...cur.groups } };
+            if (patch && patch.default !== undefined) next.default = patch.default || null;
+            if (patch && patch.groups) {
+                Object.entries(patch.groups).forEach(([k, v]) => { if (v) next.groups[k] = v; else delete next.groups[k]; });
+            }
+            await c.query('UPDATE projects SET review_assign = $1 WHERE id = $2', [asJson(next, {}), n]);
+            return next;
         });
     },
 

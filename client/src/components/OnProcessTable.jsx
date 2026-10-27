@@ -13,6 +13,36 @@ import { knownProductCodes, matchProducts, productFilterOptions, pickProduct } f
 import { NO_GROUP, groupKeySet, matchGroup, normalizeGroupSel, groupFilterOptions } from '../data/groupFilter.js';
 import { draftIsNew, markDraftSeen } from '../utils/tabUpdates.js';
 import { platformOfUrl, KNOWN_LINK_PLATFORMS } from '../data/talentSocials.js';
+import { reviewerOf } from '../data/reviewers.js';
+
+// ===== คนตรวจคลิป (27 ต.ค. 2026 — หน้า "งานของฉัน") — ฝั่งทีมเท่านั้น (หน้าเอเจนซี่ไม่ส่ง prop review มา = ไม่มีส่วนนี้เลย) =====
+// review = { me, options: [{ id, name }], assign: { default, groups }, setDefault(id), setGroup(key, id), setClip(subIds, id) }
+// ตั้งได้ 3 ชั้น ชั้นล่างทับชั้นบน: ทั้งแคมเปญ → หัวกลุ่ม → รายคลิป (data/reviewers.js reviewerOf)
+const reviewerLabel = (id, options) => {
+    if (!id) return '';
+    const hit = (options || []).find(o => o.id === id);
+    return hit ? hit.name : `ผู้ใช้ #${id}`;
+};
+// ดรอปดาวน์เลือกคนตรวจ · ค่าว่าง = ตามชั้นบน (emptyLabel บอกว่าตามใคร) · คนที่ตั้งไว้แต่ไม่มีสิทธิ์แบรนด์นี้แล้ว ยังโชว์ไว้ให้เปลี่ยนออก
+// options = null → รายชื่อยังโหลดไม่เสร็จ / โหลดไม่ได้: ล็อกไว้ก่อน ไม่ขึ้นว่า "ไม่มีสิทธิ์แบรนด์นี้แล้ว" ผิด ๆ (ผลรีวิว 27 ต.ค.)
+function ReviewerSelect({ value, options, onChange, emptyLabel, label, title, className = '' }) {
+    if (!Array.isArray(options)) {
+        return (
+            <select className={'rev-select ' + className} aria-label={label} title="กำลังโหลดรายชื่อคนตรวจ" value="" disabled onChange={() => {}}>
+                <option value="">{value ? `ผู้ใช้ #${value}` : emptyLabel}</option>
+            </select>
+        );
+    }
+    const known = !value || options.some(o => o.id === value);
+    return (
+        <select className={'rev-select ' + className} aria-label={label} title={title || label} value={value || ''}
+            onChange={e => onChange(e.target.value ? Number(e.target.value) : null)}>
+            <option value="">{emptyLabel}</option>
+            {!known && <option value={value}>ผู้ใช้ #{value} (ไม่มีสิทธิ์แบรนด์นี้แล้ว)</option>}
+            {options.map(o => <option key={o.id} value={o.id}>{o.name}</option>)}
+        </select>
+    );
+}
 
 // ค่าที่เก็บเป็นสตริงคั่นด้วย , (เช่น content_format) → แยกเป็นรายตัว
 const splitCsv = v => (v ? String(v).split(',').map(x => x.trim()).filter(Boolean) : []);
@@ -30,7 +60,8 @@ const postCheckShown = s => s.post_check === 'pending' || s.post_check === 'retu
 const postCheckTeamTodo = s => s.post_check === 'pending' || s.post_check === 'changed';
 
 // onPostCheck(subId, action, note) = ฝั่งทีมเท่านั้น (ยืนยัน / ส่งกลับให้แก้) · ฝั่งเอเจนซี่ไม่ส่งมา = เห็นแค่สถานะ
-function ProcessRow({ sub, putSubmission, reload, showAds = false, group = null, scope = '', directEdit = false, seq = 1, onPostCheck, canRemark = false, canDecide = true }) {
+// rev = คนตรวจของคลิปนี้ (ฝั่งทีม) { id, from, inherit: { id, from }, options, onChange(id|null) } · null = หน้าเอเจนซี่ ไม่มีส่วนนี้
+function ProcessRow({ sub, putSubmission, reload, showAds = false, group = null, scope = '', directEdit = false, seq = 1, onPostCheck, canRemark = false, canDecide = true, rev = null }) {
     const [draftNew, setDraftNew] = useState(false);
     useEffect(() => { setDraftNew(draftIsNew(scope, sub)); }, [scope, sub.id, sub.draft_updated_at]);
     const openDraft = () => { markDraftSeen(scope, sub); setDraftNew(false); setShowDraft(true); };
@@ -184,13 +215,28 @@ function ProcessRow({ sub, putSubmission, reload, showAds = false, group = null,
 
     return (
         <div className="proc-row">
-            <div className="proc-name">
+            <div className={'proc-name' + (rev ? ' has-rev' : '')}>
                 <span className="proc-seq">{seq}</span>
                 <span className="proc-name-txt">
                     {sub.account_name}
                     {/* คนเดียวกันอาจมีหลายแถว = หลายคลิป บอกให้ชัดว่าแถวนี้คือคลิปไหน */}
                     {sub.clip_name && <span className="proc-clip-tag">🎬 {sub.clip_name}</span>}
                 </span>
+                {/* คนตรวจคลิปนี้ — ค่าว่าง = ตามกลุ่ม / แคมเปญ (บอกชื่อในตัวเลือกแรก) · เลือกคน = เฉพาะคลิปนี้ */}
+                {rev && (
+                    <span className={'proc-rev ' + (rev.from === 'clip' ? 'own' : rev.id ? 'inherit' : 'none')}>
+                        <span aria-hidden="true">👤</span>
+                        <ReviewerSelect value={rev.from === 'clip' ? rev.id : null} options={rev.options}
+                            label={`คนตรวจคลิปของ ${sub.account_name || 'KOL'}`}
+                            title={rev.id
+                                ? `คนตรวจ: ${reviewerLabel(rev.id, rev.options)} (${rev.from === 'clip' ? 'เฉพาะคลิปนี้' : rev.from === 'group' ? 'ตามกลุ่ม' : 'ตามแคมเปญ'}) — เปลี่ยนเฉพาะคลิปนี้ได้`
+                                : 'ยังไม่มีคนตรวจ — เลือกคนตรวจเฉพาะคลิปนี้ หรือตั้งที่หัวกลุ่ม / ทั้งแคมเปญ'}
+                            emptyLabel={rev.inherit.id
+                                ? `${reviewerLabel(rev.inherit.id, rev.options)} · ${rev.inherit.from === 'group' ? 'ตามกลุ่ม' : 'ตามแคมเปญ'}`
+                                : 'ยังไม่มีคนตรวจ'}
+                            onChange={rev.onChange} />
+                    </span>
+                )}
             </div>
             <div className="proc-cell">
                 <ProductSummary value={sub.product} max={2} />
@@ -225,6 +271,13 @@ function ProcessRow({ sub, putSubmission, reload, showAds = false, group = null,
                 {showDraftNew && <span className="draft-new-pill" title="มีดราฟอัปเดตใหม่">ดราฟใหม่</span>}
                 {sub.draft_status === 'approve' && <span className="draft-verdict approved" title="ทีมอนุมัติดราฟแล้ว">✓ Approved</span>}
                 {sub.draft_status === 'revise' && <span className="draft-verdict revise" title="ทีมขอให้แก้ไขดราฟ">↻ ขอแก้ไข</span>}
+                {/* ใครตัดสินดราฟล่าสุด · คนละคนกับคนตรวจของคลิป = "แทน" (ผู้ใช้เลือก 27 ต.ค.: ตรวจแทนได้ แต่ต้องเห็นว่าใครตรวจ) */}
+                {rev && (sub.draft_status === 'approve' || sub.draft_status === 'revise') && sub.draft_checked_by && (
+                    <span className="draft-by" title={sub.draft_checked_at ? `ตรวจเมื่อ ${new Date(sub.draft_checked_at).toLocaleString('th-TH')}` : undefined}>
+                        โดย {sub.draft_checked_by}
+                        {rev.id && sub.draft_checked_by_id && Number(sub.draft_checked_by_id) !== rev.id ? ` (แทน ${reviewerLabel(rev.id, rev.options)})` : ''}
+                    </span>
+                )}
                 <button type="button" className={'proc-perf-btn' + (hasPerf ? ' has' : '')} onClick={() => setShowPerf(true)} title="กรอก/ดูผลงานคอนเทนต์ (Views/Engagement)">
                     📊 {hasPerf ? `${Number(sub.views).toLocaleString()} วิว` : 'Perf'}
                 </button>
@@ -333,7 +386,11 @@ function ProcessRow({ sub, putSubmission, reload, showAds = false, group = null,
                     canDecide={canDecide}
                     sub={sub}
                     onClose={() => setShowDraft(false)}
-                    onSave={async (payload) => { const res = await putSubmission(sub.id, payload); if (res?.data) markDraftSeen(scope, res.data); setDraftNew(false); reload(); }}
+                    onSave={async (payload) => {
+                        const res = await putSubmission(sub.id, payload); if (res?.data) markDraftSeen(scope, res.data); setDraftNew(false); reload();
+                        // เลขแดงเมนู "งานของฉัน" นับใหม่ทันที (ตัดสินดราฟแล้วงานหายจากรอตรวจ)
+                        window.dispatchEvent(new Event('kol:my-work-changed'));
+                    }}
                 />
             )}
             {showPerf && (
@@ -364,12 +421,21 @@ const procHead = (showAds = false) => (
 // scope = { products, platforms } ที่ผู้ดูเห็น (หน้าเอเจนซี่) — Concept แยกต่อสินค้าโชว์เฉพาะของขอบเขตนี้
 // kolNeeds = จำนวน KOL แยกต่อสินค้า (productKolProgress) — [] = กลุ่มนี้ไม่ได้แยก ไม่มีแถวนี้
 // onPickProduct(code, add) / pickedProducts = กดรหัสสินค้าที่หัวกลุ่มเพื่อกรองตามสินค้า (ตัวกรอง "สินค้า:" ของแท็บนี้ · ผู้ใช้สั่ง 21 ต.ค. 2026)
-function GroupBar({ group, gi, count, scope, kolNeeds = [], onPickProduct, pickedProducts = [], pickableCodes = null }) {
+// rev = คนตรวจของกลุ่ม (ฝั่งทีม) { value, inheritName, options, onChange } · ไม่ส่ง = หน้าเอเจนซี่
+function GroupBar({ group, gi, count, scope, kolNeeds = [], onPickProduct, pickedProducts = [], pickableCodes = null, rev = null }) {
     const concept = conceptText(group, false, scope && scope.products, scope && scope.platforms);
     const multiPlat = kolNeeds.length > 1;
     return (
         <div className="grp-bar">
             <span className="grp-no">กลุ่มที่ {gi + 1}</span>
+            {rev && (
+                <span className={'grp-rev' + (rev.value ? ' set' : '')}>
+                    คนตรวจกลุ่มนี้
+                    <ReviewerSelect value={rev.value} options={rev.options} onChange={rev.onChange}
+                        label={`คนตรวจคลิปของกลุ่มที่ ${gi + 1}`}
+                        emptyLabel={rev.inheritName ? `${rev.inheritName} · ตามแคมเปญ` : 'ยังไม่มีคนตรวจ'} />
+                </span>
+            )}
             <div className="grp-chips">
                 <ProductSummary value={group.products || []} max={4} onPick={onPickProduct} picked={pickedProducts} pickable={pickableCodes} />
             </div>
@@ -403,7 +469,9 @@ function GroupBar({ group, gi, count, scope, kolNeeds = [], onPickProduct, picke
 // onPostCheck(subId, action, note, seenAt) = ฝั่งทีมยืนยัน/ส่งกลับข้อมูลโพสต์ (ฝั่งเอเจนซี่ไม่ส่ง = เห็นแค่สถานะ)
 // initialCheckOnly = เปิดมาพร้อมตัวกรอง "รอตรวจ" (ลิงก์จากหน้า Ads)
 // canRemark / canDecide ตัดสินจาก role ของบัญชี ไม่ใช่จากหน้าที่เปิด — ทีมที่เปิดลิงก์เอเจนซี่ยังตรวจดราฟได้ตามปกติ
-export default function OnProcessTable({ subs = [], groups = [], showAds = false, scope = '', putSubmission, reload, directEdit = false, stage = 'all', onClearStage, conceptScope, onPostCheck, initialCheckOnly = false, canRemark = false, canDecide = true }) {
+// review = คนตรวจคลิป (ฝั่งทีมเท่านั้น · 27 ต.ค. 2026) — ดูคำอธิบายที่ ReviewerSelect ด้านบน · ไม่ส่ง = ไม่มีส่วนคนตรวจเลย (หน้าเอเจนซี่)
+export default function OnProcessTable({ subs = [], groups = [], showAds = false, scope = '', putSubmission, reload, directEdit = false, stage = 'all', onClearStage, conceptScope, onPostCheck, initialCheckOnly = false, canRemark = false, canDecide = true, review = null }) {
+    const [revFilter, setRevFilter] = useState('all');     // ตัวกรองคนตรวจ: 'all' | 'me' | 'none' | id ของคน
     const [platFilter, setPlatFilter] = useState('all');   // ตัวกรองตามแพลตฟอร์ม
     const [ctypeFilter, setCtypeFilter] = useState('all'); // ตัวกรองย่อยตาม Content Type
     const [clipFilter, setClipFilter] = useState('all');   // ตัวกรองตามคลิป (กลุ่มที่ 1 คนส่งหลายคลิป)
@@ -431,6 +499,20 @@ export default function OnProcessTable({ subs = [], groups = [], showAds = false
     const groupOpts = groupFilterOptions(groups, confirmed);
     const curGroup = normalizeGroupSel(groupFilter, groupOpts);
     const gKeys = groupKeySet(groups);
+    // คนตรวจของแต่ละคลิป (ฝั่งทีม) · กรองตามคนตรวจ: ของฉัน / รายคน / ยังไม่มีคนตรวจ
+    const revOf = s => (review ? reviewerOf(s, review.assign, gKeys) : { id: null, from: null });
+    const revIds = review ? confirmed.map(s => revOf(s).id) : [];
+    // คนที่เลือกกรองไว้ไม่มีคลิปแล้ว (เพิ่งเปลี่ยนคนตรวจ) = ดูทั้งหมด ไม่ให้ตารางว่างค้างโดยไม่มีปุ่มกดคืน
+    const curRev = typeof revFilter === 'number' && !revIds.includes(revFilter) ? 'all' : revFilter;
+    // ล้างค่าที่จำไว้ด้วย ไม่งั้นคนนั้นได้คลิปกลับมาเมื่อไหร่ ตัวกรองจะกลับมาเองโดยไม่ได้กด (ผลรีวิว 27 ต.ค. · ตั้ง state ระหว่าง render ได้เมื่อมีเงื่อนไขกันวน)
+    if (curRev !== revFilter) setRevFilter(curRev);
+    const revMatch = s => {
+        if (!review || curRev === 'all') return true;
+        const id = revOf(s).id;
+        if (curRev === 'none') return !id;
+        if (curRev === 'me') return !!id && id === review.me;
+        return id === curRev;
+    };
     // ทุกตัวกรองยกเว้นสินค้า — ใช้ทั้งตารางและตัดสินว่ารหัสไหนที่หัวกลุ่มกดกรองได้
     const preProduct = confirmed
         .filter(s => platFilter === 'all' || (s.platform || '') === platFilter)
@@ -438,6 +520,7 @@ export default function OnProcessTable({ subs = [], groups = [], showAds = false
         .filter(s => clipFilter === 'all' || (s.clip_name || '') === clipFilter)
         .filter(s => matchGroup(s, curGroup, gKeys))
         .filter(s => !checkOnly || postCheckShown(s))
+        .filter(revMatch)
         .filter(s => stage === 'all' || workStage(s) === stage);   // ตัวกรองจากการ์ดสรุปด้านบน
     const view = preProduct.filter(s => matchProducts(s, prodFilter, knownCodes));
     // รหัสที่หัวกลุ่มกดกรองได้ = มีคลิปในตารางตอนนี้ (รีวิว 21 ต.ค. 2026) — กดรหัสที่ไม่มีคลิป ตารางว่างทั้งหมด หัวกลุ่มหาย กดซ้ำเอาออกไม่ได้
@@ -447,9 +530,53 @@ export default function OnProcessTable({ subs = [], groups = [], showAds = false
     const groupMap = {};
     groups.forEach(g => { groupMap[g.key] = g; });
     const tblCls = 'proc-tbl' + (showAds ? ' with-ads' : '');
+    // คนตรวจของแถว: ตัวเลือกแรกของดรอปดาวน์ = คนที่จะได้ถ้าไม่ตั้งเฉพาะคลิป (ตามกลุ่ม / แคมเปญ)
+    const revFor = s => {
+        if (!review) return null;
+        const cur = revOf(s);
+        return {
+            ...cur, options: review.options,
+            inherit: reviewerOf({ ...s, reviewer_id: null }, review.assign, gKeys),
+            onChange: id => review.setClip([s.id], id)
+        };
+    };
     const rowsFor = list => list.map((s, i) => (
-        <ProcessRow key={s.id} sub={s} seq={i + 1} putSubmission={putSubmission} reload={reload} showAds={showAds} scope={scope} group={groupMap[s.group_key] || null} directEdit={directEdit} onPostCheck={onPostCheck} canRemark={canRemark} canDecide={canDecide} />
+        <ProcessRow key={s.id} sub={s} seq={i + 1} putSubmission={putSubmission} reload={reload} showAds={showAds} scope={scope} group={groupMap[s.group_key] || null} directEdit={directEdit} onPostCheck={onPostCheck} canRemark={canRemark} canDecide={canDecide} rev={revFor(s)} />
     ));
+    const assign = review ? (review.assign || {}) : {};
+    const defaultName = review ? reviewerLabel(Number(assign.default) || null, review.options) : '';
+    const groupRev = g => (review ? {
+        value: Number((assign.groups || {})[g.key]) || null, inheritName: defaultName, options: review.options,
+        onChange: id => review.setGroup(g.key, id)
+    } : null);
+
+    // แถบคนตรวจ (ฝั่งทีม): คนตรวจทั้งแคมเปญ + ตัวกรอง ของฉัน / รายคน / ยังไม่มีคนตรวจ — นับจากทุกคลิปที่คัดเลือก
+    let revBar = null;
+    if (review) {
+        const ids = revIds;
+        const people = [...new Set(ids.filter(Boolean))]
+            .map(id => ({ id, name: reviewerLabel(id, review.options), n: ids.filter(x => x === id).length }))
+            .sort((a, b) => a.name.localeCompare(b.name, 'th'));
+        const mine = review.me ? ids.filter(x => x === review.me).length : 0;
+        const none = ids.filter(x => !x).length;
+        const chip = (key, text, extra = '') => (
+            <button type="button" key={String(key)} className={'proc-plat-chip' + extra + (curRev === key ? ' on' : '')} onClick={() => setRevFilter(key)}>{text}</button>
+        );
+        revBar = (
+            <div className="proc-platfilter proc-revbar">
+                <span className="proc-platfilter-lbl">คนตรวจ:</span>
+                {chip('all', `ทั้งหมด (${confirmed.length})`)}
+                {chip('me', `👤 ของฉัน (${mine})`)}
+                {people.filter(p => p.id !== review.me).map(p => chip(p.id, `${p.name} (${p.n})`))}
+                {(none > 0 || curRev === 'none') && chip('none', `ยังไม่มีคนตรวจ (${none})`, ' rev-none-chip')}
+                <span className="proc-rev-default">
+                    คนตรวจทั้งแคมเปญ
+                    <ReviewerSelect value={Number(assign.default) || null} options={review.options} onChange={review.setDefault}
+                        label="คนตรวจคลิปทั้งแคมเปญ" emptyLabel="— ยังไม่ตั้ง —" />
+                </span>
+            </div>
+        );
+    }
 
     // บอกให้ชัดว่าตารางถูกกรองอยู่ ไม่งั้นงงว่าทำไมรายชื่อหายไป
     const stageLabel = (STAGES.find(x => x.key === stage) || {}).label;
@@ -556,6 +683,7 @@ export default function OnProcessTable({ subs = [], groups = [], showAds = false
         return (
             <div>
                 {stageBar}
+                {revBar}
                 {groupBar}
                 {filterBar}
                 {clipBar}
@@ -567,7 +695,8 @@ export default function OnProcessTable({ subs = [], groups = [], showAds = false
                             return (
                                 <div className="proc-group" key={g.key || gi}>
                                     <GroupBar group={g} gi={gi} count={gs.length} scope={conceptScope ? conceptScope(g) : null} kolNeeds={kolNeedsOf(g)}
-                                        pickedProducts={prodFilter} pickableCodes={pickableCodes} onPickProduct={(code, add) => setProdFilter(v => pickProduct(v, code, add))} />
+                                        pickedProducts={prodFilter} pickableCodes={pickableCodes} onPickProduct={(code, add) => setProdFilter(v => pickProduct(v, code, add))}
+                                        rev={groupRev(g)} />
                                     {procHead(showAds)}{rowsFor(gs)}
                                 </div>
                             );
@@ -589,6 +718,7 @@ export default function OnProcessTable({ subs = [], groups = [], showAds = false
     return (
         <div>
             {stageBar}
+            {revBar}
             {groupBar}
             {filterBar}
             {clipBar}

@@ -14,7 +14,8 @@ const ACTION_META = {
     update_kol: { icon: 'edit', cls: 'act-update', label: 'แก้ผลงาน' },
     remove_kol: { icon: 'trash', cls: 'act-delete', label: 'เอา KOL ออก' },
     brief: { icon: 'file', cls: 'act-update', label: 'บรีฟ' },
-    fee: { icon: 'coins', cls: 'act-update', label: 'ค่าตัว' }
+    fee: { icon: 'coins', cls: 'act-update', label: 'ค่าตัว' },
+    assign_reviewer: { icon: 'clipboard', cls: 'act-update', label: 'คนตรวจคลิป' }
 };
 
 function fmtTime(iso) {

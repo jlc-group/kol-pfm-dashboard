@@ -32,6 +32,7 @@ import { feeTargets } from '../data/feeSplit.js';
 import { tabBadges, markSeen, seedDraftsSeen } from '../utils/tabUpdates.js';
 import { fmtRange } from '../utils/date.js';
 import { useAuth } from '../auth/AuthContext.jsx';
+import { useReview } from '../data/useReview.js';
 
 // ค่าที่เก็บเป็นสตริงคั่นด้วย , (เช่น content_format) → แยกเป็นรายตัว
 const splitCsv = v => (v ? String(v).split(',').map(x => x.trim()).filter(Boolean) : []);
@@ -418,6 +419,8 @@ export default function ProjectDetail() {
     // ลิงก์จากหน้า Ads (?tab=process&check=1) เปิดแท็บ On Process พร้อมตัวกรอง "รอตรวจ"
     const [subTab, setSubTab] = useState(() => (new URLSearchParams(window.location.search).get('tab') === 'process' ? 'process' : 'list'));
     const [openCheckOnly] = useState(() => new URLSearchParams(window.location.search).get('check') === '1');
+    // คนตรวจคลิป (27 ต.ค. 2026) — แคมเปญ KOL ปกติ · KOL รายคนใช้ของตัวเองใน SoloKolDetail (รายชื่อคลิปอยู่คนละที่) · งานจ้างอื่นไม่มี
+    const review = useReview(project && !isOther && !isSolo ? project : null, load);
     // กรองรายชื่อตาม Platform — โชว์เมื่อแคมเปญมีมากกว่า 1 Platform
     const [listPlat, setListPlat] = useState('all');
     // กรองย่อยตาม Content Type ในแพลตฟอร์มนั้น (เช่น Facebook มี Awareness / Engagement)
@@ -1503,7 +1506,7 @@ export default function ProjectDetail() {
                         <StageCards subs={submissions} value={stage} onChange={setStage} />
                         <div className="panel">
                             <OnProcessTable subs={submissions} groups={project.ad_groups || []} showAds scope={id}
-                                putSubmission={putSubmission} reload={loadSubs}
+                                putSubmission={putSubmission} reload={loadSubs} review={review}
                                 initialCheckOnly={openCheckOnly}
                                 onPostCheck={async (subId, action, note, seenAt) => {
                                     // โหลดใหม่เสมอ — ถ้าได้ 409 (เอเจนซี่แก้แทรก) ทีมจะเห็นค่าล่าสุดก่อนตรวจอีกรอบ

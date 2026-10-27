@@ -929,6 +929,48 @@ a { text-decoration: none; color: inherit; }
 .proc-stat-card.approved { border-left-color: var(--mint); } .proc-stat-card.approved .proc-stat-num { color: var(--mint-dark); }
 .proc-stat-card.posted { border-left-color: #8b5cf6; } .proc-stat-card.posted .proc-stat-num { color: #7c3aed; }
 @media (max-width: 720px) { .proc-stat-grid { grid-template-columns: repeat(2, 1fr); } }
+/* ===== คนตรวจคลิป + หน้า "งานของฉัน" (27 ต.ค. 2026) ===== */
+.proc-stat-card.revise { border-left-color: #f59e0b; } .proc-stat-card.revise .proc-stat-num { color: #d97706; }
+.rev-select { max-width: 100%; padding: 3px 6px; border: 1px solid var(--border); border-radius: 8px; background: #fff; color: var(--text); font-size: 11.5px; font-weight: 600; cursor: pointer; }
+/* ขึ้นบรรทัดใหม่เฉพาะแถวที่มีดรอปดาวน์คนตรวจ (ฝั่งทีม) · ชื่อยาวหดแล้วตัด ... เหมือนเดิม ไม่ตกลงไปใต้เลขลำดับ (ผลรีวิว) */
+.proc-name.has-rev { flex-wrap: wrap; row-gap: 4px; }
+.proc-name.has-rev .proc-name-txt { flex: 1 1 0; min-width: 0; }
+.proc-name .proc-rev { flex-basis: 100%; min-width: 0; display: flex; align-items: center; gap: 3px; overflow: visible; font-size: 11px; font-weight: 600; }
+.proc-name .proc-rev .rev-select { flex: 1 1 auto; min-width: 0; width: 100%; padding: 3px 4px; font-size: 11px; text-overflow: ellipsis; }
+.proc-rev.own .rev-select { border-color: #93c5fd; background: #eff6ff; color: #1d4ed8; }
+.proc-rev.inherit .rev-select { color: var(--muted); }
+.proc-rev.none .rev-select { border-color: #fcd34d; background: #fffbeb; color: #b45309; }
+.grp-rev { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 700; color: var(--mint-dark); }
+.grp-rev .rev-select { max-width: 170px; }
+.grp-rev.set .rev-select { border-color: var(--mint); }
+.proc-revbar .proc-rev-default { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 700; color: var(--muted); }
+.proc-revbar .proc-rev-default .rev-select { max-width: 180px; }
+.proc-plat-chip.rev-none-chip { border-color: #fcd34d; color: #b45309; }
+.proc-plat-chip.rev-none-chip.on { background: #f59e0b; border-color: #f59e0b; color: #fff; }
+.draft-by { font-size: 10.5px; color: var(--muted); line-height: 1.35; white-space: normal; }
+.mywork-who label { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 700; color: var(--muted); }
+.mywork-who select, .mywork-filters select { padding: 7px 10px; border: 1px solid var(--border); border-radius: 10px; background: #fff; font-size: 13px; max-width: 100%; }
+.mywork-filters { display: flex; flex-wrap: wrap; gap: 8px; }
+.mywork-list { display: flex; flex-direction: column; }
+.mywork-row { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1.4fr) minmax(0, 1fr) auto; gap: 12px; align-items: center; padding: 12px 16px; border-top: 1px solid var(--border); }
+.mywork-row:first-child { border-top: none; }
+.mywork-main { min-width: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; }
+.mywork-camp { font-weight: 800; font-size: 13px; color: var(--text); overflow-wrap: anywhere; }
+.mywork-camp:hover { color: var(--mint-dark); }
+.mywork-brand { padding: 1px 8px; border-radius: 999px; background: var(--bg-soft); color: var(--mint-dark); font-size: 11px; font-weight: 700; white-space: nowrap; }
+.mywork-brand.solo { background: #eef2ff; color: #4338ca; }
+.mywork-kol { flex-basis: 100%; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: 12.5px; min-width: 0; overflow-wrap: anywhere; }
+.mywork-meta { display: flex; flex-wrap: wrap; gap: 4px 10px; font-size: 12px; color: var(--muted); min-width: 0; overflow-wrap: anywhere; }
+.mywork-status { font-size: 12px; min-width: 0; }
+.mywork-wait { display: inline-block; padding: 2px 9px; border-radius: 999px; background: var(--bg-soft); color: var(--muted); font-weight: 700; white-space: nowrap; }
+.mywork-wait.warn { background: #fef3c7; color: #b45309; }
+.mywork-wait.bad { background: #fde2e2; color: #c0271f; }
+.mywork-btn { padding: 7px 14px; font-size: 12.5px; white-space: nowrap; }
+@media (max-width: 720px) {
+    .mywork-row { grid-template-columns: minmax(0, 1fr) auto; }
+    .mywork-meta, .mywork-status { grid-column: 1 / 2; }
+    .mywork-btn { grid-column: 2; grid-row: 1 / span 3; align-self: center; }
+}
 
 /* การ์ดสินค้า & กลุ่มโฆษณา — มีป้ายกำกับชัดเจน + เรียงหลายคอลัมน์ (รองรับ 8-9 กลุ่มไม่เปลืองพื้นที่) */
 .adg-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(400px, 1fr)); gap: 10px; }

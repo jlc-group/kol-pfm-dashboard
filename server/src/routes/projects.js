@@ -1484,6 +1484,85 @@ router.post('/:id/submissions', async (req, res, next) => {
 });
 
 // GET /api/projects/:id/submissions — รายชื่อที่ Agency ส่งเข้ามา (ฝั่งทีม)
+// ---------- คนตรวจคลิป (27 ต.ค. 2026 — หน้า "งานของฉัน" · server/src/data/reviewers.js) ----------
+// เลือกได้เฉพาะคนในทีม (ใช้งานอยู่ ไม่ใช่เอเจนซี่) ที่เห็นแบรนด์ของแคมเปญนี้ · ตั้ง 3 ชั้น: ทั้งแคมเปญ → รายกลุ่ม → รายคลิป
+async function reviewerPool(brand) {
+    const all = await store.users.listWithTeam();
+    return all
+        .filter(u => u.is_active !== false && (u.status || 'active') === 'active' && u.role !== 'agency' && canSeeBrand(u, brand))
+        .map(u => ({ id: u.id, name: u.nickname || u.full_name || u.username }))
+        .sort((a, b) => a.name.localeCompare(b.name, 'th'));
+}
+// ค่าที่ส่งมา → id ของคนในกลุ่มที่เลือกได้ · null / '' = ล้าง · ค่าอื่น = undefined (ไม่ถูกต้อง)
+const pickReviewer = (v, pool) => {
+    if (v === null || v === '' || v === undefined) return null;
+    const hit = pool.find(u => String(u.id) === String(v));
+    return hit ? hit.id : undefined;
+};
+const reviewerName = (id, pool) => (id ? (pool.find(u => u.id === id) || {}).name || `#${id}` : 'ยังไม่มีคนตรวจ');
+
+// GET /api/projects/:id/reviewer-options — รายชื่อคนที่เลือกเป็นคนตรวจของแคมเปญนี้ได้
+router.get('/:id/reviewer-options', async (req, res, next) => {
+    try {
+        const check = await canEditProject(req, req.params.id);
+        if (!check.ok) return res.status(check.code).json({ status: 'error', message: check.message });
+        res.json({ status: 'success', data: await reviewerPool(check.project.brand) });
+    } catch (err) { next(err); }
+});
+
+// PUT /api/projects/:id/review-assign { default?, groups?: { <group_key>: id | null } } — คนตรวจทั้งแคมเปญ / รายกลุ่ม
+router.put('/:id/review-assign', async (req, res, next) => {
+    try {
+        const check = await canEditProject(req, req.params.id);
+        if (!check.ok) return res.status(check.code).json({ status: 'error', message: check.message });
+        const pool = await reviewerPool(check.project.brand);
+        const patch = {};
+        const notes = [];
+        if (req.body.default !== undefined) {
+            const id = pickReviewer(req.body.default, pool);
+            if (id === undefined) return res.status(400).json({ status: 'error', message: 'เลือกคนตรวจไม่ได้ — ต้องเป็นคนในทีมที่เห็นแบรนด์นี้' });
+            patch.default = id;
+            notes.push(`ทั้งแคมเปญ = ${reviewerName(id, pool)}`);
+        }
+        if (req.body.groups !== undefined) {
+            if (!req.body.groups || typeof req.body.groups !== 'object' || Array.isArray(req.body.groups)) {
+                return res.status(400).json({ status: 'error', message: 'ข้อมูลกลุ่มไม่ถูกต้อง' });
+            }
+            const groups = check.project.ad_groups || [];
+            patch.groups = {};
+            for (const [key, v] of Object.entries(req.body.groups)) {
+                const gi = groups.findIndex(g => g && g.key === key);
+                if (gi < 0) return res.status(400).json({ status: 'error', message: 'ไม่พบกลุ่มนี้ในแคมเปญ — รีเฟรชหน้าแล้วลองใหม่' });
+                const id = pickReviewer(v, pool);
+                if (id === undefined) return res.status(400).json({ status: 'error', message: 'เลือกคนตรวจไม่ได้ — ต้องเป็นคนในทีมที่เห็นแบรนด์นี้' });
+                patch.groups[key] = id;
+                notes.push(`กลุ่มที่ ${gi + 1} = ${id ? reviewerName(id, pool) : 'ตามแคมเปญ'}`);
+            }
+        }
+        if (!notes.length) return res.status(400).json({ status: 'error', message: 'ไม่มีค่าที่จะบันทึก' });
+        const data = await store.projects.setReviewAssign(req.params.id, patch);
+        if (!data) return res.status(404).json({ status: 'error', message: 'ไม่พบ Project' });
+        await record(req, req.params.id, 'assign_reviewer', `ตั้งคนตรวจคลิป: ${notes.join(' · ')}`, check.project.name, check.project.team_id);
+        res.json({ status: 'success', data });
+    } catch (err) { next(err); }
+});
+
+// PUT /api/projects/:id/clip-reviewer { sub_ids: [...], reviewer_id: id | null } — คนตรวจเฉพาะคลิป (null = กลับไปตามกลุ่ม / แคมเปญ)
+router.put('/:id/clip-reviewer', async (req, res, next) => {
+    try {
+        const check = await canEditProject(req, req.params.id);
+        if (!check.ok) return res.status(check.code).json({ status: 'error', message: check.message });
+        const pool = await reviewerPool(check.project.brand);
+        const id = pickReviewer(req.body.reviewer_id, pool);
+        if (id === undefined) return res.status(400).json({ status: 'error', message: 'เลือกคนตรวจไม่ได้ — ต้องเป็นคนในทีมที่เห็นแบรนด์นี้' });
+        const rows = await store.submissions.setReviewer(req.params.id, req.body.sub_ids, id);
+        const names = [...new Set(rows.map(r => r.account_name).filter(Boolean))].join(', ');
+        await record(req, req.params.id, 'assign_reviewer',
+            `ตั้งคนตรวจคลิป: ${names || rows.length + ' คลิป'} = ${id ? reviewerName(id, pool) : 'ตามกลุ่ม / แคมเปญ'}`, check.project.name, check.project.team_id);
+        res.json({ status: 'success', data: rows.map(r => ({ id: r.id, reviewer_id: r.reviewer_id })) });
+    } catch (err) { next(err); }
+});
+
 router.get('/:id/submissions', async (req, res, next) => {
     try {
         const check = await canEditProject(req, req.params.id);
@@ -1526,7 +1605,7 @@ router.put('/:id/submissions/:subId', async (req, res, next) => {
             views: views !== undefined ? Number(views) : undefined, likes: likes !== undefined ? Number(likes) : undefined, comments: comments !== undefined ? Number(comments) : undefined, saves: saves !== undefined ? Number(saves) : undefined, shares: shares !== undefined ? Number(shares) : undefined,
             reposts: reposts !== undefined ? Number(reposts) : undefined,
             perf_from: req.body.perf_from, perf_mode: req.body.perf_mode, perf_evidence_from: req.body.perf_evidence_from
-        }, byName, { actor: 'team', adUnlock: req.body.ad_unlock === true });   // ทีมแก้ข้อมูลโพสต์เอง = นับว่าตรวจแล้ว
+        }, byName, { actor: 'team', actorId: req.user.id, adUnlock: req.body.ad_unlock === true });   // ทีมแก้ข้อมูลโพสต์เอง = นับว่าตรวจแล้ว · actorId = ใครตัดสินดราฟ
         if (!data) return res.status(404).json({ status: 'error', message: 'ไม่พบรายการ' });
         // แก้ลิงก์ / Gencode / ID Post ของคลิปที่ยิงแอดแล้ว (ปลดล็อก + ยืนยันคำเตือน · 22 ต.ค. 2026) — ลงประวัติของแคมเปญไว้ย้อนดู
         if (req.body.ad_unlock === true && data.ad_status === 'ยิงแล้ว' && [post_url, gencode, id_post].some(v => v !== undefined)) {

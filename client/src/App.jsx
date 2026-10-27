@@ -12,7 +12,7 @@ import Register from './pages/Register.jsx';
 // (หน้าล็อกอิน/สมัครโหลดมาพร้อมกันเลย เพราะเป็นหน้าแรกที่คนส่วนใหญ่เจอ)
 import {
     AgencyPortal, Dashboard, Kols, OtherWork, InfluencerDetail, Projects, ProjectDetail,
-    Budget, Report, Ads, Activity, Users, Teams, Payments, Catalog
+    Budget, Report, Ads, Activity, Users, Teams, Payments, Catalog, MyWork
 } from './pages/lazyPages.js';
 
 // จำกัดเฉพาะ admin — ถ้าไม่ใช่ เด้งกลับหน้าแรก
@@ -45,6 +45,7 @@ export default function App() {
                         }
                     >
                         <Route index element={<Dashboard />} />
+                        <Route path="my-work" element={<MyWork />} />
                         <Route path="kols" element={<Kols />} />
                         <Route path="hires" element={<OtherWork />} />
                         {/* เมนู "งานจัดหา" เดิม — หน้า Talent เหลือแค่ Talent Book แล้ว (1 ต.ค. 2026) ลิงก์/บุ๊กมาร์กเก่าพาไปหน้านั้น */}

@@ -17,6 +17,7 @@ import {
 import { fmtDate } from '../utils/date.js';
 import SoloKolForm from '../components/SoloKolForm.jsx';
 import { useAuth } from '../auth/AuthContext.jsx';
+import { useReview } from '../data/useReview.js';
 
 // หน้าของ KOL รายคน 1 การจ้าง (campaign_type 'solo' · ผู้ใช้สั่ง 30 ก.ย. 2026) — ProjectDetail แตกทางมาที่นี่ (URL /projects/:id เดิม)
 // ติดตามงานใช้ตาราง On Process ตัวเดียวกับแคมเปญ (ดราฟ / ลงงาน / Gencode / ID Post / ยอดวิว / ยิงแอด)
@@ -37,6 +38,8 @@ export default function SoloKolDetail({ project, reload }) {
     const [showEdit, setShowEdit] = useState(false);
     // ฟอร์มแก้ไขอ่านชื่อคลิป / สถานะล็อกจากรายการคลิปตอนเปิด — เปิดก่อนโหลดเสร็จ ชื่อคลิปจะกลายเป็น "คลิป 1, 2, ..." ตอนบันทึก
     const [subsState, setSubsState] = useState('loading');   // loading | ok | error
+    // คนตรวจคลิป (27 ต.ค. 2026) — ตั้งทั้งแคมเปญ / รายคลิป ในตารางติดตามงาน · เปลี่ยนแล้วโหลดทั้งคลิปและแคมเปญใหม่
+    const review = useReview(project, () => { loadSubs(); reload(); });
     const g = (project.ad_groups || [])[0] || null;
     const sum = project.solo_summary || {};
     const accounts = soloAccountsOf(project);
@@ -240,7 +243,7 @@ export default function SoloKolDetail({ project, reload }) {
             <h2 className="solo-work-title">ติดตามงาน</h2>
             <StageCards subs={subs} value={stage} onChange={setStage} />
             <div className="panel">
-                <OnProcessTable subs={subs} groups={project.ad_groups || []} showAds scope={id}
+                <OnProcessTable subs={subs} groups={project.ad_groups || []} showAds scope={id} review={review}
                     putSubmission={putSubmission} reload={() => { loadSubs(); reload(); }}
                     initialCheckOnly={openCheckOnly}
                     onPostCheck={async (subId, action, note, seenAt) => {

@@ -255,6 +255,18 @@ async function updateOne(client, subId, projectId, fields, byName, opts = {}) {
         patch[f + '_by'] = s[f + '_by'];
     });
 
+    // ใครตัดสินดราฟล่าสุด (27 ต.ค. 2026 — ป้าย "ตรวจโดย / แทน" ในตาราง On Process และหน้า "งานของฉัน")
+    // ลงเฉพาะตอนทีมเปลี่ยนผลเป็น Approve / ขอแก้ไข (กดบันทึกผลเดิมซ้ำไม่นับ) · ฐานที่ยังไม่มีคอลัมน์ (ยังไม่ setup-db) = ข้าม
+    if (opts && opts.actor === 'team' && 'draft_checked_at' in prevRow
+        && ['approve', 'revise'].includes(s.draft_status) && !same(prevRow.draft_status, s.draft_status)) {
+        s.draft_checked_by_id = Number.isSafeInteger(Number(opts.actorId)) && Number(opts.actorId) > 0 ? Number(opts.actorId) : null;
+        s.draft_checked_by = byName || null;
+        s.draft_checked_at = now();
+        patch.draft_checked_by_id = s.draft_checked_by_id;
+        patch.draft_checked_by = s.draft_checked_by;
+        patch.draft_checked_at = s.draft_checked_at;
+    }
+
     // ตัวตนโพสต์ IG / FB ที่ใช้ถาม WeBoostX เปลี่ยน (แก้ลิงก์ / ID Post / Gencode / Platform) — คะแนน KOL PFM / เกรด / รูปปก
     // เป็นของโพสต์เดิม ต้องไม่ค้างโชว์กับโพสต์ใหม่ (19 ต.ค. 2026) → ล้างทิ้ง รอบซิงก์ถัดไปเติมของโพสต์ใหม่ให้ (ถ้า WeBoostX รู้จัก)
     // path เดิมกลับมา = ไฟล์เดิมในเครื่องถูกใช้ซ้ำ ไม่ต้องโหลดใหม่ · ฐานที่ยังไม่มีคอลัมน์ (ยังไม่ setup-db) = ข้าม
@@ -385,7 +397,7 @@ const submissions = {
     // อัปเดตได้ทั้งสถานะคัดเลือก + ข้อมูลดราฟงาน
     async update(subId, projectId, fields, byName, opts = {}) {
         // ส่งต่อเฉพาะ actor / adUnlock — allowFee เปิดได้ทางเดียวคือ setFees
-        return withTransaction(client => updateOne(client, subId, projectId, fields, byName, { actor: opts.actor, performanceSource: opts.performanceSource, adUnlock: opts.adUnlock === true,
+        return withTransaction(client => updateOne(client, subId, projectId, fields, byName, { actor: opts.actor, actorId: opts.actorId, performanceSource: opts.performanceSource, adUnlock: opts.adUnlock === true,
             fillEmpty: Array.isArray(opts.fillEmpty) ? opts.fillEmpty : undefined }));
     },
     // ทีมตัดสินผลตรวจข้อมูลโพสต์ — action 'ok' ยืนยัน (ขึ้นหน้า Ads) | 'return' ส่งกลับให้เอเจนซี่แก้ (note = เหตุผล)
@@ -493,6 +505,40 @@ const submissions = {
             'DELETE FROM submissions WHERE agency_token = $1 AND project_id = $2', [token ?? null, pid]);
         return r.rowCount;
     },
+    // คนตรวจเฉพาะคลิป (27 ต.ค. 2026 — submissions.reviewer_id) · reviewerId null = กลับไปตามกลุ่ม / แคมเปญ
+    // เขียนคอลัมน์เดียว ไม่ขยับ *_updated_at (ไม่ใช่งานของเอเจนซี่ ไม่ต้องเด้งป้ายอัปเดตใหม่) · ทุกแถวต้องอยู่ในแคมเปญนี้
+    async setReviewer(projectId, subIds, reviewerId) {
+        const fail = (status, message) => { const e = new Error(message); e.status = status; return e; };
+        const pid = numOr(projectId);
+        const ids = (Array.isArray(subIds) ? subIds : []).map(numOr);
+        if (pid === null || !ids.length || ids.some(id => !Number.isInteger(id) || id <= 0) || new Set(ids).size !== ids.length) {
+            throw fail(400, 'รายการคลิปไม่ถูกต้อง');
+        }
+        return withTransaction(async (client) => {
+            const r = await client.query('SELECT id FROM submissions WHERE project_id = $1 AND id = ANY($2::int[]) ORDER BY id FOR UPDATE', [pid, ids]);
+            if (r.rows.length !== ids.length) throw fail(400, 'มีคลิปที่ไม่ได้อยู่ในแคมเปญนี้ กรุณารีเฟรช');
+            const u = await client.query('UPDATE submissions SET reviewer_id = $1 WHERE project_id = $2 AND id = ANY($3::int[]) RETURNING *', [reviewerId || null, pid, ids]);
+            return u.rows;
+        });
+    },
+    // งานตรวจดราฟข้ามแคมเปญ (หน้า "งานของฉัน" + เลขแดงเมนูที่ถามทุกนาที) — คลิปที่คัดเลือกแล้วของแคมเปญ KOL / KOL รายคน ที่ไม่ได้ยกเลิก
+    // อ่านแคมเปญครั้งเดียวต่อแคมเปญ (เฉพาะรหัสกลุ่ม ไม่ลาก ad_groups ทั้งก้อน) + เฉพาะช่องของคลิปที่ใช้ — ไม่ใช่ s.* JOIN ที่ซ้ำข้อมูลแคมเปญทุกแถว
+    // คืน { projects: [{ id, name, brand, campaign_type, review_assign, group_keys }], rows } · ตัดสิทธิ์แบรนด์ / คนตรวจที่ routes/myWork.js
+    async reviewRows(columns) {
+        const p = await query(`SELECT p.id, p.name, p.brand, p.campaign_type, p.review_assign,
+                COALESCE((SELECT jsonb_agg(t.g->>'key' ORDER BY t.ord) FROM jsonb_array_elements(
+                    CASE WHEN jsonb_typeof(p.ad_groups) = 'array' THEN p.ad_groups ELSE '[]'::jsonb END) WITH ORDINALITY AS t(g, ord)), '[]'::jsonb) AS group_keys
+            FROM projects p
+            WHERE coalesce(p.campaign_type, 'kol') <> 'other' AND coalesce(p.status, '') <> 'Cancelled'`);
+        if (!p.rows.length) return { projects: [], rows: [] };
+        // ชื่อคอลัมน์มาจากรายการคงที่ในโค้ด (routes/myWork.js) — กันพิมพ์ผิด/แทรก SQL ด้วยการรับเฉพาะชื่อที่เป็นตัวอักษรล้วน
+        const cols = (columns || []).filter(c => /^[a-z_0-9]+$/.test(c));
+        const list = ['id', 'project_id', 'status', 'group_key', ...cols.filter(c => !['id', 'project_id', 'status', 'group_key'].includes(c))];
+        const r = await query(`SELECT ${list.map(c => `s."${c}"`).join(', ')} FROM submissions s
+            WHERE s.status = 'confirmed' AND s.project_id = ANY($1::int[]) ORDER BY s.id`, [p.rows.map(x => x.id)]);
+        return { projects: p.rows, rows: r.rows };
+    },
+
     // ลบทิ้งถาวร — ใช้ตอนเอารายชื่อออกจากแคมเปญ (ยกเลิก/ไม่เลือก แค่เปลี่ยนสถานะ แถวยังอยู่)
     async remove(subId, projectId) {
         const id = numOr(subId), pid = numOr(projectId);

@@ -161,6 +161,8 @@ app.use('/api/integrations/:brand', require('./routes/contentExport'));
 app.use('/api/ads', authenticate, blockPending, blockAgency, require('./routes/ads'));
 app.use('/api/rate-requests', authenticate, blockPending, blockAgency, require('./routes/rateRequests'));
 app.use('/api/hires', authenticate, blockPending, blockAgency, require('./routes/hires'));
+// หน้า "งานของฉัน" — คลิปที่ต้องตรวจดราฟของบัญชีตัวเอง (Admin ดูของทุกคนได้ · 27 ต.ค. 2026)
+app.use('/api/my-work', authenticate, blockPending, blockAgency, require('./routes/myWork'));
 // คลังสินค้า/Target ที่ Admin เพิ่มเอง (7 ต.ค. 2026) — ไม่มี blockAgency: หน้าเอเจนซี่ต้องอ่านชื่อสินค้าใหม่ได้ (แก้ได้แค่ admin ใน router)
 app.use('/api/catalog', authenticate, blockPending, require('./routes/catalog'));
 app.use('/api/agency', require('./routes/agency')); // สาธารณะ (Agency ใช้ลิงก์)

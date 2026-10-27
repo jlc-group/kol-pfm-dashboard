@@ -503,3 +503,13 @@ ALTER TABLE submissions ADD COLUMN IF NOT EXISTS weboostx_thumbnail_path TEXT;
 ALTER TABLE submissions ADD COLUMN IF NOT EXISTS thumbnail_local TEXT;
 ALTER TABLE submissions ADD COLUMN IF NOT EXISTS thumbnail_fetched_at TIMESTAMPTZ;
 ALTER TABLE submissions ADD COLUMN IF NOT EXISTS thumbnail_error TEXT;
+
+-- ===== คนตรวจคลิป + หน้า "งานของฉัน" (27 ต.ค. 2026) =====
+-- review_assign = { default: user_id, groups: { <group_key>: user_id } } — คนตรวจทั้งแคมเปญ / รายกลุ่ม (แยกจาก ad_groups ที่ฟอร์มแคมเปญเขียนทับ)
+-- reviewer_id = คนตรวจเฉพาะคลิปนี้ (ว่าง = ตามกลุ่ม / แคมเปญ) · draft_checked_* = ใครกด Approve / ขอแก้ไข ดราฟล่าสุด (ป้าย "ตรวจแทน")
+-- ข้อมูลภายในทีม — routes/agency.js ตัดออกก่อนส่งให้บัญชีเอเจนซี่
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS review_assign JSONB NOT NULL DEFAULT '{}'::jsonb;
+ALTER TABLE submissions ADD COLUMN IF NOT EXISTS reviewer_id INTEGER;
+ALTER TABLE submissions ADD COLUMN IF NOT EXISTS draft_checked_by_id INTEGER;
+ALTER TABLE submissions ADD COLUMN IF NOT EXISTS draft_checked_by VARCHAR(255);
+ALTER TABLE submissions ADD COLUMN IF NOT EXISTS draft_checked_at TIMESTAMPTZ;

@@ -12,6 +12,8 @@ import { preloadPages } from '../pages/lazyPages.js';
 // เมนูด้านซ้ายเป็นภาษาอังกฤษตามที่ทีมขอ (เนื้อหาในแต่ละหน้ายังเป็นภาษาไทย)
 const MAIN_NAV = [
     { to: '/', label: 'Overview', icon: 'dashboard', end: true },
+    // งานของฉัน (27 ต.ค. 2026) — คลิปที่ต้องตรวจดราฟของบัญชีตัวเอง · เลขแดง = รอฉันตรวจ
+    { to: '/my-work', label: 'My Work', icon: 'clipboard' },
     { to: '/projects', label: 'Campaigns', icon: 'folder' },
     { to: '/ads', label: 'Ads', icon: 'target' },
     { to: '/budget', label: 'Campaign Reports', icon: 'bars' },
@@ -81,6 +83,22 @@ export default function Layout() {
 
     // (เลขแดงใบขอให้หาบนเมนู Talent เอาออกแล้ว 1 ต.ค. 2026 — หน้า Talent เหลือแค่ Talent Book ไม่ต้องดึง /hires/tasks/count ทุกนาที)
 
+    // คลิปที่รอฉันตรวจดราฟ (เมนู My Work · 27 ต.ค. 2026) — ทุกบัญชีทีม · ตัดสินดราฟ / เปลี่ยนคนตรวจแล้วยิง event นี้ให้นับใหม่ทันที
+    const [myWorkCount, setMyWorkCount] = useState(0);
+    useEffect(() => {
+        if (!user || user.role === 'agency') return undefined;
+        let alive = true;
+        const load = () => {
+            if (document.visibilityState === 'hidden') return;
+            api('/my-work/count').then(r => { if (alive) setMyWorkCount(r.data?.review || 0); }).catch(() => {});
+        };
+        load();
+        const t = setInterval(load, 60000);
+        window.addEventListener('kol:my-work-changed', load);
+        document.addEventListener('visibilitychange', load);
+        return () => { alive = false; clearInterval(t); window.removeEventListener('kol:my-work-changed', load); document.removeEventListener('visibilitychange', load); };
+    }, [user]);
+
     useEffect(() => {
         setNavOpen(false);
     }, [location.pathname]);
@@ -96,7 +114,7 @@ export default function Layout() {
     }
 
     // เลขแดงของเมนู — ตอนพับต้องเอาไปต่อท้ายชื่อใน aria-label ด้วย (เห็นด้วยตา แต่โปรแกรมอ่านหน้าจอไม่เห็นถ้าไม่ใส่)
-    const navCount = to => (to === '/users' ? pendingCount : 0);
+    const navCount = to => (to === '/users' ? pendingCount : to === '/my-work' ? myWorkCount : 0);
 
     function renderItem(item) {
         return (
@@ -120,6 +138,9 @@ export default function Layout() {
                 <span className="nav-label">{item.label}</span>
                 {item.to === '/users' && pendingCount > 0 && (
                     <span className="nav-badge" title={`มี ${pendingCount} คนรออนุมัติ`}>{pendingCount}</span>
+                )}
+                {item.to === '/my-work' && myWorkCount > 0 && (
+                    <span className="nav-badge" title={`มีดราฟรอคุณตรวจ ${myWorkCount} คลิป`}>{myWorkCount}</span>
                 )}
             </NavLink>
         );

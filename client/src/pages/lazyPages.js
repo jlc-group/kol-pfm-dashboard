@@ -17,9 +17,10 @@ export const Users = lazyPage(() => import('./Users.jsx'));
 export const Teams = lazyPage(() => import('./Teams.jsx'));
 export const Payments = lazyPage(() => import('./Payments.jsx'));
 export const Catalog = lazyPage(() => import('./Catalog.jsx'));
+export const MyWork = lazyPage(() => import('./MyWork.jsx'));
 
 // หน้าในเมนูหลัก (หน้าเอเจนซี่ไม่ต้อง — ทีมไม่ได้เปิดจากเมนู)
-const MENU_PAGES = [Dashboard, Projects, ProjectDetail, Ads, Budget, Kols, OtherWork, InfluencerDetail, Report];
+const MENU_PAGES = [Dashboard, MyWork, Projects, ProjectDetail, Ads, Budget, Kols, OtherWork, InfluencerDetail, Report];
 const ADMIN_PAGES = [Payments, Activity, Users, Teams, Catalog];
 
 export function preloadPages(isAdmin) {

@@ -204,10 +204,18 @@ function withoutFee(row) {
 // ต้นทุนแอดใช้กติกาเดียวกับหน้าโฆษณา/KOL Analytics — เห็นเฉพาะ admin/manager (member และเอเจนซี่ไม่เห็น)
 // ต่างจากงบที่ทีมตั้งและค่าตัว KOL ซึ่งซ่อนเฉพาะบัญชีเอเจนซี่ (member ที่เปิดดูลิงก์ยังเห็น)
 const hidesAdCost = req => !canSeeCostMetrics(req.account || req.user);
+// คนตรวจคลิป / ใครตัดสินดราฟ (27 ต.ค. 2026) เป็นข้อมูลภายในทีม — บัญชีเอเจนซี่ไม่ได้รับ (ทีมที่เปิดลิงก์เดียวกันยังเห็น)
+const REVIEW_KEYS = ['reviewer_id', 'draft_checked_by_id', 'draft_checked_by', 'draft_checked_at'];
+function withoutReviewer(row) {
+    if (!row) return row;
+    const out = { ...row };
+    REVIEW_KEYS.forEach(k => { delete out[k]; });
+    return out;
+}
 // ทุกแถว submission ที่ส่งออกจากไฟล์นี้ต้องผ่านตัวนี้ (GET / POST / PUT / batch)
 const rowsFor = (req, rows) => rows.map(row => {
     const out = hidesAdCost(req) ? withoutAdCost(row) : row;
-    return hidesTeamMoney(req) ? withoutFee(out) : out;
+    return hidesTeamMoney(req) ? withoutReviewer(withoutFee(out)) : out;
 });
 
 // GET /api/agency/:token — ข้อมูลแคมเปญ + รายชื่อที่ส่งไปแล้ว (พร้อมสถานะคัดเลือก)
@@ -365,7 +373,7 @@ router.put('/:token/submissions/:subId', async (req, res, next) => {
             reposts: reposts !== undefined ? (Number(reposts) || 0) : undefined
             // ad_unlock = กดปลดล็อก + ยืนยันคำเตือน แก้ลิงก์ / Gencode / ID Post ของคลิปที่ยิงแอดแล้วได้ (22 ต.ค. 2026 · ทุกคนรวมเอเจนซี่)
             // เอเจนซี่แก้ = ป้าย "แก้หลังยิงแอด" พร้อมรายการเดิม→ใหม่ ให้ทีมตรวจ (store/logic.js nextPostCheck)
-        }, byName, { actor, adUnlock: req.body.ad_unlock === true });
+        }, byName, { actor, actorId: actor === 'team' ? req.user.id : undefined, adUnlock: req.body.ad_unlock === true });
         if (!data) return res.status(404).json({ status: 'error', message: 'ไม่พบรายการ' });
         res.json({ status: 'success', data: rowsFor(req, [data])[0] });
     } catch (err) { next(err); }
