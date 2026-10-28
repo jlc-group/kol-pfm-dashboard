@@ -7,7 +7,7 @@ import ProductMultiSelect from '../../components/ProductMultiSelect.jsx';
 import useLazyImage from '../../utils/useLazyImage.js';
 import { kindError, kindValue } from '../../data/hireKinds.js';
 import { BRANDS } from '../../data/brands.js';
-import { PRODUCT_CATALOG, productsByBrand, splitProductList } from '../../data/products.js';
+import { PRODUCT_CATALOG, pickableProducts, productsByBrand, splitProductList } from '../../data/products.js';
 import {
     SOCIAL_PLATFORMS, SOCIAL_OTHER, SOCIALS_MAX, SOCIAL_URL_MAX, avatarSource, canFetchAvatar, emptySocialRow, fillFromHandle, fillFromUrl,
     linkFromSocials, normalizeSocials, notProfilePlatform, onlyNoAvatarLinks, socialHandleMax, socialRowError, socialRowsOf, socialsForSave
@@ -172,8 +172,9 @@ export default function TalentForm({ talentId = null, onClose, onSaved }) {
             products: s.products.filter(c => !drop.has(c)) };
     });
     // ===== สินค้า: ตัวเลือก = คลังของแบรนด์ที่ติ๊ก · แบรนด์ที่ยังไม่มีคลัง → ช่องพิมพ์เอง =====
-    const productOptions = codesOfBrands(f.brands);
-    const noCatalog = f.brands.filter(b => !productsByBrand(b).length);
+    // ไม่เอาสินค้าที่ Admin ซ่อนไว้ (ยกเว้นที่เลือกไว้แล้ว) เหมือนช่องเลือกสินค้าอื่น — โหลด/เอาแบรนด์ออก ยังใช้ codesOfBrands (รวมที่ซ่อน) ให้รหัสเดิมไม่หลุด (ผลรีวิว 28 ต.ค.)
+    const productOptions = f.brands.flatMap(b => pickableProducts(b, f.products).map(p => p.code));
+    const noCatalog = f.brands.filter(b => !productsByBrand(b).some(p => !p.hidden));
     // ช่องพิมพ์เอง: ขึ้นแล้วอยู่ต่อจนปิดฟอร์ม (ลบข้อความจนว่างระหว่างพิมพ์ ช่องหายแล้วโฟกัสหลุด)
     const [textOn, setTextOn] = useState(false);
     const showText = textOn || noCatalog.length > 0 || f.products_text.trim() !== '';

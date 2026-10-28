@@ -62,7 +62,7 @@ export default function TalentDetail({ card, reloadKey = 0, onClose, onEdit, onC
     // สินค้า (2 ต.ค. 2026) — รหัสในคลังโชว์ "รหัส - ชื่อ" · ชื่อที่พิมพ์เองโชว์ตามที่พิมพ์ · หน่วยเรทเลิกโชว์แล้ว
     const products = [...new Set(((t ? t.products : talent && talent.products) || []).map(str).filter(Boolean))];
     // ช่วงเวลาที่จ้าง (2 ต.ค. 2026) — วัน/เดือน/ปี · มีด้านเดียวโชว์ "ตั้งแต่ ..." / "ถึง ..." (ตัวเดียวกับการ์ด)
-    const hirePeriod = hirePeriodText(t);
+    const hirePeriod = hirePeriodText(t || talent);   // ระหว่างโหลด / โหลดไม่ได้ ใช้ของการ์ดไปก่อน เหมือนเรทและสินค้า
     const brands = [...new Set([...(card.brands || []), ...((t && Array.isArray(t.brands) && t.brands) || [])].map(str).filter(Boolean))];
     const mode = str(card.contact_mode) || str(t && t.contact_mode);
     const contactName = str(card.contact_name) || str(t && t.contact_name);
