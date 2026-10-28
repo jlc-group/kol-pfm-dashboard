@@ -8,6 +8,7 @@ const { once } = require('node:events');
 
 // คนตรวจคลิป + หน้า "งานของฉัน" (27 ต.ค. 2026) — เส้น API บน server จริง + store จำลอง (ไม่ต่อฐาน)
 // ผู้ใช้สั่ง: งานของฉันเห็นเฉพาะเจ้าของบัญชี ยกเว้น Admin เห็นของทุกคน · ข้อมูลคนตรวจห้ามถึงบัญชีเอเจนซี่
+// 28 ต.ค. 2026: หน้า My Work + ตั้งเป็นคนตรวจได้ เฉพาะทีม Reviewer (Admin ยังเข้าหน้า My Work ได้ แต่ตั้งเป็นคนตรวจไม่ได้)
 process.env.NODE_ENV = 'test';
 process.env.JWT_SECRET = crypto.randomBytes(48).toString('hex');
 process.env.UPLOAD_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'kol-reviewer-test-'));
@@ -27,13 +28,15 @@ const jwt = require(require.resolve('jsonwebtoken', { paths: [SRC] }));
 const app = require(path.join(SRC, 'app'));
 
 const u = (id, username, nickname, role, brands, over = {}) => ({ id, username, full_name: username, nickname, role, status: 'active', is_active: true, team_id: 1, brands, agency_tokens: [], ...over });
+const REV = { team_name: 'Reviewer' };
 const ACCOUNTS = {
-    1: u(1, 'admin1', 'บอส', 'admin', []),
-    2: u(2, 'fon', 'ฝน', 'member', ['Jernis']),
-    3: u(3, 'praew', 'แพรว', 'member', ['Beauterry']),
-    4: u(4, 'mgr', 'แนน', 'manager', ['Jernis']),
-    5: u(5, 'ag', 'เอเจนซี่', 'agency', [], { agency_tokens: ['tok1'] }),
-    6: u(6, 'old', 'คนเก่า', 'member', ['Jernis'], { is_active: false })
+    1: u(1, 'admin1', 'บอส', 'admin', [], { team_name: 'Admin' }),
+    2: u(2, 'fon', 'ฝน', 'member', ['Jernis'], REV),
+    3: u(3, 'praew', 'แพรว', 'member', ['Beauterry'], REV),
+    4: u(4, 'mgr', 'แนน', 'manager', ['Jernis'], REV),
+    5: u(5, 'ag', 'เอเจนซี่', 'agency', [], { agency_tokens: ['tok1'], team_name: 'Reviewer' }),
+    6: u(6, 'old', 'คนเก่า', 'member', ['Jernis'], { is_active: false, team_name: 'Reviewer' }),
+    7: u(7, 'adsguy', 'เอ็ม', 'member', ['Jernis'], { team_id: 3, team_name: 'Ads' })
 };
 store.users.findById = async id => (ACCOUNTS[Number(id)] ? { ...ACCOUNTS[Number(id)] } : null);
 store.users.listWithTeam = async () => Object.values(ACCOUNTS).map(a => ({ ...a }));
@@ -82,7 +85,8 @@ const ROWS = [
     R(21, 6, { reviewer_id: 2 }),                              // แบรนด์อื่น (Beauterry) ตั้งให้ฝน — ฝนไม่มีสิทธิ์ = ไม่เห็น
     R(22, 404, { reviewer_id: 2 }),                            // แคมเปญที่ไม่อยู่ในรายการ (ยกเลิก / งานจ้างอื่น) = ไม่นับ
     R(23, 5, { group_key: 'g2', reviewer_id: 6 }),             // คนตรวจปิดบัญชีไปแล้ว = นับเป็นยังไม่มีคนตรวจ (ผลรีวิว)
-    R(24, 5, { group_key: 'g2', reviewer_id: 99 })             // คนตรวจถูกลบไปแล้ว = ยังไม่มีคนตรวจ
+    R(24, 5, { group_key: 'g2', reviewer_id: 99 }),            // คนตรวจถูกลบไปแล้ว = ยังไม่มีคนตรวจ
+    R(25, 5, { group_key: 'g2', reviewer_id: 7 })              // ตั้งให้ทีม Ads ไว้ก่อนจำกัดทีม (28 ต.ค.) = ยังไม่มีคนตรวจ (Admin ตามเก็บได้)
 ];
 const ASKED_COLS = [];
 store.submissions.reviewRows = async columns => { ASKED_COLS.push(columns); return { projects: structuredClone(RP), rows: ROWS.map(r => structuredClone(r)) }; };
@@ -115,11 +119,11 @@ const call = (id, url, method = 'GET', body) => fetch(base + '/api' + url, {
 });
 const json = async res => ({ status: res.status, body: await res.json() });
 
-test('รายชื่อคนตรวจที่เลือกได้ = คนในทีมที่เห็นแบรนด์ของแคมเปญ (ไม่รวมเอเจนซี่ / ปิดบัญชี / แบรนด์อื่น)', async () => {
+test('รายชื่อคนตรวจ = คนที่เห็นแบรนด์ของแคมเปญ (ไม่รวมเอเจนซี่ / ปิดบัญชี / แบรนด์อื่น) · เลือกได้ (pick) เฉพาะทีม Reviewer · ทีมอื่นส่งแค่ชื่อไว้โชว์', async () => {
     const r = await json(await call(2, '/projects/5/reviewer-options'));
     assert.equal(r.status, 200);
-    assert.deepEqual(r.body.data.map(x => x.id).sort(), [1, 2, 4]);
-    assert.ok(r.body.data.every(x => Object.keys(x).sort().join() === 'id,name'), 'ส่งแค่ id + ชื่อ');
+    assert.deepEqual(r.body.data.map(x => [x.id, x.pick]).sort((a, b) => a[0] - b[0]), [[1, false], [2, true], [4, true], [7, false]]);
+    assert.ok(r.body.data.every(x => Object.keys(x).sort().join() === 'id,name,pick'), 'ส่งแค่ id + ชื่อ + เลือกได้ไหม');
     assert.equal((await call(3, '/projects/5/reviewer-options')).status, 403, 'แบรนด์อื่น');
     assert.equal((await call(5, '/projects/5/reviewer-options')).status, 403, 'เอเจนซี่');
 });
@@ -134,6 +138,7 @@ test('ตั้งคนตรวจทั้งแคมเปญ / ราย�
     assert.match(LOGS.at(-1).summary, /กลุ่มที่ 1 = ฝน · กลุ่มที่ 2 = ตามแคมเปญ/);
     assert.equal(LOGS.at(-1).action, 'assign_reviewer');
     for (const [body, why] of [[{ default: 3 }, 'แพรวไม่เห็นแบรนด์ Jernis'], [{ default: 5 }, 'เอเจนซี่'], [{ default: 6 }, 'ปิดบัญชี'],
+        [{ default: 7 }, 'ทีม Ads ไม่ใช่ Reviewer'], [{ default: 1 }, 'Admin ไม่อยู่ทีม Reviewer'], [{ groups: { g1: 7 } }, 'กลุ่ม = ทีม Ads'],
         [{ groups: { nope: 2 } }, 'กลุ่มไม่มีจริง'], [{ groups: [1] }, 'groups ผิดรูป'], [{}, 'ไม่มีอะไรให้บันทึก']]) {
         assert.equal((await call(2, '/projects/5/review-assign', 'PUT', body)).status, 400, why);
     }
@@ -153,6 +158,9 @@ test('ตั้งคนตรวจรายคลิป: ตรวจคนท
     assert.equal(CLIP_CALLS[1].rid, null);
     assert.match(LOGS.at(-1).summary, /ตามกลุ่ม \/ แคมเปญ/);
     assert.equal((await call(2, '/projects/5/clip-reviewer', 'PUT', { sub_ids: [11], reviewer_id: 3 })).status, 400);
+    const bad = await json(await call(2, '/projects/5/clip-reviewer', 'PUT', { sub_ids: [11], reviewer_id: 7 }));
+    assert.equal(bad.status, 400, 'ทีม Ads');
+    assert.match(bad.body.message, /ทีม Reviewer/);
     assert.equal(CLIP_CALLS.length, 2);
 });
 
@@ -184,13 +192,31 @@ test('งานของฉัน: คนที่ไม่ใช่ Admin ด�
     assert.equal(r.status, 200);
     assert.deepEqual(r.body.data.rows.map(x => x.id).sort((a, b) => a - b), [11, 12, 14, 15, 16, 21], 'Admin เห็นทุกแบรนด์ รวมคลิป Beauterry ที่ตั้งให้ฝน');
     r = await json(await call(1, '/my-work?user=unassigned'));
-    assert.deepEqual(r.body.data.rows.map(x => x.id), [19, 23, 24], 'คนตรวจปิดบัญชี / ถูกลบ = ยังไม่มีคนตรวจ (Admin ตามเก็บได้)');
+    assert.deepEqual(r.body.data.rows.map(x => x.id), [19, 23, 24, 25], 'คนตรวจปิดบัญชี / ถูกลบ / เข้า My Work ไม่ได้แล้ว (ทีม Ads) = ยังไม่มีคนตรวจ (Admin ตามเก็บได้)');
+    assert.equal((await json(await call(1, '/my-work?user=7'))).body.data.rows.length, 0, 'ไม่ค้างเป็นงานของคนทีม Ads ที่เปิดหน้านี้ไม่ได้');
     assert.equal((await json(await call(1, '/my-work?user=6'))).body.data.rows.length, 0);
     r = await json(await call(4, '/my-work'));
     assert.deepEqual(r.body.data.rows.map(x => x.id), [13], 'แนน (Manager) เห็นงานของตัวเอง');
     assert.equal((await call(1, '/my-work?user=abc')).status, 400);
     assert.equal((await call(5, '/my-work')).status, 403, 'เอเจนซี่');
     assert.equal((await call(5, '/my-work/count')).status, 403);
+});
+
+test('หน้า My Work: เฉพาะทีม Reviewer + Admin (28 ต.ค. 2026) · ทีมอื่น / ไม่มีทีม = 403 ทั้งรายการและเลขแดง', async () => {
+    const r7 = await json(await call(7, '/my-work'));
+    assert.equal(r7.status, 403, 'ทีม Ads');
+    assert.match(r7.body.message, /Reviewer/);
+    assert.equal((await call(7, '/my-work/count')).status, 403);
+    ACCOUNTS[8] = u(8, 'noteam', 'ไม่มีทีม', 'member', ['Jernis'], { team_id: null, team_name: null });
+    try {
+        assert.equal((await call(8, '/my-work/count')).status, 403, 'ไม่มีทีม');
+    } finally { delete ACCOUNTS[8]; }
+    ACCOUNTS[9] = u(9, 'case', 'ตัวเล็ก', 'member', ['Jernis'], { team_name: ' reviewer ' });
+    try {
+        assert.equal((await call(9, '/my-work/count')).status, 200, 'ชื่อทีมตัวเล็ก / มีช่องว่าง ก็นับเป็น Reviewer');
+    } finally { delete ACCOUNTS[9]; }
+    assert.equal((await call(1, '/my-work/count')).status, 200, 'Admin (ทีม Admin) ยังเข้าได้');
+    assert.equal((await call(2, '/my-work/count')).status, 200, 'ทีม Reviewer');
 });
 
 test('ลิงก์เอเจนซี่: บัญชีเอเจนซี่ไม่ได้รับคนตรวจ / ใครตรวจดราฟ · ทีมที่เปิดลิงก์เดียวกันยังเห็น', async () => {

@@ -6,6 +6,7 @@ const { thumbPath, createThumbCache } = require('../services/adThumbs');
 const wxThumbs = require('../services/weboostxThumbs');
 const { authenticate } = require('../middleware/auth');
 const { allowedBrands, canSeeBrand, canSeeCostMetrics } = require('../data/roles');
+const { displayName } = require('../data/userNames');   // ชื่อคนบันทึก = ชื่อที่แสดงก่อน (เจ้าของบัญชีตั้งเองได้ 28 ต.ค. 2026)
 const { cleanFee, pfmManagedSpend, postCheckWaiting, adStatusAuto } = require('../store/logic');
 const { getOrganicMetricStatus } = require('../services/beauterryPfmSync');
 const wxSync = require('../services/weboostxPfmSync');
@@ -180,7 +181,7 @@ router.post('/:subId/wx-confirm', async (req, res, next) => {
         }
         if (!found) return res.status(409).json({ status: 'error', message: 'WeBoostX ไม่พบโพสต์นี้ (หรือเป็นคนละ Platform) — เลือกใหม่อีกครั้ง' });
         const user = await store.users.findById(req.user.id);
-        const byName = user ? (user.full_name || user.username) : null;
+        const byName = displayName(user);
         const saved = await store.submissions.update(ctx.submission.id, null, { id_post: value }, byName, { fillEmpty: ['id_post'] });
         if (!saved) return res.status(404).json({ status: 'error', message: 'ไม่พบโพสต์' });
         // ลงค่าแอด / Reach / วันยิงแอดของโพสต์นี้ทันที (ล้มก็ไม่เป็นไร — รอบซิงก์ทุกชั่วโมงเติมให้)

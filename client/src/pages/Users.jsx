@@ -15,7 +15,7 @@ const teamIdByName = (teams, name) => {
     const t = teams.find(x => x.name === name);
     return t ? t.id : null;
 };
-// ทีมที่ member เลือกได้ = ทุกทีมที่ไม่ได้จองไว้ให้สิทธิ์ admin/manager (ตอนนี้คือ KOL, Ads)
+// ทีมที่ member เลือกได้ = ทุกทีมที่ไม่ได้จองไว้ให้สิทธิ์ admin/manager (ตอนนี้คือ Reviewer, Ads)
 const memberTeams = teams => teams.filter(t => !Object.values(ROLE_TEAM_NAME).includes(t.name));
 // ทีมที่ควรได้ตามสิทธิ์ — member คงทีมเดิมไว้ถ้าเป็นทีมที่เลือกได้ ไม่งั้นคืน null (ต้องให้คนเลือก)
 const teamForRole = (teams, role, currentTeamId) => {
@@ -27,6 +27,7 @@ const teamForRole = (teams, role, currentTeamId) => {
 function UserForm({ editing, agencyLinks, teams, onClose, onSaved }) {
     const [form, setForm] = useState({
         username: editing?.username || '',
+        nickname: editing?.nickname || '',   // ชื่อที่แสดง — เจ้าของบัญชีแก้เองได้ด้วย (28 ต.ค. 2026)
         password: '',
         role: editing?.role || 'member',
         team_id: editing?.team_id ? String(editing.team_id) : '',   // ใช้เฉพาะ member (admin/manager ระบบจัดทีมให้)
@@ -64,7 +65,14 @@ function UserForm({ editing, agencyLinks, teams, onClose, onSaved }) {
                 // เอเจนซี่ไม่เข้า dashboard จึงไม่ต้องมีทีม ที่เหลือต้องมี ไม่งั้นสร้างแคมเปญไม่ได้
                 team_id: form.role === 'agency' ? null : teamId,
             };
-            body.username = form.username.trim();
+            // แก้ไข: ส่งชื่อล็อกอิน / ชื่อที่แสดง เฉพาะช่องที่ Admin แก้จริง — เจ้าของบัญชีแก้ชื่อตัวเองได้แล้ว (28 ต.ค. 2026)
+            // ถ้าส่งค่าจากรายชื่อที่โหลดไว้ตอนเปิดหน้า จะเขียนทับชื่อที่เจ้าของเพิ่งแก้กลับเป็นชื่อเดิมเงียบ ๆ (ผลรีวิว 28 ต.ค.)
+            const uname = form.username.trim();
+            if (!isEdit || uname !== editing.username) body.username = uname;
+            // เทียบแบบรวบช่องว่างทั้ง 2 ฝั่ง — ชื่อเดิมที่มีช่องว่างซ้อนแต่ไม่ได้แตะ จะไม่ถูกส่งไป (ผลรีวิว 28 ต.ค. รอบ 2)
+            const squashNick = v => String(v || '').replace(/\s+/g, ' ').trim();
+            const nick = squashNick(form.nickname);
+            if (form.role !== 'agency' && (isEdit ? nick !== squashNick(editing.nickname) : nick)) body.nickname = nick;
             if (form.password) body.password = form.password;
             if (isEdit) {
                 await api(`/users/${editing.id}`, { method: 'PUT', body });
@@ -90,6 +98,14 @@ function UserForm({ editing, agencyLinks, teams, onClose, onSaved }) {
                         <input value={form.username} onChange={e => update('username', e.target.value)}
                             required />
                     </div>
+                    {/* ชื่อที่แสดง — โชว์ในเมนู / ช่องเลือกคน / ประวัติแทน Username · เจ้าของแก้เองได้ที่ปุ่ม Edit profile · เอเจนซี่ไม่ใช้ */}
+                    {form.role !== 'agency' && (
+                        <div className="field">
+                            <label htmlFor="user-form-nickname">ชื่อที่แสดง <span className="dash-section-sub">ไม่บังคับ · เว้นว่าง = ใช้{editing?.full_name ? 'ชื่อเต็ม' : ' Username'}</span></label>
+                            <input id="user-form-nickname" value={form.nickname} maxLength={60}
+                                onChange={e => update('nickname', e.target.value)} />
+                        </div>
+                    )}
                     <div className="field">
                         <label>{isEdit ? 'รหัสผ่านใหม่ (เว้นว่างถ้าไม่เปลี่ยน)' : 'รหัสผ่าน *'}</label>
                         <PasswordInput value={form.password}
@@ -181,7 +197,7 @@ export default function Users() {
     const [users, setUsers] = useState([]);
     const [agencyLinks, setAgencyLinks] = useState([]);   // ลิงก์เอเจนซี่ทุกแคมเปญ (ไว้ผูกกับบัญชี role agency)
     const [teams, setTeams] = useState([]);               // ทีมทั้งหมด (ใช้จัดทีมตามสิทธิ์ และให้ member เลือกทีม)
-    const { user: me } = useAuth();                       // บัญชีที่กำลังล็อกอินอยู่ — ห้ามลดสิทธิ์ตัวเอง
+    const { user: me, updateUser } = useAuth();           // บัญชีที่กำลังล็อกอินอยู่ — ห้ามลดสิทธิ์ตัวเอง
     const [busyId, setBusyId] = useState(null);           // แถวที่กำลังบันทึกอยู่ (ล็อก dropdown กันกดซ้ำ)
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
@@ -203,7 +219,11 @@ export default function Users() {
         catch (err) { alert(err.message); }
     }
 
-    function handleSaved() { setModal(null); load(); window.dispatchEvent(new Event('kol:users-changed')); }
+    function handleSaved() {
+        // แก้บัญชีตัวเองจากหน้านี้ (เช่นชื่อที่แสดง) → ชื่อในเมนูซ้ายเปลี่ยนทันที ไม่ต้องรอรีเฟรช (28 ต.ค. 2026)
+        if (modal && modal.editing && me && modal.editing.id === me.id) api('/auth/me').then(r => updateUser(r.user)).catch(() => {});
+        setModal(null); load(); window.dispatchEvent(new Event('kol:users-changed'));
+    }
 
     // บันทึกฟิลด์เดียวจาก dropdown ในตาราง — ส่งเฉพาะฟิลด์ที่เปลี่ยน
     // ฝั่ง server ข้ามฟิลด์ที่เป็น undefined อยู่แล้ว ค่าอื่นจึงไม่โดนล้าง

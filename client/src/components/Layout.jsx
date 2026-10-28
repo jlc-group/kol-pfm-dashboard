@@ -3,8 +3,9 @@ import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext.jsx';
 import Icon from './Icon.jsx';
 import { api } from '../api/client.js';
-import { ROLE_LABEL, hasBrandList, canManageCatalog } from '../data/brands.js';
+import { ROLE_LABEL, hasBrandList, canManageCatalog, canUseMyWork } from '../data/brands.js';
 import ChangePasswordModal from './ChangePasswordModal.jsx';
+import ProfileModal, { shownName } from './ProfileModal.jsx';
 import { useNavSection } from '../utils/navSection.js';
 import PageErrorBoundary from './PageErrorBoundary.jsx';
 import { preloadPages } from '../pages/lazyPages.js';
@@ -12,8 +13,8 @@ import { preloadPages } from '../pages/lazyPages.js';
 // เมนูด้านซ้ายเป็นภาษาอังกฤษตามที่ทีมขอ (เนื้อหาในแต่ละหน้ายังเป็นภาษาไทย)
 const MAIN_NAV = [
     { to: '/', label: 'Overview', icon: 'dashboard', end: true },
-    // งานของฉัน (27 ต.ค. 2026) — คลิปที่ต้องตรวจดราฟของบัญชีตัวเอง · เลขแดง = รอฉันตรวจ
-    { to: '/my-work', label: 'My Work', icon: 'clipboard' },
+    // งานของฉัน (27 ต.ค. 2026) — คลิปที่ต้องตรวจดราฟของบัญชีตัวเอง · เลขแดง = รอฉันตรวจ · เฉพาะทีม Reviewer + Admin (28 ต.ค. · canUseMyWork)
+    { to: '/my-work', label: 'My Work', icon: 'clipboard', show: canUseMyWork },
     { to: '/projects', label: 'Campaigns', icon: 'folder' },
     { to: '/ads', label: 'Ads', icon: 'target' },
     { to: '/budget', label: 'Campaign Reports', icon: 'bars' },
@@ -56,6 +57,8 @@ export default function Layout() {
     const navigate = useNavigate();
     const location = useLocation();
     const [showPw, setShowPw] = useState(false);
+    const [showProfile, setShowProfile] = useState(false);   // แก้ชื่อที่แสดง / ชื่อล็อกอินของตัวเอง (28 ต.ค. 2026)
+    const myName = shownName(user);   // ชื่อที่แสดง (nickname) ก่อน — เหมือนชื่อในหน้าอื่น ๆ
     const [navOpen, setNavOpen] = useState(false);
     // โหมดแถบไอคอน — มีผลเฉพาะจอกว้าง (CSS คุมไว้ใน @media min-width 901px) จอแคบยังเป็นลิ้นชักเหมือนเดิม
     const [rail, setRail] = useState(readRail);
@@ -83,10 +86,10 @@ export default function Layout() {
 
     // (เลขแดงใบขอให้หาบนเมนู Talent เอาออกแล้ว 1 ต.ค. 2026 — หน้า Talent เหลือแค่ Talent Book ไม่ต้องดึง /hires/tasks/count ทุกนาที)
 
-    // คลิปที่รอฉันตรวจดราฟ (เมนู My Work · 27 ต.ค. 2026) — ทุกบัญชีทีม · ตัดสินดราฟ / เปลี่ยนคนตรวจแล้วยิง event นี้ให้นับใหม่ทันที
+    // คลิปที่รอฉันตรวจดราฟ (เมนู My Work · 27 ต.ค. 2026) — ทีม Reviewer + Admin เท่านั้น (28 ต.ค.) · ตัดสินดราฟ / เปลี่ยนคนตรวจแล้วยิง event นี้ให้นับใหม่ทันที
     const [myWorkCount, setMyWorkCount] = useState(0);
     useEffect(() => {
-        if (!user || user.role === 'agency') return undefined;
+        if (!canUseMyWork(user)) { setMyWorkCount(0); return undefined; }
         let alive = true;
         const load = () => {
             if (document.visibilityState === 'hidden') return;
@@ -164,8 +167,8 @@ export default function Layout() {
                     <span className="brand-mark">K</span>
                     <span>KOL Dashboard</span>
                 </div>
-                <div className="mobile-avatar" aria-label={user?.full_name || user?.username}>
-                    {(user?.full_name || user?.username || '?')[0]}
+                <div className="mobile-avatar" aria-label={myName}>
+                    {(myName || '?')[0]}
                 </div>
             </header>
             <button
@@ -194,7 +197,7 @@ export default function Layout() {
                     <button type="button" className="sidebar-close" aria-label="ปิดเมนูหลัก" onClick={() => setNavOpen(false)}>×</button>
                 </div>
                 <nav className="nav" aria-label="เมนูการทำงาน">
-                    {MAIN_NAV.map(renderItem)}
+                    {MAIN_NAV.filter(item => !item.show || item.show(user)).map(renderItem)}
                     {!isAdmin && canManageCatalog(user) && renderItem(CATALOG_NAV)}
                     {isAdmin && (
                         <>
@@ -206,11 +209,11 @@ export default function Layout() {
                 <div className="sidebar-footer">
                     <div className="user-box">
                         {/* พับอยู่เหลือแค่วงกลมย่อ — ชี้เมาส์ค้างถึงจะเห็นชื่อ */}
-                        <div className="user-avatar" title={rail ? (user?.full_name || user?.username || '') : undefined}>
-                            {(user?.full_name || user?.username || '?')[0]}
+                        <div className="user-avatar" title={rail ? myName : undefined}>
+                            {(myName || '?')[0]}
                         </div>
                         <div className="user-meta">
-                            <div className="user-name">{user?.full_name || user?.username}</div>
+                            <div className="user-name">{myName}</div>
                             <div className="user-role">
                                 {ROLE_LABEL[user?.role] || user?.role}
                                 {hasBrandList(user?.role) && (user?.brands || []).length > 0
@@ -220,13 +223,23 @@ export default function Layout() {
                         </div>
                     </div>
                     {/* พับอยู่เหลือไอคอน — ข้อความอยู่ใน title/aria-label แทน (ปุ่ม Log out มีเทสต์ smoke จับชื่ออยู่) */}
+                    {/* แก้ชื่อที่แสดง / ชื่อล็อกอินของตัวเอง (28 ต.ค. 2026) — สไตล์เดียวกับปุ่มเปลี่ยนรหัสผ่าน
+                        จอมือถือ: ปิดลิ้นชักเมนูก่อน ไม่งั้นลิ้นชักบังโมดัล (ทั้ง 2 ปุ่ม) */}
                     <button
                         className="btn-changepw"
-                        onClick={() => setShowPw(true)}
+                        onClick={() => { setNavOpen(false); setShowProfile(true); }}
+                        title={rail ? 'Edit profile' : undefined}
+                        aria-label={rail ? 'Edit profile' : undefined}
+                    >
+                        <Icon name="edit" size={15} /> <span className="btn-label">Edit profile</span>
+                    </button>
+                    <button
+                        className="btn-changepw"
+                        onClick={() => { setNavOpen(false); setShowPw(true); }}
                         title={rail ? 'Change password' : undefined}
                         aria-label={rail ? 'Change password' : undefined}
                     >
-                        <Icon name="edit" size={15} /> <span className="btn-label">Change password</span>
+                        <Icon name="key" size={15} /> <span className="btn-label">Change password</span>
                     </button>
                     <button
                         className="btn-logout"
@@ -239,6 +252,7 @@ export default function Layout() {
                 </div>
             </aside>
             {showPw && <ChangePasswordModal onClose={() => setShowPw(false)} />}
+            {showProfile && <ProfileModal onClose={() => setShowProfile(false)} />}
             <main id="main-content" className="content" tabIndex="-1">
                 {/* หน้าต่าง ๆ แยกไฟล์ — ระหว่างโหลดหน้าที่เปิดครั้งแรก เมนูด้านข้างยังอยู่ */}
                 {/* หน้าไหนพัง (เช่นโหลดไฟล์ไม่ได้) ขึ้นข้อความพร้อมปุ่มโหลดใหม่ เมนูยังอยู่ · เปลี่ยนเมนูแล้วเริ่มใหม่ */}

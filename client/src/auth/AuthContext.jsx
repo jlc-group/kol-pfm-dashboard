@@ -100,6 +100,11 @@ export function AuthProvider({ children }) {
         return res.user;
     }
 
+    // แก้ชื่อของตัวเองสำเร็จ (ProfileModal) — ใช้ข้อมูลที่ server ตอบกลับ ชื่อในเมนูเปลี่ยนทันทีไม่ต้องรีเฟรช
+    function updateUser(next) {
+        if (next && user && next.id === user.id) setUser(next);
+    }
+
     function logout() {
         gen.current += 1;
         setToken(null);
@@ -110,7 +115,7 @@ export function AuthProvider({ children }) {
     }
 
     return (
-        <AuthContext.Provider value={{ user, loading, connecting, authError, retry, login, logout, isAdmin: user?.role === 'admin' }}>
+        <AuthContext.Provider value={{ user, loading, connecting, authError, retry, login, logout, updateUser, isAdmin: user?.role === 'admin' }}>
             {children}
         </AuthContext.Provider>
     );

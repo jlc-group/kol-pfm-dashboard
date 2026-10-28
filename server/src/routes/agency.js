@@ -7,6 +7,7 @@ const chatHub = require('../services/chatHub');
 const { authenticate } = require('../middleware/auth');
 const { canSeeCostMetrics, canSeeBrand } = require('../data/roles');
 const { isMixedTier, mixedTierError } = require('../data/tiers');
+const { displayName } = require('../data/userNames');   // ชื่อคนบันทึก = ชื่อที่แสดงก่อน (เจ้าของบัญชีตั้งเองได้ 28 ต.ค. 2026)
 
 const { UPLOAD_DIR, uploadPath } = require('../config/uploads');
 const router = express.Router();
@@ -356,7 +357,7 @@ router.put('/:token/submissions/:subId', async (req, res, next) => {
         let byName = link.name ? `${link.name} (เอเจนซี่)` : 'เอเจนซี่';   // ฝั่งนี้ไม่มีบัญชีผู้ใช้ ใช้ชื่อจากลิงก์แทน
         if (actor === 'team') {
             const me = await store.users.findById(req.user.id);
-            if (me) byName = me.full_name || me.username;
+            if (me) byName = displayName(me);
         }
         const data = await writer.call(store.submissions, req.params.subId, project.id, {
             account_name: account_name !== undefined ? String(account_name).trim() : undefined,

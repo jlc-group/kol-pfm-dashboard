@@ -68,7 +68,8 @@ test('เลือกทั้งคน: ส่งสถานะที่เห
     const r = await put(1, '/projects/5/submissions/101/person-status', { status: 'confirmed', from_status: 'submitted' });
     assert.equal(r.status, 200);
     assert.equal((await r.json()).data.length, 3);
-    assert.deepEqual(CALLS.at(-1), { subId: '101', pid: '5', status: 'confirmed', from: 'submitted', byName: 'Fon', opts: { actor: 'team' } });
+    // ชื่อคนกด = ชื่อที่แสดง (nickname) ก่อนชื่อเต็ม — เจ้าของบัญชีตั้งเองได้ตั้งแต่ 28 ต.ค. 2026 (data/userNames.js displayName)
+    assert.deepEqual(CALLS.at(-1), { subId: '101', pid: '5', status: 'confirmed', from: 'submitted', byName: 'ฝน', opts: { actor: 'team' } });
     assert.equal(LOGS.length, 1);
     assert.equal(LOGS[0].action, 'select_kol');
     assert.equal(LOGS[0].summary, 'คัดเลือก KOL: reviewafter6pm (3 คลิป)');

@@ -1,6 +1,6 @@
 const express = require('express');
 const store = require('../store');
-const { allowedBrands, normalizeRole } = require('../data/roles');
+const { allowedBrands, normalizeRole, canUseMyWork } = require('../data/roles');
 const { idOf, reviewerOf, reviewBucket, latestDraftNo, DRAFT_LINKS } = require('../data/reviewers');
 
 // หน้า "งานของฉัน" (ผู้ใช้สั่ง 27 ต.ค. 2026) — คลิปที่ต้องตรวจดราฟ ข้ามทุกแคมเปญ ตามคนตรวจที่ตั้งไว้ (ทั้งแคมเปญ → กลุ่ม → รายคลิป)
@@ -8,6 +8,9 @@ const { idOf, reviewerOf, reviewBucket, latestDraftNo, DRAFT_LINKS } = require('
 // ตัดตามแบรนด์ที่ผู้เปิดมีสิทธิ์เสมอ · ไม่มีข้อมูลเงิน (ค่าตัว / ค่าแอด) ในคำตอบ
 // app.js: authenticate + blockPending + blockAgency (เอเจนซี่เข้าไม่ได้)
 const router = express.Router();
+// เข้าได้เฉพาะทีม Reviewer + Admin (ผู้ใช้สั่ง 28 ต.ค. 2026) — ทีมอื่นไม่มีหน้านี้ (เมนู / เลขแดงก็ไม่ขึ้น · roles.js canUseMyWork)
+router.use((req, res, next) => (canUseMyWork(req.account)
+    ? next() : res.status(403).json({ status: 'error', message: 'หน้า My Work ใช้ได้เฉพาะทีม Reviewer และ Admin' })));
 
 const POSTED_DAYS = 7;   // การ์ด "ลงงานแล้ว" นับเฉพาะ 7 วันล่าสุด
 const DAY = 86400000;
@@ -38,7 +41,8 @@ async function workOf(req, targetId, columns = ROW_KEYS) {
     const [{ projects, rows }, users] = await Promise.all([store.submissions.reviewRows(columns), store.users.listWithTeam()]);
     // คนตรวจที่ปิดบัญชี / ถูกลบ / เปลี่ยนเป็นเอเจนซี่ไปแล้ว = นับเป็น "ยังไม่มีคนตรวจ" (ผลรีวิว 27 ต.ค.)
     // ไม่งั้นคลิปของคนนั้นหายจากทุกหน้า รวมหน้า "ยังไม่มีคนตรวจ" ของ Admin ที่ใช้ตามเก็บงานตกหล่น
-    const active = new Set((users || []).filter(u => u && u.is_active !== false && (u.status || 'active') === 'active' && u.role !== 'agency').map(u => idOf(u.id)));
+    // + คนที่เข้าหน้านี้ไม่ได้แล้ว (ไม่อยู่ทีม Reviewer และไม่ใช่ Admin · 28 ต.ค.) เช่น ตั้งไว้ก่อนจำกัดทีม / ย้ายทีมทีหลัง (ผลรีวิว 28 ต.ค.)
+    const active = new Set((users || []).filter(u => u && u.is_active !== false && (u.status || 'active') === 'active' && u.role !== 'agency' && canUseMyWork(u)).map(u => idOf(u.id)));
     const byId = new Map();
     projects.forEach(p => {
         const keys = (Array.isArray(p.group_keys) ? p.group_keys : []).filter(Boolean);

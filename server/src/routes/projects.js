@@ -20,6 +20,7 @@ const {
 } = require('../store/logic');
 const { soloInput, buildSoloGroup, soloPersons, soloAccountsText, soloName, soloDeleteBlock } = require('../store/soloKol');
 const { isMixedTier, mixedTierError } = require('../data/tiers');
+const { displayName } = require('../data/userNames');   // ชื่อคนบันทึก = ชื่อที่แสดงก่อน (เจ้าของบัญชีตั้งเองได้ 28 ต.ค. 2026)
 // KOL รายคน (campaign_type 'solo') — ข้อความเมื่อเส้นทั่วไปของแคมเปญถูกเรียกกับรายการ KOL รายคน
 // (หน้าเว็บรุ่นเก่าที่เปิดค้างไว้ไม่รู้จักประเภทนี้ ฟอร์มแคมเปญจะสร้างกลุ่มใหม่ทับจนข้อมูลของ KOL รายคนหาย)
 const SOLO_ONLY_MSG = 'รายการนี้เป็น KOL รายคน — แก้จากหน้าของ KOL คนนั้น (ถ้าเปิดหน้าเว็บค้างไว้นาน กด F5 ก่อน)';
@@ -1311,7 +1312,7 @@ function tempPassword() {
     }
     return chars.join('');
 }
-const { allowedBrands, seesAllBrands, canSeeBrand } = require('../data/roles');
+const { allowedBrands, seesAllBrands, canSeeBrand, isReviewerTeam } = require('../data/roles');
 
 // POST /api/projects/:id/share — สร้าง/ดึงลิงก์แชร์ให้ Agency (ลิงก์รวมเดิม)
 router.post('/:id/share', async (req, res, next) => {
@@ -1486,19 +1487,22 @@ router.post('/:id/submissions', async (req, res, next) => {
 // GET /api/projects/:id/submissions — รายชื่อที่ Agency ส่งเข้ามา (ฝั่งทีม)
 // ---------- คนตรวจคลิป (27 ต.ค. 2026 — หน้า "งานของฉัน" · server/src/data/reviewers.js) ----------
 // เลือกได้เฉพาะคนในทีม (ใช้งานอยู่ ไม่ใช่เอเจนซี่) ที่เห็นแบรนด์ของแคมเปญนี้ · ตั้ง 3 ชั้น: ทั้งแคมเปญ → รายกลุ่ม → รายคลิป
+// pick = เลือกเป็นคนตรวจได้ (เฉพาะทีม Reviewer · ผู้ใช้สั่ง 28 ต.ค. 2026) · คนทีมอื่นส่งชื่อไปด้วย (pick: false)
+// ไว้โชว์ชื่อคนที่เคยตั้งไว้ก่อนหน้า ไม่ให้กลายเป็น "ผู้ใช้ #id"
 async function reviewerPool(brand) {
     const all = await store.users.listWithTeam();
     return all
         .filter(u => u.is_active !== false && (u.status || 'active') === 'active' && u.role !== 'agency' && canSeeBrand(u, brand))
-        .map(u => ({ id: u.id, name: u.nickname || u.full_name || u.username }))
+        .map(u => ({ id: u.id, name: u.nickname || u.full_name || u.username, pick: isReviewerTeam(u) }))
         .sort((a, b) => a.name.localeCompare(b.name, 'th'));
 }
-// ค่าที่ส่งมา → id ของคนในกลุ่มที่เลือกได้ · null / '' = ล้าง · ค่าอื่น = undefined (ไม่ถูกต้อง)
+// ค่าที่ส่งมา → id ของคนที่เลือกเป็นคนตรวจได้ (pick) · null / '' = ล้าง · ค่าอื่น = undefined (ไม่ถูกต้อง)
 const pickReviewer = (v, pool) => {
     if (v === null || v === '' || v === undefined) return null;
-    const hit = pool.find(u => String(u.id) === String(v));
+    const hit = pool.find(u => u.pick && String(u.id) === String(v));
     return hit ? hit.id : undefined;
 };
+const PICK_ERR = 'เลือกคนตรวจไม่ได้ — ต้องเป็นคนในทีม Reviewer ที่เห็นแบรนด์นี้';
 const reviewerName = (id, pool) => (id ? (pool.find(u => u.id === id) || {}).name || `#${id}` : 'ยังไม่มีคนตรวจ');
 
 // GET /api/projects/:id/reviewer-options — รายชื่อคนที่เลือกเป็นคนตรวจของแคมเปญนี้ได้
@@ -1520,7 +1524,7 @@ router.put('/:id/review-assign', async (req, res, next) => {
         const notes = [];
         if (req.body.default !== undefined) {
             const id = pickReviewer(req.body.default, pool);
-            if (id === undefined) return res.status(400).json({ status: 'error', message: 'เลือกคนตรวจไม่ได้ — ต้องเป็นคนในทีมที่เห็นแบรนด์นี้' });
+            if (id === undefined) return res.status(400).json({ status: 'error', message: PICK_ERR });
             patch.default = id;
             notes.push(`ทั้งแคมเปญ = ${reviewerName(id, pool)}`);
         }
@@ -1534,7 +1538,7 @@ router.put('/:id/review-assign', async (req, res, next) => {
                 const gi = groups.findIndex(g => g && g.key === key);
                 if (gi < 0) return res.status(400).json({ status: 'error', message: 'ไม่พบกลุ่มนี้ในแคมเปญ — รีเฟรชหน้าแล้วลองใหม่' });
                 const id = pickReviewer(v, pool);
-                if (id === undefined) return res.status(400).json({ status: 'error', message: 'เลือกคนตรวจไม่ได้ — ต้องเป็นคนในทีมที่เห็นแบรนด์นี้' });
+                if (id === undefined) return res.status(400).json({ status: 'error', message: PICK_ERR });
                 patch.groups[key] = id;
                 notes.push(`กลุ่มที่ ${gi + 1} = ${id ? reviewerName(id, pool) : 'ตามแคมเปญ'}`);
             }
@@ -1554,7 +1558,7 @@ router.put('/:id/clip-reviewer', async (req, res, next) => {
         if (!check.ok) return res.status(check.code).json({ status: 'error', message: check.message });
         const pool = await reviewerPool(check.project.brand);
         const id = pickReviewer(req.body.reviewer_id, pool);
-        if (id === undefined) return res.status(400).json({ status: 'error', message: 'เลือกคนตรวจไม่ได้ — ต้องเป็นคนในทีมที่เห็นแบรนด์นี้' });
+        if (id === undefined) return res.status(400).json({ status: 'error', message: PICK_ERR });
         const rows = await store.submissions.setReviewer(req.params.id, req.body.sub_ids, id);
         const names = [...new Set(rows.map(r => r.account_name).filter(Boolean))].join(', ');
         await record(req, req.params.id, 'assign_reviewer',
@@ -1587,7 +1591,7 @@ router.put('/:id/submissions/:subId/person-status', async (req, res, next) => {
         }
         if (isSoloProject(check.project)) return res.status(400).json({ status: 'error', message: SOLO_ONLY_MSG });
         const user = await store.users.findById(req.user.id);
-        const byName = user ? (user.full_name || user.username) : null;
+        const byName = displayName(user);
         const rows = await store.submissions.setPersonStatus(req.params.subId, req.params.id, status, from, byName, { actor: 'team' });
         if (!rows) return res.status(404).json({ status: 'error', message: 'ไม่พบรายการ' });
         const label = status === 'confirmed' ? 'คัดเลือก KOL' : status === 'rejected' ? 'ไม่เลือก KOL' : 'รีเซ็ตสถานะ KOL';
@@ -1617,7 +1621,7 @@ router.put('/:id/submissions/:subId', async (req, res, next) => {
         // ไม่งั้นคลิปหายจากหน้าติดตามงาน แต่ยังนับในค่าตัวรวม · ยกเลิกทั้งการจ้างใช้สถานะของรายการแทน
         if (status !== undefined && isSoloProject(check.project)) return res.status(400).json({ status: 'error', message: SOLO_ONLY_MSG });
         const user = await store.users.findById(req.user.id);
-        const byName = user ? (user.full_name || user.username) : null;
+        const byName = displayName(user);
         const data = await store.submissions.update(req.params.subId, req.params.id, {
             status, gencode, approved, draft_status,
             draft_link, draft_link2, draft_link3, draft_link4, draft_link5,
@@ -1730,7 +1734,7 @@ router.put('/:id/fees', async (req, res, next) => {
             return res.status(400).json({ status: 'error', message: 'ค่าตัวของ KOL รายคนแก้ทีละ Platform — กด F5 แล้วลองใหม่' });
         }
         const user = await store.users.findById(req.user.id);
-        const byName = user ? (user.full_name || user.username) : null;
+        const byName = displayName(user);
         const { rows, changed } = await store.submissions.setFees(req.params.id, parsed.items, byName, { protectFree: parsed.reason !== 'manual' });
         // KOL รายคน: งบของรายการ = ผลรวมค่าตัว → อัปเดตตามทันที
         if (changed.length && isSoloProject(check.project)) await store.projects.syncSoloBudget(req.params.id);
@@ -1760,7 +1764,7 @@ router.put('/:id/fee-free', async (req, res, next) => {
             return res.status(400).json({ status: 'error', message: 'รายการไม่ถูกต้อง' });
         }
         const user = await store.users.findById(req.user.id);
-        const byName = user ? (user.full_name || user.username) : null;
+        const byName = displayName(user);
         const { rows, changed } = await store.submissions.setFeeFree(req.params.id, items.map(it => ({ sub_id: it.sub_id, from: it.from })), free, byName);
         if (changed.length) {
             const names = [...new Set(changed.map(c => c.account_name).filter(Boolean))];
@@ -1795,7 +1799,7 @@ router.post('/:id/submissions/:subId/post-check', async (req, res, next) => {
             return res.status(400).json({ status: 'error', message: 'ยังไม่มีข้อมูลโพสต์ให้ตรวจ' });
         }
         const user = await store.users.findById(req.user.id);
-        const byName = user ? (user.full_name || user.username) : null;
+        const byName = displayName(user);
         const data = await store.submissions.setPostCheck(req.params.subId, req.params.id, action, note, byName, req.body.seen_at);
         if (!data) return res.status(404).json({ status: 'error', message: 'ไม่พบรายการ' });
         await record(req, req.params.id, 'update', action === 'ok'
@@ -1901,7 +1905,7 @@ router.post('/:id/agency-links/:token/messages', onlyMultipart(guardEdit), (req,
         const user = await store.users.findById(req.user.id);
         const row = await store.projects.addAgencyMessage(req.params.id, req.params.token, {
             from: 'team',
-            by: user ? (user.full_name || user.username) : 'ทีม',
+            by: displayName(user) || 'ทีม',
             text,
             image: full ? { filename: full.filename, original: full.originalname, size: full.size } : null,
             thumb: thumb ? { filename: thumb.filename, original: thumb.originalname, size: thumb.size } : null

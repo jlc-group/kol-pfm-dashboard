@@ -29,6 +29,7 @@ const {
 const { now, clone, inScope, scopeProjects, linkGroupPlatforms, hireRowFee, sameInstant, normCampaignType, updateLatest } = require('../logic');
 const { soloSummary, soloClipLive, soloClipEmpty, withSoloBudgets } = require('../soloKol');
 const { normalizeAssign } = require('../../data/reviewers');
+const { displayName } = require('../../data/userNames');   // ชื่อคนบันทึก = ชื่อที่แสดงก่อน (เจ้าของบัญชีตั้งเองได้ 28 ต.ค. 2026)
 
 // KOL รายคน: ผลรวมค่าตัวต่อ Platform ของคลิปที่ไม่ถูกปฏิเสธ (งบของแต่ละบล็อกในกลุ่ม)
 const SOLO_SUMS_SQL = "SELECT platform, COALESCE(SUM(budget), 0) AS total FROM submissions WHERE project_id = $1 AND status <> 'rejected' GROUP BY platform";
@@ -125,8 +126,8 @@ function enrichProject(snap, p) {
     const out = {
         ...p,
         team_name: team ? team.name : null,
-        created_by_name: creator ? (creator.full_name || creator.username) : null,
-        updated_by_name: editor ? (editor.full_name || editor.username) : null,
+        created_by_name: displayName(creator),
+        updated_by_name: displayName(editor),
         kol_count,
         sub_count: subs.length,
         sub_confirmed,

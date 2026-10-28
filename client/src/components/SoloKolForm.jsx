@@ -159,7 +159,19 @@ export default function SoloKolForm({ onClose, onSaved, project = null, clipName
     useEffect(() => {
         let alive = true;
         api('/users/options')
-            .then(res => { if (alive) setOwners((res.data || []).map(u => u.name).filter(Boolean)); })
+            .then(res => {
+                if (!alive) return;
+                const names = (res.data || []).map(u => u.name).filter(Boolean);
+                setOwners(names);
+                // ผู้ดูแลที่จำไว้จากครั้งก่อนไม่อยู่ในรายชื่อแล้ว (เปลี่ยนชื่อที่แสดง / ปิดบัญชี · 28 ต.ค. 2026) → ล้างให้เลือกใหม่ เหมือน QuickHireForm
+                // เฉพาะเพิ่มใหม่ (แก้ไขต้องคงผู้ดูแลเดิม) · ปรับค่าตั้งต้นที่ใช้เช็ค "ยังไม่ได้บันทึก" ด้วย ปิดฟอร์มที่ยังไม่แตะจะได้ไม่ถาม
+                if (editing || !names.length) return;
+                setJ(s => (s.owner && !names.includes(s.owner) ? { ...s, owner: '' } : s));
+                if (clean.current) {
+                    const base = JSON.parse(clean.current);
+                    if (base.j.owner && !names.includes(base.j.owner)) { base.j.owner = ''; clean.current = JSON.stringify(base); }
+                }
+            })
             .catch(() => { if (alive) setOwners([]); });
         return () => { alive = false; };
     }, []);

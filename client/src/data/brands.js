@@ -15,6 +15,10 @@ export const canSeeCostMetrics = user => !!user && (user.role === 'admin' || use
 // ดูจากชื่อทีม (team_name ที่ /auth/me ส่งมา) — ต้องตรงกับ canManageCatalog ฝั่ง server (server/src/data/roles.js)
 export const canManageCatalog = user => !!user && (user.role === 'admin'
     || (user.role !== 'agency' && String(user.team_name || '').trim().toLowerCase() === 'ads'));
+// หน้า "งานของฉัน" (My Work) + ตั้งเป็นคนตรวจคลิปได้: ทีม Reviewer (เดิม KOL) · Admin เข้าหน้านี้ได้ด้วย (ผู้ใช้สั่ง 28 ต.ค. 2026)
+// ต้องตรงกับ isReviewerTeam / canUseMyWork ฝั่ง server (server/src/data/roles.js)
+export const canUseMyWork = user => !!user && (user.role === 'admin'
+    || (user.role !== 'agency' && String(user.team_name || '').trim().toLowerCase() === 'reviewer'));
 
 // แบรนด์ที่ผู้ใช้คนนี้เห็นได้ — admin เห็นทุกแบรนด์
 // member / manager ที่ยังไม่ได้รับแบรนด์จะได้ [] (ไม่มีอะไรให้เลือก)

@@ -86,10 +86,11 @@ const projectKols = {
 const activity = {
     // user_name = ชื่อผู้ทำเมื่อไม่ใช่ผู้ใช้ในระบบ (เช่น 'ระบบอัตโนมัติ' ของรอบทำจ่ายอัตโนมัติ · user_id ว่าง)
     async log({ user_id, team_id, action, project_id, project_name, summary, user_name }) {
-        const u = (await query('SELECT full_name, username FROM users WHERE id = $1', [Number(user_id)])).rows[0];
+        // ชื่อที่แสดง (nickname) ก่อน — เจ้าของบัญชีตั้งเองได้ตั้งแต่ 28 ต.ค. 2026 · เหมือนชื่อในหน้าอื่น ๆ
+        const u = (await query('SELECT nickname, full_name, username FROM users WHERE id = $1', [Number(user_id)])).rows[0];
         const row = await insertRow('activity_logs', {
             user_id: Number(user_id) || null,
-            user_name: u ? (u.full_name || u.username) : (user_name || 'ไม่ทราบ'),
+            user_name: u ? (u.nickname || u.full_name || u.username) : (user_name || 'ไม่ทราบ'),
             team_id: team_id ?? null,
             action: action || 'update',
             project_id: project_id ?? null,

@@ -1,7 +1,7 @@
 import { Suspense } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { useAuth } from './auth/AuthContext.jsx';
-import { canManageCatalog } from './data/brands.js';
+import { canManageCatalog, canUseMyWork } from './data/brands.js';
 import ProtectedRoute from './components/ProtectedRoute.jsx';
 import AgencyRoute from './components/AgencyRoute.jsx';
 import Layout from './components/Layout.jsx';
@@ -25,6 +25,11 @@ function CatalogRoute({ children }) {
     const { user } = useAuth();
     return canManageCatalog(user) ? children : <Navigate to="/" replace />;
 }
+// หน้า "งานของฉัน" — ทีม Reviewer + Admin เท่านั้น (28 ต.ค. 2026) · คนอื่นเปิดลิงก์ตรงกลับหน้าแรก
+function MyWorkRoute({ children }) {
+    const { user } = useAuth();
+    return canUseMyWork(user) ? children : <Navigate to="/" replace />;
+}
 
 export default function App() {
     return (
@@ -45,7 +50,7 @@ export default function App() {
                         }
                     >
                         <Route index element={<Dashboard />} />
-                        <Route path="my-work" element={<MyWork />} />
+                        <Route path="my-work" element={<MyWorkRoute><MyWork /></MyWorkRoute>} />
                         <Route path="kols" element={<Kols />} />
                         <Route path="hires" element={<OtherWork />} />
                         {/* เมนู "งานจัดหา" เดิม — หน้า Talent เหลือแค่ Talent Book แล้ว (1 ต.ค. 2026) ลิงก์/บุ๊กมาร์กเก่าพาไปหน้านั้น */}

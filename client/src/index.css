@@ -2840,6 +2840,8 @@ a.ads-thumb:focus-visible { outline: 2px solid var(--mint-dark); outline-offset:
 /* ช่องรหัสผ่าน + ปุ่มตาเปิด/ปิดการมองเห็น */
 .pw-field { position: relative; display: block; }
 .pw-field input { width: 100%; padding-inline-end: 42px; }
+/* Edge มีปุ่มตาของตัวเองซ้อนกับปุ่ม .pw-eye (เห็นตา 2 อัน · 28 ต.ค. 2026) — ใช้ของเราอันเดียว */
+.pw-field input::-ms-reveal, .pw-field input::-ms-clear { display: none; }
 .pw-eye {
     position: absolute; inset-inline-end: 6px; top: 50%; transform: translateY(-50%);
     width: 32px; height: 32px; display: grid; place-items: center;
@@ -3113,6 +3115,21 @@ a.ads-thumb:focus-visible { outline: 2px solid var(--mint-dark); outline-offset:
 .plat-blk-budget { display: flex; align-items: center; gap: 6px; }
 .plat-blk-budget input { width: 116px; margin: 0; text-align: right; font-variant-numeric: tabular-nums; }
 .plat-blk.single .plat-blk-head { border-bottom: none; margin-bottom: 4px; }
+/* ช่อง BUDGET เด่นขึ้น (ผู้ใช้สั่ง 28 ต.ค. 2026 "มันจมมาก") — โทนทองแบบกล่องบรีฟ · ตัวเลขใหญ่หนา · ช่องกว้างขึ้น
+   กลุ่ม Platform เดียว = ทั้งแถว "💰 BUDGET ... [ช่อง] ฿" เป็นแถบสีทอง · หลาย Platform = เฉพาะช่องงบที่หัวแต่ละ Platform */
+.plat-blk.single .plat-blk-head {
+    background: #fffbeb; border: 1.5px solid #fcd34d; border-radius: 12px; padding: 10px 12px; margin-bottom: 10px;
+}
+.plat-blk.single .plat-blk-name { font-size: 15px; color: #92400e; letter-spacing: .3px; }
+.plat-blk-budget:not(.auto) { gap: 8px; }
+.plat-blk-budget:not(.auto) input {
+    width: 168px; padding: 9px 12px; border: 1.5px solid #fcd34d; border-radius: 10px; background: #fff;
+    font-size: 18px; font-weight: 800; color: #92400e;
+}
+.plat-blk-budget:not(.auto) input::placeholder { color: #d6b97a; font-weight: 700; }
+.plat-blk-budget:not(.auto) input:focus { outline: none; border-color: #f59e0b; box-shadow: 0 0 0 3px rgba(245,158,11,.2); }
+.plat-blk-budget:not(.auto) .pb-baht { color: #b45309; font-size: 18px; }
+@media (max-width: 520px) { .plat-blk-budget:not(.auto) input { width: 140px; font-size: 16px; } }
 /* งบของ Platform: รวมก้อนเดียว / แยกต่อสินค้า */
 .bmode { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin: 0 0 9px; }
 /* ช่องเลือกสินค้าตอนยังไม่เลือกแบรนด์ไม่มีระยะล่างเหมือน .pms — เว้นให้ปุ่มแยกงบ/Concept ที่อยู่ใต้ลงมา */

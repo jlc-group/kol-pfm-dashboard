@@ -7,6 +7,7 @@
 const fs = require('fs');
 const path = require('path');
 const { nextPostCheck, postCheckDecision, postCheckWaiting, POST_CHECK_OPEN, sameInstant: sameInstantPC, postNoGencode, normalizeStamp, pfmSourceBrands } = require('./logic');
+const { displayName } = require('../data/userNames');   // ชื่อคนบันทึก = ชื่อที่แสดงก่อน (28 ต.ค. 2026)
 
 const DATA_DIR = path.join(__dirname, '..', '..', 'data');
 const DATA_FILE = path.join(DATA_DIR, 'db.json');
@@ -437,8 +438,8 @@ function enrichProject(p) {
         campaign_type: p.campaign_type === 'other' || p.campaign_type === 'solo' ? p.campaign_type : 'kol',
         hire_items: Array.isArray(p.hire_items) ? p.hire_items : [],
         team_name: team ? team.name : null,
-        created_by_name: creator ? (creator.full_name || creator.username) : null,
-        updated_by_name: editor ? (editor.full_name || editor.username) : null,
+        created_by_name: displayName(creator),
+        updated_by_name: displayName(editor),
         kol_count,
         sub_count: subs.length,
         sub_confirmed
@@ -1272,7 +1273,7 @@ const activity = {
         const row = {
             id: nextId('activity_logs'),
             user_id: Number(user_id) || null,
-            user_name: u ? (u.full_name || u.username) : 'ไม่ทราบ',
+            user_name: u ? (u.nickname || u.full_name || u.username) : 'ไม่ทราบ',
             team_id: team_id ?? null,
             action: action || 'update',
             project_id: project_id ?? null,

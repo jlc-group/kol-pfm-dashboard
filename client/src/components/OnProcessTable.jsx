@@ -33,13 +33,16 @@ function ReviewerSelect({ value, options, onChange, emptyLabel, label, title, cl
             </select>
         );
     }
-    const known = !value || options.some(o => o.id === value);
+    // เลือกได้เฉพาะทีม Reviewer (pick · 28 ต.ค. 2026) — คนทีมอื่นที่ตั้งไว้ก่อนหน้ายังโชว์ชื่อไว้ให้เปลี่ยนออก (server รุ่นก่อนไม่มี pick = เลือกได้ทุกคน)
+    const picks = options.filter(o => o.pick !== false);
+    const known = !value || picks.some(o => o.id === value);
+    const other = known ? null : options.find(o => o.id === value);
     return (
         <select className={'rev-select ' + className} aria-label={label} title={title || label} value={value || ''}
             onChange={e => onChange(e.target.value ? Number(e.target.value) : null)}>
             <option value="">{emptyLabel}</option>
-            {!known && <option value={value}>ผู้ใช้ #{value} (ไม่มีสิทธิ์แบรนด์นี้แล้ว)</option>}
-            {options.map(o => <option key={o.id} value={o.id}>{o.name}</option>)}
+            {!known && <option value={value}>{other ? `${other.name} (ไม่อยู่ทีม Reviewer)` : `ผู้ใช้ #${value} (ไม่มีสิทธิ์แบรนด์นี้แล้ว)`}</option>}
+            {picks.map(o => <option key={o.id} value={o.id}>{o.name}</option>)}
         </select>
     );
 }
@@ -222,7 +225,7 @@ function ProcessRow({ sub, putSubmission, reload, showAds = false, group = null,
                     {/* คนเดียวกันอาจมีหลายแถว = หลายคลิป บอกให้ชัดว่าแถวนี้คือคลิปไหน */}
                     {sub.clip_name && <span className="proc-clip-tag">🎬 {sub.clip_name}</span>}
                 </span>
-                {/* คนตรวจคลิปนี้ — ค่าว่าง = ตามกลุ่ม / แคมเปญ (บอกชื่อในตัวเลือกแรก) · เลือกคน = เฉพาะคลิปนี้ */}
+                {/* คนตรวจคลิปนี้ — ค่าว่าง = ตามกลุ่ม / แคมเปญ (ตัวเลือกแรกโชว์แค่ชื่อคนตรวจ · ผู้ใช้สั่ง 28 ต.ค. 2026 เอา "· ตามกลุ่ม" ออก — ที่มาอยู่ใน tooltip) · เลือกคน = เฉพาะคลิปนี้ */}
                 {rev && (
                     <span className={'proc-rev ' + (rev.from === 'clip' ? 'own' : rev.id ? 'inherit' : 'none')}>
                         <span aria-hidden="true">👤</span>
@@ -231,9 +234,7 @@ function ProcessRow({ sub, putSubmission, reload, showAds = false, group = null,
                             title={rev.id
                                 ? `คนตรวจ: ${reviewerLabel(rev.id, rev.options)} (${rev.from === 'clip' ? 'เฉพาะคลิปนี้' : rev.from === 'group' ? 'ตามกลุ่ม' : 'ตามแคมเปญ'}) — เปลี่ยนเฉพาะคลิปนี้ได้`
                                 : 'ยังไม่มีคนตรวจ — เลือกคนตรวจเฉพาะคลิปนี้ หรือตั้งที่หัวกลุ่ม / ทั้งแคมเปญ'}
-                            emptyLabel={rev.inherit.id
-                                ? `${reviewerLabel(rev.inherit.id, rev.options)} · ${rev.inherit.from === 'group' ? 'ตามกลุ่ม' : 'ตามแคมเปญ'}`
-                                : 'ยังไม่มีคนตรวจ'}
+                            emptyLabel={rev.inherit.id ? reviewerLabel(rev.inherit.id, rev.options) : 'ยังไม่มีคนตรวจ'}
                             onChange={rev.onChange} />
                     </span>
                 )}
@@ -433,7 +434,7 @@ function GroupBar({ group, gi, count, scope, kolNeeds = [], onPickProduct, picke
                     คนตรวจกลุ่มนี้
                     <ReviewerSelect value={rev.value} options={rev.options} onChange={rev.onChange}
                         label={`คนตรวจคลิปของกลุ่มที่ ${gi + 1}`}
-                        emptyLabel={rev.inheritName ? `${rev.inheritName} · ตามแคมเปญ` : 'ยังไม่มีคนตรวจ'} />
+                        emptyLabel={rev.inheritName || 'ยังไม่มีคนตรวจ'} />
                 </span>
             )}
             <div className="grp-chips">

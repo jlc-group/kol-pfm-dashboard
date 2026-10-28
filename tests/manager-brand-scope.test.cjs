@@ -90,6 +90,8 @@ test('หน้า Users: สร้าง/แก้ Manager เก็บแบ�
     let created = null;
     const updates = [];
     store.users.create = async f => { created = f; return { id: 9, ...f }; };
+    // สร้างผู้ใช้ตรวจชื่อที่จะโชว์ซ้ำคนอื่นด้วย (28 ต.ค. 2026 · data/userNames.js) — อ่านรายชื่อจาก store
+    store.users.listWithTeam = async () => Object.values(ACCOUNTS).map(u => ({ ...u }));
     store.users.update = async (id, f) => { updates.push(f); return { id: Number(id), ...f }; };
     let r = await call(1, 'POST', '/api/users', { username: 'm2', password: 'Passw0rd!x', role: 'manager', team_id: 3, brands: ['Jernis', '', 'Jdent'] });
     assert.equal(r.status, 201);

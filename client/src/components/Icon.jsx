@@ -32,7 +32,9 @@ const PATHS = {
     image: <><rect x="3" y="3" width="18" height="18" rx="2" /><circle cx="8.5" cy="8.5" r="1.5" /><polyline points="21 15 16 10 5 21" /></>,
     play: <polygon points="7 4 19 12 7 20 7 4" />,
     // เมนู My Work (งานของฉัน · 27 ต.ค. 2026) — คลิปบอร์ด + เครื่องหมายถูก
-    clipboard: <><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2" /><rect x="8" y="2" width="8" height="4" rx="1" /><polyline points="9 14 11 16 15 12" /></>
+    clipboard: <><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2" /><rect x="8" y="2" width="8" height="4" rx="1" /><polyline points="9 14 11 16 15 12" /></>,
+    // ปุ่ม Change password ในเมนูซ้าย (28 ต.ค. 2026 — ปุ่มดินสอยกให้ Edit profile)
+    key: <><circle cx="7.5" cy="15.5" r="5.5" /><path d="M21 2l-9.6 9.6" /><path d="M15.5 7.5l3 3L22 7l-3-3" /></>
 };
 
 export default function Icon({ name, size = 20, className = '', strokeWidth = 2 }) {

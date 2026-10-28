@@ -23,6 +23,12 @@ function seesAllBrands(user) {
 const isAdsTeam = user => !!user && user.role !== 'agency' && String(user.team_name || '').trim().toLowerCase() === 'ads';
 const canManageCatalog = user => !!user && (user.role === 'admin' || isAdsTeam(user));
 
+// ทีม Reviewer (เดิมชื่อ KOL · เปลี่ยน 28 ต.ค. 2026) = คนตรวจคลิป — ตั้งเป็นคนตรวจได้เฉพาะคนในทีมนี้ + มีหน้า "งานของฉัน" (My Work)
+// ผู้ใช้สั่ง 28 ต.ค. 2026 "หน้า My Work ให้ขึ้นแค่คนที่ตั้งเป็น Reviewer เท่านั้น" · Admin ยังเข้าได้ (ดูงานของทุกคน)
+// ดูจากชื่อทีมเหมือนทีม Ads — ต้องตรงกับ canUseMyWork ฝั่งหน้าเว็บ (client/src/data/brands.js)
+const isReviewerTeam = user => !!user && user.role !== 'agency' && String(user.team_name || '').trim().toLowerCase() === 'reviewer';
+const canUseMyWork = user => !!user && (user.role === 'admin' || isReviewerTeam(user));
+
 // บทบาทที่เก็บรายการแบรนด์ที่ดูได้ (admin กำหนดให้) — member + manager · admin เห็นทุกแบรนด์ / agency ไม่ใช้
 // ต้องตรงกับ hasBrandList ฝั่งหน้าเว็บ (client/src/data/brands.js)
 const hasBrandList = role => role === 'member' || role === 'manager';
@@ -52,4 +58,4 @@ const canSeeCostMetrics = user => !!user && (user.role === 'admin' || user.role 
 const STATUSES = ['pending', 'active', 'rejected'];
 const isApproved = user => !!user && (user.status || 'active') === 'active' && user.is_active !== false;
 
-module.exports = { ROLES, ROLE_LABEL, seesAllBrands, hasBrandList, allowedBrands, canSeeBrand, canSeeCostMetrics, canManageCatalog, normalizeRole, isAgency, STATUSES, isApproved };
+module.exports = { ROLES, ROLE_LABEL, seesAllBrands, hasBrandList, allowedBrands, canSeeBrand, canSeeCostMetrics, canManageCatalog, isReviewerTeam, canUseMyWork, normalizeRole, isAgency, STATUSES, isApproved };
