@@ -1,6 +1,7 @@
 // คำศัพท์ชุดเดียวของหน้า Talent — เปลี่ยนแค่ "ป้ายที่แสดง" ค่าที่เก็บในฐานเหมือนเดิมทุกตัว
 // (ทาบทาม / ตกลงแล้ว / เสนอ / เลือกแล้ว / ไม่เอา / pending / fee_review / Draft / Active ... ห้ามแก้)
 // ไฟล์นี้ต้องเป็น JS ล้วน (ไม่มี JSX / window) — เทสต์ import ตรงผ่าน node ได้
+import { fmtDate, fmtRange } from '../utils/date.js';
 
 // คำนามที่ใช้ทั้งหน้า — ใช้ตัวแปรแทนการพิมพ์ซ้ำ จะได้ไม่หลุดกลับไปใช้คำเก่า
 export const T = {
@@ -78,6 +79,15 @@ export const parseOpen = v => {
 
 // ตัวเลขเงิน / เวลาแบบคนอ่าน
 export const baht = n => '฿' + (Number(n) || 0).toLocaleString('th-TH');
+// ช่วงเวลาที่จ้างของ Talent Book (talents.hire_from / hire_to · 'YYYY-MM-DD') → วัน/เดือน/ปี
+// สองด้าน = '01/10/2026 – 05/10/2026' · ด้านเดียว = 'ตั้งแต่ …' / 'ถึง …' · ไม่มี = '' (การ์ดและหน้ารายละเอียดใช้ตัวเดียวกัน)
+export function hirePeriodText(t) {
+    const from = String((t && t.hire_from) || '').trim(), to = String((t && t.hire_to) || '').trim();
+    if (from && to) return fmtRange(from, to);
+    if (from) return `ตั้งแต่ ${fmtDate(from)}`;
+    if (to) return `ถึง ${fmtDate(to)}`;
+    return '';
+}
 export function feeDiff(approved, asked) {
     const a = Number(approved) || 0, b = Number(asked) || 0;
     const d = b - a;

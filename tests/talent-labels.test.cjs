@@ -156,3 +156,11 @@ test('daysLate: นับวันที่เลยกำหนดส่งร�
     // หลังเที่ยงคืนไทย (ยังเป็นวันที่ 18 ตาม UTC) กำหนดวันที่ 18 ถือว่าเลยแล้ว 1 วัน
     assert.equal(L.daysLate('2026-09-18', Date.UTC(2026, 8, 18, 17, 30)), 1);
 });
+
+test('hirePeriodText: ช่วงเวลาที่จ้างเป็น วัน/เดือน/ปี (การ์ด + หน้ารายละเอียด) · ด้านเดียวบอก ตั้งแต่ / ถึง', () => {
+    assert.equal(L.hirePeriodText({ hire_from: '2026-10-01', hire_to: '2026-10-05' }), '01/10/2026 – 05/10/2026');
+    assert.equal(L.hirePeriodText({ hire_from: '2026-10-01T00:00:00.000Z', hire_to: null }), 'ตั้งแต่ 01/10/2026');
+    assert.equal(L.hirePeriodText({ hire_from: '', hire_to: '2026-12-31' }), 'ถึง 31/12/2026');
+    assert.equal(L.hirePeriodText({ hire_from: null, hire_to: null }), '');
+    assert.equal(L.hirePeriodText(null), '', 'การ์ดจากงานเก่าที่ไม่มีข้อมูล Talent Book');
+});

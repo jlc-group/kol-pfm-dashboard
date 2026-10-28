@@ -2,9 +2,12 @@ import { useEffect, useId, useRef, useState } from 'react';
 import { api, uploadFile } from '../../api/client.js';
 import SideDrawer from '../../components/SideDrawer.jsx';
 import KindPicker from '../../components/KindPicker.jsx';
+import DatePicker from '../../components/DatePicker.jsx';
+import ProductMultiSelect from '../../components/ProductMultiSelect.jsx';
 import useLazyImage from '../../utils/useLazyImage.js';
 import { kindError, kindValue } from '../../data/hireKinds.js';
 import { BRANDS } from '../../data/brands.js';
+import { PRODUCT_CATALOG, productsByBrand, splitProductList } from '../../data/products.js';
 import {
     SOCIAL_PLATFORMS, SOCIAL_OTHER, SOCIALS_MAX, SOCIAL_URL_MAX, avatarSource, canFetchAvatar, emptySocialRow, fillFromHandle, fillFromUrl,
     linkFromSocials, normalizeSocials, notProfilePlatform, onlyNoAvatarLinks, socialHandleMax, socialRowError, socialRowsOf, socialsForSave
@@ -15,7 +18,6 @@ import { clipboardImage, pasteFileName } from '../../data/talentJobs.js';
 // talentId = null → เพิ่มใหม่ (POST /hires/talents) · มีค่า → แก้ (GET แล้ว PUT) และลบได้
 // ทุกคนในทีมเห็นการ์ดนี้ (ไม่ผูกแบรนด์) · แก้/ลบได้เฉพาะคนที่เพิ่ม และ admin (server ตัดสิน)
 // ไฟล์รูป / คลิปอัปหลังบันทึกข้อมูลแล้ว (ต้องมี id ก่อน) — อัปพลาด: ข้อมูลเก็บแล้ว ฟอร์มค้างอยู่ให้กดบันทึกซ้ำเพื่อลองอัปใหม่
-// หน่วยเรทต้องตรงกับ RATE_UNITS ใน server/src/routes/hires.js
 // 1 ต.ค. 2026: ช่องทาง Social หลายช่องทาง (เพิ่ม/ลบแถวได้ · วางลิงก์โปรไฟล์แล้วเลือกช่องทาง + ใส่ชื่อบัญชีให้เอง)
 //   ส่งทั้ง socials และ link = ลิงก์ช่องทางแรก (ของเดิมที่อ่าน link ใช้ต่อได้ — server เขียนซ้ำให้อยู่แล้ว) · แถวรุ่นเก่าที่มีแค่ link → โหลดเป็น 1 ช่องทาง
 //   รูปการ์ด: ก๊อปรูปแล้วกด Ctrl+V ในฟอร์มได้ (อัปเหมือนเลือกไฟล์) · ปุ่ม "ดึงรูปจากลิงก์" ให้ server ดึงรูปโปรไฟล์ TikTok / YouTube / X
@@ -23,12 +25,26 @@ import { clipboardImage, pasteFileName } from '../../data/talentJobs.js';
 //   มีรูปที่เลือก/วางรออัป หรือสั่งเอารูปเดิมออก → ส่ง auto_image: false (ไม่ให้ server ดึงรูปมาชนกับรูปที่ผู้ใช้เลือกเอง)
 //   กำลังดึงรูปจากลิงก์อยู่ = ยังเลือก/วางรูป และกดบันทึกไม่ได้ (รูปที่ดึงเสร็จทีหลังจะทับรูปที่ผู้ใช้เพิ่งเลือก)
 //   ช่องทาง "อื่น ๆ" = ข้อความอิสระ ยาวได้ 1000 ตัว · ข้อความ Account เดิมที่มีหลายบรรทัด โชว์เป็นกล่องหลายบรรทัด (ช่องบรรทัดเดียวจะตัดบรรทัดทิ้ง)
-export const RATE_UNITS = ['ต่อวัน', 'ต่องาน', 'ต่อชั่วโมง', 'ต่อโพสต์', 'ต่อคลิป'];
+// 2 ต.ค. 2026 (ผู้ใช้สั่ง):
+//   • เอาช่องหน่วยเรท (ต่องาน / ต่อวัน ...) ออก — ไม่ส่ง rate_unit (ค่าเดิมในฐานไม่ล้าง แต่การ์ด/หน้ารายละเอียดไม่โชว์แล้ว)
+//   • ช่องสินค้า (ไม่บังคับ · หลายตัว) — เลือกจากคลังสินค้าของแบรนด์ที่ติ๊กไว้ · แบรนด์ที่ยังไม่มีคลัง = พิมพ์ชื่อเอง คั่นด้วย ,
+//     เก็บรวมเป็น products = [รหัสในคลัง..., ชื่อที่พิมพ์เอง...] · เอาแบรนด์ออก = รหัสของแบรนด์นั้นหลุดจากที่เลือกด้วย
+//   • ช่วงเวลาที่จ้าง (ตั้งแต่ – ถึง) ไม่บังคับ · มีด้านเดียวได้ · ถึง ต้องไม่ก่อน ตั้งแต่
+//   • server รุ่นก่อน (หน้าเว็บขึ้นแล้วแต่ server ยังไม่รีสตาร์ต) ทิ้งสินค้า/ช่วงเวลาเงียบ ๆ — คำตอบไม่มีคีย์ products / hire_from
+//     = บอกผู้ใช้ให้ลองใหม่ ไม่ปิดฟอร์มเหมือนบันทึกครบ
 // ช่องทางติดต่อ — ติ๊กเลือกก่อน แล้วช่องที่ต้องกรอกเปลี่ยนตามแบบ (ผู้ใช้สั่ง 30 ก.ย. 2026) · ค่าต้องตรงกับ CONTACT_MODES ใน server
 //   ติดต่อเอง = ชื่อผู้ติดต่อ + เบอร์/LINE · ผ่าน Agency = ชื่อเอเจนซี่ + ชื่อผู้ติดต่อของเอเจนซี่ (ไม่มีช่องเบอร์/LINE)
 export const CONTACT_MODES = [['self', 'ติดต่อเอง'], ['agency', 'ผ่าน Agency']];
-const EMPTY = { name: '', brands: [], kind: '', socials: [emptySocialRow()], contact_mode: '', contact_name: '', contact: '', agency: '', rate: '', rate_unit: RATE_UNITS[0], scope: '', image_link: '', clip_link: '', note: '' };
+const EMPTY = { name: '', brands: [], products: [], products_text: '', hire_from: '', hire_to: '', kind: '', socials: [emptySocialRow()], contact_mode: '', contact_name: '', contact: '', agency: '', rate: '', scope: '', image_link: '', clip_link: '', note: '' };
 const MAX = { name: 200, contact_name: 200, contact: 200, agency: 200, scope: 2000, image_link: 1000, clip_link: 1000, note: 1000 };
+// สินค้า — เพดานเดียวกับ server (TALENT_PRODUCTS_MAX / TALENT_PRODUCT_LEN ใน routes/hires.js)
+const PRODUCTS_MAX = 100;
+const PRODUCT_LEN = 100;
+const CATALOG_ORDER = PRODUCT_CATALOG.map(p => p.code);
+const CATALOG_CODES = new Set(CATALOG_ORDER);
+// เรียงรหัสตามคลังเสมอ (เลือกสลับลำดับไม่ทำให้ฟอร์มดูว่าแก้แล้ว) · ค่าที่ไม่อยู่ในคลังต่อท้ายตามเดิม
+const sortCodes = list => [...CATALOG_ORDER.filter(c => list.includes(c)), ...list.filter(c => !CATALOG_CODES.has(c))];
+const codesOfBrands = brands => brands.flatMap(b => productsByBrand(b).map(p => p.code));
 // แถวที่บันทึกก่อนมีตัวเลือกนี้ (contact_mode ว่าง) — เดาจากข้อมูลที่มี: มีสังกัด = ผ่านเอเจนซี่ · มีเบอร์/ชื่อ = ติดต่อเอง
 // มีทั้งเบอร์และสังกัด (ฟอร์มรุ่นเก่า) = ไม่เดา ปล่อยให้คนเลือกเอง — เดาแล้วช่องที่ถูกซ่อนจะหายตอนกดบันทึกโดยไม่รู้ตัว
 const modeOf = t => (t.contact_mode === 'self' || t.contact_mode === 'agency') ? t.contact_mode
@@ -120,14 +136,21 @@ export default function TalentForm({ talentId = null, onClose, onSaved }) {
             .then(res => {
                 if (!on) return;
                 const t = res.data || {};
+                // สินค้าที่บันทึกไว้: รหัสในคลัง → ช่องเลือก · ที่เหลือ (พิมพ์เอง) → ช่องพิมพ์ คั่นด้วย ,
+                // รหัสนับเฉพาะของแบรนด์ที่เลือกไว้ — ข้อความที่พิมพ์เองที่บังเอิญตรงรหัสแบรนด์อื่น (เช่น "C1") ยังอยู่ในช่องพิมพ์
+                const prods = Array.isArray(t.products) ? t.products.map(S).map(x => x.trim()).filter(Boolean) : [];
+                const brands = Array.isArray(t.brands) ? t.brands.map(S).filter(Boolean) : [];
+                const own = new Set(codesOfBrands(brands));
                 const next = {
-                    name: S(t.name), brands: Array.isArray(t.brands) ? t.brands.map(S).filter(Boolean) : [],
+                    name: S(t.name), brands,
+                    products: sortCodes(prods.filter(x => own.has(x))), products_text: prods.filter(x => !own.has(x)).join(', '),
+                    hire_from: S(t.hire_from).slice(0, 10), hire_to: S(t.hire_to).slice(0, 10),
                     // socials ว่าง (แถวรุ่นเก่า) → ใช้ link ช่องเดียวเป็น 1 ช่องทาง · ไม่มีอะไรเลย = แถวว่าง 1 แถวให้กรอก
                     // ข้อความหลายบรรทัด (Account เดิม) → multi = ใช้กล่องหลายบรรทัดตลอดการแก้ (ลบบรรทัดหมดแล้วช่องไม่สลับกลับ ไม่หลุดโฟกัส)
                     kind: S(t.kind), socials: socialRowsOf(normalizeSocials(t.socials, t.link))
                         .map(r => (r.platform === SOCIAL_OTHER && /[\r\n]/.test(r.handle) ? { ...r, multi: true } : r)),
                     contact_mode: modeOf(t), contact_name: S(t.contact_name), contact: S(t.contact), agency: S(t.agency),
-                    rate: t.rate == null ? '' : String(t.rate), rate_unit: t.rate_unit || RATE_UNITS[0], scope: S(t.scope),
+                    rate: t.rate == null ? '' : String(t.rate), scope: S(t.scope),
                     image_link: S(t.image_link), clip_link: S(t.clip_link), note: S(t.note)
                 };
                 if (!next.socials.length) next.socials = [emptySocialRow()];
@@ -140,10 +163,23 @@ export default function TalentForm({ talentId = null, onClose, onSaved }) {
 
     const up = (k, v) => setF(s => ({ ...s, [k]: v }));
     // แบรนด์เลือกได้หลายอัน — เรียงตามรายชื่อแบรนด์เสมอ (กดสลับลำดับไม่ทำให้ฟอร์มดูว่าแก้แล้ว)
+    // เอาแบรนด์ออก = รหัสสินค้าของแบรนด์นั้นหลุดจากที่เลือกด้วย (รหัสอื่น / ชื่อที่พิมพ์เองไม่แตะ)
     const toggleBrand = b => setF(s => {
-        const on = s.brands.includes(b) ? s.brands.filter(x => x !== b) : [...s.brands, b];
-        return { ...s, brands: [...BRANDS.filter(x => on.includes(x)), ...on.filter(x => !BRANDS.includes(x))] };
+        const off = s.brands.includes(b);
+        const on = off ? s.brands.filter(x => x !== b) : [...s.brands, b];
+        const drop = new Set(off ? codesOfBrands([b]) : []);
+        return { ...s, brands: [...BRANDS.filter(x => on.includes(x)), ...on.filter(x => !BRANDS.includes(x))],
+            products: s.products.filter(c => !drop.has(c)) };
     });
+    // ===== สินค้า: ตัวเลือก = คลังของแบรนด์ที่ติ๊ก · แบรนด์ที่ยังไม่มีคลัง → ช่องพิมพ์เอง =====
+    const productOptions = codesOfBrands(f.brands);
+    const noCatalog = f.brands.filter(b => !productsByBrand(b).length);
+    // ช่องพิมพ์เอง: ขึ้นแล้วอยู่ต่อจนปิดฟอร์ม (ลบข้อความจนว่างระหว่างพิมพ์ ช่องหายแล้วโฟกัสหลุด)
+    const [textOn, setTextOn] = useState(false);
+    const showText = textOn || noCatalog.length > 0 || f.products_text.trim() !== '';
+    useEffect(() => { if (showText && !textOn) setTextOn(true); }, [showText, textOn]);
+    const typedProducts = splitProductList(f.products_text);
+    const allProducts = [...new Set([...f.products, ...typedProducts])];
     const editing = rowId != null;
 
     // ===== ช่องทาง Social (หลายแถว) =====
@@ -205,6 +241,9 @@ export default function TalentForm({ talentId = null, onClose, onSaved }) {
         if (se.some(Boolean)) { e.socials = 'แก้ช่องทาง Social ที่ขึ้นสีแดงก่อน'; e.socialRows = se; }
         if (f.image_link.trim() && !isWeb(f.image_link.trim())) e.image = 'ลิงก์รูปต้องขึ้นต้นด้วย http:// หรือ https://';
         if (f.clip_link.trim() && !isWeb(f.clip_link.trim())) e.clip = 'ลิงก์คลิปต้องขึ้นต้นด้วย http:// หรือ https://';
+        if (typedProducts.some(x => x.length > PRODUCT_LEN)) e.products = `ชื่อสินค้าแต่ละตัวยาวไม่เกิน ${PRODUCT_LEN} ตัวอักษร`;
+        else if (allProducts.length > PRODUCTS_MAX) e.products = `สินค้าเยอะเกินไป (ไม่เกิน ${PRODUCTS_MAX} รายการ)`;
+        if (f.hire_from && f.hire_to && f.hire_to < f.hire_from) e.hire = 'วันสิ้นสุดต้องไม่ก่อนวันเริ่ม';
         if (f.rate.trim()) {
             const n = rateNum(f.rate);
             // ต้องมีตัวเลขจริง (พิมพ์แค่ "," จะกลายเป็น 0 เงียบ ๆ)
@@ -252,7 +291,8 @@ export default function TalentForm({ talentId = null, onClose, onSaved }) {
                 const el = wrapRef.current && wrapRef.current.querySelector('.qf-field.has-err');
                 if (el) {
                     el.scrollIntoView({ block: 'center', behavior: 'smooth' });
-                    const input = el.querySelector('.kind-other') || el.querySelector('input:not([type=file]), textarea, select, button');
+                    const input = el.querySelector('.kind-other') || el.querySelector('.tf-prod-text')
+                        || el.querySelector('input:not([type=file]), textarea, select, button');
                     if (input) input.focus({ preventScroll: true });
                 }
             }, 0);
@@ -265,10 +305,10 @@ export default function TalentForm({ talentId = null, onClose, onSaved }) {
         const mode = f.contact_mode;
         const body = {
             // link = ลิงก์ช่องทางแรก (ที่ยังอ่าน link ช่องเดียวแบบเดิมใช้ต่อได้)
-            name: f.name.trim(), brands: f.brands, kind: kindValue(f.kind), socials: formSocials, link: linkFromSocials(formSocials) || '',
+            name: f.name.trim(), brands: f.brands, products: allProducts, hire_from: f.hire_from || null, hire_to: f.hire_to || null, kind: kindValue(f.kind), socials: formSocials, link: linkFromSocials(formSocials) || '',
             contact_mode: mode, contact_name: f.contact_name.trim(),
             contact: mode === 'agency' ? '' : f.contact.trim(), agency: mode === 'self' ? '' : f.agency.trim(),
-            rate: hasRate ? rateNum(f.rate) : null, rate_unit: hasRate ? f.rate_unit : null, scope: f.scope.trim(),
+            rate: hasRate ? rateNum(f.rate) : null, scope: f.scope.trim(),
             image_link: f.image_link.trim(), clip_link: f.clip_link.trim(), note: f.note.trim()
         };
         if (imageFile || dropImage) body.auto_image = false;
@@ -278,6 +318,8 @@ export default function TalentForm({ talentId = null, onClose, onSaved }) {
                 : await api('/hires/talents', { method: 'POST', body });
             const saved = res.data || {};
             const tid = saved.id;
+            // server รุ่นก่อน (ยังไม่รีสตาร์ตหลัง deploy) ไม่รู้จักช่องสินค้า / ช่วงเวลา — ทิ้งเงียบ ๆ แล้วตอบสำเร็จ · บอกผู้ใช้ตรง ๆ
+            const oldServer = !('products' in saved) || !('hire_from' in saved);
             setRowId(tid);
             setOrig(o => ({ ...(o || {}), ...saved }));
             savedAny.current = true;
@@ -296,6 +338,12 @@ export default function TalentForm({ talentId = null, onClose, onSaved }) {
             await fileStep('clip', clipFile, dropClip, setClipFile, setDropClip);
             if (fails.length) {
                 setErr(`บันทึกข้อมูลแล้ว แต่ไฟล์ยังไม่ขึ้น — ${fails.join(' · ')} · กดบันทึกอีกครั้งเพื่อลองใหม่`);
+                toTop();
+                return;
+            }
+            if (oldServer && (allProducts.length || f.hire_from || f.hire_to)) {
+                clean.current = '';   // ฟอร์มยังนับว่ามีของที่ยังไม่บันทึก — ปิดแล้วถามก่อน
+                setErr('บันทึกข้อมูลอื่นแล้ว แต่สินค้า / ช่วงเวลาที่จ้างยังไม่ถูกบันทึก — ระบบกำลังอัปเดต รอสักครู่แล้วกดบันทึกอีกครั้ง');
                 toTop();
                 return;
             }
@@ -426,6 +474,23 @@ export default function TalentForm({ talentId = null, onClose, onSaved }) {
                                 ))}
                             </div>
                         </Field>
+                        <Field label="สินค้า" err={E.products} labelId={id('prod')}
+                            hint={!f.brands.length && !allProducts.length ? 'เลือกแบรนด์ก่อน แล้วเลือกสินค้าของแบรนด์นั้น'
+                                : ['เลือกได้หลายตัว · ไม่บังคับ', noCatalog.length > 0 && `${noCatalog.join(' / ')} ยังไม่มีรายการสินค้าในระบบ — พิมพ์ชื่อสินค้าเอง คั่นด้วย ,`].filter(Boolean).join(' · ')}>
+                            {(f.brands.length > 0 || allProducts.length > 0) && (
+                                <div className="tf-prods" role="group" aria-labelledby={id('prod')}>
+                                    {(productOptions.length > 0 || f.products.length > 0) && (
+                                        <ProductMultiSelect value={f.products.join(',')} options={productOptions} placeholder="— เลือกสินค้า —"
+                                            itemName="สินค้า" ariaLabel="เลือกสินค้า" onChange={v => up('products', sortCodes(splitProductList(v)))} />
+                                    )}
+                                    {showText && (
+                                        <input className="tf-prod-text" value={f.products_text} maxLength={2000} autoComplete="off"
+                                            aria-label="สินค้าที่พิมพ์เอง" aria-invalid={E.products ? 'true' : undefined} onChange={e => up('products_text', e.target.value)}
+                                            placeholder={noCatalog.length ? `ชื่อสินค้าของ ${noCatalog.join(' / ')} เช่น เซรั่มวิตซี, ครีมกันแดด` : 'ชื่อสินค้า คั่นด้วย ,'} />
+                                    )}
+                                </div>
+                            )}
+                        </Field>
                         <Field label="ประเภทงาน" req err={E.kind} labelId={id('kind')}>
                             <KindPicker value={f.kind} onChange={v => up('kind', v)} labelId={id('kind')} invalid={!!E.kind} />
                         </Field>
@@ -496,12 +561,20 @@ export default function TalentForm({ talentId = null, onClose, onSaved }) {
                             </div>
                         )}
                         <Field label="เรทราคา (บาท)" err={E.rate} htmlFor={id('rate')} hint="ยังไม่รู้ก็เว้นไว้ได้">
-                            <div className="tf-rate">
-                                <input id={id('rate')} inputMode="decimal" value={f.rate} autoComplete="off"
-                                    onChange={e => up('rate', e.target.value.replace(/[^0-9.,]/g, ''))} placeholder="เช่น 5000" />
-                                <select value={f.rate_unit} onChange={e => up('rate_unit', e.target.value)} aria-label="หน่วยเรท">
-                                    {RATE_UNITS.map(u => <option key={u} value={u}>{u}</option>)}
-                                </select>
+                            <input id={id('rate')} inputMode="decimal" value={f.rate} autoComplete="off"
+                                onChange={e => up('rate', e.target.value.replace(/[^0-9.,]/g, ''))} placeholder="เช่น 5000" />
+                        </Field>
+                        <Field label="ช่วงเวลาที่จ้าง" err={E.hire} labelId={id('hire')} hint="ไม่บังคับ · ใส่ด้านเดียวได้ · กด ✕ ในช่องเพื่อล้างวันที่">
+                            <div className="tf-hire" role="group" aria-labelledby={id('hire')}>
+                                <div className="tf-hire-side">
+                                    <span className="tf-hire-k">ตั้งแต่</span>
+                                    <DatePicker value={f.hire_from} onChange={v => up('hire_from', v)} placeholder="วันเริ่ม" />
+                                </div>
+                                <span className="tf-hire-dash" aria-hidden="true">–</span>
+                                <div className="tf-hire-side">
+                                    <span className="tf-hire-k">ถึง</span>
+                                    <DatePicker value={f.hire_to} onChange={v => up('hire_to', v)} placeholder="วันสิ้นสุด" />
+                                </div>
                             </div>
                         </Field>
                         <Field label="Scope of work" htmlFor={id('scope')} hint="งานที่รวมอยู่ในเรทนี้ — ยังไม่รู้ก็เว้นไว้ได้">

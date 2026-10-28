@@ -8,13 +8,15 @@
 const { query, withTransaction, insertRow, updateRow, asJson } = require('./_base');
 
 // ช่องที่แก้ได้จากฟอร์ม — id / ผู้เพิ่ม / เวลา / ไฟล์ ไม่รับจากตรงนี้ (ไฟล์มีเส้นของตัวเอง)
-const EDITABLE = ['name', 'kind', 'link', 'socials', 'contact_mode', 'contact_name', 'contact', 'agency', 'rate', 'rate_unit', 'scope', 'brands', 'image_link', 'clip_link', 'note'];
+const EDITABLE = ['name', 'kind', 'link', 'socials', 'contact_mode', 'contact_name', 'contact', 'agency', 'rate', 'rate_unit', 'scope', 'brands', 'products', 'hire_from', 'hire_to', 'image_link', 'clip_link', 'note'];
 const pick = fields => {
     const out = {};
     for (const k of EDITABLE) if (fields && fields[k] !== undefined) out[k] = fields[k];
     // brands / socials เป็น JSONB (array) — socials = [{ platform, handle, url }] (data/talentSocials.js · 1 ต.ค. 2026)
     if (out.brands !== undefined) out.brands = asJson(Array.isArray(out.brands) ? out.brands : [], []);
     if (out.socials !== undefined) out.socials = asJson(Array.isArray(out.socials) ? out.socials : [], []);
+    // products = ["L8A", "ชื่อที่พิมพ์เอง"] (2 ต.ค. 2026) — JSONB เหมือน brands
+    if (out.products !== undefined) out.products = asJson(Array.isArray(out.products) ? out.products : [], []);
     return out;
 };
 // id ของตาราง (SERIAL = int4) — เกินช่วงถือว่าไม่พบ ไม่ส่งไปให้ PostgreSQL ตอบ error 22003 (กลายเป็น 500)

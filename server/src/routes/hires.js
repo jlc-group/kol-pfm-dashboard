@@ -107,7 +107,12 @@ const CONTACT_MODES = ['self', 'agency'];
 // แบรนด์ (เลือกได้หลายแบรนด์ · บังคับอย่างน้อย 1) — รายชื่อแบรนด์อยู่ฝั่งหน้าเว็บ (client/src/data/brands.js) ที่นี่กันแค่รูปแบบ/ขนาด
 const TALENT_BRANDS_MAX = 20;
 const TALENT_BRAND_LEN = 60;
-// หน่วยของเรทราคา — ต้องตรงกับตัวเลือกในฟอร์ม (client/src/pages/hires/TalentForm.jsx)
+// สินค้า (ผู้ใช้สั่ง 2 ต.ค. 2026) — รหัสในคลังของหน้าเว็บ หรือชื่อที่พิมพ์เอง · ไม่บังคับ · ที่นี่กันแค่รูปแบบ/ขนาด (คลังอยู่ฝั่งหน้าเว็บ)
+const TALENT_PRODUCTS_MAX = 100;
+const TALENT_PRODUCT_LEN = 100;
+const HIRE_ORDER_ERR = 'วันสิ้นสุดการจ้างต้องไม่ก่อนวันเริ่มจ้าง';
+// หน่วยของเรทราคา — ฟอร์มเลิกมีช่องนี้แล้ว (ผู้ใช้สั่ง 2 ต.ค. 2026 ไม่ส่ง rate_unit · หน้าเว็บไม่โชว์)
+// ยังตรวจค่าไว้ เผื่อฟอร์มรุ่นก่อนที่เปิดค้างส่งมา · ค่าเดิมในฐานไม่ล้าง
 const RATE_UNITS = ['ต่อวัน', 'ต่องาน', 'ต่อชั่วโมง', 'ต่อโพสต์', 'ต่อคลิป'];
 const RATE_MAX = 1e9;
 const isWebUrl = v => /^https?:\/\/\S+$/i.test(v);
@@ -160,6 +165,23 @@ function talentInput(body, { partial = false } = {}) {
         if (m === 'self') fields.agency = null;
         if (m === 'agency') fields.contact = null;
     }
+    // ช่วงเวลาที่จ้าง (2 ต.ค. 2026): YYYY-MM-DD (รับ YYYY-MM = วันที่ 1) · '' / null = ล้าง · ส่งมาทั้งคู่ = ถึง ต้องไม่ก่อน ตั้งแต่
+    //   (ส่งมาด้านเดียว เส้น PUT เทียบกับค่าที่บันทึกไว้ให้)
+    for (const [k, label] of [['hire_from', 'วันเริ่มจ้าง'], ['hire_to', 'วันสิ้นสุดการจ้าง']]) {
+        if (b[k] === undefined) continue;
+        const d = hiredDate(b[k]);
+        if (d === null) return { error: `${label}ไม่ถูกต้อง` };
+        fields[k] = d || null;
+    }
+    if (fields.hire_from && fields.hire_to && fields.hire_to < fields.hire_from) return { error: HIRE_ORDER_ERR };
+    // สินค้า: รายการข้อความ · ตัดช่องว่าง/ซ้ำ · [] = ล้าง · ไม่ส่งมา (ฟอร์มรุ่นก่อน / แก้บางช่อง) = คงเดิม
+    if (b.products !== undefined) {
+        if (!Array.isArray(b.products)) return { error: 'สินค้าไม่ถูกต้อง' };
+        const list = [...new Set(b.products.map(textOf).filter(Boolean))];
+        if (list.length > TALENT_PRODUCTS_MAX) return { error: `สินค้าเยอะเกินไป (ไม่เกิน ${TALENT_PRODUCTS_MAX} รายการ)` };
+        if (list.some(x => x.length > TALENT_PRODUCT_LEN)) return { error: `ชื่อสินค้ายาวเกิน ${TALENT_PRODUCT_LEN} ตัวอักษร` };
+        fields.products = list;
+    }
     // ตรวจท้ายสุด — ข้อความ error ของช่องอื่นขึ้นก่อน (ฟอร์มโชว์ทีละข้อ)
     if (b.brands !== undefined) {
         if (!Array.isArray(b.brands)) return { error: 'แบรนด์ไม่ถูกต้อง' };
@@ -185,6 +207,10 @@ const fileInfo = f => (f && typeof f === 'object' && (f.filename || f.original)
     : null);
 const talentOut = (t, req) => ({
     id: t.id, name: t.name, kind: t.kind, link: t.link || null, brands: Array.isArray(t.brands) ? t.brands : [],
+    // สินค้า (2 ต.ค. 2026) — แถวก่อนรัน setup-db / ก่อนมีช่องนี้ = []
+    products: Array.isArray(t.products) ? t.products : [],
+    // ช่วงเวลาที่จ้าง (2 ต.ค. 2026) — 'YYYY-MM-DD' | null
+    hire_from: t.hire_from || null, hire_to: t.hire_to || null,
     // ช่องทาง Social [{ platform, handle, url }] — แถวเก่าที่มีแค่ link แปลงเป็น 1 ช่องทาง (ไม่หาย)
     socials: normalizeSocials(t.socials, t.link),
     contact_mode: t.contact_mode || null, contact_name: t.contact_name || null, contact: t.contact || null, agency: t.agency || null,
@@ -398,6 +424,10 @@ router.put('/talents/:id', async (req, res, next) => {
         if (fields.socials !== undefined && sameSocials(fields.socials, normalizeSocials(acc.talent.socials, acc.talent.link))) {
             delete fields.link;
         }
+        // ช่วงเวลาที่จ้าง: ส่งมาด้านเดียว → เทียบกับอีกด้านที่บันทึกไว้
+        const hireFrom = fields.hire_from !== undefined ? fields.hire_from : (acc.talent.hire_from || null);
+        const hireTo = fields.hire_to !== undefined ? fields.hire_to : (acc.talent.hire_to || null);
+        if (hireFrom && hireTo && hireTo < hireFrom) return res.status(400).json({ status: 'error', message: HIRE_ORDER_ERR });
         const name = fields.name !== undefined ? fields.name : acc.talent.name;
         const kind = fields.kind !== undefined ? fields.kind : acc.talent.kind;
         const dup = await store.talents.findByKey(name, kind, acc.talent.id);

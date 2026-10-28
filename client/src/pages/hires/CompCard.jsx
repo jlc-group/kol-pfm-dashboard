@@ -1,6 +1,6 @@
 import Icon from '../../components/Icon.jsx';
 import useLazyImage from '../../utils/useLazyImage.js';
-import { baht } from '../../data/talentLabels.js';
+import { baht, hirePeriodText } from '../../data/talentLabels.js';
 import { normalizeSocials, socialLabel, SOCIAL_SHORT } from '../../data/talentSocials.js';
 import { jobsCountOf } from '../../data/talentJobs.js';
 
@@ -116,6 +116,8 @@ export default function CompCard({ card, onOpen, onEdit }) {
     // ไม่มีเรทที่ใส่เอง (การ์ดจากงานเก่า) → ราคาล่าสุดจากงาน (server ส่งมาใหม่สุดก่อน ตัด ฿0 แล้ว)
     const fee = rate ? null : (Array.isArray(card.fees) ? card.fees : []).find(f => f && Number(f.fee) > 0) || null;
     const jobs = jobsCountOf(card);
+    // ช่วงเวลาที่จ้าง (วัน/เดือน/ปี) ใต้เรทราคา — ผู้ใช้ขอ 5 ต.ค. 2026 · ไม่ได้ใส่ = ไม่โชว์บรรทัดนี้
+    const period = hirePeriodText(talent);
     const open = () => onOpen && onOpen(card);
 
     return (
@@ -152,7 +154,8 @@ export default function CompCard({ card, onOpen, onEdit }) {
                     {rate > 0 ? (
                         <div className="tb-fee rate">
                             <b className="tb-fee-v">{baht(rate)}</b>
-                            <span className="tb-fee-k">เรท{talent.rate_unit ? ' ' + talent.rate_unit : ''}</span>
+                            {/* หน่วยเรท (ต่อวัน / ต่องาน) เลิกใช้แล้ว 2 ต.ค. 2026 — ค่าเดิมในฐานไม่โชว์ */}
+                            <span className="tb-fee-k">เรท</span>
                         </div>
                     ) : fee ? (
                         <div className={'tb-fee ' + (fee.kind === 'hired' ? 'hired' : 'proposed')}>
@@ -161,6 +164,11 @@ export default function CompCard({ card, onOpen, onEdit }) {
                         </div>
                     ) : (
                         <div className="tb-fee-none">ยังไม่มีเรทราคา</div>
+                    )}
+                    {period && (
+                        <div className="tb-period" title={`ช่วงเวลาที่จ้าง : ${period}`}>
+                            <Icon name="calendar" size={12} /><span className="tb-period-k">ช่วงเวลาที่จ้าง </span><span className="tb-period-v">{period}</span>
+                        </div>
                     )}
                 </div>
 

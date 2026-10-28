@@ -440,6 +440,12 @@ ALTER TABLE talents ADD COLUMN IF NOT EXISTS brands JSONB NOT NULL DEFAULT '[]':
 -- ช่องทาง Social หลายช่องต่อคน (ผู้ใช้สั่ง 1 ต.ค. 2026): [{ platform, handle, url }] — server/src/data/talentSocials.js
 --   แถวเก่ามีแค่ link (Account) ช่องเดียว: socials ว่าง = เส้น API แปลง link เป็น 1 ช่องทางตอนอ่าน · ตอนบันทึกยังเขียน link = ลิงก์ช่องทางแรก
 ALTER TABLE talents ADD COLUMN IF NOT EXISTS socials JSONB NOT NULL DEFAULT '[]'::jsonb;
+-- สินค้าที่คนนี้เหมาะ/เคยทำให้ (ผู้ใช้สั่ง 2 ต.ค. 2026): ["L8A", "BTA4-01", "ชื่อที่พิมพ์เอง"] — รหัสในคลังสินค้าของหน้าเว็บ
+--   (client/src/data/products.js) หรือชื่อที่พิมพ์เองสำหรับแบรนด์ที่ยังไม่มีคลัง · ไม่บังคับ · ไม่ผูกสิทธิ์การเห็น
+ALTER TABLE talents ADD COLUMN IF NOT EXISTS products JSONB NOT NULL DEFAULT '[]'::jsonb;
+-- ช่วงเวลาที่จ้าง (ผู้ใช้สั่ง 2 ต.ค. 2026): ตั้งแต่ – ถึง · ไม่บังคับ · มีด้านเดียวได้ · มีทั้งคู่ = ถึง ต้องไม่ก่อน ตั้งแต่ (เส้น API ตรวจ)
+ALTER TABLE talents ADD COLUMN IF NOT EXISTS hire_from DATE;
+ALTER TABLE talents ADD COLUMN IF NOT EXISTS hire_to DATE;
 
 -- ===== งานที่จ้างของคนใน Talent Book (ผู้ใช้สั่ง 1 ต.ค. 2026) — คนหนึ่งมีได้หลายงาน =====
 -- แบรนด์ / วันที่จ้าง (หน้าเว็บโชว์เป็นเดือน/ปี) / ค่าตัวที่จ่ายจริง / Scope / ลิงก์ผลงาน / หมายเหตุ

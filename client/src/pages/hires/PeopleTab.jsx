@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { api } from '../../api/client.js';
 import Icon from '../../components/Icon.jsx';
 import { BRANDS } from '../../data/brands.js';
+import { productLabel } from '../../data/products.js';
 import { T } from '../../data/talentLabels.js';
 import { socialsSearchText } from '../../data/talentSocials.js';
 import CompCard, { cardSocials } from './CompCard.jsx';
@@ -90,7 +91,9 @@ export default function PeopleTab() {
         c.name, c.agency, c.link, socialsSearchText(cardSocials(c)), c.contact, c.contact_name,
         ...(c.team_contacts || []), ...(c.proposed_by || []), ...(c.projects || []).map(p => p && p.name),
         // คนที่เพิ่มเอง: หมายเหตุ + คนที่เพิ่ม
-        c.talent && c.talent.note, c.talent && c.talent.scope, c.talent && c.talent.added_by
+        c.talent && c.talent.note, c.talent && c.talent.scope, c.talent && c.talent.added_by,
+        // สินค้า (2 ต.ค. 2026) — ค้นได้ทั้งรหัส (L8A) และชื่อสินค้า
+        ...((c.talent && c.talent.products) || []).flatMap(p => [p, productLabel(p)])
     ].map(low).join('\n')])), [cards]);
 
     const q = search.trim().toLowerCase();
@@ -135,7 +138,7 @@ export default function PeopleTab() {
                 <div className="ka-search">
                     <Icon name="search" size={15} />
                     <input value={search} onChange={e => setSearch(e.target.value)} aria-label="ค้นหาคอมการ์ด"
-                        placeholder={`ค้นหาชื่อ / @ชื่อช่อง / สังกัด / ${T.contact} / ผู้ติดต่อ / Scope...`} />
+                        placeholder={`ค้นหาชื่อ / @ชื่อช่อง / สังกัด / ${T.contact} / ผู้ติดต่อ / สินค้า / Scope...`} />
                     {search && (
                         <button type="button" className="ka-search-x" onClick={() => setSearch('')} title="ล้างคำค้นหา">✕</button>
                     )}

@@ -6,7 +6,8 @@ import SideDrawer from '../../components/SideDrawer.jsx';
 import FilePreviewModal from '../../components/FilePreviewModal.jsx';
 import Icon from '../../components/Icon.jsx';
 import { visibleBrands } from '../../data/brands.js';
-import { T, baht } from '../../data/talentLabels.js';
+import { productLabel } from '../../data/products.js';
+import { T, baht, hirePeriodText } from '../../data/talentLabels.js';
 import { normalizeSocials } from '../../data/talentSocials.js';
 import { jobsCountOf, monthYear, sortJobs } from '../../data/talentJobs.js';
 import { Photo, SocialLine, cardSocials, httpUrl, okPath, str } from './CompCard.jsx';
@@ -58,7 +59,10 @@ export default function TalentDetail({ card, reloadKey = 0, onClose, onEdit, onC
     const socials = cs.length ? cs : normalizeSocials(t && t.socials, t && t.link);
     const rateRaw = t ? t.rate : talent && talent.rate;
     const rate = Number(rateRaw) > 0 ? Number(rateRaw) : 0;
-    const rateUnit = str(t ? t.rate_unit : talent && talent.rate_unit);
+    // สินค้า (2 ต.ค. 2026) — รหัสในคลังโชว์ "รหัส - ชื่อ" · ชื่อที่พิมพ์เองโชว์ตามที่พิมพ์ · หน่วยเรทเลิกโชว์แล้ว
+    const products = [...new Set(((t ? t.products : talent && talent.products) || []).map(str).filter(Boolean))];
+    // ช่วงเวลาที่จ้าง (2 ต.ค. 2026) — วัน/เดือน/ปี · มีด้านเดียวโชว์ "ตั้งแต่ ..." / "ถึง ..." (ตัวเดียวกับการ์ด)
+    const hirePeriod = hirePeriodText(t);
     const brands = [...new Set([...(card.brands || []), ...((t && Array.isArray(t.brands) && t.brands) || [])].map(str).filter(Boolean))];
     const mode = str(card.contact_mode) || str(t && t.contact_mode);
     const contactName = str(card.contact_name) || str(t && t.contact_name);
@@ -104,6 +108,8 @@ export default function TalentDetail({ card, reloadKey = 0, onClose, onEdit, onC
 
     const facts = [
         brands.length > 0 && ['แบรนด์', brands.join(', ')],
+        products.length > 0 && ['สินค้า', products.map(productLabel).join(', ')],
+        hirePeriod && ['ช่วงเวลาที่จ้าง', hirePeriod],
         mode && ['ช่องทางติดต่อ', CONTACT_LABEL[mode] || mode],
         agency && [mode === 'agency' ? 'เอเจนซี่' : 'สังกัด', agency],
         contactName && [mode === 'agency' ? 'ผู้ติดต่อเอเจนซี่' : 'ชื่อผู้ติดต่อ', contactName],
@@ -166,7 +172,7 @@ export default function TalentDetail({ card, reloadKey = 0, onClose, onEdit, onC
                         <div className="tbd-block">
                             <div className="tbd-k">เรทราคา</div>
                             {rate > 0
-                                ? <div className="tbd-rate"><b>{baht(rate)}</b>{rateUnit && <span> {rateUnit}</span>}</div>
+                                ? <div className="tbd-rate"><b>{baht(rate)}</b></div>
                                 : <div className="tb-fee-none">ยังไม่มีเรทราคา</div>}
                         </div>
                         {facts.length > 0 && (

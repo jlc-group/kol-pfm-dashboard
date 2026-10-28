@@ -763,7 +763,7 @@ test('วางรูป (Ctrl+V): ไฟล์ไม่มีนามสกุ
 
 test('ทุกเส้นของคนหนึ่งคนตอบข้อมูลรูปเดียวกัน (POST / PUT / GET / อัปไฟล์ / เอาไฟล์ออก) — มี socials + jobs_count + jobs', async () => {
     const a = await addTalent();
-    const KEYS = ['id', 'name', 'kind', 'link', 'brands', 'socials', 'contact_mode', 'contact_name', 'contact', 'agency', 'rate', 'rate_unit', 'scope',
+    const KEYS = ['id', 'name', 'kind', 'link', 'brands', 'products', 'hire_from', 'hire_to', 'socials', 'contact_mode', 'contact_name', 'contact', 'agency', 'rate', 'rate_unit', 'scope',
         'image', 'image_link', 'clip', 'clip_link', 'note', 'added_by', 'created_at', 'updated_at', 'editable', 'jobs_count', 'jobs'].sort();
     assert.deepEqual(Object.keys(a).sort(), KEYS);
     assert.deepEqual(Object.keys((await call(2, 'PUT', `/hires/talents/${a.id}`, { note: 'x' })).body.data).sort(), KEYS);

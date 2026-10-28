@@ -172,6 +172,63 @@ test('แบรนด์: หลายแบรนด์ · ตัดช่อ�
     assert.ok(forFon.brands.includes('Dermiq'), 'แบรนด์ขึ้นในตัวกรอง Brand');
 });
 
+test('สินค้า (2 ต.ค. 2026): ตัดช่องว่าง/ซ้ำ · ไม่ส่ง = คงเดิม · [] = ล้าง · ค่าแปลก/ยาว/เยอะเกิน → 400 · ส่งไปกับการ์ด', async () => {
+    const none = await call(2, 'POST', '/hires/talents', { brands: ['Jdent'], name: 'ไม่มีสินค้า', kind: 'นางแบบ' });
+    assert.equal(none.status, 201);
+    assert.deepEqual(none.body.data.products, [], 'ไม่บังคับ');
+    const a = await call(2, 'POST', '/hires/talents', { brands: ['Beauterry', 'Dermiq'], name: 'ต้น', kind: 'นางแบบ',
+        products: [' BTA4-01 ', 'BTA4-01', '', 'เซรั่มวิตซี'] });
+    assert.equal(a.status, 201);
+    assert.deepEqual(a.body.data.products, ['BTA4-01', 'เซรั่มวิตซี']);
+    assert.deepEqual(rows.get(a.body.data.id).products, ['BTA4-01', 'เซรั่มวิตซี']);
+    const keep = await call(2, 'PUT', `/hires/talents/${a.body.data.id}`, { note: 'x' });
+    assert.deepEqual(keep.body.data.products, ['BTA4-01', 'เซรั่มวิตซี'], 'แก้ช่องอื่น สินค้าคงเดิม');
+    // คนแบรนด์อื่น (ฝน = Beauterry) ก็เห็นสินค้าบนการ์ด · ดูข้อมูลเต็มได้
+    const c = (await call(3, 'GET', '/hires/book')).body.data.cards.find(x => x.name === 'ต้น');
+    assert.deepEqual(c.talent.products, ['BTA4-01', 'เซรั่มวิตซี']);
+    assert.deepEqual((await call(3, 'GET', `/hires/talents/${a.body.data.id}`)).body.data.products, ['BTA4-01', 'เซรั่มวิตซี']);
+    const bad = async (products, re) => {
+        const r = await call(2, 'PUT', `/hires/talents/${a.body.data.id}`, { products });
+        assert.equal(r.status, 400, JSON.stringify(products).slice(0, 80));
+        assert.match(r.body.message, re);
+    };
+    await bad('BTA4-01', /สินค้าไม่ถูกต้อง/);
+    await bad(['x'.repeat(101)], /ชื่อสินค้ายาวเกิน 100/);
+    await bad(Array.from({ length: 101 }, (_, i) => 'P' + i), /สินค้าเยอะเกินไป/);
+    assert.deepEqual(rows.get(a.body.data.id).products, ['BTA4-01', 'เซรั่มวิตซี'], 'ค่าแปลกไม่ถูกบันทึก');
+    const clear = await call(2, 'PUT', `/hires/talents/${a.body.data.id}`, { products: [] });
+    assert.deepEqual(clear.body.data.products, [], 'ล้างได้');
+});
+
+test('ช่วงเวลาที่จ้าง (2 ต.ค. 2026): ไม่บังคับ · ด้านเดียวได้ · ถึง ก่อน ตั้งแต่ ไม่ได้ (รวมแก้ทีละด้าน) · วันแปลก → 400 · ล้างได้', async () => {
+    const none = await call(2, 'POST', '/hires/talents', { brands: ['Jdent'], name: 'ไม่มีช่วง', kind: 'นางแบบ' });
+    assert.equal(none.status, 201);
+    assert.deepEqual([none.body.data.hire_from, none.body.data.hire_to], [null, null]);
+    const a = await call(2, 'POST', '/hires/talents', { brands: ['Jdent'], name: 'มีช่วง', kind: 'นางแบบ', hire_from: '2026-10-01', hire_to: '2026-12-31' });
+    assert.equal(a.status, 201);
+    assert.deepEqual([a.body.data.hire_from, a.body.data.hire_to], ['2026-10-01', '2026-12-31']);
+    const id = a.body.data.id;
+    const bad = async (body, re) => {
+        const r = await call(2, 'PUT', `/hires/talents/${id}`, body);
+        assert.equal(r.status, 400, JSON.stringify(body));
+        assert.match(r.body.message, re);
+    };
+    await bad({ hire_from: '2026-10-05', hire_to: '2026-10-01' }, /วันสิ้นสุดการจ้างต้องไม่ก่อนวันเริ่มจ้าง/);
+    await bad({ hire_to: '2026-09-30' }, /วันสิ้นสุดการจ้างต้องไม่ก่อนวันเริ่มจ้าง/);    // แก้ด้านเดียว เทียบกับที่บันทึกไว้
+    await bad({ hire_from: '2027-01-01' }, /วันสิ้นสุดการจ้างต้องไม่ก่อนวันเริ่มจ้าง/);
+    await bad({ hire_from: '2026-02-30' }, /วันเริ่มจ้างไม่ถูกต้อง/);
+    await bad({ hire_to: 'พรุ่งนี้' }, /วันสิ้นสุดการจ้างไม่ถูกต้อง/);
+    assert.deepEqual([rows.get(id).hire_from, rows.get(id).hire_to], ['2026-10-01', '2026-12-31'], 'ค่าแปลกไม่ถูกบันทึก');
+    const keep = await call(2, 'PUT', `/hires/talents/${id}`, { note: 'x' });
+    assert.deepEqual([keep.body.data.hire_from, keep.body.data.hire_to], ['2026-10-01', '2026-12-31'], 'แก้ช่องอื่น ช่วงเวลาคงเดิม');
+    const oneSide = await call(2, 'PUT', `/hires/talents/${id}`, { hire_to: '' });
+    assert.deepEqual([oneSide.body.data.hire_from, oneSide.body.data.hire_to], ['2026-10-01', null], 'ล้างด้านเดียว');
+    const clear = await call(2, 'PUT', `/hires/talents/${id}`, { hire_from: null, hire_to: null });
+    assert.deepEqual([clear.body.data.hire_from, clear.body.data.hire_to], [null, null]);
+    const toOnly = await call(2, 'PUT', `/hires/talents/${id}`, { hire_to: '2026-11-15' });
+    assert.deepEqual([toOnly.body.data.hire_from, toOnly.body.data.hire_to], [null, '2026-11-15'], 'มีแค่วันสิ้นสุดก็ได้');
+});
+
 test('แบรนด์: การ์ดที่รวมกับคนในงาน = แบรนด์จากงาน + แบรนด์ที่ทีมเลือก ไม่ซ้ำ', async () => {
     await call(2, 'POST', '/hires/talents', { name: 'มะลิ', kind: 'นางแบบ', brands: ['Jdent', 'Minimii'] });
     const c = (await call(2, 'GET', '/hires/book')).body.data.cards.find(x => x.key === 'มะลิ|นางแบบ');
@@ -426,7 +483,7 @@ test('Talent Book: คนที่เพิ่มเองขึ้นเป็�
     assert.deepEqual(c.fees, [], 'เรทที่ใส่เองไม่ใช่ราคาจากงาน');
     assert.equal(c.photo.type, 'image');
     assert.match(c.photo.path, talentPath(a.id, 'image'), 'path มีเวอร์ชันไฟล์ — เปลี่ยนรูปแล้วการ์ดโหลดใหม่');
-    assert.deepEqual(c.talent, { id: a.id, rate: 5000, rate_unit: 'ต่อวัน', scope: null, note: 'ถนัดงานผิว', added_by: 'แพรว', editable: false, jobs_count: 0 });
+    assert.deepEqual(c.talent, { id: a.id, rate: 5000, rate_unit: 'ต่อวัน', scope: null, products: [], hire_from: null, hire_to: null, note: 'ถนัดงานผิว', added_by: 'แพรว', editable: false, jobs_count: 0 });
     assert.equal(forFon.counts.saved, 1);
 
     const forPraew = (await call(2, 'GET', '/hires/book')).body.data;

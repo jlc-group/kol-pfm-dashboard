@@ -4976,7 +4976,15 @@ button { color: inherit; }
 .tb-edit:hover { border-color: var(--mint); }
 .tb-fee.rate .tb-fee-v { color: #6d28d9; }
 .tb-toolbar .tb-add { flex: none; display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
-.tf-rate { display: grid; grid-template-columns: minmax(0, 1fr) 150px; gap: 8px; }
+/* ช่องสินค้า (2 ต.ค. 2026): ดรอปดาวน์เลือกจากคลัง + ช่องพิมพ์เองของแบรนด์ที่ยังไม่มีคลัง — เรียงลงล่าง */
+.tf-prods { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.qf-field.has-err .tf-prod-text { border-color: var(--danger); }
+/* ช่วงเวลาที่จ้าง (2 ต.ค. 2026): ตั้งแต่ [ปฏิทิน] – ถึง [ปฏิทิน] · จอแคบเรียงลงล่าง */
+.tf-hire { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px 10px; }
+.tf-hire-side { flex: 1 1 200px; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.tf-hire-k { font-size: 12px; font-weight: 600; color: var(--muted); }
+.tf-hire-dash { padding-bottom: 10px; color: var(--muted); }
+@media (max-width: 520px) { .tf-hire-dash { display: none; } }
 
 /* ===== KOL รายคน (แท็บในหน้าแคมเปญ · ฟอร์ม · หน้ารายละเอียด) — 30 ก.ย. 2026 ===== */
 /* ตัวนับบนแท็บหน้าแคมเปญเท่านั้น — .hub-tabs ใช้ร่วมกับหน้า Talent ที่มีเลขแดง/เหลือง ห้ามทับ */
@@ -5090,7 +5098,6 @@ button { color: inherit; }
 .tf-file-hint { font-size: 11.5px; color: var(--muted); }
 .qf .tf-link { margin-top: 8px; }
 .side-drawer-foot .tf-delete { margin-right: auto; color: var(--danger); border-color: #fecaca; }
-@media (max-width: 600px) { .tf-rate { grid-template-columns: minmax(0, 1fr) 120px; } }
 .tb-sub { padding: 1px 7px; border-radius: 999px; border: 1px solid #e2e8f0; background: #fff; font-size: 10.5px; font-weight: 700; color: #475569; }
 .tb-sub.s-waiting { color: #92400e; background: #fef3c7; border-color: #fde68a; }
 .tb-sub.s-spare { border-style: dashed; }
@@ -5115,6 +5122,12 @@ button { color: inherit; }
 .tb-fee.hired .tb-fee-v { color: var(--mint-dark); }
 .tb-fee-k { min-width: 0; font-size: 10.5px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .tb-fee-none { font-size: 11px; color: var(--muted); }
+/* ช่วงเวลาที่จ้าง (วัน/เดือน/ปี) ใต้เรทราคา — 5 ต.ค. 2026 · การ์ดแคบ (~160px) วันที่ต้องไม่ถูกตัด:
+   คำว่า "ช่วงเวลาที่จ้าง" ซ่อนไว้ให้โปรแกรมอ่านหน้าจอ (ตาเห็นไอคอนปฏิทิน + title) · จอแคบกว่านั้นตัดบรรทัดที่ " – " ไม่ตัดกลางวันที่ */
+.tb-period { position: relative; display: flex; align-items: flex-start; gap: 5px; min-width: 0; margin-top: 2px; font-size: 11px; line-height: 1.4; color: var(--text); font-variant-numeric: tabular-nums; }
+.tb-period svg { flex: none; margin-top: 1px; color: var(--mint-dark); }
+.tb-period-k { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap; }
+.tb-period-v { min-width: 0; white-space: normal; }
 
 .tb-rows { list-style: none; display: flex; flex-direction: column; gap: 3px; min-height: 0; overflow: hidden; font-size: 11.5px; color: var(--text); }
 .tb-rows li { display: flex; align-items: center; gap: 6px; min-width: 0; }

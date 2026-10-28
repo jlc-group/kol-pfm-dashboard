@@ -255,6 +255,10 @@ const hires = {
                     rate: t.rate == null || t.rate === '' ? null : Number(t.rate),
                     rate_unit: str(t.rate_unit) || null,
                     scope: str(t.scope) || null,
+                    // สินค้า (2 ต.ค. 2026) — หน้ารายละเอียดโชว์ก่อนโหลดข้อมูลเต็ม + ค้นหาในแท็บ Talent Book
+                    products: Array.isArray(t.products) ? t.products.map(str).filter(Boolean) : [],
+                    // ช่วงเวลาที่จ้าง (2 ต.ค. 2026) — การ์ดโชว์ใต้เรทเป็น วัน/เดือน/ปี (5 ต.ค.) · 'YYYY-MM-DD' | null
+                    hire_from: str(t.hire_from).slice(0, 10) || null, hire_to: str(t.hire_to).slice(0, 10) || null,
                     note: str(t.note) || null,
                     added_by: str(t.created_by) || null,
                     editable: !!isAdmin || (userId != null && t.created_by_id != null && String(t.created_by_id) === String(userId)),
