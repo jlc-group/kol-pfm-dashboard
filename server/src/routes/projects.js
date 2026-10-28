@@ -20,7 +20,9 @@ const {
 } = require('../store/logic');
 const { soloInput, buildSoloGroup, soloPersons, soloAccountsText, soloName, soloDeleteBlock } = require('../store/soloKol');
 const { isMixedTier, mixedTierError } = require('../data/tiers');
-const { displayName } = require('../data/userNames');   // ชื่อคนบันทึก = ชื่อที่แสดงก่อน (เจ้าของบัญชีตั้งเองได้ 28 ต.ค. 2026)
+const { displayName, nameKey } = require('../data/userNames');   // ชื่อคนบันทึก = ชื่อที่แสดงก่อน (เจ้าของบัญชีตั้งเองได้ 28 ต.ค. 2026)
+const { canUseMyWork } = require('../data/roles');
+const { normalizeAssign } = require('../data/reviewers');
 // KOL รายคน (campaign_type 'solo') — ข้อความเมื่อเส้นทั่วไปของแคมเปญถูกเรียกกับรายการ KOL รายคน
 // (หน้าเว็บรุ่นเก่าที่เปิดค้างไว้ไม่รู้จักประเภทนี้ ฟอร์มแคมเปญจะสร้างกลุ่มใหม่ทับจนข้อมูลของ KOL รายคนหาย)
 const SOLO_ONLY_MSG = 'รายการนี้เป็น KOL รายคน — แก้จากหน้าของ KOL คนนั้น (ถ้าเปิดหน้าเว็บค้างไว้นาน กด F5 ก่อน)';
@@ -268,6 +270,21 @@ router.post('/', async (req, res, next) => {
     } catch (err) { next(err); }
 });
 
+// KOL รายคน: คนตรวจ = ผู้ดูแลที่เลือกตอนเพิ่มรายชื่อ (ผู้ใช้สั่ง 28 ต.ค. 2026 "ชื่อคนตรวจในหน้า KOL รายคน ให้ยึดชื่อจากตอนเพิ่มรายชื่อ")
+// ช่องผู้ดูแลเก็บเป็นชื่อ → จับคู่กับผู้ใช้ตอนบันทึก (ชื่อที่โชว์ตรงตัวก่อน แล้วค่อยไม่สนตัวพิมพ์ · ต้องเจอคนเดียว) → เก็บ id ที่ review_assign.default
+// เก็บเป็น id = ผู้ดูแลเปลี่ยนชื่อที่แสดงทีหลังคนตรวจไม่หลุด · ตั้งได้เฉพาะคนที่มีหน้า My Work (ทีม Reviewer / Admin) และเห็นแบรนด์นี้
+// ไม่เข้าเงื่อนไข = ไม่ตั้ง (ยังไม่มีคนตรวจ ตั้งเองที่ตารางได้เหมือนเดิม) · id หรือ null
+async function soloOwnerReviewer(ownerName, brand) {
+    const name = String(ownerName || '').trim();
+    if (!name) return null;
+    const users = (await store.users.listWithTeam())
+        .filter(u => u && u.is_active !== false && (u.status || 'active') === 'active' && u.role !== 'agency');
+    let hits = users.filter(u => displayName(u) === name);
+    if (!hits.length) hits = users.filter(u => nameKey(displayName(u)) === nameKey(name));
+    if (hits.length !== 1) return null;
+    return canUseMyWork(hits[0]) && canSeeBrand(hits[0], brand) ? Number(hits[0].id) : null;
+}
+
 // POST /api/projects/solo — เพิ่ม KOL รายคน (จ้าง KOL เดี่ยว ไม่ต้องสร้างแคมเปญ · ผู้ใช้สั่ง 30 ก.ย. 2026)
 // server สร้างแถวแคมเปญ campaign_type 'solo' + กลุ่มโฆษณา 1 กลุ่ม (1 บล็อก / Platform) + แถวคลิป (confirmed) ในทรานแซกชันเดียว
 // กลุ่มสร้างที่นี่เท่านั้น (ไม่รับกลุ่มจากหน้าเว็บ) · ค่าตัวบังคับทุก Platform (0 = ได้ฟรี) · งบ = ค่าตัว × จำนวนคลิป ของแต่ละ Platform
@@ -298,6 +315,11 @@ router.post('/solo', async (req, res, next) => {
             start_date: today, end_date: today,
             status: 'Active'
         }, soloPersons(input, group.key), input.clip_names, who);
+        // คนตรวจ = ผู้ดูแล (28 ต.ค. 2026) — ตั้งไม่สำเร็จไม่ขวางการเพิ่ม (ตั้งเองที่ตารางได้)
+        try {
+            const rid = await soloOwnerReviewer(input.owner, input.brand);
+            if (rid) project.review_assign = await store.projects.setReviewAssign(project.id, { default: rid });
+        } catch (e) { console.error(`KOL รายคน #${project.id}: ตั้งคนตรวจตามผู้ดูแลไม่สำเร็จ — ${e.message}`); }
         // ค่าตัวที่ตั้งตอนเพิ่มไม่ได้ผ่านเส้นแก้ค่าตัว — บันทึกยอดของทุก Platform ไว้ในประวัติให้ตรวจย้อนหลังได้
         const baht = n => '฿' + (Number(n) || 0).toLocaleString('th-TH');
         const parts = input.platforms.map(p =>
@@ -353,6 +375,15 @@ router.put('/:id/solo', async (req, res, next) => {
             clipNames: input.clip_names, codeExpire: input.code_expire
         }, who);
         if (out.error) return res.status(out.error.code).json({ status: 'error', message: out.error.message });
+        // คนตรวจตามผู้ดูแล (28 ต.ค. 2026): เปลี่ยนผู้ดูแล → คนตรวจเปลี่ยนตาม · รายการที่ยังไม่มีคนตรวจ (เพิ่มก่อน 28 ต.ค.) กดแก้ไข-บันทึก = ตั้งให้
+        // คนตรวจทั้งรายการที่ตั้งเองไว้เป็นคนอื่น (ไม่ใช่ผู้ดูแลเดิม) ไม่แตะ · คนตรวจรายคลิปไม่แตะเสมอ
+        try {
+            const cur = normalizeAssign(check.project.review_assign).default;
+            if (!cur || cur === await soloOwnerReviewer(check.project.owner, check.project.brand)) {
+                const rid = await soloOwnerReviewer(input.owner, input.brand);
+                if (rid !== cur) out.project.review_assign = await store.projects.setReviewAssign(req.params.id, { default: rid });
+            }
+        } catch (e) { console.error(`KOL รายคน #${req.params.id}: ตั้งคนตรวจตามผู้ดูแลไม่สำเร็จ — ${e.message}`); }
         const extra = [
             ...(out.platforms_added || []).map(p => `เพิ่ม ${p}`),
             ...(out.platforms_removed || []).map(p => `เอา ${p} ออก`),
