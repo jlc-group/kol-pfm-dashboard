@@ -16,6 +16,8 @@ export { MAX_DRAFTS, buildDrafts, draftPayload };
  */
 export default function DraftModal({ sub, onSave, onClose, canRemark = false, canDecide = true }) {
     const [drafts, setDrafts] = useState(() => buildDrafts(sub));
+    // Caption ของ KOL — 1 ช่องต่อคลิป แยกจากดราฟ (ผู้ใช้สั่ง 30 ต.ค. 2026) · ทีมและเอเจนซี่กรอก / แก้ได้ทั้งคู่
+    const [caption, setCaption] = useState(sub.kol_caption || '');
     const [draftStatus, setDraftStatus] = useState(sub.draft_status || (sub.approved ? 'approve' : ''));
     // เพิ่งกดเพิ่มดราฟในครั้งนี้ — คนที่ตัดสินไม่ได้ก็ยังต้องล้างผลตรวจรอบก่อนออกได้
     const [resetReview, setResetReview] = useState(false);
@@ -36,7 +38,7 @@ export default function DraftModal({ sub, onSave, onClose, canRemark = false, ca
     async function save() {
         setSaving(true);
         try {
-            const ok = await onSave(draftPayload(drafts, draftStatus, { canRemark, canDecide, resetReview }));
+            const ok = await onSave(draftPayload(drafts, draftStatus, { canRemark, canDecide, resetReview, caption }));
             if (ok !== false) onClose();
         } catch (err) { alert(err.message); }
         finally { setSaving(false); }
@@ -116,6 +118,16 @@ export default function DraftModal({ sub, onSave, onClose, canRemark = false, ca
                         <Icon name="plus" size={14} /> เพิ่มดราฟ {drafts.length + 1}
                     </button>
                 )}
+                {/* Caption ของ KOL — ช่องเดียวต่อคลิป อยู่นอกกล่องดราฟ (ไม่ผูกกับดราฟรอบไหน · ผู้ใช้สั่ง 30 ต.ค. 2026)
+                    อยู่ใต้ปุ่มเพิ่มดราฟ ก่อนปุ่มบันทึก (ผู้ใช้สั่งย้ายจากบนสุด) */}
+                <div className="field draft-caption">
+                    <label htmlFor={`kol-caption-${sub.id}`}>
+                        CAPTION <span className="draft-remark-who">— แคปชั่นที่ KOL จะใช้โพสต์</span>
+                        {caption && <span className="draft-caption-count">{caption.length.toLocaleString('en-US')} ตัวอักษร</span>}
+                    </label>
+                    <textarea id={`kol-caption-${sub.id}`} rows="3" value={caption} maxLength={4000} onChange={e => setCaption(e.target.value)}
+                        placeholder="วาง Caption ของ KOL ที่นี่ (รวม #แฮชแท็ก)" />
+                </div>
                 <div className="modal-actions">
                     <button type="button" className="btn-ghost" onClick={onClose}>ปิด</button>
                     {/* ยังไม่ได้เลือก Revise/Approve = เขียวอ่อน

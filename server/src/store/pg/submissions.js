@@ -35,6 +35,8 @@ const UPDATABLE = [
     'draft_link', 'draft_link2', 'draft_link3', 'draft_link4', 'draft_link5',
     'gencode', 'feedback', 'feedback2', 'feedback3', 'feedback4', 'feedback5',
     'draft_remark', 'draft_remark2', 'draft_remark3', 'draft_remark4', 'draft_remark5',
+    // Caption ของ KOL 1 ช่องต่อคลิป (30 ต.ค. 2026) — ฐานที่ยังไม่มีคอลัมน์ = ตัดทิ้งใน updateOne
+    'kol_caption',
     'approved', 'draft_status', 'post_url', 'post_date', 'id_post', 'code_expire',
     'ad_status', 'ad_spend', 'ad_reach', 'ad_start', 'ad_end', 'ad_note',
     'team_note', 'agency_note', 'content_type',
@@ -143,6 +145,7 @@ async function updateOne(client, subId, projectId, fields, byName, opts = {}) {
     const s = r.rows[0];
     if (!s) return null;
     if (!('fee_free' in s)) delete fields.fee_free;   // ยังไม่ได้ setup-db (27 ต.ค. 2026) — ไม่เขียนคอลัมน์ที่ไม่มี
+    if (!('kol_caption' in s)) delete fields.kol_caption;   // เหมือนกัน (Caption ของ KOL · 30 ต.ค. 2026)
 
     // ช่องที่บันทึกว่าใครแก้ล่าสุดเมื่อไหร่
     // post_date อยู่ในนี้ด้วย เพราะต้องรู้ว่า "แจ้งวันลงงานเข้าระบบตอนไหน"
@@ -285,8 +288,8 @@ async function updateOne(client, subId, projectId, fields, byName, opts = {}) {
     // ถ้าขยับ list_updated_at ด้วย ป้าย "มีอัปเดตใหม่" ฝั่งเอเจนซี่จะเด้งทั้งแคมเปญทั้งที่รายชื่อไม่ได้เปลี่ยน
     const LIST_F = ['account_name', 'followers', 'platform', 'product', 'agency', 'link_account', 'tier', 'content_type', 'group_key', 'status'];
     const DRAFT_REMARK_F = ['draft_remark', 'draft_remark2', 'draft_remark3', 'draft_remark4', 'draft_remark5'];
-    const WORK_F = ['draft_link', 'draft_link2', 'draft_link3', 'draft_link4', 'draft_link5', 'draft_status', 'feedback', 'feedback2', 'feedback3', 'feedback4', 'feedback5', ...DRAFT_REMARK_F, 'gencode', 'post_url', 'post_date', 'id_post', 'code_expire', 'approved', 'concept', 'gen_date'];
-    const DRAFT_F = ['draft_link', 'draft_link2', 'draft_link3', 'draft_link4', 'draft_link5', 'draft_status', 'feedback', 'feedback2', 'feedback3', 'feedback4', 'feedback5', ...DRAFT_REMARK_F];
+    const WORK_F = ['draft_link', 'draft_link2', 'draft_link3', 'draft_link4', 'draft_link5', 'draft_status', 'feedback', 'feedback2', 'feedback3', 'feedback4', 'feedback5', ...DRAFT_REMARK_F, 'kol_caption', 'gencode', 'post_url', 'post_date', 'id_post', 'code_expire', 'approved', 'concept', 'gen_date'];
+    const DRAFT_F = ['draft_link', 'draft_link2', 'draft_link3', 'draft_link4', 'draft_link5', 'draft_status', 'feedback', 'feedback2', 'feedback3', 'feedback4', 'feedback5', ...DRAFT_REMARK_F, 'kol_caption'];   // Caption ส่งมาในหน้าต่างดราฟ = นับเป็นอัปเดตดราฟ
     const keys = Object.keys(fields).filter(k => fields[k] !== undefined); // นับเฉพาะ field ที่ส่งมาจริง
     if (keys.some(k => LIST_F.includes(k))) { s.list_updated_at = now(); patch.list_updated_at = s.list_updated_at; }
     if (keys.some(k => WORK_F.includes(k))) { s.work_updated_at = now(); patch.work_updated_at = s.work_updated_at; }
@@ -605,8 +608,17 @@ const submissions = {
         // ชื่อคอลัมน์มาจากรายการคงที่ในโค้ด (routes/myWork.js) — กันพิมพ์ผิด/แทรก SQL ด้วยการรับเฉพาะชื่อที่เป็นตัวอักษรล้วน
         const cols = (columns || []).filter(c => /^[a-z_0-9]+$/.test(c));
         const list = ['id', 'project_id', 'status', 'group_key', ...cols.filter(c => !['id', 'project_id', 'status', 'group_key'].includes(c))];
-        const r = await query(`SELECT ${list.map(c => `s."${c}"`).join(', ')} FROM submissions s
+        const read = names => query(`SELECT ${names.map(c => `s."${c}"`).join(', ')} FROM submissions s
             WHERE s.status = 'confirmed' AND s.project_id = ANY($1::int[]) ORDER BY s.id`, [p.rows.map(x => x.id)]);
+        let r;
+        try {
+            r = await read(list);
+        } catch (err) {
+            // คอลัมน์ใหม่ที่ฐานยังไม่มี (ยังไม่ setup-db เช่น kol_caption · 30 ต.ค. 2026) — ตัดคอลัมน์ที่ไม่มีออกแล้วอ่านใหม่ หน้างานของฉันไม่ล่ม
+            if (err.code !== '42703') throw err;
+            const have = new Set((await query(`SELECT column_name FROM information_schema.columns WHERE table_name = 'submissions'`)).rows.map(x => x.column_name));
+            r = await read(list.filter(c => have.has(c)));
+        }
         return { projects: p.rows, rows: r.rows };
     },
 

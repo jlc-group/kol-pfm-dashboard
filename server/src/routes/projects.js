@@ -1644,6 +1644,9 @@ router.put('/:id/submissions/:subId', async (req, res, next) => {
             account_name, platform, product, agency, link_account, concept, gen_date, team_note,
             views, likes, comments, saves, shares, reposts   // ผลงานคอนเทนต์ จากโมดัล Perf
         } = req.body;
+        // Caption ของ KOL 1 ช่องต่อคลิป (30 ต.ค. 2026) — ทีมกรอกได้เหมือนเอเจนซี่ · ตัดช่องว่างหัวท้าย · ว่างล้วน = null · ไม่ส่งมา = ไม่แตะ · ยาวสุด 4,000 (เพดาน TikTok)
+        const cap = req.body.kol_caption;
+        const kol_caption = cap === undefined ? undefined : ((cap && String(cap).trim()) ? String(cap).trim().slice(0, 4000) : null);
         // ค่าตัว (budget) ไม่รับที่เส้นนี้แล้ว — ตั้งผ่าน PUT /:id/fees ที่เดียว (มีเช็คค่าเดิม + ลงประวัติ)
         if (status !== undefined && !['confirmed', 'rejected', 'submitted'].includes(status)) {
             return res.status(400).json({ status: 'error', message: 'สถานะไม่ถูกต้อง' });
@@ -1657,6 +1660,7 @@ router.put('/:id/submissions/:subId', async (req, res, next) => {
             status, gencode, approved, draft_status,
             draft_link, draft_link2, draft_link3, draft_link4, draft_link5,
             feedback, feedback2, feedback3, feedback4, feedback5,
+            kol_caption,
             post_url, post_date, id_post, code_expire,
             account_name, platform, product, agency,
             link_account, concept, gen_date,

@@ -2,6 +2,7 @@
 // แยกจาก DraftModal.jsx เพราะ .jsx มี JSX ทำให้เทสต์ (node:test) import ตรง ๆ ไม่ได้
 // 1 ดราฟ = ลิงก์งาน + Feedback ของทีม + Remark ของเอเจนซี่
 // ชื่อฟิลด์: ดราฟ 1 = draft_link / feedback / draft_remark · ดราฟ 2-5 = ต่อท้ายด้วยเลข
+// Caption ของ KOL (kol_caption · 30 ต.ค. 2026) = 1 ช่องต่อคลิป ไม่ผูกกับดราฟ — ส่งผ่าน opts.caption ของ draftPayload
 
 export const MAX_DRAFTS = 5;
 export const draftSuffix = i => (i === 0 ? '' : String(i + 1));
@@ -25,8 +26,9 @@ export function buildDrafts(sub) {
 // opts.canDecide   = ตัดสินผลตรวจได้ (ฝั่งทีม) · เอเจนซี่ไม่ส่ง draft_status/approved มาเลย จะได้อนุมัติตัวเองไม่ได้
 // opts.resetReview = เพิ่งเพิ่มดราฟรอบใหม่ในครั้งนี้ — คนที่ตัดสินไม่ได้ก็ยังต้องล้างผลตรวจรอบก่อนออกได้
 //                    ไม่งั้นดราฟใหม่จะขึ้นป้าย Approve ค้างมาจากรอบที่แล้ว เหมือนทีมตรวจไปแล้วทั้งที่ยังไม่ได้ดู
+// opts.caption     = Caption ของ KOL (1 ช่องต่อคลิป · ทีมและเอเจนซี่กรอกได้) · ไม่ส่ง = ไม่แตะของเดิม · ว่าง = ล้าง
 export function draftPayload(drafts, status, opts = {}) {
-    const { canRemark = false, canDecide = true, resetReview = false } = opts;
+    const { canRemark = false, canDecide = true, resetReview = false, caption } = opts;
     // ฝั่งเอเจนซี่ (ส่ง Remark ด้วย) ตัดดราฟที่ว่างทุกช่องทิ้งก่อนเขียน — ในฐานจะไม่มีช่องว่างคั่นกลางดราฟ
     // ไม่งั้นตำแหน่งในโมดัล (buildDrafts ตัดช่องว่างตอนโหลด) จะไม่ตรงกับในฐาน พอทีมบันทึกลิงก์จะเลื่อนแต่ Remark ไม่เลื่อน
     // ฝั่งทีมห้ามตัด — ต้องเขียนกลับตำแหน่งเดิมเป๊ะ เพราะไม่ได้ส่ง Remark ไปเลื่อนตาม
@@ -45,6 +47,7 @@ export function draftPayload(drafts, status, opts = {}) {
         payload['feedback' + draftSuffix(i)] = (ds[i] && ds[i].fb) || null;
         if (canRemark) payload['draft_remark' + draftSuffix(i)] = (ds[i] && ds[i].rm) || null;
     }
+    if (caption !== undefined) payload.kol_caption = String(caption || '').trim() ? caption : null;
     return payload;
 }
 

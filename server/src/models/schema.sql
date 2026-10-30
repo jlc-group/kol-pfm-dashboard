@@ -274,6 +274,10 @@ ALTER TABLE submissions ADD COLUMN IF NOT EXISTS draft_remark3 TEXT;
 ALTER TABLE submissions ADD COLUMN IF NOT EXISTS draft_remark4 TEXT;
 ALTER TABLE submissions ADD COLUMN IF NOT EXISTS draft_remark5 TEXT;
 
+-- Caption ของ KOL (ผู้ใช้สั่ง 30 ต.ค. 2026 "ในหน้าส่งดราฟ ขอเพิ่มช่องสำหรับใส่ Caption ของ KOL" · "ช่องเดียวพอ แยกออกมาจากดราฟ")
+-- 1 คลิป 1 ช่อง ไม่ผูกกับดราฟรอบไหน · ทีมและเอเจนซี่กรอกได้ทั้งคู่ (หน้าต่างส่งดราฟ)
+ALTER TABLE submissions ADD COLUMN IF NOT EXISTS kol_caption TEXT;
+
 -- ---------- payments (สถานะเอกสาร/การจ่ายต่อแคมเปญ+เอเจนซี่) ----------
 CREATE TABLE IF NOT EXISTS payments (
     id             SERIAL PRIMARY KEY,

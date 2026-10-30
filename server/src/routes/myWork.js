@@ -18,6 +18,7 @@ const DAY = 86400000;
 const ROW_KEYS = ['id', 'project_id', 'account_name', 'platform', 'product', 'clip_name', 'clip_no', 'group_key', 'status',
     ...DRAFT_LINKS, 'feedback', 'feedback2', 'feedback3', 'feedback4', 'feedback5',
     'draft_remark', 'draft_remark2', 'draft_remark3', 'draft_remark4', 'draft_remark5',
+    'kol_caption',   // Caption ของ KOL (30 ต.ค. 2026)
     'draft_status', 'approved', 'post_url', 'post_url_at', 'post_date', 'draft_updated_at',
     'draft_checked_by_id', 'draft_checked_by', 'draft_checked_at', 'reviewer_id'];
 const COUNT_KEYS = ['reviewer_id', ...DRAFT_LINKS, 'draft_status', 'post_url', 'post_url_at'];

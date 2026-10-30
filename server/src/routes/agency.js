@@ -288,10 +288,11 @@ router.post('/:token', async (req, res, next) => {
 // ช่องที่ PUT ด้านล่างรับบันทึก — ใช้แยกคำขอ "มีแต่ค่าตัว" ออกจากคำขอที่มีช่องอื่นมาด้วย
 // เพิ่มช่องใหม่ให้เส้นนั้นเมื่อไหร่ ต้องเพิ่มที่นี่ด้วย ไม่งั้นคำขอที่มีช่องใหม่ + budget จะโดนตอบ 409
 // หมายเหตุต่อดราฟ: ตัดช่องว่างหัวท้าย · ว่างล้วน = null · ไม่ได้ส่งมา = undefined (store จะไม่แตะคอลัมน์นั้น)
-function remarkFields(src) {
+// max = ความยาวสูงสุด (Remark 2,000 · Caption ของ KOL 4,000 ตามเพดาน TikTok)
+function remarkFields(src, max = 2000) {
     const out = {};
     for (const [k, v] of Object.entries(src)) {
-        out[k] = v === undefined ? undefined : ((v && String(v).trim()) ? String(v).trim().slice(0, 2000) : null);
+        out[k] = v === undefined ? undefined : ((v && String(v).trim()) ? String(v).trim().slice(0, max) : null);
     }
     return out;
 }
@@ -301,6 +302,7 @@ const AGENCY_PUT_FIELDS = [
     'draft_link', 'draft_link2', 'draft_link3', 'draft_link4', 'draft_link5',
     'gencode', 'feedback', 'feedback2', 'feedback3', 'feedback4', 'feedback5',
     'draft_remark', 'draft_remark2', 'draft_remark3', 'draft_remark4', 'draft_remark5',
+    'kol_caption',
     'approved', 'draft_status', 'post_url', 'post_date', 'id_post', 'code_expire',
     'views', 'likes', 'comments', 'saves', 'shares', 'reposts'
 ];
@@ -332,6 +334,7 @@ router.put('/:token/submissions/:subId', async (req, res, next) => {
             draft_link, draft_link2, draft_link3, draft_link4, draft_link5,
             gencode, feedback, feedback2, feedback3, feedback4, feedback5,
             draft_remark, draft_remark2, draft_remark3, draft_remark4, draft_remark5,   // หมายเหตุต่อดราฟ (เอเจนซี่เขียน)
+            kol_caption,   // Caption ของ KOL 1 ช่องต่อคลิป (30 ต.ค. 2026)
             approved, draft_status, post_url, post_date, id_post, code_expire,
             views, likes, comments, saves, shares, reposts   // ผลงานคอนเทนต์ จากโมดัล Perf
         } = req.body;
@@ -369,6 +372,7 @@ router.put('/:token/submissions/:subId', async (req, res, next) => {
             gencode, feedback, feedback2, feedback3, feedback4, feedback5,
             // ตัดช่องว่างหัวท้าย · ว่าง = เก็บเป็น null (กติกาเดียวกับ agency_note) · ไม่ส่งมา = ไม่แตะของเดิม
             ...remarkFields({ draft_remark, draft_remark2, draft_remark3, draft_remark4, draft_remark5 }),
+            ...remarkFields({ kol_caption }, 4000),
             ...decide,
             post_url, post_date, id_post, code_expire,
             views: views !== undefined ? (Number(views) || 0) : undefined, likes: likes !== undefined ? (Number(likes) || 0) : undefined, comments: comments !== undefined ? (Number(comments) || 0) : undefined, saves: saves !== undefined ? (Number(saves) || 0) : undefined, shares: shares !== undefined ? (Number(shares) || 0) : undefined,
