@@ -96,6 +96,17 @@ test('ลบดราฟ ไม่แตะ Caption (อยู่นอกดร
     assert.equal(team.kol_caption, 'แคปชั่นเดิม');
 });
 
+test('Caption ไม่ได้แก้ในหน้าต่างนี้ = ไม่ส่ง (หน้าต่างเปิดค้างไม่ทับ Caption ที่อีกฝั่งเพิ่งแก้)', () => {
+    const ds = [{ link: 'a', fb: '', rm: '' }];
+    // ทีมเปิดหน้าต่างตอน Caption = "เดิม" แล้วกด Approve อย่างเดียว → ไม่ส่ง kol_caption เลย server ไม่แตะ
+    assert.equal('kol_caption' in web.draftPayload(ds, 'approve', { caption: 'เดิม', captionWas: 'เดิม' }), false, 'ไม่ได้แก้ = ไม่ส่ง');
+    assert.equal('kol_caption' in web.draftPayload(ds, '', { canRemark: true, canDecide: false, caption: '', captionWas: '' }), false, 'ว่างตั้งแต่เปิด = ไม่ส่ง');
+    // แก้จริง → ส่ง · ลบจนว่าง → ส่ง null (ล้าง)
+    assert.equal(web.draftPayload(ds, '', { caption: 'ใหม่', captionWas: 'เดิม' }).kol_caption, 'ใหม่');
+    assert.equal(web.draftPayload(ds, '', { caption: '', captionWas: 'เดิม' }).kol_caption, null);
+    assert.equal(web.draftPayload(ds, '', { caption: 'เดิม ', captionWas: 'เดิม' }).kol_caption, 'เดิม ', 'ต่างแค่ช่องว่าง ส่งได้ (server ตัดหัวท้ายเอง)');
+});
+
 // ---------------------------------------------------------------- ชั้นเก็บข้อมูล (ทรานแซกชันจำลอง)
 
 test('store: เขียน Caption ได้ + ขยับเวลาอัปเดตดราฟ · ฐานที่ยังไม่มีคอลัมน์ (ยังไม่ setup-db) = ข้ามช่อง Caption ไม่ error', async () => {

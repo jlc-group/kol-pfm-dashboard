@@ -38,7 +38,7 @@ export default function DraftModal({ sub, onSave, onClose, canRemark = false, ca
     async function save() {
         setSaving(true);
         try {
-            const ok = await onSave(draftPayload(drafts, draftStatus, { canRemark, canDecide, resetReview, caption }));
+            const ok = await onSave(draftPayload(drafts, draftStatus, { canRemark, canDecide, resetReview, caption, captionWas: sub.kol_caption || '' }));
             if (ok !== false) onClose();
         } catch (err) { alert(err.message); }
         finally { setSaving(false); }

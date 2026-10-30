@@ -27,8 +27,10 @@ export function buildDrafts(sub) {
 // opts.resetReview = เพิ่งเพิ่มดราฟรอบใหม่ในครั้งนี้ — คนที่ตัดสินไม่ได้ก็ยังต้องล้างผลตรวจรอบก่อนออกได้
 //                    ไม่งั้นดราฟใหม่จะขึ้นป้าย Approve ค้างมาจากรอบที่แล้ว เหมือนทีมตรวจไปแล้วทั้งที่ยังไม่ได้ดู
 // opts.caption     = Caption ของ KOL (1 ช่องต่อคลิป · ทีมและเอเจนซี่กรอกได้) · ไม่ส่ง = ไม่แตะของเดิม · ว่าง = ล้าง
+// opts.captionWas  = Caption ตอนเปิดหน้าต่าง — ไม่ได้แก้ = ไม่ส่ง
+//                    กันหน้าต่างที่เปิดค้างไว้ (เช่นกด Approve อย่างเดียว) เขียน Caption เก่าทับของที่อีกฝั่งเพิ่งแก้
 export function draftPayload(drafts, status, opts = {}) {
-    const { canRemark = false, canDecide = true, resetReview = false, caption } = opts;
+    const { canRemark = false, canDecide = true, resetReview = false, caption, captionWas } = opts;
     // ฝั่งเอเจนซี่ (ส่ง Remark ด้วย) ตัดดราฟที่ว่างทุกช่องทิ้งก่อนเขียน — ในฐานจะไม่มีช่องว่างคั่นกลางดราฟ
     // ไม่งั้นตำแหน่งในโมดัล (buildDrafts ตัดช่องว่างตอนโหลด) จะไม่ตรงกับในฐาน พอทีมบันทึกลิงก์จะเลื่อนแต่ Remark ไม่เลื่อน
     // ฝั่งทีมห้ามตัด — ต้องเขียนกลับตำแหน่งเดิมเป๊ะ เพราะไม่ได้ส่ง Remark ไปเลื่อนตาม
@@ -47,7 +49,8 @@ export function draftPayload(drafts, status, opts = {}) {
         payload['feedback' + draftSuffix(i)] = (ds[i] && ds[i].fb) || null;
         if (canRemark) payload['draft_remark' + draftSuffix(i)] = (ds[i] && ds[i].rm) || null;
     }
-    if (caption !== undefined) payload.kol_caption = String(caption || '').trim() ? caption : null;
+    const captionTouched = caption !== undefined && (captionWas === undefined || caption !== captionWas);
+    if (captionTouched) payload.kol_caption = String(caption || '').trim() ? caption : null;
     return payload;
 }
 
