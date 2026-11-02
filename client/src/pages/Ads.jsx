@@ -443,6 +443,19 @@ function AdRow({ row, onSaved, canCost, noAd = false }) {
                 )}
                 {saving ? <span className="proc-status">…</span> : saved ? <span className="proc-status ok">✓</span> : null}
             </div>
+            {/* BUDGET = ค่าตัว KOL ของคลิปนี้ (ผู้ใช้สั่ง 2 พ.ย. 2026) — ดูอย่างเดียว ทีมใส่/แก้ที่หน้าแคมเปญ
+                ไม่มีคีย์ fee (server รุ่นก่อนที่ยังไม่รีสตาร์ตหลัง deploy) = "—" ห้ามขึ้นรอค่าตัวทั้งที่ใส่แล้ว */}
+            <div className="ads-cell ads-fee">
+                {row.fee_free
+                    ? <span className="ads-fee-free" title="KOL ได้มาฟรี (ค่าตัว 0)">ฟรี</span>
+                    : row.fee_missing
+                        ? <span className="perf-pill wait fee" title="ทีมยังไม่ได้ใส่ค่าตัว KOL คลิปนี้ — ใส่ที่หน้าแคมเปญ">รอค่าตัว</span>
+                        : row.fee == null
+                            ? <span className="muted" title="ยังโหลดค่าตัวไม่ได้ — รีเฟรชหน้าอีกครั้งภายหลัง">—</span>
+                            : Number(row.fee) > 0
+                                ? <span className="ads-fee-amt" title="ค่าตัว KOL ของคลิปนี้ — แก้ที่หน้าแคมเปญ">{fmtMoney(row.fee)}</span>
+                                : <span className="perf-pill wait fee" title="ทีมยังไม่ได้ใส่ค่าตัว KOL คลิปนี้ — ใส่ที่หน้าแคมเปญ">รอค่าตัว</span>}
+            </div>
             {/* ค่าแอดสะสม + Reach — บันทึกเมื่อออกจากช่อง (ใช้คิด CPM ในหน้านี้และหน้าภาพรวม) */}
             <div className="ads-cell ads-spend">
                 {row.spend_from_pfm ? (
@@ -795,6 +808,7 @@ export default function Ads() {
                                         options={[{ value: '', label: 'ทุกสถานะ', count: countIf('status', () => true) },
                                         ...STATUSES.map(st => ({ value: st, label: st === 'ยิงแล้ว' ? '✓ ยิงแล้ว' : st, count: countIf('status', r => shownStatusOf(r) === st) }))]} />
                                 </span>
+                                <span title="ค่าตัว KOL ของคลิปนี้ (บาท) — ทีมใส่ที่หน้าแคมเปญ หน้านี้ดูได้อย่างเดียว">BUDGET</span>
                                 <span title="ค่าแอดสะสม (บาท) และ Reach — กรอกเองได้ บันทึกเมื่อออกจากช่อง">ค่าแอด / REACH</span>
                                 <span title="นับจากวันที่ข้อมูลครบพร้อมยิง (ลงคลิป / Gencode / ID Post / ทีมอนุมัติ) ถึงวันยิงแอด — ภายใน 3 วัน = ตรงเวลา">ระยะเวลายิง
                                     <ColumnFilter label="ระยะเวลายิง" value={late} onPick={setLate}

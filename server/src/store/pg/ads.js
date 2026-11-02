@@ -205,7 +205,7 @@ const ads = {
         const projById = {};
         snap.projects.forEach(p => { projById[p.id] = p; });
 
-        // ค่าตัวของแต่ละแถว ไว้คิด CPE รวมของการ์ดบนหน้า (ค่าตัว ÷ engagement — pooledCpe) — ไม่ส่งค่าตัวออกไปกับแถว (ข้อมูลลับของ member)
+        // ค่าตัวของแต่ละแถว ไว้คิด CPE รวมของการ์ดบนหน้า (ค่าตัว ÷ engagement — pooledCpe) · แถวส่งค่าตัวเป็น fee แล้ว (คอลัมน์ BUDGET 2 พ.ย. 2026 — ค่าตัวไม่ใช่ข้อมูลลับ ที่ปิดคือค่าแอด)
         const costIn = new Map();
         // ID Post ซ้ำ: ซิงก์ลงยอดแถว id ต่ำสุด — คิดจากแถวของแบรนด์ที่ต่อ PFM เท่านั้น แบบเดียวกับ adsSync.apply (แบรนด์อื่นไม่ถูกซิงก์ · 6 ต.ค. 2026) · ไม่กรองสิทธิ์/สถานะ
         const pfmProjIds = new Set(snap.projects.filter(p => isPfmBrand(p.brand)).map(p => p.id));
@@ -272,6 +272,9 @@ const ads = {
                     ad_has_spend: adRanBySpend(s),
                     ad_spend: spend,
                     ad_reach: reach,
+                    // คอลัมน์ BUDGET = ค่าตัว KOL ของคลิปนี้ (ผู้ใช้สั่ง 2 พ.ย. 2026) — ไม่ปิดตามสิทธิ์ เหมือนหน้า KOL Analytics (ที่ปิดคือค่าแอด / CPM)
+                    // ยังไม่ใส่ / ได้ฟรี ดูที่ fee_missing / fee_free ด้านล่าง
+                    fee: Number(s.budget) || 0,
                     // ค่าแอดมาจาก PFM อัตโนมัติ (หน้าโฆษณาไม่ให้กรอกทับ) — TikTok ของแบรนด์ที่ยังไม่ต่อ PFM กรอกเองได้
                     spend_from_pfm: pfmManagedSpend(s, p && p.brand),
                     // สถานะยิงแล้วมาจาก PFM (ปุ่มสถานะเป็นป้ายอ่านอย่างเดียว) — TikTok ของแบรนด์ที่ต่อ PFM แล้วเท่านั้น (6 ต.ค. 2026)

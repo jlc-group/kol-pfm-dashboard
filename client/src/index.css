@@ -1324,8 +1324,9 @@ a { text-decoration: none; color: inherit; }
    ต่ำกว่านี้ Target จะโดนตัดเป็น ... / สูงกว่านี้ Target ไม่ได้กว้างขึ้นแล้ว มีแต่เลื่อนไกลขึ้นเปล่า ๆ
    เพิ่มคอลัมน์ IMAGE (รูปปก 56px + ช่องไฟ 10px) ไว้หน้าสุด จึงขยายเป็น 2166px — คอลัมน์อื่นกว้างเท่าเดิม
    เอาคอลัมน์ POST ออก (0.3fr ≈ 39px + ช่องไฟ 10px · ผู้ใช้สั่ง 1 ต.ค. 2026 — รูปปกเปิดโพสต์แทน) จึงลดเหลือ 2117px — คอลัมน์อื่นกว้างเท่าเดิม
+   เพิ่มคอลัมน์ BUDGET (ค่าตัว KOL 0.7fr ≈ 86px + ช่องไฟ 10px · ผู้ใช้สั่ง 2 พ.ย. 2026) หน้าค่าแอด จึงขยายเป็น 2213px — คอลัมน์อื่นกว้างเท่าเดิม
    หมายเหตุ: --app-zoom ตอนนี้เป็น 1 (เปลี่ยนจาก 1.2 ใน edb8dc7) ความกว้างบนจอจึงเท่ากับค่านี้ */
-.ads-tbl { min-width: 2117px; }
+.ads-tbl { min-width: 2213px; }
 /* หัวการ์ดตาราง: ชื่อ + ปุ่มล้างตัวกรอง + ตัวเลือกขนาดตาราง อยู่บรรทัดเดียวกัน (จอแคบตกบรรทัดได้)
    เดิมกล่องนี้ไม่มีสไตล์เลย หัวข้อกับปุ่มจึงซ้อนกันเป็นบรรทัด ๆ */
 .ads-tbl-bar { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin-bottom: 14px; }
@@ -1385,12 +1386,15 @@ a { text-decoration: none; color: inherit; }
 .colf-dot.none { background: #c3cdc8; }
 .ads-tbl-head, .kol-track-entry {
     display: grid;
-    /* IMAGE KOL BRANDS PRODUCT CAMPAIGN TARGET CONTENT-TYPE FORMAT GENCODE ID-POST วันลงงาน วันยิงแอด สถานะ ค่าแอด/REACH ระยะเวลายิง STAMPED LIVE หมายเหตุ */
+    /* IMAGE KOL BRANDS PRODUCT CAMPAIGN TARGET CONTENT-TYPE FORMAT GENCODE ID-POST วันลงงาน วันยิงแอด สถานะ BUDGET ค่าแอด/REACH ระยะเวลายิง STAMPED LIVE หมายเหตุ */
     /* IMAGE กว้างคงที่เท่ารูปปก (กดรูปเปิดโพสต์ — คอลัมน์ POST เดิมเอาออกแล้ว) */
-    grid-template-columns: 56px 1fr 0.95fr 0.85fr 0.85fr 1.25fr 0.7fr 0.5fr 1fr 1.3fr 0.8fr 0.7fr 1fr 0.85fr 1.1fr 0.7fr 0.7fr 0.9fr;
+    grid-template-columns: 56px 1fr 0.95fr 0.85fr 0.85fr 1.25fr 0.7fr 0.5fr 1fr 1.3fr 0.8fr 0.7fr 1fr 0.7fr 0.85fr 1.1fr 0.7fr 0.7fr 0.9fr;
     gap: 10px; align-items: center;
 }
 .kol-track-note input { width: 100%; }
+/* BUDGET = ค่าตัว KOL ของคลิป (ดูอย่างเดียว) · ยังไม่ใส่ใช้ป้าย "รอค่าตัว" ตัวเดียวกับคอลัมน์ PFM · ได้ฟรี = ป้ายมินต์ */
+.ads-fee-amt { font-size: 12.5px; font-weight: 700; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.ads-fee-free { display: inline-flex; padding: 2px 9px; border-radius: 999px; background: #ecfdf5; color: var(--mint-dark); border: 1px solid #a7f3d0; font-size: 11.5px; font-weight: 700; white-space: nowrap; }
 .ads-spend { display: grid; gap: 4px; }
 .kol-track-entry .ads-spend input { padding: 6px 8px; font-size: 12px; }
 .ads-spend-pfm { font-size: 12px; font-weight: 700; white-space: nowrap; }

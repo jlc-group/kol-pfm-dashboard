@@ -163,9 +163,15 @@ test('ads.list summary: cpe จาก engagement จริง + จำนวน�
     assert.equal(none.eng_posts, 0);
 });
 
-test('ads.list ไม่ส่งค่าตัว (budget) ออกไปกับแถว — CPE รวมคิดในฝั่ง server', async () => {
+// 2 พ.ย. 2026: ผู้ใช้สั่งเพิ่มคอลัมน์ BUDGET (ค่าตัว KOL) หน้า Ads → แถวส่ง fee แล้ว · ค่าแอด / CPM / CPE / total_cost ยังปิดสำหรับ member
+// (CPM/CPE คิดจากค่าตัวอย่างเดียวตั้งแต่ 5 ต.ค. — ค่าตัวถอดกลับเป็นค่าแอดไม่ได้) · CPE รวมของการ์ดยังคิดในฝั่ง server
+test('ads.list ไม่ส่งช่อง budget ดิบออกไปกับแถว — ค่าตัวส่งเป็น fee (คอลัมน์ BUDGET) · CPE รวมคิดในฝั่ง server', async () => {
     const { rows } = await ads.list({});
-    for (const r of rows) assert.equal('budget' in r || 'fee' in r, false, 'แถว ' + r.sub_id);
+    for (const r of rows) {
+        assert.equal('budget' in r, false, 'แถว ' + r.sub_id);
+        assert.equal(typeof r.fee, 'number', 'แถว ' + r.sub_id);
+    }
+    assert.equal(rows.find(r => r.sub_id === 1).fee, 5000);
 });
 
 test('dashboard.overview: CPE รวมจาก engagement จริง (เดิม 0 ตายตัว) + Engagement Rate ต่อแพลตฟอร์ม', async () => {

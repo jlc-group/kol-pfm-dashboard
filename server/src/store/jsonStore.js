@@ -1624,6 +1624,7 @@ const ads = {
                     ad_status: s.ad_status || 'ยังไม่ยิง',
                     ad_spend: spend,
                     ad_reach: reach,
+                    fee: Number(s.budget) || 0,   // คอลัมน์ BUDGET หน้า Ads (ค่าตัว KOL ของคลิป)
                     ad_start: s.ad_start || null,
                     ad_end: s.ad_end || null,
                     ad_note: s.ad_note || null,
