@@ -49,8 +49,8 @@ export function latestDraftNo(sub) {
 
 // การ์ดหน้า "งานของฉัน" (ตามลำดับ) · ลงงานแล้วนับเฉพาะ 7 วันล่าสุด (server ตัดให้)
 export const WORK_BUCKETS = [
-    { key: 'review', label: 'รอฉันตรวจ', hint: 'เอเจนซี่ส่งดราฟมาแล้ว ยังไม่มีใครกด Approve / ขอแก้ไข' },
-    { key: 'revise', label: 'รอเอเจนซี่แก้', hint: 'ขอแก้ไขไปแล้ว รอดราฟใหม่' },
+    { key: 'review', label: 'รอตรวจ', hint: 'เอเจนซี่ส่งดราฟมาแล้ว ยังไม่มีใครกด Approve / ขอแก้ไข' },
+    { key: 'revise', label: 'รอแก้', hint: 'ขอแก้ไขไปแล้ว รอดราฟใหม่' },
     { key: 'approved', label: 'Approve แล้ว รอลงงาน', hint: 'ดราฟผ่านแล้ว รอ KOL ลงโพสต์' },
     { key: 'posted', label: 'ลงงานแล้ว (7 วัน)', hint: 'ลงโพสต์แล้วใน 7 วันล่าสุด' }
 ];
