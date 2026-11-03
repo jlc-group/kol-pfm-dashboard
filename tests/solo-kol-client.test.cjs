@@ -183,3 +183,63 @@ test('ฟอร์มไม่มีช่องทางติดต่อแ�
     assert.equal(ag.input.agency, 'Ag Co');
     assert.match(server.soloInput({ ...base, contact_mode: 'self', brief_link: 'drive.google.com/x' }).error, /ลิงก์บรีฟ/);
 });
+
+test('ใส่ลิงก์ช่อง → เติมชื่อบัญชีให้ (3 พ.ย. 2026): อ่านจากลิงก์ · เฉพาะ Platform ของช่อง · ไม่ทับชื่อที่พิมพ์เอง', () => {
+    const empty = { account_name: '', link_account: '', followers: '', tier: '', tierTouched: false, autoName: '' };
+    // ลิงก์โปรไฟล์ / ลิงก์คลิปที่มี @ / มี query ต่อท้าย → ชื่อบัญชี
+    let a = c.accWithLink(empty, 'TikTok', 'https://www.tiktok.com/@aom_chr?is_from_webapp=1&sender_device=pc');
+    assert.equal(a.account_name, 'aom_chr');
+    assert.equal(a.link_account, 'https://www.tiktok.com/@aom_chr?is_from_webapp=1&sender_device=pc', 'ช่องลิงก์เก็บตามที่ใส่');
+    assert.equal(c.accWithLink(empty, 'TikTok', 'https://www.tiktok.com/@nam.wan/video/7412345678901234567').account_name, 'nam.wan');
+    assert.equal(c.accWithLink(empty, 'Instagram', 'https://www.instagram.com/aom.chr/?igsh=abc').account_name, 'aom.chr');
+    assert.equal(c.accWithLink(empty, 'Facebook', 'https://www.facebook.com/aomchr').account_name, 'aomchr');
+    assert.equal(c.accWithLink(empty, 'YouTube', 'https://www.youtube.com/@aomchannel').account_name, 'aomchannel');
+    assert.equal(c.accWithLink(empty, 'X', 'https://x.com/aom_x').account_name, 'aom_x');
+    assert.equal(c.accWithLink(empty, 'Lemon8', 'https://www.lemon8-app.com/@aom8').account_name, 'aom8');
+    assert.equal(c.accWithLink(empty, 'TikTok', 'https://www.tiktok.com/@%E0%B8%AD%E0%B8%AD%E0%B8%A1').account_name, 'ออม', 'ชื่อภาษาไทยในลิงก์ถอดรหัสให้');
+    // พิมพ์ลิงก์ทีละตัว: ชื่อตามลิงก์ล่าสุด (ชื่อที่เติมให้เองเปลี่ยนตามได้)
+    a = c.accWithLink(empty, 'TikTok', 'https://www.tiktok.com/@ao');
+    a = c.accWithLink(a, 'TikTok', 'https://www.tiktok.com/@aom');
+    assert.equal(a.account_name, 'aom');
+    // ลิงก์ของ Platform อื่น → ไม่เติม (ช่องลิงก์ยังเก็บค่า)
+    const ig = c.accWithLink(empty, 'TikTok', 'https://www.instagram.com/aom.chr');
+    assert.equal(ig.account_name, '');
+    assert.equal(ig.link_account, 'https://www.instagram.com/aom.chr');
+    // ชื่อที่พิมพ์เอง / ชื่อเดิมของรายการที่แก้ไข (ไม่มี autoName) → ไม่ทับ
+    assert.equal(c.accWithLink({ ...empty, account_name: 'ชื่อที่พิมพ์' }, 'TikTok', 'https://www.tiktok.com/@other').account_name, 'ชื่อที่พิมพ์');
+    assert.equal(c.accWithLink({ account_name: 'saved', link_account: 'https://www.tiktok.com/@saved' }, 'TikTok', 'https://www.tiktok.com/@other').account_name, 'saved');
+    // เติมให้แล้วผู้ใช้แก้ชื่อเอง → เปลี่ยนลิงก์ทีหลังไม่ทับ
+    a = c.accWithLink(empty, 'TikTok', 'https://www.tiktok.com/@aom');
+    a = { ...a, account_name: 'aom_official' };
+    assert.equal(c.accWithLink(a, 'TikTok', 'https://www.tiktok.com/@zzz').account_name, 'aom_official');
+    // ลบชื่อออกหมดแล้วใส่ลิงก์ใหม่ → เติมใหม่ได้
+    assert.equal(c.accWithLink({ ...a, account_name: '  ' }, 'TikTok', 'https://www.tiktok.com/@zzz').account_name, 'zzz');
+    // ลิงก์ที่อ่านชื่อไม่ได้ (ลิงก์ย่อ / ลิงก์โพสต์ IG) → ล้างชื่อที่เคยเติมให้ (ไม่ค้างชื่อของลิงก์เก่า)
+    a = c.accWithLink(empty, 'TikTok', 'https://www.tiktok.com/@aom');
+    assert.equal(c.accWithLink(a, 'TikTok', 'https://vt.tiktok.com/ZSabc123/').account_name, '');
+    assert.equal(c.accWithLink(empty, 'Instagram', 'https://www.instagram.com/reel/C0abc/').account_name, '');
+    // ไม่ใช่ลิงก์ / ลบลิงก์ออก → ไม่แตะชื่อ
+    assert.equal(c.accWithLink(a, 'TikTok', '').account_name, 'aom');
+    assert.equal(c.accWithLink(a, 'TikTok', 'aom chr').account_name, 'aom');
+    // ACC ที่ยังไม่มี (undefined) ใช้ได้
+    assert.equal(c.accWithLink(undefined, 'TikTok', 'https://www.tiktok.com/@new').account_name, 'new');
+    // ชื่อที่เติมให้ผ่านเกณฑ์ server (ตัด @ · ไม่ว่าง)
+    const r = server.soloInput({
+        platforms: [{ platform: 'TikTok', ...c.accWithLink(empty, 'TikTok', 'https://www.tiktok.com/@aom_chr'), tier: 'Nano 1k - 10k', fee: 1000, content_type: ad.contentTypesFor('TikTok')[0] }],
+        brand: 'B', products: ['P1'], clips: 1, owner: 'o', code_expire: 60, contact_mode: 'self', agency: ''
+    });
+    assert.equal(r.error, undefined, r.error);
+    assert.equal(r.input.platforms[0].account_name, 'aom_chr');
+    assert.equal(r.input.platforms[0].link_account, 'https://www.tiktok.com/@aom_chr');
+});
+
+test('คำใต้ช่องลิงก์ช่อง: ว่าง = วิธีใช้ · ลิงก์ Platform อื่น / อ่านชื่อไม่ได้ = บอกเหตุ · ลิงก์ปกติ = ไม่มีคำ', () => {
+    assert.match(c.soloLinkHint('TikTok', ''), /ชื่อบัญชีขึ้นให้เอง/);
+    assert.match(c.soloLinkHint('TikTok', '   '), /ชื่อบัญชีขึ้นให้เอง/);
+    assert.equal(c.soloLinkHint('TikTok', 'https://www.tiktok.com/@aom'), '');
+    assert.equal(c.soloLinkHint('TikTok', 'https://www.instagram.com/aom'), 'ลิงก์นี้เป็นของ Instagram ไม่ใช่ TikTok');
+    assert.match(c.soloLinkHint('TikTok', 'https://vt.tiktok.com/ZSabc123/'), /อ่านชื่อบัญชีจากลิงก์นี้ไม่ได้/);
+    assert.match(c.soloLinkHint('Facebook', 'https://www.facebook.com/profile.php?id=1000123'), /อ่านชื่อบัญชีจากลิงก์นี้ไม่ได้/);
+    assert.equal(c.soloLinkHint('TikTok', 'https://linktr.ee/aom'), '', 'เว็บอื่น (linktree) ไม่เตือน');
+    assert.equal(c.soloLinkHint('TikTok', 'ไม่ใช่ลิงก์'), '', 'ไม่ใช่ลิงก์ — ให้ตัวตรวจ http:// ของฟอร์มเตือนแทน');
+});

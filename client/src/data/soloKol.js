@@ -1,6 +1,7 @@
 // KOL รายคน — จ้าง KOL เดี่ยวโดยไม่ต้องสร้างแคมเปญ (ผู้ใช้สั่ง 30 ก.ย. 2026) · ตรรกะล้วน ทดสอบได้โดยไม่ต้องเปิดเบราว์เซอร์
 // ตัวเลือกต้องตรงกับ server/src/store/soloKol.js (tests/solo-kol-client.test.cjs เทียบให้)
 // รอบ 4 (1 ต.ค. 2026): 1 การจ้างเลือกได้หลาย Platform — บัญชี / ค่าตัว / ข้อมูลยิงแอด แยกต่อ Platform · จำนวนคลิปเท่ากันทุก Platform
+import { detectSocial, SOCIAL_OTHER } from './talentSocials.js';
 
 export const SOLO_PLATFORMS = ['TikTok', 'Instagram', 'Facebook', 'Lemon8', 'X', 'YouTube'];
 export const SOLO_TIERS = ['Nano 1k - 10k', 'Micro 10k - 100k', 'Macro 100k - 1M', 'Mega 1M+'];
@@ -66,6 +67,28 @@ export function soloPlatformsOf(p) {
 // kols = [{ platforms?, acc: { [platform]: { account_name } } }] · คืน { 'ลำดับKOL|Platform': ลำดับ KOL แรกที่ใช้ชื่อนี้ } (นับจาก 0)
 // KOL ที่มี platforms (เลือก Platform ในการ์ดของตัวเอง) ตรวจเฉพาะ Platform ที่เลือก — ค่าค้างของ Platform ที่เอาติ๊กออกไม่นับ
 // เทียบแบบไม่สน @ นำหน้า / ช่องว่าง / ตัวพิมพ์เล็กใหญ่ — server ตัด @ ออกก่อนเก็บเหมือนกัน
+// ใส่ลิงก์ช่อง → เติมชื่อบัญชีให้ (ผู้ใช้สั่ง 3 พ.ย. 2026) — อ่านจากตัวลิงก์อย่างเดียว ไม่เปิดหน้าโปรไฟล์ (ตัวอ่านเดียวกับหน้า Talent: detectSocial)
+// acc = บัญชีในฟอร์ม · autoName = ชื่อที่เติมให้รอบล่าสุด — ชื่อที่พิมพ์เอง / ชื่อเดิมของรายการที่แก้ไข ไม่ถูกทับ
+// เติมเฉพาะลิงก์ของ Platform นั้น (ลิงก์ IG ในช่อง TikTok = ไม่เติม) · ลิงก์ที่อ่านชื่อไม่ได้ (ลิงก์ย่อ / ลิงก์โพสต์ IG) = ล้างชื่อที่เคยเติมให้
+export function accWithLink(acc, platform, text) {
+    const a = acc || {};
+    const next = { ...a, link_account: text };
+    const det = detectSocial(text);
+    if (!det || det.platform !== platform) return next;
+    const name = String(a.account_name || '');
+    if (name.trim() && name !== a.autoName) return next;
+    return { ...next, account_name: det.handle, autoName: det.handle };
+}
+// คำใต้ช่องลิงก์ช่อง: ยังว่าง = บอกว่าใส่ลิงก์แล้วชื่อขึ้นเอง · ลิงก์ของ Platform อื่น / อ่านชื่อไม่ได้ = บอกเหตุที่ไม่เติม · อื่น ๆ = ''
+export function soloLinkHint(platform, text) {
+    const t = String(text || '').trim();
+    if (!t) return 'ใส่ลิงก์แล้วชื่อบัญชีขึ้นให้เอง';
+    const det = detectSocial(t);
+    if (det && det.platform !== SOCIAL_OTHER && det.platform !== platform) return `ลิงก์นี้เป็นของ ${det.platform} ไม่ใช่ ${platform}`;
+    if (det && det.platform === platform && !det.handle) return 'อ่านชื่อบัญชีจากลิงก์นี้ไม่ได้ (ลิงก์ย่อ / ลิงก์โพสต์) — พิมพ์ชื่อเอง';
+    return '';
+}
+
 export function soloDuplicateAccounts(kols, platforms) {
     const out = {};
     (platforms || []).forEach(p => {

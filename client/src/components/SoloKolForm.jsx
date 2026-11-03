@@ -9,7 +9,8 @@ import { contentTypesFor, CAMPAIGN_TYPES, SOCIAL_CAMPAIGNS, campaignIsCtype, nee
 import { CONTENT_FORMATS } from '../data/contentFormats.js';
 import {
     SOLO_PLATFORMS, SOLO_TIERS, SOLO_MEDIA, SOLO_CODE_EXPIRE, SOLO_MAX_CLIPS,
-    tierFromFollowers, baht, soloPlatformOrder, soloAccountsOf, soloPlatformsOf, soloDuplicateAccounts, isOldServerError, OLD_SERVER_TEXT
+    tierFromFollowers, baht, soloPlatformOrder, soloAccountsOf, soloPlatformsOf, soloDuplicateAccounts, isOldServerError, OLD_SERVER_TEXT,
+    accWithLink, soloLinkHint
 } from '../data/soloKol.js';
 
 // ฟอร์ม "เพิ่ม KOL รายคน" — จ้าง KOL เดี่ยวโดยไม่ต้องสร้างแคมเปญ (ผู้ใช้สั่ง 30 ก.ย. 2026)
@@ -41,7 +42,8 @@ const LINK_PH = {
 };
 
 // ค่าต่อ Platform เก็บเป็น map ตามชื่อ Platform — เอาติ๊กออกแล้วติ๊กกลับ ค่าที่กรอกไว้ยังอยู่ · ตรวจ/ส่งเฉพาะ Platform ที่เลือก
-const ACC_EMPTY = { account_name: '', link_account: '', followers: '', tier: '', tierTouched: false };
+// autoName = ชื่อบัญชีที่เติมจากลิงก์ช่องรอบล่าสุด (accWithLink — ไม่ทับชื่อที่พิมพ์เอง) · ไม่ส่งไป server
+const ACC_EMPTY = { account_name: '', link_account: '', followers: '', tier: '', tierTouched: false, autoName: '' };
 const AD_EMPTY = { content_type: '', campaign: '', media_type: '', content_format: '', target: [] };
 // 1 การ์ด = 1 KOL — เลือก Platform ในการ์ดของตัวเอง (ผู้ใช้สั่ง 5 ต.ค. 2026: เดิมเลือกครั้งเดียวด้านบน + Account แล้วติด TikTok เปลี่ยนไม่ได้)
 // platforms = Platform ของ KOL คนนี้ · acc = บัญชีต่อ Platform (เอาติ๊กออกแล้วติ๊กกลับ ค่าที่กรอกไว้ยังอยู่ · ตรวจ/ส่งเฉพาะที่เลือก)
@@ -535,9 +537,10 @@ export default function SoloKolForm({ onClose, onSaved, project = null, clipName
                                                             autoFocus={ki === 0 && p === kp[0]}
                                                             onChange={e => upAcc(ki, p, { account_name: e.target.value })} placeholder="@ชื่อบัญชี" />
                                                     </Field>
-                                                    <Field label="ลิงก์ช่อง" err={E['link_' + at]} htmlFor={fid('link')}>
+                                                    <Field label="ลิงก์ช่อง" err={E['link_' + at]} htmlFor={fid('link')} hint={soloLinkHint(p, a.link_account)}>
                                                         <input id={fid('link')} value={a.link_account} maxLength={1000} autoComplete="off"
-                                                            onChange={e => upAcc(ki, p, { link_account: e.target.value })} placeholder={LINK_PH[p] || 'https://...'} />
+                                                            onChange={e => { const v = e.target.value; upKolAcc(ki, p, x => accWithLink(x, p, v)); }}
+                                                            placeholder={LINK_PH[p] || 'https://...'} />
                                                     </Field>
                                                 </div>
                                                 <div className="qf-row2">
