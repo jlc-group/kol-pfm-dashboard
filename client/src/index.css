@@ -3201,6 +3201,18 @@ a.ads-thumb:focus-visible { outline: 2px solid var(--mint-dark); outline-offset:
 .catg-typed button { flex: none; white-space: nowrap; align-self: center; }
 .catg-confirm { display: flex; align-items: flex-start; gap: 8px; margin: 4px 0 10px; padding: 8px 10px; border-radius: 9px; background: #f6faf8; border: 1px solid var(--border); font-size: 12.5px; line-height: 1.5; cursor: pointer; }
 .catg-confirm input { margin-top: 3px; width: auto; }
+/* หน้าต่างซ่อน Target (กด ×) — เลือกว่าแคมเปญเดิมคงชื่อเดิม / เปลี่ยนเป็นชื่ออื่น (6 พ.ย. 2026) */
+.catg-choice { display: grid; gap: 8px; }
+/* อยู่ใน .field — ล้างสไตล์หัวช่อง (.field label ตัวพิมพ์ใหญ่สีจาง) และช่องกรอก (.modal input กว้างเต็ม) */
+.field .catg-choice-opt { display: flex; align-items: flex-start; gap: 8px; margin: 0; padding: 10px 12px; border: 1px solid var(--border); border-radius: 11px; background: #fff; cursor: pointer;
+    font-size: 13px; font-weight: 400; letter-spacing: 0; text-transform: none; color: var(--text, #1f2d28); }
+.field .catg-choice-opt.on { border-color: var(--mint); background: var(--bg-soft); }
+.field .catg-choice-opt.off { cursor: default; opacity: .75; }
+.modal .catg-choice-opt input[type="radio"] { margin-top: 3px; width: auto; padding: 0; flex: none; }
+.catg-choice-opt > span { display: grid; gap: 4px; min-width: 0; flex: 1; }
+.catg-choice-opt b { font-size: 13px; }
+.catg-choice-opt small { color: var(--muted); font-size: 12px; line-height: 1.45; }
+.catg-choice-opt select { width: 100%; padding: 8px 10px; font-size: 13px; }
 .catg-exact { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; background: #fff; border: 1px solid var(--border); border-radius: 5px; padding: 0 5px; }
 .catg-label-row { display: flex !important; align-items: baseline; justify-content: space-between; gap: 8px; }
 .catg-link { border: none; background: transparent; color: var(--mint-dark); font-weight: 700; font-size: 12px; cursor: pointer; text-decoration: underline; padding: 0; }

@@ -285,6 +285,16 @@ export function targetsForProducts(codes) {
     (codes || []).forEach(c => targetsForProduct(c).forEach(t => { if (!out.includes(t)) out.push(t); }));
     return out;
 }
+// Target ที่สินค้าที่เลือกทุกตัวใช้อยู่ (ไม่รวมที่ซ่อน) ยกเว้นชื่อ except (ไม่สนตัวพิมพ์/ช่องว่างหัวท้าย)
+// หน้า Products & Targets → กด × ซ่อน Target แล้วเลือกชื่อที่แคมเปญเดิมจะใช้แทน (6 พ.ย. 2026)
+// ต้องมีครบทุกสินค้า (ตัวสะกดตรงกัน) — ไม่งั้นตอนเปลี่ยน server จะเพิ่มชื่อนั้นให้สินค้าที่ยังไม่มีไปเงียบ ๆ
+export function sharedTargetsExcept(codes, except) {
+    const list = (codes || []).filter(Boolean);
+    if (!list.length) return [];
+    const ex = String(except || '').trim().toLowerCase();
+    const rest = list.slice(1).map(c => targetsForProduct(c));
+    return targetsForProduct(list[0]).filter(t => t.trim().toLowerCase() !== ex && rest.every(ts => ts.includes(t)));
+}
 // รวมแบบนับที่ซ่อนด้วย — ฟอร์ม KOL รายคนใช้เก็บ Target ที่เลือกไว้แล้วไม่ให้หายตอนติ๊กสินค้าเพิ่ม/ลด
 export function allTargetsForProducts(codes) {
     const out = [];

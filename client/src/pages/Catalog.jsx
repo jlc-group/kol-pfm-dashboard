@@ -5,7 +5,7 @@ import { BRANDS, visibleBrands } from '../data/brands.js';
 import { useAuth } from '../auth/AuthContext.jsx';
 import ColumnFilter from '../components/ColumnFilter.jsx';
 import { sortProducts, prefixOptions, codePrefix, SORT_MODES, isSortMode } from '../data/catalogSort.js';
-import { productsByBrand, productInfo, targetEntriesOf, targetsForProduct, PRODUCT_CATALOG } from '../data/products.js';
+import { productsByBrand, productInfo, targetEntriesOf, targetsForProduct, sharedTargetsExcept, PRODUCT_CATALOG } from '../data/products.js';
 import { setCatalogFromServer } from '../data/catalogLoader.js';
 import { useCatalogVersion } from '../data/useCatalog.js';
 
@@ -339,6 +339,147 @@ function EditTargetModal({ brand, product, target, onClose, onSaved }) {
     );
 }
 
+// ซ่อน Target (กด × · ผู้ใช้สั่ง 6 พ.ย. 2026 "ปรับปุ่ม × ให้ถามก่อนเลย")
+// เดิมซ่อนเลย แคมเปญเดิมเก็บชื่อเดิมไว้ หน้า Ads / ฟีดยิงแอดจึงยังส่งชื่อเดิม (ทีมเพิ่มชื่อใหม่ด้วย + แล้วซ่อนชื่อเดิม คิดว่าแคมเปญเปลี่ยนตาม)
+// ตอนนี้: มีแคมเปญเดิมใช้ชื่อนี้กับสินค้าที่เลือก = ต้องเลือกก่อนว่า "คงชื่อเดิม" หรือ "เปลี่ยนเป็น Target อื่นของสินค้านั้น"
+//   คงชื่อเดิม = PATCH ซ่อนทีละสินค้าแบบเดิม · เปลี่ยน = POST /catalog/targets/rename (ตัวเดียวกับ ✎ — ซ่อนชื่อเดิม + แก้แคมเปญในธุรกรรมเดียว)
+function HideTargetModal({ brand, product, target, onClose, onSaved, onSync }) {
+    // สินค้าอื่นของแบรนด์ที่ยังใช้ชื่อนี้ (ไม่ซ่อน) — เลือกซ่อนพร้อมกันได้ · สินค้าที่กดมาก่อนเสมอ
+    const users = productsByBrand(brand).filter(p => p.code !== product.code && targetsForProduct(p.code).includes(target));
+    const products = [product, ...users];
+    const [codes, setCodes] = useState(() => [product.code]);
+    const [picked, setMode] = useState('');     // '' = ยังไม่เลือก · 'keep' = คงชื่อเดิมในแคมเปญเดิม · 'replace' = เปลี่ยนเป็นชื่ออื่น
+    const [pick, setPick] = useState('');
+    const [usage, setUsage] = useState(null);     // null = กำลังนับ · { count, campaigns, bundled } · { error }
+    const [retry, setRetry] = useState(0);
+    const [error, setError] = useState('');
+    const [saving, setSaving] = useState(false);
+    const codesKey = codes.join(',');
+    useEffect(() => {
+        if (!codes.length) { setUsage({ count: 0, campaigns: [], bundled: [] }); return undefined; }
+        let live = true;
+        setUsage(null);
+        api(`/catalog/targets/usage?target=${encodeURIComponent(target)}&codes=${encodeURIComponent(codesKey)}`)
+            .then(res => { if (live) setUsage(res.data); })
+            .catch(err => { if (live) setUsage({ error: err.message }); });
+        return () => { live = false; };
+    }, [codesKey, target, retry]);
+    // ชื่อที่ใช้แทนได้ = Target ที่สินค้าที่เลือกทุกตัวมีอยู่แล้ว (ชื่อใหม่ที่ยังไม่มี ต้องกด + เพิ่มก่อน หรือใช้ ✎ แก้ชื่อแทน)
+    const options = sharedTargetsExcept(codes, target);
+    const to = options.includes(pick) ? pick : (options.length === 1 ? options[0] : '');
+    // เลือก "เปลี่ยน" ไว้แล้วติ๊กสินค้าเพิ่มจนไม่มีชื่อที่ใช้แทนได้ = กลับไปยังไม่เลือก (ตัวเลือกนั้นกดไม่ได้แล้ว)
+    const mode = picked === 'replace' && !options.length ? '' : picked;
+    const n = usage && !usage.error ? usage.count : null;
+    const bundled = (usage && !usage.error && usage.bundled) || [];
+    const asking = n > 0;
+    const replacing = asking && mode === 'replace';
+    const allOn = codes.length === products.length;
+    const close = () => { if (!saving) onClose(); };
+    const problems = [];
+    if (!codes.length) problems.push('เลือกสินค้าอย่างน้อย 1 ตัว');
+    if (asking && !mode) problems.push('เลือกว่าแคมเปญเดิมจะใช้ Target ไหนต่อ');
+    if (replacing && !to) problems.push('เลือกชื่อ Target ที่จะใช้แทน');
+    async function submit(e) {
+        e.preventDefault();
+        if (saving) return;
+        if (n === null) { setError(usage && usage.error ? 'นับแคมเปญไม่สำเร็จ — กด "นับใหม่" ก่อน' : 'รอนับแคมเปญที่ใช้ชื่อนี้ให้เสร็จก่อน'); return; }
+        if (problems.length) { setError('ยังไม่ครบ: ' + problems.join(', ')); return; }
+        setError(''); setSaving(true);
+        if (replacing) {
+            try {
+                // keep = สินค้าในคลังที่ยังมีชื่อเดิม — กติกาเดียวกับ ✎ (ใช้ตัดสินแคมเปญแบบเก่าที่ Target ก้อนเดียวใช้กับหลายสินค้า)
+                const keep = PRODUCT_CATALOG.filter(p => !codes.includes(p.code) && targetEntriesOf(p.code).some(x => x.target.trim().toLowerCase() === target.trim().toLowerCase())).map(p => p.code);
+                const res = await api('/catalog/targets/rename', { method: 'POST', body: { from: target, to, codes, keep } });
+                const done = (res.campaigns || []).length;
+                onSaved(res.data, `ซ่อน ${target} แล้ว (${codes.length} สินค้า) · แคมเปญเดิม ${done} แคมเปญเปลี่ยนเป็น ${to}`);
+            } catch (err) { setError(err.message); }
+            finally { setSaving(false); }
+            return;
+        }
+        // ซ่อนอย่างเดียว — route ซ่อนรับทีละสินค้า · พลาดกลางทาง = บอกว่าตัวไหนซ่อนแล้ว และอัปเดตตารางตามที่สำเร็จ
+        const done = [];
+        let last = null;
+        try {
+            for (const code of codes) {
+                const res = await api('/catalog/targets', { method: 'PATCH', body: { code, target, hidden: true } });
+                last = res.data; done.push(code);
+            }
+            onSaved(last, `ซ่อน ${target} ของ ${done.join(', ')} แล้ว${asking ? ` · แคมเปญเดิม ${n} แคมเปญยังใช้ชื่อเดิม` : ''}`);
+        } catch (err) {
+            if (last) onSync(last);
+            setError((done.length ? `ซ่อนแล้ว ${done.join(', ')} · ` : '') + err.message);
+        } finally { setSaving(false); }
+    }
+    return (
+        <Modal title={`ซ่อน Target · ${brand}`} onClose={close}>
+            {error && <div className="alert-error">{error}</div>}
+            <form onSubmit={submit}>
+                <div className="field">
+                    <label>Target ที่จะซ่อน</label>
+                    <div className="catg-exact catg-old-name">{target}</div>
+                    <small className="catg-hint">ซ่อนแล้วแคมเปญใหม่จะเลือกชื่อนี้ให้สินค้าที่เลือกไม่ได้ · กด ↺ เอากลับได้</small>
+                </div>
+                <div className="field">
+                    <div className="catg-label-row">
+                        <label>ซ่อนจากสินค้า * <span className="catg-opt">{codes.length} / {products.length}</span></label>
+                        {products.length > 1 && (
+                            <button type="button" className="catg-link" onClick={() => setCodes(allOn ? [product.code] : products.map(p => p.code))}>
+                                {allOn ? `เฉพาะ ${product.code}` : `ทุกสินค้าที่ใช้ชื่อนี้ (${products.length})`}
+                            </button>
+                        )}
+                    </div>
+                    <div className="catg-pick">
+                        {products.map(p => (
+                            <button type="button" key={p.code} className={'catg-pick-item' + (codes.includes(p.code) ? ' on' : '')} aria-pressed={codes.includes(p.code)}
+                                title={p.name} onClick={() => setCodes(c => (c.includes(p.code) ? c.filter(x => x !== p.code) : [...c, p.code]))}>
+                                {codes.includes(p.code) ? '☑' : '☐'} {p.code}{p.hidden ? ' · ซ่อน' : ''}
+                            </button>
+                        ))}
+                    </div>
+                </div>
+                <div className="catg-warn catg-usage" role="status">
+                    {usage === null ? <span>กำลังนับแคมเปญที่ใช้ชื่อนี้…</span>
+                        : usage.error ? <span>นับแคมเปญไม่ได้: {usage.error} <button type="button" className="catg-link" onClick={() => setRetry(x => x + 1)}>นับใหม่</button></span>
+                        : usage.count === 0 ? <span>ยังไม่มีแคมเปญไหนใช้ชื่อนี้กับสินค้าที่เลือก — ซ่อนแค่ในคลัง</span>
+                        : <span>แคมเปญเดิมที่ใช้ชื่อนี้กับสินค้าที่เลือก <b>{usage.count} แคมเปญ</b>: {usage.campaigns.slice(0, 6).map(c => c.name).join(', ')}
+                            {usage.count > 6 ? ` และอีก ${usage.count - 6} แคมเปญ` : ''} — หน้า Ads และฟีดยิงแอดอ่าน Target จากแคมเปญ ไม่ได้อ่านจากหน้านี้</span>}
+                </div>
+                {asking && (
+                    <div className="field">
+                        <label>แคมเปญเดิมจะใช้ Target ไหนต่อ? *</label>
+                        <div className="catg-choice" role="radiogroup" aria-label="แคมเปญเดิมจะใช้ Target ไหนต่อ">
+                            <label className={'catg-choice-opt' + (mode === 'keep' ? ' on' : '')}>
+                                <input type="radio" name="hide-target-mode" checked={mode === 'keep'} onChange={() => setMode('keep')} />
+                                <span><b>คงชื่อเดิม ({target})</b><small>ซ่อนแค่ในคลัง · หน้า Ads / ฟีดยิงแอดของ {n} แคมเปญยังส่งชื่อเดิม</small></span>
+                            </label>
+                            <label className={'catg-choice-opt' + (mode === 'replace' ? ' on' : '') + (options.length ? '' : ' off')}>
+                                <input type="radio" name="hide-target-mode" checked={mode === 'replace'} disabled={!options.length} onChange={() => setMode('replace')} />
+                                <span>
+                                    <b>เปลี่ยนในแคมเปญเดิมเป็น</b>
+                                    {options.length
+                                        ? <select value={to} aria-label="Target ที่ใช้แทน" onChange={e => { setPick(e.target.value); setMode('replace'); }}>
+                                            {options.length > 1 && <option value="">— เลือก Target —</option>}
+                                            {options.map(o => <option key={o} value={o}>{o}</option>)}
+                                        </select>
+                                        : <small>สินค้าที่เลือก{codes.length > 1 ? 'ทุกตัว' : ''}ยังไม่มี Target อื่นให้เลือก — กด + เพิ่มชื่อใหม่ให้สินค้าก่อน หรือใช้ ✎ แก้ชื่อแทน</small>}
+                                    {options.length > 0 && <small>{n} แคมเปญเปลี่ยนเป็นชื่อที่เลือกทันที (เหมือนกด ✎ แก้ชื่อ)</small>}
+                                </span>
+                            </label>
+                        </div>
+                        {replacing && bundled.length > 0 && <small className="catg-hint"><b>{bundled.join(', ')}</b> อยู่ในชุดเดียวกับสินค้าที่เลือก (รีวิวรวมคลิปเดียว) ในแคมเปญนั้น จะเปลี่ยนทั้งชุด — ส่วนในคลัง {bundled.join(', ')} ยังเป็นชื่อเดิม</small>}
+                    </div>
+                )}
+                <div className="modal-actions">
+                    <button type="button" className="btn-ghost" onClick={close} disabled={saving}>ยกเลิก</button>
+                    <button type="submit" className="btn-primary" disabled={saving || n === null || problems.length > 0}>
+                        {saving ? 'กำลังบันทึก...' : replacing ? 'ซ่อน + เปลี่ยนในแคมเปญเดิม' : 'ซ่อน'}
+                    </button>
+                </div>
+            </form>
+        </Modal>
+    );
+}
+
 function RenameModal({ product, onClose, onSaved }) {
     const [name, setName] = useState(product.name);
     const [error, setError] = useState('');
@@ -413,11 +554,11 @@ export default function Catalog() {
         patch('p:' + p.code, `/catalog/products/${encodeURIComponent(p.code)}`, { hidden: hide, name: p.name, brand: p.brand },
             hide ? `ซ่อน ${p.code} แล้ว` : `เอา ${p.code} กลับมาแล้ว`);
     };
+    // × ซ่อน = เปิดหน้าต่างถามก่อน (แคมเปญเดิมคงชื่อเดิม / เปลี่ยนเป็นชื่ออื่น · 6 พ.ย. 2026) · ↺ เอากลับ = ทำเลยแบบเดิม
     const toggleTarget = (p, t) => {
-        const hide = !t.hidden;
-        if (hide && !window.confirm(`ซ่อน Target "${t.target}" ของ ${p.code}?\nแคมเปญใหม่จะเลือก Target นี้ให้สินค้านี้ไม่ได้ · แคมเปญเก่าไม่เสีย · กดเอากลับได้`)) return;
-        patch('t:' + p.code + ':' + t.target, '/catalog/targets', { code: p.code, target: t.target, hidden: hide },
-            hide ? `ซ่อน Target ของ ${p.code} แล้ว` : `เอา Target ของ ${p.code} กลับมาแล้ว`);
+        if (!t.hidden) { setModal({ kind: 'hide-target', product: p, target: t.target }); return; }
+        patch('t:' + p.code + ':' + t.target, '/catalog/targets', { code: p.code, target: t.target, hidden: false },
+            `เอา Target ของ ${p.code} กลับมาแล้ว`);
     };
 
     const all = brand ? productsByBrand(brand) : [];
@@ -543,12 +684,13 @@ export default function Catalog() {
                     </table>
                 </div>
             </div>
-            <p className="catg-foot">กด ✎ ที่ Target = แก้ชื่อ (แคมเปญเดิมที่ใช้ชื่อนั้นเปลี่ยนตามด้วย) · กด × ที่ Target = ซ่อน (แคมเปญเก่าไม่เสีย กดเอากลับได้) · ซ่อนสินค้า = แคมเปญใหม่เลือกไม่ได้ · รหัสสินค้าแก้/ลบไม่ได้ · เพิ่มแบรนด์ใหม่ต้องแก้ในระบบ</p>
+            <p className="catg-foot">กด ✎ ที่ Target = แก้ชื่อ (แคมเปญเดิมที่ใช้ชื่อนั้นเปลี่ยนตามด้วย) · กด × ที่ Target = ซ่อน (ถามก่อนว่าแคมเปญเดิมจะคงชื่อเดิมหรือเปลี่ยนเป็นชื่ออื่น · กด ↺ เอากลับได้) · ซ่อนสินค้า = แคมเปญใหม่เลือกไม่ได้ · รหัสสินค้าแก้/ลบไม่ได้ · เพิ่มแบรนด์ใหม่ต้องแก้ในระบบ</p>
 
             {modal && modal.kind === 'product' && <AddProductModal brand={brand} brands={brands} onClose={() => setModal(null)} onSaved={saved} />}
             {modal && modal.kind === 'target' && <AddTargetModal brand={brand} preset={modal.codes} onClose={() => setModal(null)} onSaved={saved} />}
             {modal && modal.kind === 'rename' && <RenameModal product={modal.product} onClose={() => setModal(null)} onSaved={saved} />}
             {modal && modal.kind === 'edit-target' && <EditTargetModal brand={brand} product={modal.product} target={modal.target} onClose={() => setModal(null)} onSaved={saved} />}
+            {modal && modal.kind === 'hide-target' && <HideTargetModal brand={brand} product={modal.product} target={modal.target} onClose={() => setModal(null)} onSaved={saved} onSync={setCatalogFromServer} />}
         </div>
     );
 }

@@ -112,6 +112,30 @@ test('ใส่ส่วนต่าง: สินค้าใหม่ / ซ่
     assert.deepEqual(web.targetsForProduct('L10'), ['F_SUN_MASS_18_54', 'F_SUN_NEW_25_44']);
 });
 
+// กด × ซ่อน Target แล้วเลือกชื่อที่แคมเปญเดิมจะใช้แทน (6 พ.ย. 2026) — ตัวเลือก = ชื่อที่สินค้าที่เลือกทุกตัวมี (ไม่ซ่อน) ยกเว้นชื่อที่กำลังซ่อน
+test('sharedTargetsExcept: ชื่อที่ใช้แทนได้ = มีครบทุกสินค้าที่เลือก · ไม่รวมที่ซ่อน · ไม่รวมชื่อที่กำลังซ่อน (ไม่สนตัวพิมพ์)', () => {
+    web.applyCatalogOverlay({
+        products: [{ code: 'JNPSET1', name: 'ชุดมินิ', brand: 'Jernis', hidden: false }],
+        targets: [
+            { product_code: 'JNP1', target: 'F_Parfume_18_44', hidden: false },
+            { product_code: 'JNP2', target: 'F_Parfume_18_44', hidden: false },
+            { product_code: 'JNP2', target: 'F_ONLY_JNP2', hidden: false },
+            { product_code: 'JNPSET1', target: 'F_Beauty-Fragrance_18-44', hidden: false },
+            { product_code: 'JNPSET1', target: 'F_Parfume_18_44', hidden: true },   // ซ่อนอยู่ = ใช้แทนไม่ได้
+            { product_code: 'L10', target: 'F_SUN_NEW_25_44', hidden: false }
+        ]
+    });
+    assert.deepEqual(web.sharedTargetsExcept(['JNP1'], 'F_Beauty-Fragrance_18-44'), ['F_Parfume_18_44']);
+    assert.deepEqual(web.sharedTargetsExcept(['JNP2'], 'f_beauty-fragrance_18-44 '), ['F_Parfume_18_44', 'F_ONLY_JNP2'], 'ไม่สนตัวพิมพ์/ช่องว่าง');
+    assert.deepEqual(web.sharedTargetsExcept(['JNP1', 'JNP2'], 'F_Beauty-Fragrance_18-44'), ['F_Parfume_18_44'], 'ต้องมีครบทุกตัว');
+    assert.deepEqual(web.sharedTargetsExcept(['JNP1', 'JNPSET1'], 'F_Beauty-Fragrance_18-44'), [], 'JNPSET1 ซ่อนชื่อใหม่ไว้ = ไม่มีตัวเลือก');
+    assert.deepEqual(web.sharedTargetsExcept(['JNP3'], 'F_Beauty-Fragrance_18-44'), [], 'มีแค่ชื่อที่กำลังซ่อน');
+    assert.deepEqual(web.sharedTargetsExcept(['L10'], 'F_SUN_MASS_18_54'), ['MF_SUN_MASS_18_54', 'F_SUN_NEW_25_44']);
+    assert.deepEqual(web.sharedTargetsExcept([], 'X'), []);
+    assert.deepEqual(web.sharedTargetsExcept(null, 'X'), []);
+    web.applyCatalogOverlay({ products: [], targets: [] });
+});
+
 test('สีใหม่ของ Beauterry กางครบทั้งหน้าเว็บและฟีด PFM (กลุ่มเดียวกันสองฝั่ง) · ป้ายใต้ชื่อ KOL รู้จักรหัสใหม่', () => {
     web.applyCatalogOverlay(OVERLAY);
     assert.deepEqual(web.expandProductFamilies('BTA4-03'), ['BTA4-00', 'BTA4-01', 'BTA4-02', 'BTA4-03', 'BTA4-04', 'BTA4-05', 'BTA4-06', 'BTA4-07', 'BTA4-08']);
