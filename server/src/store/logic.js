@@ -758,6 +758,15 @@ function resolveGroupTarget(g, platform, product) {
 // โพสต์ที่มี Gencode อยู่แล้วทำงานเหมือนเดิม (ไม่ลบค่าเดิม) · ต้องตรงกับ groupNoGencode / postNoGencode ฝั่งหน้าเว็บทุกตัวอักษร
 const groupNoGencode = g => !!g && g.no_gencode === true;
 const postNoGencode = (s, g) => groupNoGencode(g) && !String((s && s.gencode) ?? '').trim();
+// Day Left = วัน Gencode ที่เหลือ — ใช้ร่วมกันหน้า KOL Analytics (pg/kols.js) กับหน้า Ads (pg/ads.js · 10 พ.ย. 2026) ตัวเลขจะได้ตรงกันทุกหน้า
+// จำนวนวันของ Gencode (Code Expire) · กลุ่ม "-" + แถวนี้ยังไม่มี Gencode (noGencode) = 0 → ไม่มีวันหมดอายุให้นับ
+const gencodeDays = (s, noGencode) => (noGencode ? 0 : (Number(s && s.code_expire) || 0));
+// = (วันลงงาน + จำนวนวัน) − วันนี้ ปัดขึ้น · ติดลบ = หมดอายุแล้ว · ไม่มีวันลงงาน / จำนวนวันเป็น 0 = null
+function gencodeDayLeft(postDate, days, today = new Date()) {
+    if (!postDate || !days) return null;
+    const expire = new Date(postDate + 'T00:00:00').getTime() + days * 86400000;
+    return Math.ceil((expire - today.getTime()) / 86400000);
+}
 // แท็บที่เปิดค้างจากก่อน deploy ไม่รู้จักคีย์ no_gencode → ยกค่าเดิมในฐานมา ไม่ให้ "-" หายเงียบ (แบบเดียวกับ carryProductConcepts)
 // ฟอร์มรุ่นใหม่ส่ง boolean เสมอ → ใช้ตามที่ส่งมา (ส่ง false = ผู้ใช้ปลดเอง · สตริง 'true' ไม่นับ)
 function carryNoGencode(incoming, stored) {
@@ -1301,7 +1310,7 @@ module.exports = {
     resolveInside, sameInstant, mergeHireItems, mergeBriefFiles, cleanFee, cleanHeadcount, safeId, safeSlug,
     linkGroupPlatforms, resolveGroupClips, resolveGroupTarget, productCodesIn, carryProductTargets, carryProductBudgets, carryProductConcepts, carryProductKols,
     carryProductBundles, blockBundles,
-    groupNoGencode, postNoGencode, carryNoGencode,
+    groupNoGencode, postNoGencode, carryNoGencode, gencodeDays, gencodeDayLeft,
     resolveGroupProducts, resolveGroupCtype, resolveGroupMedia, resolveGroupCampaign,
     engagementOf, maybeStamp, stampWaitReason, stampFeeOnly, normalizeStamp,
     feeMissing, clipCostMetrics, costAxisRange, costAxisNorm, perfVerdict, feeCostAverages, pooledCpe, viewsMissingReason, firstByIdPost

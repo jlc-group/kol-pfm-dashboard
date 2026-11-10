@@ -18,7 +18,7 @@ const {
     engagementOf, clipCostMetrics, perfVerdict,
     maybeStamp, stampWaitReason, normalizeStamp, stampAtFor, pfmManagedSpend, postCheckWaiting,
     adRanBySpend, effectiveAdStatus, postNoGencode, pooledCpe, viewsMissingReason, firstByIdPost,
-    adStatusAuto, pfmSourceBrands, isPfmBrand
+    adStatusAuto, pfmSourceBrands, isPfmBrand, gencodeDays, gencodeDayLeft
 } = logic;
 
 // ===== สแตมป์ Performance ตอนค่าแอดถึงเกณฑ์ =====
@@ -210,6 +210,7 @@ const ads = {
         // ID Post ซ้ำ: ซิงก์ลงยอดแถว id ต่ำสุด — คิดจากแถวของแบรนด์ที่ต่อ PFM เท่านั้น แบบเดียวกับ adsSync.apply (แบรนด์อื่นไม่ถูกซิงก์ · 6 ต.ค. 2026) · ไม่กรองสิทธิ์/สถานะ
         const pfmProjIds = new Set(snap.projects.filter(p => isPfmBrand(p.brand)).map(p => p.id));
         const firstByPost = firstByIdPost(snap.submissions.filter(s => pfmProjIds.has(s.project_id)));
+        const today = new Date();   // คอลัมน์ DAY LEFT — วันนี้ตัวเดียวทั้งรายการ (แบบ pg/kols.js)
         let rows = snap.submissions
             // เฉพาะโพสต์ที่มีลิงก์แล้ว และเฉพาะแคมเปญ KOL — งานจ้างอื่น ๆ ไม่เข้าหน้ายิงแอด
             .filter(s => s.post_url && String(s.post_url).trim()
@@ -229,6 +230,10 @@ const ads = {
                 // Content Type ผูกกับคน (1 Platform ในกลุ่มเดียวมีได้หลายอย่าง) แถวเก่าค่อยถอยไปใช้ของกลุ่ม
                 const ct = s.content_type || resolveGroupCtype(grp, s.platform);
                 const media = resolveGroupMedia(grp, s.platform, ct);
+                // DAY LEFT (ผู้ใช้สั่ง 10 พ.ย. 2026) — วัน Gencode ที่เหลือ สูตรเดียวกับหน้า KOL Analytics (logic.js gencodeDayLeft)
+                // กลุ่ม "-" ที่แถวนี้ยังไม่มี Gencode = 0 วัน → day_left null (หน้าเว็บขึ้น "ไม่ใช้" ตาม no_gencode)
+                const noGencode = postNoGencode(s, grp);
+                const codeDays = gencodeDays(s, noGencode);
                 costIn.set(s.id, { fee: s.budget, adSpend: spend, engagement: engagementOf(s), campaignType, feeFree: s.fee_free });
                 return {
                     sub_id: s.id,
@@ -243,10 +248,13 @@ const ads = {
                     group_format: media.content_format,
                     gencode: s.gencode || null,
                     // กลุ่ม "-" (ไม่ใช้ Gencode) และแถวนี้ยังไม่มีค่า → หน้าเว็บขึ้น "ไม่ใช้" แทนช่องว่าง (แยกจาก "ยังไม่กรอก")
-                    no_gencode: postNoGencode(s, grp),
+                    no_gencode: noGencode,
                     id_post: s.id_post || null,
                     post_url: s.post_url,
                     post_date: s.post_date || null,
+                    // อายุ Gencode (วัน) + วันที่เหลือ — ไม่มีวันลงโพสต์ / ไม่ใช้ Gencode = day_left null
+                    gencode_days: codeDays,
+                    day_left: gencodeDayLeft(s.post_date, codeDays, today),
                     // ใครแก้ล่าสุดเมื่อไหร่ (ว่าง = ข้อมูลเก่าก่อนมีฟีเจอร์นี้)
                     post_url_at: s.post_url_at || null, post_url_by: s.post_url_by || null,
                     gencode_at: s.gencode_at || null, gencode_by: s.gencode_by || null,

@@ -3,6 +3,7 @@ import { api } from '../api/client.js';
 import Icon from '../components/Icon.jsx';
 import ProductChips from '../components/ProductChips.jsx';
 import ProductMultiSelect from '../components/ProductMultiSelect.jsx';
+import DayLeft from '../components/DayLeft.jsx';
 import { stampAtOf, stampAtText, viewsReasonText } from '../data/stamp.js';
 
 const splitCodes = v => (v ? String(v).split(',').map(s => s.trim()).filter(Boolean) : []);
@@ -20,19 +21,7 @@ function fmtD(d) {
 const GOOD_CPM = 28;
 const GOOD_CPE = 1.5;
 
-// วันที่ Gencode เหลือ — ทำสีเตือนให้เห็นว่าใครใกล้หมดแล้ว
-//   ต่ำกว่า 10 วัน = แดง | 10-20 วัน = เหลือง | 21 วันขึ้นไป = เขียว
-// none = กลุ่มตั้ง "-" (ไม่ใช้ Gencode) และแถวนี้ไม่มี Gencode — ขึ้น "ไม่ใช้" ให้แยกออกจาก "—" ที่แปลว่ายังไม่มีข้อมูล
-function DayLeft({ days, none = false }) {
-    if (none) return <span className="muted" title="กลุ่มนี้ไม่ใช้ Gencode">ไม่ใช้</span>;
-    if (days == null) return <span className="muted">—</span>;
-    if (days < 0) return <span className="dayleft over">หมดอายุแล้ว</span>;
-    const level = days < 10 ? 'red' : days <= 20 ? 'amber' : 'green';
-    const why = days < 10 ? 'เหลือน้อยกว่า 10 วัน — ต้องรีบแล้ว'
-        : days <= 20 ? 'เหลือ 10-20 วัน — เริ่มต้องตาม'
-            : 'เหลือมากกว่า 20 วัน — ยังมีเวลา';
-    return <span className={'dayleft ' + level} title={why}>{days} Days</span>;
-}
+// ป้ายวันที่ Gencode เหลือ (แดง/เหลือง/เขียว) ย้ายไป components/DayLeft.jsx — หน้า Ads ใช้ตัวเดียวกัน (10 พ.ย. 2026)
 
 // ป้ายบอกว่า KOL คนนี้คุ้มค่าไหม — เขียว = ผ่านทั้ง CPM และ CPE, แดง = มีตัวใดตัวหนึ่งเกินเกณฑ์
 // ยังไม่กรอกผลงานคอนเทนต์ = ยังตัดสินไม่ได้ ขึ้นเป็นสีเทา (ไม่ใช่ "ไม่ผ่าน")

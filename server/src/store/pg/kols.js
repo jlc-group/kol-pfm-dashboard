@@ -9,7 +9,7 @@
  */
 const { query, insertRow, updateRow, asNum, asNumOrNull, asJson } = require('./_base');
 const { loadSnapshot } = require('./_snapshot');
-const { now, clone, duplicateError, scopeProjects, stampWaitReason, normalizeStamp, stampAtFor, clipCostMetrics, perfVerdict, postNoGencode, viewsMissingReason, firstByIdPost, isPfmBrand } = require('../logic');
+const { now, clone, duplicateError, scopeProjects, stampWaitReason, normalizeStamp, stampAtFor, clipCostMetrics, perfVerdict, postNoGencode, gencodeDays, gencodeDayLeft, viewsMissingReason, firstByIdPost, isPfmBrand } = require('../logic');
 
 // id ที่ส่งมาเป็นสตริงจาก URL — jsonStore ใช้ Number(id) เทียบตรง ๆ
 // ค่าที่แปลงไม่ได้ (NaN) จะหาไม่เจอเสมอ ต้องดักไว้ก่อนยิง SQL ไม่งั้น Postgres จะ error แทนที่จะคืน null
@@ -216,15 +216,12 @@ const kols = {
                 // (หน้าเว็บขึ้น "ไม่ใช้" แทน "หมดอายุ" และเรียงไว้ท้ายตามเดิม) · code_expire ในแถวไม่ถูกแตะ แถวที่มี Gencode นับตามเดิม
                 const grp = (p && Array.isArray(p.ad_groups)) ? p.ad_groups.find(g => g && g.key === s.group_key) : null;
                 const noGencode = postNoGencode(s, grp);
-                const days = noGencode ? 0 : (Number(s.code_expire) || 0);
+                const days = gencodeDays(s, noGencode);
                 // วันที่เริ่ม Gen = วันยิงแอด (ad_end จากหน้า Ads) ถ้ามี, ถ้ายังไม่ยิงค่อยใช้ค่าที่กรอกเอง
                 const genStart = s.ad_end || s.gen_date || null;
                 // Day Left = จำนวนวัน Gencode ที่เหลือ = (วันที่ลงงาน + Days) − วันนี้ (นับจากวันที่ลงงาน)
-                let day_left = null;
-                if (s.post_date && days) {
-                    const expire = new Date(s.post_date + 'T00:00:00').getTime() + days * 86400000;
-                    day_left = Math.ceil((expire - today.getTime()) / 86400000);
-                }
+                // สูตรอยู่ที่ logic.js gencodeDayLeft — หน้า Ads คอลัมน์ DAY LEFT ใช้ตัวเดียวกัน (10 พ.ย. 2026)
+                const day_left = gencodeDayLeft(s.post_date, days, today);
                 // ผลงานคอนเทนต์ + เกณฑ์ผ่าน/ไม่ผ่าน (CPM/CPE คิดจากค่าตัวอย่างเดียว · total_cost = ค่าตัว + ค่ายิงแอด)
                 const views = Number(s.views) || 0;
                 const likes = Number(s.likes) || 0, comments = Number(s.comments) || 0;

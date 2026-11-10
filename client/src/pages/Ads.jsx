@@ -19,6 +19,8 @@ import { adEvidence, hasAdSpend } from '../data/adEvidence.js';
 import { adTiming, timingLevel, timingTip, TIMING_OPTS } from '../data/adTiming.js';
 import { wxPfmBadge, isWxPlatform, WX_PFM_TITLE } from '../data/wxPfm.js';
 import { sortByPfm } from '../data/pfmSort.js';
+import { sortByDayLeft, gencodeExpireDate } from '../data/dayLeft.js';
+import DayLeft from '../components/DayLeft.jsx';
 
 
 // คอลัมน์ "สถานะ" กลับเป็นปุ่ม ✓ ยิงแล้ว / ยังไม่ยิง แบบเดิม (ผู้ใช้สั่ง 12 ต.ค. 2026 — เลิกช่อง "หลักฐานการเริ่มยิง" + หน้าต่างยืนยัน)
@@ -36,13 +38,15 @@ const PFM_GOOD = { cpm: GOOD_CPM, cpe: GOOD_CPE };
 // ไม่เรียง ↕ → น้อย → มาก ↑ (ดีสุดก่อน) → มาก → น้อย ↓ (แย่สุดก่อน) → ไม่เรียง · เรียงได้ทีละคอลัมน์ (กดอีกคอลัมน์ = เริ่ม ↑ ที่คอลัมน์นั้น)
 const PFM_SORT_NEXT = { '': 'asc', asc: 'desc', desc: '' };
 const PFM_SORT_TEXT = { '': 'ไม่เรียง (วันลงงานใหม่สุดก่อน)', asc: 'คะแนนน้อย → มาก (ดีสุดก่อน)', desc: 'คะแนนมาก → น้อย (แย่สุดก่อน)' };
-function PfmSortButton({ label, dir = '', onChange }) {
-    const now = PFM_SORT_TEXT[dir] ? dir : '';
+// ปุ่มเดียวกันที่หัว DAY LEFT (10 พ.ย. 2026) — ข้อความของวันที่เหลือแทนคะแนน
+const DAY_LEFT_SORT_TEXT = { '': 'ไม่เรียง (วันลงงานใหม่สุดก่อน)', asc: 'ใกล้หมดอายุก่อน', desc: 'เหลือเยอะก่อน' };
+function PfmSortButton({ label, dir = '', onChange, texts = PFM_SORT_TEXT }) {
+    const now = texts[dir] ? dir : '';
     const next = PFM_SORT_NEXT[now];
     return (
         <button type="button" className={'pfm-sort-btn' + (now ? ' on' : '')} onClick={() => onChange(next)}
-            title={`${label}: ${PFM_SORT_TEXT[now]} — กดเพื่อเปลี่ยนเป็น ${PFM_SORT_TEXT[next]}`}
-            aria-label={`เรียง${label} ตอนนี้ ${PFM_SORT_TEXT[now]}`}>
+            title={`${label}: ${texts[now]} — กดเพื่อเปลี่ยนเป็น ${texts[next]}`}
+            aria-label={`เรียง${label} ตอนนี้ ${texts[now]}`}>
             {now === 'asc' ? '↑' : now === 'desc' ? '↓' : '↕'}
         </button>
     );
@@ -485,6 +489,13 @@ function AdRow({ row, onSaved, canCost, noAd = false }) {
                         ? <span className="late-chip ontime" title={timingTip(timing)}>ตรงเวลา</span>
                         : <span className={'late-chip ' + timingLevel(timing.late)} title={timingTip(timing)}>ช้า {timing.late} วัน</span>}
             </div>
+            {/* DAY LEFT — วัน Gencode ที่เหลือ ป้ายเดียวกับหน้า KOL Analytics (ผู้ใช้สั่ง 10 พ.ย. 2026) · server รุ่นก่อนไม่ส่ง day_left = "—" */}
+            <div className="ads-cell ads-dayleft">
+                <DayLeft days={row.day_left} none={row.no_gencode === true}
+                    detail={gencodeExpireDate(row.post_date, row.gencode_days)
+                        ? `Gencode อายุ ${row.gencode_days} วัน นับจากวันลงโพสต์ ${fmtDate(row.post_date)} · ครบกำหนด ${fmtDate(gencodeExpireDate(row.post_date, row.gencode_days))}`
+                        : ''} />
+            </div>
             <div className="ads-cell"><StampCell row={row} /></div>
             <div className="ads-cell ads-stack">
                 <LiveCell row={row} />
@@ -520,6 +531,7 @@ export default function Ads() {
     const [late, setLate] = useState('');   // '' | ontime | warn | bad
     const [missingPerf, setMissingPerf] = useState(false);
     // เรียงตามคะแนน PFM (22 ต.ค. 2026) — คอลัมน์ STAMPED PFM 🔒 ('stamp') หรือ PFM ('live') ทีละคอลัมน์ · '' = ลำดับเดิม (วันลงงานใหม่สุดก่อน)
+    // + DAY LEFT ('left' · 10 พ.ย. 2026) วัน Gencode ที่เหลือ (data/dayLeft.js)
     const [pfmSort, setPfmSort] = useState({ key: '', dir: '' });
     // ค้นหาชื่อ KOL / แคมเปญ / สินค้า / Gencode / ID Post — กรองฝั่งหน้าเว็บเหมือนตัวกรองอื่น (ดู data/adsSearch.js)
     const [search, setSearch] = useState('');
@@ -589,7 +601,9 @@ export default function Ads() {
     // กดเปลี่ยนเป็น "ยิงแล้ว" แถวต้องอยู่ที่เดิม เปลี่ยนแค่ป้ายสถานะ (เดิมเด้งลงไปท้ายตาราง ทีมหาแถวที่เพิ่งกดไม่เจอ)
     // อยากดูเฉพาะที่ยังไม่ยิง ใช้ปุ่มกรอง ▾ ที่หัวคอลัมน์สถานะแทน
     // เรียงตามคะแนน PFM เมื่อเลือกที่หัวคอลัมน์ STAMPED PFM 🔒 / PFM (data/pfmSort.js) — ไม่เลือก = ลำดับเดิม
-    const rows = sortByPfm(tabRows.filter(r => matches(r)), pfmSort, PFM_GOOD);
+    // ปุ่มเรียงที่หัว DAY LEFT ใช้ state เดียวกัน (key 'left') — เรียงได้ทีละคอลัมน์ กดอันใหม่ อันเดิมเลิกเรียงเอง
+    const filteredRows = tabRows.filter(r => matches(r));
+    const rows = pfmSort.key === 'left' ? sortByDayLeft(filteredRows, pfmSort.dir) : sortByPfm(filteredRows, pfmSort, PFM_GOOD);
     const reachRows = adRowsAll.filter(r => Number(r.ad_reach) > 0);
     const paidRows = adRowsAll.filter(r => Number(r.ad_spend) > 0);
     const measuredRows = paidRows.filter(r => Number(r.ad_reach) > 0);
@@ -814,6 +828,10 @@ export default function Ads() {
                                     <ColumnFilter label="ระยะเวลายิง" value={late} onPick={setLate}
                                         options={[{ value: '', label: 'ทั้งหมด', count: countIf('late', () => true) },
                                         ...TIMING_OPTS.map(([v, l]) => ({ value: v, label: l, dot: v, count: countIf('late', r => lateBucket(r) === v) }))]} />
+                                </span>
+                                {/* DAY LEFT (10 พ.ย. 2026) — ปุ่มเรียงแบบเดียวกับ PFM: ↑ ใกล้หมดอายุก่อน · ↓ เหลือเยอะก่อน · ไม่มีวัน (ไม่ใช้ Gencode) ท้ายเสมอ */}
+                                <span title="วัน Gencode ที่เหลือ = วันลงโพสต์ + อายุ Gencode (Code Expire) − วันนี้ · เขียว มากกว่า 20 วัน · เหลือง 10-20 วัน · แดง น้อยกว่า 10 วัน · กดปุ่มลูกศรเพื่อเรียง">DAY LEFT
+                                    <PfmSortButton label="วัน Gencode ที่เหลือ" texts={DAY_LEFT_SORT_TEXT} dir={pfmSort.key === 'left' ? pfmSort.dir : ''} onChange={pickPfmSort('left')} />
                                 </span>
                                 {/* ปุ่มเรียงตามคะแนน PFM = CPM กับ CPE เทียบเกณฑ์ (CPM ÷ GOOD_CPM กับ CPE ÷ GOOD_CPE เฉลี่ยกัน) · ต่ำ = ดี · data/pfmSort.js */}
                                 <span title="ผลที่ระบบล็อกไว้ตอนค่ายิงแอดสะสมถึงเกณฑ์ของแบรนด์นั้น — แก้ไม่ได้ (ชี้ที่ป้ายในแถวเพื่อดูตัวเลขของแบรนด์) · กดปุ่มลูกศรเพื่อเรียงตามคะแนน (CPM + CPE เทียบเกณฑ์)">STAMPED PFM 🔒

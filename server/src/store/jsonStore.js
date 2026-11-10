@@ -6,7 +6,7 @@
  */
 const fs = require('fs');
 const path = require('path');
-const { nextPostCheck, postCheckDecision, postCheckWaiting, POST_CHECK_OPEN, sameInstant: sameInstantPC, postNoGencode, normalizeStamp, pfmSourceBrands } = require('./logic');
+const { nextPostCheck, postCheckDecision, postCheckWaiting, POST_CHECK_OPEN, sameInstant: sameInstantPC, postNoGencode, gencodeDays, gencodeDayLeft, normalizeStamp, pfmSourceBrands } = require('./logic');
 const { displayName } = require('../data/userNames');   // ชื่อคนบันทึก = ชื่อที่แสดงก่อน (28 ต.ค. 2026)
 
 const DATA_DIR = path.join(__dirname, '..', '..', 'data');
@@ -366,15 +366,11 @@ const kols = {
                 // กลุ่ม "-" (ไม่ใช้ Gencode) + แถวนี้ยังไม่มีค่า → days 0 ทำให้ day_left เป็น null — ตรงกับ pg/kols.js
                 const grp = (p && Array.isArray(p.ad_groups)) ? p.ad_groups.find(g => g && g.key === s.group_key) : null;
                 const noGencode = postNoGencode(s, grp);
-                const days = noGencode ? 0 : (Number(s.code_expire) || 0);
+                const days = gencodeDays(s, noGencode);
                 // วันที่เริ่ม Gen = วันยิงแอด (ad_end จากหน้า Ads) ถ้ามี, ถ้ายังไม่ยิงค่อยใช้ค่าที่กรอกเอง
                 const genStart = s.ad_end || s.gen_date || null;
-                // Day Left = จำนวนวัน Gencode ที่เหลือ = (วันที่ลงงาน + Days) − วันนี้ (นับจากวันที่ลงงาน)
-                let day_left = null;
-                if (s.post_date && days) {
-                    const expire = new Date(s.post_date + 'T00:00:00').getTime() + days * 86400000;
-                    day_left = Math.ceil((expire - today.getTime()) / 86400000);
-                }
+                // Day Left = จำนวนวัน Gencode ที่เหลือ = (วันที่ลงงาน + Days) − วันนี้ — สูตรเดียวกับ pg/kols.js และหน้า Ads (logic.js gencodeDayLeft)
+                const day_left = gencodeDayLeft(s.post_date, days, today);
                 // ผลงานคอนเทนต์ + เกณฑ์ผ่าน/ไม่ผ่าน (ต้นทุน = ค่าตัว + ค่ายิงแอด)
                 const views = Number(s.views) || 0;
                 const likes = Number(s.likes) || 0, comments = Number(s.comments) || 0;
@@ -1582,6 +1578,7 @@ const ads = {
     async list({ scopeBrands = null, brand, status, from, to } = {}) {
         const projById = {};
         db.projects.forEach(p => { projById[p.id] = p; });
+        const today = new Date();   // คอลัมน์ DAY LEFT
 
         let rows = db.submissions
             .filter(s => s.post_url && String(s.post_url).trim())     // เฉพาะโพสต์ที่มีลิงก์แล้ว
@@ -1610,6 +1607,9 @@ const ads = {
                     id_post: s.id_post || null,
                     post_url: s.post_url,
                     post_date: s.post_date || null,
+                    // คอลัมน์ DAY LEFT (10 พ.ย. 2026) — ตรงกับ pg/ads.js
+                    gencode_days: gencodeDays(s, postNoGencode(s, grp)),
+                    day_left: gencodeDayLeft(s.post_date, gencodeDays(s, postNoGencode(s, grp)), today),
                     // ใครแก้ล่าสุดเมื่อไหร่ (ว่าง = ข้อมูลเก่าก่อนมีฟีเจอร์นี้)
                     post_url_at: s.post_url_at || null, post_url_by: s.post_url_by || null,
                     gencode_at: s.gencode_at || null, gencode_by: s.gencode_by || null,
