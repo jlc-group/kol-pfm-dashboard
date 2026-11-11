@@ -66,7 +66,7 @@ after(async () => {
 const tokenOf = id => jwt.sign({ id, username: ACCOUNTS[id].username, role: ACCOUNTS[id].role }, process.env.JWT_SECRET, { expiresIn: '1h' });
 const call = (method, url, body) => fetch(base + '/api' + url, { method, headers: { Authorization: `Bearer ${tokenOf(1)}`, 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
 const TT = { platform: 'TikTok', account_name: '@ppp', link_account: 'https://www.tiktok.com/@ppp', followers: 5000, tier: 'Nano 1k - 10k', fee: 0,
-    content_type: 'Review', campaign: 'VDO View', media_type: 'VDO', content_format: 'Review', target: [] };
+    content_type: 'Review', campaign: 'VDO View', media_type: 'VDO', content_format: 'Review', target: [], cart: true };
 const body = owner => ({ contact_mode: 'self', brand: 'Beauterry', products: ['BTA4-01'], clips: 1, owner, code_expire: 60, platforms: [TT] });
 
 test('เพิ่ม KOL รายคน: คนตรวจทั้งรายการ = ผู้ดูแล (เก็บเป็น id) · Admin เป็นผู้ดูแลก็ได้ (มีหน้า My Work)', async () => {

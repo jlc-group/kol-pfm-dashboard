@@ -12,7 +12,7 @@
  * ไฟล์นี้เป็นตรรกะล้วน ไม่แตะฐานข้อมูล
  */
 const {
-    TARGET_PLATFORMS, CAMPAIGN_PLATFORMS, CAMPAIGN_AS_CTYPE, SOCIAL_CAMPAIGNS,
+    TARGET_PLATFORMS, CAMPAIGN_PLATFORMS, CAMPAIGN_AS_CTYPE, SOCIAL_CAMPAIGNS, CART_PLATFORMS, cartValue,
     groupNoGencode, effectiveAdStatus
 } = require('./logic');
 
@@ -23,13 +23,13 @@ const SOLO_TIERS = ['Nano 1k - 10k', 'Micro 10k - 100k', 'Macro 100k - 1M', 'Meg
 const SOLO_CAMPAIGNS = ['VDO View', 'Reach', 'Consideration Ads'];   // TikTok (FB/IG ใช้ SOCIAL_CAMPAIGNS เป็นทั้ง Campaign และ Content Type)
 const SOLO_MEDIA = ['Photo', 'VDO'];
 const SOLO_CODE_EXPIRE = [7, 30, 60, 180, 365];
-const SOLO_MAX_CLIPS = 5;
+const SOLO_MAX_CLIPS = 10;   // 11 พ.ย. 2026 ผู้ใช้ขอเพิ่มจาก 5 → 10 · ต้องเท่ากับ client/src/data/soloKol.js
 const SOLO_FEE_MAX = 10000000;    // เท่ากับ FEE_MAX ของ PUT /projects/:id/fees (เส้นแก้ค่าตัวต่อคลิป) — กันพิมพ์ศูนย์เกิน
 const SOLO_NAME_MAX = 500;        // projects.name เป็น VARCHAR(500)
 const CONTACT_MODES = ['self', 'agency'];
 // หน้าเว็บก่อนรอบ 4 (แท็บที่เปิดค้าง) ส่งข้อมูล Platform เดียวแบบแบน — คีย์ชุดนี้ห่อเป็นรายการ 1 Platform
 const LEGACY_PLATFORM_KEYS = ['platform', 'account_name', 'link_account', 'followers', 'tier', 'fee',
-    'content_type', 'campaign', 'media_type', 'content_format', 'target'];
+    'content_type', 'campaign', 'media_type', 'content_format', 'target', 'cart'];
 
 const text = (v, max) => {
     const s = typeof v === 'string' || typeof v === 'number' ? String(v).trim() : '';
@@ -103,10 +103,20 @@ function soloInput(body, opts = {}) {
             if (!Array.isArray(src.target)) throw at('Target ไม่ถูกต้อง');
             target = [...new Set(src.target.map(x => text(x, 100)).filter(Boolean))].slice(0, 30);
         }
+        // ติดตะกร้า (TikTok · 11 พ.ย. 2026) — บังคับตอนเพิ่ม · แก้ไขแล้วไม่ส่งมา (แท็บที่เปิดค้างก่อนมีช่องนี้) = null → buildSoloGroup ยกค่าเดิม
+        // Platform อื่นไม่รับค่านี้ (ไม่มีคีย์ในผลลัพธ์)
+        const useCart = CART_PLATFORMS.includes(P);
+        let cart = null;
+        if (useCart) {
+            if (src.cart === true || src.cart === false) cart = src.cart;
+            else if (src.cart !== undefined && src.cart !== null) throw at('ตะกร้าไม่ถูกต้อง');
+            else if (!editing) throw at('เลือก ติดตะกร้า / ไม่ติดตะกร้า (ไม่เห็นช่องนี้ให้กด F5 ก่อน)');
+        }
         return {
             platform: P, account_name, link_account: link_account || null, followers, tier,
             fee: fee === undefined ? null : fee,
-            content_type, campaign, media_type: media_type || null, content_format: content_format || null, target
+            content_type, campaign, media_type: media_type || null, content_format: content_format || null, target,
+            ...(useCart ? { cart } : {})
         };
     };
 
@@ -200,6 +210,13 @@ function soloPayee(i, prev) {
 // prev = กลุ่มเดิมตอนแก้ไข (PUT /projects/:id/solo) — ใช้คง Platform ของผู้รับเงินไว้ (soloPayeePlatform)
 function buildSoloGroup(i, key, prev = null) {
     const clips = i.clips > 1 ? [...i.clip_names] : [];
+    // ติดตะกร้า (TikTok) — ไม่ได้ส่งมาตอนแก้ไข (แท็บเก่า) = ค่าเดิมของ Platform นั้นในกลุ่มเดิม · ไม่มีค่าเดิม = null
+    const prevCart = P => {
+        const ob = prev && Array.isArray(prev.blocks) ? prev.blocks.find(x => x && x.platform === P) : null;
+        return cartValue(ob && Array.isArray(ob.sets) && ob.sets[0] ? ob.sets[0].cart : null);
+    };
+    const cartOf = p => (cartValue(p.cart) !== null ? p.cart : prevCart(p.platform));
+    const withCart = (p, row) => (CART_PLATFORMS.includes(p.platform) ? { ...row, cart: cartOf(p) } : row);
     const blocks = i.platforms.map(p => {
         const useTarget = TARGET_PLATFORMS.includes(p.platform);
         const product_targets = {};
@@ -210,14 +227,14 @@ function buildSoloGroup(i, key, prev = null) {
             budget: p.fee == null ? 0 : money(p.fee * i.clips),
             budget_mode: 'total', product_budgets: {}, concept_split: false, product_concepts: {},
             products: [...i.products], clips: [...clips],
-            sets: [{
+            sets: [withCart(p, {
                 campaign: p.campaign || '', content_type: p.content_type,
                 media_type: p.media_type || '', content_format: p.content_format || '',
                 tiers: [{ tier: p.tier, kols: 1 }]
-            }]
+            })]
         };
     });
-    const allocations = i.platforms.map(p => ({
+    const allocations = i.platforms.map(p => withCart(p, {
         platform: p.platform, tier: p.tier, kols: 1, campaign: p.campaign || null,
         content_type: p.content_type, media_type: p.media_type || null, content_format: p.content_format || null
     }));

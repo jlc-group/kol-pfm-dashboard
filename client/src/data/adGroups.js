@@ -31,6 +31,17 @@ export function groupPlatforms(g) {
 export const TARGET_PLATFORMS = ['TikTok'];
 export const needTarget = p => TARGET_PLATFORMS.includes(p);
 
+// ติดตะกร้า / ไม่ติดตะกร้า (11 พ.ย. 2026) — ตั้งต่อชุด Content Type · บังคับเลือก · ใช้เฉพาะ TikTok ก่อน
+// เก็บเป็น set.cart / allocation.cart = true | false (null = ยังไม่เลือก / แคมเปญที่บันทึกก่อนมีช่องนี้)
+// ต้องตรงกับ CART_PLATFORMS ฝั่ง server (server/src/store/logic.js — tests/cart-tag.test.cjs เทียบให้)
+export const CART_PLATFORMS = ['TikTok'];
+export const needCart = p => CART_PLATFORMS.includes(p);
+// นับเฉพาะ true / false ตรงตัว — สตริง 'true' / undefined (ร่างหรือแท็บที่เปิดค้างก่อนมีช่องนี้) = ยังไม่เลือก
+export const cartValue = v => (v === true ? true : v === false ? false : null);
+// ชุด Content Type ชุดหนึ่งเลือกตะกร้าครบหรือยัง (Platform ที่ไม่ใช้ = ผ่านเสมอ)
+export const setCartOk = (platform, s) => !needCart(platform) || cartValue(s && s.cart) !== null;
+export const CART_LABEL = { true: 'ติดตะกร้า', false: 'ไม่ติดตะกร้า' };
+
 // Content Type ต่างกันตาม Platform
 export const CONTENT_TYPES_DEFAULT = ['Review', 'Sale'];
 // Facebook / Instagram ไม่เลือกที่ช่องนี้แล้ว — เลือก Awareness / Engagement / Reels ที่ช่อง Campaign แทน (ดู CAMPAIGN_TYPES_BY_PLATFORM)
@@ -83,7 +94,7 @@ export function withCampaignFromCtype(b) {
 }
 
 export const emptyTier = () => ({ tier: '', kols: '' });
-export const emptySet = (over = {}) => ({ campaign: '', content_type: '', media_type: '', content_format: '', tiers: [emptyTier()], ...over });
+export const emptySet = (over = {}) => ({ campaign: '', content_type: '', media_type: '', content_format: '', cart: null, tiers: [emptyTier()], ...over });
 // product_targets = Target แยกต่อสินค้า { รหัสสินค้า: [Target] } · target = รวมทุกสินค้า (ให้หน้าที่ยังอ่านแบบรวมใช้ต่อได้)
 // budget_mode = 'total' งบรวมก้อนเดียว (budget) | 'split' แยกงบต่อสินค้า (product_budgets { รหัส: งบ } และ budget = ผลรวม)
 // concept_split / product_concepts = Concept แยกต่อสินค้าของ Platform นี้ (ว่าง = ใช้ Concept หลักของกลุ่ม)
@@ -158,6 +169,8 @@ export function toBlocks(g, platformCsv) {
                     content_type: s.content_type || '',
                     media_type: s.media_type || '',
                     content_format: s.content_format || '',
+                    // ติดตะกร้า (TikTok) — แคมเปญที่บันทึกก่อนมีช่องนี้ = null (ฟอร์มให้เลือกก่อนบันทึก)
+                    cart: cartValue(s.cart),
                     tiers: (s.tiers && s.tiers.length ? s.tiers : [emptyTier()])
                         .map(t => ({ tier: t.tier || '', kols: t.kols ?? '' }))
                 }))
@@ -210,7 +223,9 @@ export function flattenBlocks(blocks) {
             campaign: s.campaign || null,
             content_type: s.content_type || null,
             media_type: s.media_type || null,
-            content_format: s.content_format || null
+            content_format: s.content_format || null,
+            // ติดตะกร้า — Platform ที่ไม่ใช้เก็บ null เสมอ (กันค่าค้างตอนเปลี่ยน Platform)
+            cart: needCart(b.platform) ? cartValue(s.cart) : null
         }))));
 }
 
@@ -689,6 +704,34 @@ export function packCampaigns(b) {
     return { ...b, sets: (b.sets || []).map(s => ({ ...s, campaign: '' })) };
 }
 
+// ชุดที่หน้าอื่นแยกไม่ออก = ใช้ค่าตะกร้าเดียวกัน — หน้า Ads / เอเจนซี่ / On Process จับคู่คลิปกับชุดด้วย (Platform + Content Type) เท่านั้น
+// (ผลรีวิว 11 พ.ย.) ชุดที่ Content Type ซ้ำกัน หรือกลุ่ม "ไม่ใช้ Gencode" (ช่อง Content Type ปิด ทุกชุดเป็นกล่องเดียว) ต้องได้ค่าเดียวกัน
+export const cartKey = (g, s) => (groupNoGencode(g) ? '' : String((s && s.content_type) || ''));
+// เลือกตะกร้าที่ชุดหนึ่ง = ชุดอื่นในบล็อกเดียวกันที่แยกไม่ออกได้ค่าเดียวกันด้วย
+export function withSetCart(g, b, si, v) {
+    const key = cartKey(g, (b.sets || [])[si]);
+    return { ...b, sets: (b.sets || []).map((s, j) => (j === si || cartKey(g, s) === key ? { ...s, cart: cartValue(v) } : s)) };
+}
+// Content Type ที่มีชุดเลือกตะกร้าต่างกัน (เกิดได้ตอนเปลี่ยน Content Type ของชุดให้ซ้ำกับอีกชุด) — ตัวตรวจฟอร์มไม่ให้บันทึก
+export function cartConflicts(g, b) {
+    if (!needCart(b && b.platform)) return [];
+    const seen = {};
+    (b.sets || []).forEach(s => {
+        const v = cartValue(s && s.cart);
+        if (v === null) return;
+        const k = cartKey(g, s);
+        (seen[k] = seen[k] || new Set()).add(v);
+    });
+    return Object.keys(seen).filter(k => seen[k].size > 1);
+}
+
+// ตอนบันทึก: ติดตะกร้าเก็บเป็น true / false / null ตรงตัวเสมอ (ส่งคีย์ทุกชุด — server แยกฟอร์มรุ่นใหม่ออกจากแท็บที่เปิดค้างก่อนมีช่องนี้)
+// Platform ที่ไม่ใช้ = null (กันค่าค้างเมื่อเปลี่ยน Platform ของบล็อก)
+export function packCart(b) {
+    const use = needCart(b.platform);
+    return { ...b, sets: (b.sets || []).map(s => ({ ...s, cart: use ? cartValue(s.cart) : null })) };
+}
+
 // ตอนบันทึก: เก็บ Target เฉพาะสินค้าที่ยังอยู่ในบล็อก และคิด Target รวม (b.target) ใหม่จากทุกสินค้า
 // ให้หน้าที่ยังอ่าน Target รวมได้ค่าตรงกับที่เลือกจริง · Platform ที่ไม่ใช้ Target เก็บเป็นว่าง · ตัดตัวช่วยเตือนของฟอร์มทิ้ง
 export function packProductTargets(b) {
@@ -764,6 +807,19 @@ export function mediaFor(g, platform, contentType) {
         media_type: hit ? (hit.media_type || null) : (g.media_type || null),
         content_format: hit ? (hit.content_format || null) : (g.content_format || null)
     };
+}
+
+// ติดตะกร้าของ (Platform + Content Type) — true / false / null (ไม่ใช่ TikTok / แคมเปญก่อนมีช่องนี้ / ไม่เจอชุด)
+// กติกาเดียวกับ resolveGroupCart ฝั่ง server: Content Type ต้องตรงตัว (ไม่ใช่แบบ mediaFor ที่ชุดไม่มี Content Type ใช้ได้กับทุกอัน)
+// ไม่รู้ Content Type = ชุดแรกที่เลือกไว้ · อ่านจาก blocks ก่อน (allocations ข้ามชุดที่ยังไม่มี Tier) แล้วค่อยถอยไป allocations
+export function cartFor(g, platform, contentType) {
+    if (!g || !needCart(platform)) return null;
+    const match = x => x && cartValue(x.cart) !== null && (!contentType || x.content_type === contentType);
+    const b = (g.blocks || []).find(x => x && x.platform === platform);
+    const s = b && (b.sets || []).find(match);
+    if (s) return s.cart;
+    const a = (g.allocations || []).find(x => x && x.platform === platform && match(x));
+    return a ? a.cart : null;
 }
 
 // จำนวนที่ต้องการของ (Platform + Content Type) — ไว้ทำตัวเลข "ส่งแล้ว / ต้องการ" ในตัวกรอง

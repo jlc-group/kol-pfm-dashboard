@@ -7,7 +7,7 @@ export const SOLO_PLATFORMS = ['TikTok', 'Instagram', 'Facebook', 'Lemon8', 'X',
 export const SOLO_TIERS = ['Nano 1k - 10k', 'Micro 10k - 100k', 'Macro 100k - 1M', 'Mega 1M+'];
 export const SOLO_MEDIA = ['Photo', 'VDO'];
 export const SOLO_CODE_EXPIRE = [7, 30, 60, 180, 365];
-export const SOLO_MAX_CLIPS = 5;
+export const SOLO_MAX_CLIPS = 10;   // 11 พ.ย. 2026 ผู้ใช้ขอเพิ่มจาก 5 → 10 · ต้องเท่ากับ server/src/store/soloKol.js (tests/solo-kol-client.test.cjs เทียบให้)
 
 // ---- server รุ่นเก่า (ยังไม่รีสตาร์ตหลัง deploy) — ใช้ร่วมกันในฟอร์ม (SoloKolForm) และหน้า KOL รายคน (SoloKolDetail)
 // รับแบบ Platform เดียว (ช่องแบนระดับบนสุด) — ส่งรูปใหม่ไปจะตอบว่าไม่เจอช่องแรกที่ตรวจ

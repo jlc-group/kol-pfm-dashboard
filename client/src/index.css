@@ -1171,6 +1171,13 @@ a { text-decoration: none; color: inherit; }
 .proc-ctype-chip.fmt { background: #fff4e6; color: #b45309; }
 /* ป้าย Campaign (VDO View / Reach / Consideration Ads) ในหน้า Ads — สีฟ้า แยกจากป้าย Content Type / Format / Style */
 .proc-ctype-chip.camp { background: #e0f2fe; color: #0369a1; }
+/* ป้ายติดตะกร้า (TikTok · 11 พ.ย. 2026) — หน้า Ads ใต้ชื่อ KOL · หน้าเอเจนซี่ / หัวกล่อง Content Type / On Process / ภาพรวมแคมเปญ
+   ติดตะกร้า = ส้มเข้ม (ต่างจากป้าย Style สีส้มอ่อน) · ไม่ติดตะกร้า = เทา */
+.cart-tag { display: inline-flex; align-items: center; gap: 3px; white-space: nowrap; font-size: 10.5px; font-weight: 800; padding: 3px 7px; border-radius: 8px; background: #ffedd5; color: #c2410c; border: 1px solid #fdba74; line-height: 1.2; }
+.cart-tag.no { background: #f4f5f5; color: #6b7674; border-color: #e0e4e3; }
+/* หน้า Ads: ช่องชื่อ KOL เป็นคอลัมน์แนวตั้ง — ป้ายต้องไม่ยืดเต็มช่อง */
+.ads-name-meta .cart-tag { align-self: flex-start; margin-top: 3px; }
+.chip-ctype + .cart-tag, .adg-set-chips .cart-tag { align-self: center; }
 /* Content Type + Photo/VDO อยู่แถวบน, Content Format เต็มแถวล่าง
    (วาง 3 ช่องในแถวเดียวแล้วช่องที่ 3 แคบจนตัวหนังสือชนลูกศร) */
 .ctype-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
@@ -3108,6 +3115,16 @@ a.ads-thumb:focus-visible { outline: 2px solid var(--mint-dark); outline-offset:
 .blk-tiers-title { font-size: 12.5px; font-weight: 800; color: var(--text); }
 .blk-tiers .tier-add { align-self: flex-start; }
 .set-kol-row { margin-top: 8px; }
+/* ติดตะกร้า / ไม่ติดตะกร้า ในชุด Content Type ของ TikTok (11 พ.ย. 2026) — บังคับเลือก · ยังไม่เลือก = กรอบแดงจาง + "ต้องเลือก" */
+.ctype-cart-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 9px; padding-top: 9px; border-top: 1px dashed var(--border); }
+.ctype-cart-label { font-size: 12.5px; font-weight: 800; color: var(--text); margin-right: 2px; }
+.ctype-cart-label em { font-style: normal; color: var(--danger); }
+.ctype-cart-opt { padding: 5px 13px; border: 1px solid var(--border); border-radius: 999px; background: #fff; color: var(--text); font: inherit; font-size: 12.5px; font-weight: 700; cursor: pointer; }
+.ctype-cart-opt:hover { border-color: var(--mint); color: var(--mint-dark); }
+.ctype-cart-opt.on { background: var(--grad); border-color: transparent; color: #fff; }
+.ctype-cart-opt:focus-visible { outline: 2px solid var(--mint-dark); outline-offset: 2px; }
+.ctype-cart-row.need .ctype-cart-opt { border-color: #f8b4c0; }
+.ctype-cart-hint { font-size: 11.5px; font-weight: 700; color: var(--danger); }
 .set-kol-label { flex: 1; font-size: 12.5px; font-weight: 700; color: var(--text); }
 .tier-unit { font-size: 11.5px; color: #7d938d; }
 .tier-add {

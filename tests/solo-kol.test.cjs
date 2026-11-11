@@ -60,7 +60,7 @@ const logic = require(path.join(SRC, 'store/logic'));
 const TT = {
     platform: 'TikTok', account_name: '@flow3rgurrl', link_account: 'https://www.tiktok.com/@flow3rgurrl', followers: 85000,
     tier: 'Micro 10k - 100k', fee: 5000, content_type: 'Review', campaign: 'VDO View', media_type: 'VDO', content_format: 'Review',
-    target: ['F_Beauty-Make up_18-44']
+    target: ['F_Beauty-Make up_18-44'], cart: true   // ติดตะกร้า (TikTok บังคับตอนเพิ่ม · 11 พ.ย. 2026)
 };
 const IG = {
     platform: 'Instagram', account_name: 'flow.ig', link_account: '', followers: 12000, tier: 'Micro 10k - 100k',
@@ -73,7 +73,7 @@ const MULTI = { ...BASE, clips: 2, clip_names: ['A', 'B'], platforms: [IG, TT] }
 // หน้าเว็บก่อนรอบ 4 (แท็บที่เปิดค้าง): Platform เดียวแบบแบน + วันที่จ้าง/กำหนดลงงาน
 const FLAT = {
     ...BASE, account_name: '@flow3rgurrl', platform: 'TikTok', link_account: TT.link_account, followers: 85000, tier: TT.tier,
-    fee: 5000, content_type: 'Review', campaign: 'VDO View', media_type: 'VDO', content_format: 'Review', target: TT.target,
+    fee: 5000, content_type: 'Review', campaign: 'VDO View', media_type: 'VDO', content_format: 'Review', target: TT.target, cart: true,
     hire_date: '2020-01-01', due_date: '2020-01-10'
 };
 const withPlat = (p, over) => ({ ...GOOD, platforms: [{ ...p, ...over }] });
@@ -120,7 +120,10 @@ test('soloInput: ข้อผิดพลาดของช่องต่อ Pl
     assert.match(errOf({ ...GOOD, brand: '' }), /แบรนด์/);
     assert.match(errOf({ ...GOOD, products: [] }), /สินค้าอย่างน้อย 1/);
     assert.match(errOf({ ...GOOD, products: 'BTA4-01' }), /สินค้าอย่างน้อย 1/);
-    for (const clips of [0, 6, 1.5]) assert.match(errOf({ ...GOOD, clips }), /1-5/, String(clips));
+    for (const clips of [0, 11, 1.5]) assert.match(errOf({ ...GOOD, clips }), /1-10/, String(clips));
+    // 11 พ.ย. 2026 เพิ่มสูงสุดเป็น 10 คลิป — 6-10 ผ่าน (ชื่อคลิปว่าง = "คลิป N")
+    for (const clips of [6, 10]) assert.ok(!errOf({ ...GOOD, clips }), String(clips));
+    assert.deepEqual(inputOf({ ...GOOD, clips: 10 }).clip_names, Array.from({ length: 10 }, (_, k) => `คลิป ${k + 1}`));
     assert.match(errOf({ ...GOOD, owner: '' }), /ผู้ดูแล/);
     assert.match(errOf({ ...GOOD, brief_link: 'javascript:alert(1)' }), /ลิงก์บรีฟ/);
     assert.match(errOf({ ...GOOD, code_expire: 45 }), /อายุ Gencode/);
@@ -214,7 +217,7 @@ test('buildSoloGroup: 1 บล็อก / Platform — ตัวอ่านก�
         assert.deepEqual(logic.resolveGroupMedia(g, P, p.content_type), { media_type: p.media_type, content_format: 'F' + k }, P);
         assert.equal(g.blocks[k].budget, k * 1000 * 2, P + ': งบบล็อก = ค่าตัว × คลิป');
         assert.deepEqual(g.allocations[k], { platform: P, tier: p.tier, kols: 1, campaign: p.campaign, content_type: p.content_type,
-            media_type: p.media_type, content_format: 'F' + k }, P);
+            media_type: p.media_type, content_format: 'F' + k, ...(P === 'TikTok' ? { cart: true } : {}) }, P);
     });
     assert.deepEqual(solo.SOLO_PLATFORMS.map((P, k) => logic.resolveGroupCampaign(g, P, i.platforms[k].content_type)),
         ['VDO View', 'Reels', 'Awareness', null, null, null]);
@@ -244,7 +247,7 @@ test('buildSoloGroup: 1 บล็อก / Platform — ตัวอ่านก�
 
 test('buildSoloGroup: ตัวอ่านกลุ่มของหน้าเว็บนับเป้าคลิปตรงทุก Platform (quotaOf × clipCountFor) · Content Type / Target ต่อ Platform', async () => {
     const c = await import(pathToFileURL(path.join(__dirname, '../client/src/data/adGroups.js')).href);
-    for (const n of [1, 2, 5]) {
+    for (const n of [1, 2, 5, 10]) {
         const i = inputOf({ ...ALL6(), platforms: ALL6().platforms, clips: n, clip_names: Array.from({ length: n }, (_, k) => 'c' + k) });
         const g = solo.buildSoloGroup(i, 'g');
         for (const p of i.platforms) {

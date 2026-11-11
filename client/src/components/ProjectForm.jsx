@@ -16,7 +16,8 @@ import {
     isSplitConcept, isBlockSplitConcept, packConcepts, conceptParts,
     isKolSplit, productKolOf, productKolSum, kolSplitState, kolSplitProblem, packKols, kolAutoTier, syncAutoKols, seedKolSplit,
     blockTierNames, unifyTiers, setSetKols, setKol, settleKols, KOL_TIERS, MIXED_TIER,
-    productRows, makeBundle, splitBundle, dropFromBundle, packBundles, copyProductSet, sameProductSet
+    productRows, makeBundle, splitBundle, dropFromBundle, packBundles, copyProductSet, sameProductSet,
+    needCart, setCartOk, cartValue, packCart, withSetCart, cartConflicts
 } from '../data/adGroups.js';
 
 // รายชื่อทีมงานที่รับเป็น Owner ของแคมเปญ — แก้/เพิ่มชื่อตรงนี้ได้เลย
@@ -398,6 +399,20 @@ export default function ProjectForm({ editing, onClose, onSaved }) {
             .map(b => kolSplitProblem(b, adGroups.length > 1 ? `กลุ่มที่ ${gi + 1} · ${b.platform}` : b.platform))
             .filter(Boolean);
     });
+    // ติดตะกร้า / ไม่ติดตะกร้า (TikTok · 11 พ.ย. 2026) — บังคับเลือกทุกชุด Content Type ทั้งตอนสร้างและตอนแก้ไข
+    // (แคมเปญเดิมที่บันทึกก่อนมีช่องนี้ ต้องเลือกให้ครบก่อนบันทึกครั้งถัดไป) · บอกกลุ่ม / Platform / ชุดที่ยังไม่เลือก
+    // + ชุดที่หน้าอื่นแยกไม่ออก (Content Type ซ้ำ / กลุ่มไม่ใช้ Gencode) เลือกต่างกันไม่ได้ — ดู cartConflicts
+    const cartProblems = () => adGroups.flatMap((g, gi) => {
+        const plats = splitCsv(g.platform);
+        const where = b => `${adGroups.length > 1 ? `กลุ่มที่ ${gi + 1} · ` : ''}${b.platform}`;
+        return (g.blocks || []).filter(b => plats.includes(b.platform) && needCart(b.platform))
+            .flatMap(b => [
+                ...(b.sets || []).map((s, si) => (setCartOk(b.platform, s) ? null
+                    : `ติดตะกร้า / ไม่ติดตะกร้า (${where(b)} · ${s.content_type || s.campaign || 'ชุดที่ ' + (si + 1)})`)),
+                ...cartConflicts(g, b).map(k => `ชุด ${k || 'ที่ไม่มี Content Type'} ของ ${where(b)} ต้องเลือกตะกร้าเหมือนกัน (หน้า Ads / เอเจนซี่แยกชุดตาม Content Type)`)
+            ])
+            .filter(Boolean);
+    });
     // เลือกกลุ่ม Target ได้หลายอัน (array)
 
     // ตรวจว่ากรอกครบทุกช่องไหม (คืน list ช่องที่ยังไม่ครบ)
@@ -437,6 +452,7 @@ export default function ProjectForm({ editing, onClose, onSaved }) {
         if (!budgetOk) m.push('Budget ของแต่ละ Platform ในกลุ่มสินค้า (ถ้าแยกงบต่อสินค้า ทุกสินค้าต้องใส่งบ)');
         // แยกจำนวน KOL ต่อสินค้า: ทุกสินค้าใส่อย่างน้อย 1 คน และรวมแล้วต้องเท่าจำนวน KOL ของ Platform พอดี
         m.push(...kolProblems());
+        m.push(...cartProblems());
         if (!form.start_date) m.push('วันเริ่ม (Start)');
         if (!form.end_date) m.push('วันสิ้นสุด (End)');
         return m;
@@ -449,7 +465,8 @@ export default function ProjectForm({ editing, onClose, onSaved }) {
             if (m.length) { setError('กรุณากรอกให้ครบทุกช่อง: ' + m.join(', ')); return; }
         } else {
             // ตอนแก้ไขไม่บังคับช่องอื่น (แคมเปญเก่าบางอันกรอกไม่ครบ) แต่จำนวน KOL ต่อสินค้าที่เปิดแยกไว้ต้องรวมได้ตรง
-            const k = kolProblems();
+            // + ติดตะกร้าของ TikTok ต้องเลือกครบ (ผู้ใช้สั่งบังคับเลือก 11 พ.ย. 2026)
+            const k = [...kolProblems(), ...cartProblems()];
             if (k.length) { setError('กรุณาแก้ให้ถูกต้องก่อนบันทึก: ' + k.join(', ')); return; }
         }
         setError(''); setSaving(true);
@@ -465,7 +482,8 @@ export default function ProjectForm({ editing, onClose, onSaved }) {
                 // ชุดสินค้า: ส่ง bundles เป็นอาเรย์เสมอ (packBundles — server carryProductBundles ใช้แยกแท็บเก่า) · งบ / คน / Concept ของชุดเก็บที่หัวชุด
                 // ไม่ใช้ Gencode: ส่ง no_gencode เป็น boolean เสมอ — server (carryNoGencode) ใช้แยกฟอร์มรุ่นใหม่ออกจากแท็บเก่าที่ไม่ส่งคีย์นี้
                 // syncAutoKols ซ้ำอีกรอบกันพลาด — Content Type เดียว + Tier เดียว จำนวนคนของ Tier = ผลรวมจากสินค้า
-                const blocks = (g.blocks || []).filter(b => plats.includes(b.platform)).map(b => packCampaigns(packProductTargets(packBudgets(packConcepts(packKols(packBundles(syncAutoKols(settleKols(b)))))))));
+                // ติดตะกร้า: ส่ง cart ทุกชุดเสมอ (true / false / null · Platform ที่ไม่ใช้ = null) — server carryCart ใช้แยกแท็บเก่าที่ไม่ส่งคีย์นี้
+                const blocks = (g.blocks || []).filter(b => plats.includes(b.platform)).map(b => packCart(packCampaigns(packProductTargets(packBudgets(packConcepts(packKols(packBundles(syncAutoKols(settleKols(b))))))))));
                 // แบนโครง 3 ชั้นออกเป็น allocations — 1 แถว = Platform + Content Type + Tier
                 // หน้าอื่นที่ยังอ่านแบบเดิมจะยังทำงานได้ และมีข้อมูลพอให้แยกตาม Platform ได้ด้วย
                 const allocations = flattenBlocks(blocks);
@@ -542,8 +560,8 @@ export default function ProjectForm({ editing, onClose, onSaved }) {
     }
 
     const missing = validate();
-    // ตอนแก้ไขบังคับแค่จำนวน KOL ต่อสินค้า (ช่องอื่นไม่บังคับเหมือนเดิม)
-    const editProblems = isEdit ? kolProblems() : [];
+    // ตอนแก้ไขบังคับแค่จำนวน KOL ต่อสินค้า + ติดตะกร้าของ TikTok (ช่องอื่นไม่บังคับเหมือนเดิม)
+    const editProblems = isEdit ? [...kolProblems(), ...cartProblems()] : [];
     const canSubmit = isEdit ? editProblems.length === 0 : missing.length === 0;
 
     return (
@@ -1049,6 +1067,22 @@ export default function ProjectForm({ editing, onClose, onSaved }) {
                                                                 onClick={() => removeSet(i, bi, si)}>×</button>
                                                         )}
                                                     </div>
+                                                    {/* ติดตะกร้า / ไม่ติดตะกร้า (TikTok · 11 พ.ย. 2026) — บังคับเลือกทุกชุด · KOL ทุกคนในชุดได้ค่านี้
+                                                        หน้า Ads ขึ้นป้ายให้คนยิงแอด · หน้าเอเจนซี่เห็นว่าชุดนี้ต้องติดตะกร้าหรือไม่ */}
+                                                    {needCart(b.platform) && (
+                                                        <div className={'ctype-cart-row' + (cartValue(s.cart) === null ? ' need' : '')} role="radiogroup"
+                                                            aria-label={`ตะกร้า · ${b.platform} · ${s.content_type || s.campaign || 'ชุดที่ ' + (si + 1)}`}>
+                                                            <span className="ctype-cart-label">🛒 ตะกร้า <em>*</em></span>
+                                                            {[true, false].map(v => (
+                                                                <button type="button" key={String(v)} role="radio" aria-checked={cartValue(s.cart) === v}
+                                                                    className={'ctype-cart-opt' + (cartValue(s.cart) === v ? ' on' : '')}
+                                                                    onClick={() => mapBlock(i, bi, blk => withSetCart(g, blk, si, v))}>
+                                                                    {v ? 'ติดตะกร้า' : 'ไม่ติดตะกร้า'}
+                                                                </button>
+                                                            ))}
+                                                            {cartValue(s.cart) === null && <span className="ctype-cart-hint">ต้องเลือก</span>}
+                                                        </div>
+                                                    )}
                                                     {/* จำนวนคนของ Content Type — ขึ้นเฉพาะตอนมีมากกว่า 1 Content Type (ผลรวมต้องเท่าผลรวมจากสินค้า)
                                                         Content Type เดียว = จำนวนมาจากสินค้าเอง ไม่มีช่องนี้ (6 ต.ค. 2026) */}
                                                     {(b.sets || []).length > 1 && (

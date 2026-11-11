@@ -16,7 +16,7 @@ const {
     mergeHireItems, mergeBriefFiles, hireRowFee, cleanFee, cleanHeadcount, safeId,
     HIRE_BOOKED, BOOK_PENDING, BOOK_FEE, HIRE_JOB_CLOSED, hireBookings, newHireRow, payableWithoutFee, hireScope,
     PERSON_FIELDS, personPatch, releaseToRequest, bookingConfirm, bookingFeeDecision, bookingUnavailable, carryProductTargets, carryProductBudgets, carryProductConcepts,
-    carryProductKols, carryProductBundles, carryNoGencode, normCampaignType, todayTH
+    carryProductKols, carryProductBundles, carryNoGencode, carryCart, normCampaignType, todayTH
 } = require('../store/logic');
 const { soloInput, buildSoloGroup, soloPersons, soloAccountsText, soloName, soloDeleteBlock } = require('../store/soloKol');
 const { isMixedTier, mixedTierError } = require('../data/tiers');
@@ -236,6 +236,8 @@ router.post('/', async (req, res, next) => {
         if (!teamId) return res.status(400).json({ status: 'error', message: 'ผู้ใช้ยังไม่ได้สังกัดทีม' });
 
         const createFields = { ...req.body, team_id: teamId, created_by: req.user.id };
+        // ติดตะกร้า (11 พ.ย. 2026): จัดค่าให้ตรงตัว — TikTok = true / false / null · Platform อื่นไม่เก็บ (ยังไม่มีของเดิมให้ยก)
+        if (Array.isArray(createFields.ad_groups)) createFields.ad_groups = carryCart(createFields.ad_groups, []);
         if (req.body.hire_items !== undefined && req.body.hire_items !== null && !Array.isArray(req.body.hire_items)) {
             return res.status(400).json({ status: 'error', message: 'รายการจ้างไม่ถูกต้อง' });
         }
@@ -457,6 +459,8 @@ router.put('/:id', async (req, res, next) => {
             const stored = curProject.ad_groups;
             patch.ad_groups = carryNoGencode(carryProductKols(
                 carryProductConcepts(carryProductBudgets(carryProductTargets(carryProductBundles(patch.ad_groups, stored), stored), stored), stored), stored), stored);
+            // ติดตะกร้า (11 พ.ย. 2026): แท็บเก่าที่ไม่ส่ง cart → ยกค่าเดิมจากฐาน · ตัวอื่นแตะแค่คีย์ของตัวเอง ลำดับไม่มีผล
+            patch.ad_groups = carryCart(patch.ad_groups, stored);
         }
         // รายการจ้างไม่เขียนทับทั้งก้อน: ต้องยืนยันว่าหน้าเว็บถือข้อมูลล่าสุดอยู่ แล้วรวมกับของในฐาน
         // (ชื่อที่คนจัดหาเสนอ / คนที่ถูกเลือกไปแล้ว / ไฟล์แนบ มาจากเส้นของมันเอง หน้าเว็บส่งทับไม่ได้)

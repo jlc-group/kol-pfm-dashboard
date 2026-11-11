@@ -2,10 +2,12 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 
 // ปุ่มกรองเล็ก ๆ บนหัวคอลัมน์ (▾) — ใช้ร่วมกันหลายหน้า
 // options = [{ value, label, count, dot? }] , value = '' คือไม่กรอง
-export default function ColumnFilter({ label, value, options, onPick }) {
+// icon = สัญลักษณ์บนปุ่ม (ค่าเดิม ▾) — หัวคอลัมน์ที่มีตัวกรองสองตัว (หน้า Ads คอลัมน์ KOL: Platform ▾ + ตะกร้า 🛒) ใช้แยกปุ่ม
+export default function ColumnFilter({ label, value, options, onPick, icon = '▾' }) {
     const [open, setOpen] = useState(false);
     const [pos, setPos] = useState({ top: 0, left: 0 });
     const btnRef = useRef(null);
+    const menuRef = useRef(null);
 
     // วางเมนูให้ตรงใต้ปุ่มเสมอ (คำนวณสด ไม่ใช้ค่าที่จำไว้)
     // สำคัญ: เมนูเป็น fixed แต่อยู่ในซับทรีที่อาจโดน zoom — body ตั้งไว้ตัวหนึ่ง (ดู --app-zoom)
@@ -27,7 +29,11 @@ export default function ColumnFilter({ label, value, options, onPick }) {
 
     useEffect(() => {
         if (!open) return;
-        const onDown = e => { if (!e.target.closest?.('.colf-menu, .colf-btn')) setOpen(false); };
+        // กดนอกปุ่ม / เมนูของตัวเอง = ปิด — รวมปุ่มกรองอีกตัว (หน้า Ads คอลัมน์ KOL มี ▾ กับ 🛒 ติดกัน · เดิมเปิดค้างซ้อนกันได้ · ผลรีวิว 11 พ.ย.)
+        const onDown = e => {
+            if ((btnRef.current && btnRef.current.contains(e.target)) || (menuRef.current && menuRef.current.contains(e.target))) return;
+            setOpen(false);
+        };
         const onKey = e => { if (e.key === 'Escape') setOpen(false); };
         document.addEventListener('mousedown', onDown);
         document.addEventListener('keydown', onKey);
@@ -59,10 +65,10 @@ export default function ColumnFilter({ label, value, options, onPick }) {
             <button ref={btnRef} type="button" className={'colf-btn' + (value ? ' on' : '')} onClick={toggle}
                 title={value ? `กรอง: ${current ? current.label : value}` : `กรองตาม${label}`}
                 aria-label={`กรองตาม${label}`} aria-expanded={open}>
-                ▾
+                {icon}
             </button>
             {open && (
-                <div className="colf-menu" style={{ top: pos.top, left: pos.left }} role="menu">
+                <div ref={menuRef} className="colf-menu" style={{ top: pos.top, left: pos.left }} role="menu">
                     {options.map(o => (
                         <button key={o.value || 'all'} type="button" role="menuitem"
                             className={'colf-item' + (value === o.value ? ' on' : '')}
