@@ -99,20 +99,43 @@ const LISTENERS = new Set();
 export let PRODUCT_CATALOG = [];
 export let PRODUCT_FAMILIES = [];
 let FAMILY_OF = new Map();
+let SET_OF = new Map();       // รหัสเซ็ต → สินค้าข้างใน (กางสีต่อแล้ว) — ช่อง PRODUCTS หน้า Ads ใช้ (11 พ.ย. 2026)
 let CATALOG_CODES = new Set();
 let BY_CODE = new Map();
 let TARGETS_OF = new Map();   // รหัส → [{ target, hidden, builtin }] ตามลำดับ (ตั้งต้นก่อน แล้วที่เพิ่ม)
 
+// ===== สินค้าในเซ็ต (หน้า Products & Targets · ผู้ใช้สั่ง 11 พ.ย. 2026 — JNPSET1 หน้า Ads ขึ้นเป็น JNP1, JNP2, JNP3) =====
+// แถวส่วนต่าง → รายการสินค้าข้างใน: ตัวพิมพ์ใหญ่ รูปทรงรหัสถูก ไม่ซ้ำ ไม่ใส่ตัวเอง
+// ต้องให้ผลเหมือน server/src/store/productFamilies.js setItemsOf ทุกตัวอักษร (tests/product-sets.test.cjs เทียบสองฝั่ง)
+function setItemsOf(row) {
+    const self = row && typeof row.code === 'string' ? row.code.trim().toUpperCase() : '';
+    const out = [];
+    for (const v of (row && Array.isArray(row.set_items) ? row.set_items : [])) {
+        const c = typeof v === 'string' ? v.trim().toUpperCase() : '';
+        if (c && c !== self && CODE_SHAPE.test(c) && !out.includes(c)) out.push(c);
+    }
+    return out;
+}
+
 function rebuildCatalog() {
     const rows = new Map(OVERLAY.products.map(r => [r.code, r]));
-    const base = DEFAULT_PRODUCTS.map(p => ({ ...p, hidden: !!(rows.get(p.code) && rows.get(p.code).hidden), builtin: true }));
+    const itemsOf = code => (rows.get(code) ? [...rows.get(code).set_items] : []);
+    const base = DEFAULT_PRODUCTS.map(p => ({ ...p, hidden: !!(rows.get(p.code) && rows.get(p.code).hidden), builtin: true, items: itemsOf(p.code) }));
     const added = OVERLAY.products.filter(r => !DEFAULT_CODES.has(r.code)).sort(byCodeNum)
-        .map(r => ({ code: r.code, name: r.name, brand: r.brand, hidden: !!r.hidden, builtin: false }));
+        .map(r => ({ code: r.code, name: r.name, brand: r.brand, hidden: !!r.hidden, builtin: false, items: itemsOf(r.code) }));
     PRODUCT_CATALOG = [...base, ...added];
     BY_CODE = new Map(PRODUCT_CATALOG.map(p => [p.code, p]));
     CATALOG_CODES = new Set(PRODUCT_CATALOG.map(p => p.code));
     PRODUCT_FAMILIES = familiesOf(PRODUCT_CATALOG);
     FAMILY_OF = new Map(PRODUCT_FAMILIES.flatMap(codes => codes.map(c => [c, codes])));
+    // เซ็ต → สินค้าข้างใน (สินค้าข้างในที่มีหลายสี กางทุกสีต่อ) · กติกาเดียวกับ server familyMapWith (เซ็ตชนะกลุ่มสี · ไม่กางซ้อน)
+    SET_OF = new Map();
+    for (const r of OVERLAY.products) {
+        if (!r.set_items.length) continue;
+        const out = [];
+        for (const m of r.set_items) for (const c of (FAMILY_OF.get(m) || [m])) if (!out.includes(c)) out.push(c);
+        SET_OF.set(r.code, out);
+    }
     const tmap = new Map();
     for (const [code, list] of Object.entries(TARGET_MAP)) tmap.set(code, list.map(target => ({ target, hidden: false, builtin: true })));
     for (const r of OVERLAY.targets) {
@@ -134,7 +157,7 @@ export function applyCatalogOverlay(overlay) {
     OVERLAY = {
         products: (Array.isArray(o.products) ? o.products : [])
             .filter(r => r && isStr(r.code) && isStr(r.name) && isStr(r.brand))
-            .map(r => ({ code: r.code.trim().toUpperCase(), name: r.name.trim(), brand: r.brand.trim(), hidden: r.hidden === true })),
+            .map(r => ({ code: r.code.trim().toUpperCase(), name: r.name.trim(), brand: r.brand.trim(), hidden: r.hidden === true, set_items: setItemsOf(r) })),
         targets: (Array.isArray(o.targets) ? o.targets : [])
             .filter(r => r && isStr(r.product_code) && isStr(r.target))
             .map(r => ({ product_code: r.product_code.trim().toUpperCase(), target: r.target.trim(), hidden: r.hidden === true }))
@@ -143,7 +166,7 @@ export function applyCatalogOverlay(overlay) {
     VERSION += 1;
     LISTENERS.forEach(fn => { try { fn(); } catch { /* ตัวฟังพังไม่กระทบตัวอื่น */ } });
 }
-export const getCatalogOverlay = () => ({ products: OVERLAY.products.map(r => ({ ...r })), targets: OVERLAY.targets.map(r => ({ ...r })) });
+export const getCatalogOverlay = () => ({ products: OVERLAY.products.map(r => ({ ...r, set_items: [...r.set_items] })), targets: OVERLAY.targets.map(r => ({ ...r })) });
 export const getCatalogVersion = () => VERSION;
 export function subscribeCatalog(fn) {
     LISTENERS.add(fn);
@@ -151,7 +174,17 @@ export function subscribeCatalog(fn) {
 }
 // สินค้าตั้งต้นในโค้ด (ชื่อ/แบรนด์แก้ไม่ได้ · ซ่อนได้) หรือที่ Admin เพิ่มเอง
 export const isBuiltinProduct = code => DEFAULT_CODES.has(String(code ?? '').trim().toUpperCase());
-export const productInfo = code => { const p = BY_CODE.get(code); return p ? { ...p } : null; };
+export const productInfo = code => { const p = BY_CODE.get(code); return p ? { ...p, items: [...p.items] } : null; };
+// สินค้าในเซ็ต (ตามที่ตั้งไว้ ยังไม่กางสี) · [] = ไม่ใช่เซ็ต
+export const productSetItems = code => { const p = BY_CODE.get(String(code ?? '').trim().toUpperCase()); return p ? [...p.items] : []; };
+export const isProductSet = code => productSetItems(code).length > 0;
+// รหัสที่อยู่ในกลุ่มสี (กางทุกสีอยู่แล้ว) — ตั้งเป็นเซ็ตไม่ได้ (server ตอบ 409) หน้า Products & Targets จึงไม่โชว์ปุ่มเซ็ต
+export const inColorFamily = code => FAMILY_OF.has(String(code ?? '').trim().toUpperCase());
+// เซ็ตที่มีสินค้านี้อยู่ข้างใน (หน้า Products & Targets บอกที่แถวสินค้า · ตั้งเป็นเซ็ตซ้อนไม่ได้)
+export const setsContaining = code => {
+    const c = String(code ?? '').trim().toUpperCase();
+    return PRODUCT_CATALOG.filter(p => p.code !== c && p.items.includes(c)).map(p => p.code);
+};
 
 // แยกช่องสินค้า ("BTA1-03,BTA1-04" หรือ array) เป็นรายการ — คั่นด้วย , หรือ ， (จุลภาคเต็มความกว้าง แบบเดียวกับ productCodesIn)
 // ตัดช่องว่าง ทิ้งช่องว่างเปล่า
@@ -178,14 +211,15 @@ export function productCodeOf(entry) {
     return String(entry ?? '').trim().split(/\s+/)[0].toUpperCase();
 }
 
-// กางทุกสีของสินค้าที่มีหลายสี · สินค้าอื่นคืนค่าเดิม · ไม่ซ้ำ เรียงตามที่เจอก่อน
+// กางทุกสีของสินค้าที่มีหลายสี + กางเซ็ตเป็นสินค้าข้างใน (JNPSET1 → JNP1, JNP2, JNP3) · สินค้าอื่นคืนค่าเดิม · ไม่ซ้ำ เรียงตามที่เจอก่อน
 // ต้องให้ผลเหมือน expandProductFamilies ฝั่ง server ทุกตัวอักษร (ฟีดส่งค่านี้ให้ระบบยิงแอด)
 export function expandProductFamilies(value) {
     const out = [];
     const seen = new Set();
     const add = v => { if (!seen.has(v)) { seen.add(v); out.push(v); } };
     for (const part of productParts(value)) {
-        const fam = FAMILY_OF.get(productCodeOf(part));
+        const code = productCodeOf(part);
+        const fam = SET_OF.get(code) || FAMILY_OF.get(code);
         if (fam) fam.forEach(add); else add(part);
     }
     return out;

@@ -528,3 +528,9 @@ ALTER TABLE submissions ADD COLUMN IF NOT EXISTS draft_checked_at TIMESTAMPTZ;
 -- แคมเปญ KOL: ค่าตัว 0 + fee_free = ทีมยืนยันว่าได้ฟรี (ไม่ใช่ "ยังไม่ใส่ค่าตัว") · ตั้งพร้อมกันทุกคลิปของคน · ใส่ค่าตัว > 0 = ไม่ฟรีแล้ว
 -- KOL รายคน (solo) ไม่ใช้คอลัมน์นี้ (ค่าตัว 0 = ได้ฟรีอยู่แล้ว)
 ALTER TABLE submissions ADD COLUMN IF NOT EXISTS fee_free BOOLEAN NOT NULL DEFAULT FALSE;
+
+-- ===== สินค้าในเซ็ต (11 พ.ย. 2026) =====
+-- หน้า Products & Targets ตั้งได้ว่ารหัสเซ็ต (เช่น JNPSET1) มีสินค้าอะไรข้างใน (JNP1, JNP2, JNP3) · '{}' = ไม่ใช่เซ็ต
+-- ช่อง PRODUCTS หน้า Ads + ฟีดยิงแอดกางเซ็ตเป็นสินค้าข้างใน (store/productFamilies.js familyMapWith) · ป้ายใต้ชื่อ KOL ยังเป็นรหัสเซ็ต
+-- ค่าเริ่มต้นคงที่ — PostgreSQL 11+ แก้แค่โครงตาราง ไม่เขียนแถวเดิม · โค้ดขึ้นก่อนรันได้ (อ่าน = ไม่มีเซ็ต · บันทึกเซ็ต = 503 บอกให้ setup-db)
+ALTER TABLE catalog_products ADD COLUMN IF NOT EXISTS set_items TEXT[] NOT NULL DEFAULT '{}';

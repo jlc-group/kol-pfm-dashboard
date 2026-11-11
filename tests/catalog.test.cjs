@@ -84,7 +84,7 @@ test('ใส่ส่วนต่าง: สินค้าใหม่ / ซ่
     assert.equal(web.getCatalogVersion(), v0 + 1);
     // สินค้าใหม่ต่อท้ายตามรหัส (เรียงแบบตัวเลข) · แถว BAD (ไม่มีชื่อ) ไม่เข้า
     assert.deepEqual(web.productsByBrand('Jernis').map(p => p.code), ['JNP1', 'JNP2', 'JNP3', 'JNP4']);
-    assert.deepEqual(web.productInfo('JNP4'), { code: 'JNP4', name: 'Velvet Dawn', brand: 'Jernis', hidden: false, builtin: false });
+    assert.deepEqual(web.productInfo('JNP4'), { code: 'JNP4', name: 'Velvet Dawn', brand: 'Jernis', hidden: false, builtin: false, items: [] });
     assert.equal(web.productInfo('BAD'), null);
     assert.equal(web.productLabel('JNP4'), 'JNP4 - Velvet Dawn');
     assert.equal(web.productName('JNP4'), 'Velvet Dawn');
@@ -164,7 +164,7 @@ test('ส่วนต่างว่าง = กลับเป็นราย�
 // ---------------------------------------------------------------- ชั้น SQL
 test('store: ยังไม่มีตาราง (42P01) → อ่านได้ว่าง ready:false · เขียน = 503 บอกให้ setup-db', async () => {
     onQuery = async () => { const e = new Error('relation does not exist'); e.code = '42P01'; throw e; };
-    assert.deepEqual(await REAL.overlay(), { ready: false, products: [], targets: [] });
+    assert.deepEqual(await REAL.overlay(), { ready: false, sets: false, products: [], targets: [] });
     assert.deepEqual(await REAL.familyProducts(), []);
     await assert.rejects(REAL.addProduct({ code: 'JNP4', name: 'x', brand: 'Jernis' }), e => e.status === 503 && /setup-db/.test(e.message));
     await assert.rejects(REAL.setTargets(['JNP4'], 'T', false), e => e.status === 503);

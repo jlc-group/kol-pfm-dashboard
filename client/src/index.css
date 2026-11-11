@@ -3234,6 +3234,15 @@ a.ads-thumb:focus-visible { outline: 2px solid var(--mint-dark); outline-offset:
 .catg-exact { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; background: #fff; border: 1px solid var(--border); border-radius: 5px; padding: 0 5px; }
 .catg-label-row { display: flex !important; align-items: baseline; justify-content: space-between; gap: 8px; }
 .catg-link { border: none; background: transparent; color: var(--mint-dark); font-weight: 700; font-size: 12px; cursor: pointer; text-decoration: underline; padding: 0; }
+/* สินค้าในเซ็ต (11 พ.ย. 2026) — ป้าย "เซ็ต" ที่รหัส · รายการสินค้าข้างในใต้ชื่อ · ปุ่ม "เซ็ต" ในช่องจัดการ */
+.catg-badge.set { background: #f3e8ff; color: #7c3aed; }
+.catg-set { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin-top: 4px; }
+.catg-set-label { font-size: 11.5px; font-weight: 700; color: #7c3aed; }
+.catg-set-chip { display: inline-block; padding: 1px 7px; border-radius: 6px; background: #faf5ff; border: 1px solid #e9d5ff; color: #6b21a8; font-size: 11.5px; font-weight: 700; }
+.catg-inset { margin-top: 3px; font-size: 11.5px; color: var(--muted); }
+.catg-set-btn { border: 1px solid var(--border); background: #fff; color: #6b7280; border-radius: 8px; padding: 4px 10px; font-size: 12px; font-weight: 700; cursor: pointer; white-space: nowrap; }
+.catg-set-btn.on { border-color: #c4b5fd; color: #7c3aed; background: #faf5ff; }
+.catg-set-btn:disabled { opacity: .5; cursor: default; }
 .plat-blk-budget.auto { flex-direction: column; align-items: flex-end; gap: 0; line-height: 1.2; }
 .plat-blk-budget.auto b { font-size: 14px; color: #0f766e; font-variant-numeric: tabular-nums; }
 .plat-blk-budget.auto small { font-size: 10.5px; color: #7d938d; }

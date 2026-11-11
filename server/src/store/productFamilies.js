@@ -21,8 +21,23 @@ const FAMILY_RULES = {
     "Jula's Herb": code => (code.match(/^([A-Z]+\d+)[A-Z]$/) || [])[1] || null
 };
 const keyOfDefault = code => FAMILY_RULES.Beauterry(code) || FAMILY_RULES["Jula's Herb"](code);
-// extra = [{ code, brand }] เรียงตามรหัส (pg/catalog.js familyProducts) → Map รหัส → ทุกสีในกลุ่ม · ไม่มี extra = กลุ่มตั้งต้นเดิม
-function familyMapWith(extra) {
+// ===== สินค้าในเซ็ต (หน้า Products & Targets ช่อง "สินค้าในเซ็ต" · ผู้ใช้สั่ง 11 พ.ย. 2026) =====
+// รหัสเซ็ต (เช่น JNPSET1) → สินค้าข้างใน (JNP1, JNP2, JNP3) · เก็บที่ catalog_products.set_items
+// ช่อง PRODUCTS หน้า Ads + ฟีดยิงแอดกางเซ็ตเป็นสินค้าข้างใน (แทนรหัสเซ็ต) · ป้ายใต้ชื่อ KOL ยังเป็นรหัสเซ็ตตามที่รีวิวจริง
+// สินค้าข้างในที่มีหลายสีกางทุกสีต่ออีกชั้น · ไม่กางซ้อน (เซ็ตในเซ็ต server ไม่รับ — ถ้ามีหลุดมาก็ถือเป็นรหัสธรรมดา)
+// ต้องให้ผลเหมือน client/src/data/products.js setItemsOf ทุกตัวอักษร (tests/product-sets.test.cjs เทียบสองฝั่ง)
+function setItemsOf(row) {
+    const self = row && typeof row.code === 'string' ? row.code.trim().toUpperCase() : '';
+    const out = [];
+    for (const v of (row && Array.isArray(row.set_items) ? row.set_items : [])) {
+        const c = typeof v === 'string' ? v.trim().toUpperCase() : '';
+        if (c && c !== self && CODE_SHAPE.test(c) && !out.includes(c)) out.push(c);
+    }
+    return out;
+}
+
+// extra = แถว catalog_products [{ code, brand }] → Map รหัส → ทุกสีในกลุ่ม (กลุ่มสีอย่างเดียว ไม่รวมเซ็ต) · ไม่มี extra = กลุ่มตั้งต้นเดิม
+function familiesWith(extra) {
     // เรียงรหัสแบบตัวเลขเอง (BTA4-08 ก่อน BTA4-10) — ลำดับสีต้องตรงกับหน้าเว็บ (products.js เรียงสินค้าที่เพิ่มแบบเดียวกัน)
     const list = (extra || []).filter(p => p && typeof p.code === 'string' && typeof p.brand === 'string')
         .sort((a, b) => a.code.localeCompare(b.code, 'en', { numeric: true }));
@@ -38,6 +53,22 @@ function familyMapWith(extra) {
     }
     const fams = [...byKey.values()].filter(codes => codes.length > 1);
     return new Map(fams.flatMap(codes => codes.map(c => [c, codes])));
+}
+
+// extra = แถว catalog_products [{ code, brand, set_items? }] (pg/catalog.js familyProducts) → Map รหัส → รหัสที่กางออกมา
+// กลุ่มสี (familiesWith) + เซ็ต (รหัสเซ็ต → สินค้าข้างใน กางสีต่อ) · ไม่มีแถว / ไม่มีเซ็ต = กลุ่มสีอย่างเดียวเหมือนเดิม
+function familyMapWith(extra) {
+    const fams = familiesWith(extra);
+    const sets = (extra || []).filter(p => p && typeof p.code === 'string' && typeof p.brand === 'string')
+        .map(p => [p.code.trim().toUpperCase(), setItemsOf(p)]).filter(([, items]) => items.length);
+    if (!sets.length) return fams;
+    const map = new Map(fams);
+    for (const [code, items] of sets) {
+        const out = [];
+        for (const m of items) for (const c of (fams.get(m) || [m])) if (!out.includes(c)) out.push(c);
+        map.set(code, out);
+    }
+    return map;
 }
 
 // แยกช่องสินค้า ("BTA1-03,BTA1-04" หรือ array) เป็นรายการ — คั่นด้วย , หรือ ， (จุลภาคเต็มความกว้าง แบบเดียวกับ productCodesIn)
@@ -66,8 +97,8 @@ function productCodeOf(entry) {
     return String(entry ?? '').trim().split(/\s+/)[0].toUpperCase();
 }
 
-// กางทุกสีของสินค้าที่มีหลายสี · สินค้าอื่นคืนค่าเดิม · ไม่ซ้ำ เรียงตามที่เจอก่อน
-// familyOf = กลุ่มที่รวมสินค้าที่ Admin เพิ่มแล้ว (familyMapWith) · ไม่ส่ง = กลุ่มตั้งต้น
+// กางทุกสีของสินค้าที่มีหลายสี + กางเซ็ตเป็นสินค้าข้างใน · สินค้าอื่นคืนค่าเดิม · ไม่ซ้ำ เรียงตามที่เจอก่อน
+// familyOf = กลุ่มที่รวมสินค้าที่ Admin เพิ่มแล้ว + เซ็ต (familyMapWith) · ไม่ส่ง = กลุ่มตั้งต้น (ไม่รู้จักเซ็ต)
 function expandProductFamilies(value, familyOf = FAMILY_OF) {
     const out = [];
     const seen = new Set();
@@ -79,4 +110,4 @@ function expandProductFamilies(value, familyOf = FAMILY_OF) {
     return out;
 }
 
-module.exports = { PRODUCT_FAMILIES, FAMILY_RULES, CODE_SHAPE, splitProductList, productParts, productCodeOf, expandProductFamilies, familyMapWith };
+module.exports = { PRODUCT_FAMILIES, FAMILY_RULES, CODE_SHAPE, splitProductList, productParts, productCodeOf, expandProductFamilies, familyMapWith, familiesWith, setItemsOf };

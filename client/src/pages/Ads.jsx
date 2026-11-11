@@ -370,7 +370,8 @@ function AdRow({ row, onSaved, canCost, noAd = false }) {
                 {row.brand && <span className="tag">{row.brand}</span>}
             </div>
             <div className="ads-cell ads-stack">
-                {/* ทุกสีของสินค้าที่คลิปรีวิว (ระบบยิงแอดดึงค่าเดียวกันนี้ไปจากฟีด) — โชว์ 3 รหัสแรก ที่เหลือกด +N · ชี้ดูชื่อสีครบ */}
+                {/* ทุกสีของสินค้าที่คลิปรีวิว (ระบบยิงแอดดึงค่าเดียวกันนี้ไปจากฟีด) — โชว์ 3 รหัสแรก ที่เหลือกด +N · ชี้ดูชื่อสีครบ
+                    เซ็ตที่ตั้งสินค้าข้างในไว้ในหน้า Products & Targets ขึ้นเป็นสินค้าข้างใน (JNPSET1 → JNP1, JNP2, JNP3 · 11 พ.ย. 2026) */}
                 <ProductSummary value={expandProductFamilies(row.product)} max={3} />
             </div>
             {/* CAMPAIGN (อยู่หน้า TARGET) — ตั้งไว้ที่ชุด Content Type ของกลุ่ม · แคมเปญที่บันทึกก่อนมีช่องนี้จะเป็น — */}
