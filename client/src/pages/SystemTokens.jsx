@@ -84,6 +84,8 @@ export default function SystemTokens() {
     const [formError, setFormError] = useState('');
     const [fresh, setFresh] = useState(null);
     const [revoking, setRevoking] = useState(null);
+    const [creating, setCreating] = useState(false);
+    const [setupError, setSetupError] = useState('');
 
     function load() {
         setLoading(true);
@@ -103,6 +105,23 @@ export default function SystemTokens() {
 
     const door = doors.find(d => d.scope === scope) || null;
     const doorLabel = s => (doors.find(d => d.scope === s) || {}).label || '';
+
+    // ฐานข้อมูลยังไม่มีตาราง system_tokens — admin สร้างได้จากหน้านี้ (สร้างแค่ตารางนี้กับ index ของมัน ไม่ได้รัน setup-db)
+    async function createTable() {
+        const ask = 'สร้างตาราง system_tokens ในฐานข้อมูลตอนนี้?\n\n'
+            + 'สร้างเฉพาะตารางนี้ตารางเดียว (ยังว่าง) — ไม่แตะตารางอื่นและไม่แตะข้อมูลที่มีอยู่';
+        if (!confirm(ask)) return;
+        setSetupError('');
+        setCreating(true);
+        try {
+            await api('/system-tokens/setup', { method: 'POST' });
+            await load();
+        } catch (err) {
+            setSetupError(err.message);
+        } finally {
+            setCreating(false);
+        }
+    }
 
     async function issue(e) {
         e.preventDefault();
@@ -149,11 +168,20 @@ export default function SystemTokens() {
 
             {error && <div className="alert-error">{error}</div>}
 
-            {!loading && !ready && (
+            {!ready && (!loading || creating) && (
                 <div className="systok-setup">
                     <strong>ยังออก token ไม่ได้</strong> — ฐานข้อมูลยังไม่มีตาราง <code>system_tokens</code>
-                    {' '}ให้ผู้ดูแลเซิร์ฟเวอร์รัน <code>npm run setup-db</code> ในโฟลเดอร์ <code>server</code> หนึ่งครั้ง แล้วเปิดหน้านี้ใหม่
-                    (ระหว่างนี้ประตูระบบตอบ 503)
+                    {' '}(ระหว่างนี้ประตูระบบตอบ 503) กดปุ่มนี้เพื่อสร้างตารางได้เลย:
+                    สร้างเฉพาะตารางนี้ตารางเดียว ไม่แตะตารางอื่นและไม่แตะข้อมูลที่มีอยู่ กดซ้ำก็ไม่มีผล
+                    <div className="systok-setup-row">
+                        <button type="button" className="btn-primary" disabled={creating} onClick={createTable}>
+                            <Icon name="plus" size={16} /> {creating ? 'กำลังสร้าง...' : 'สร้างตาราง'}
+                        </button>
+                        <span className="systok-setup-alt">
+                            หรือให้ผู้ดูแลเซิร์ฟเวอร์รัน <code>npm run setup-db</code> ในโฟลเดอร์ <code>server</code> หนึ่งครั้ง แล้วเปิดหน้านี้ใหม่
+                        </span>
+                    </div>
+                    {setupError && <div className="systok-setup-error" role="alert">สร้างตารางไม่สำเร็จ — {setupError}</div>}
                 </div>
             )}
 

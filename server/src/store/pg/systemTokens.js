@@ -1,27 +1,67 @@
-const { query } = require('./_base');
+const fs = require('fs');
+const path = require('path');
+const { query, withTransaction } = require('./_base');
 
 // ===== Token ระบบต่อระบบ (11 พ.ย. 2026 · มาตรฐาน token ของ JLC) =====
 // ตาราง system_tokens เก็บเฉพาะ SHA-256 ของ token — ชั้นนี้ไม่เคยเห็น token ตัวจริง (services/systemTokens.js แฮชก่อนส่งมา)
 // และไม่มีเส้นไหน SELECT token_hash กลับออกไป (รายการของหน้า admin ใช้ LIST_COLS)
-// ตารางยังไม่ถูกสร้าง (prod ยังไม่รัน setup-db): อ่านรายการ = ready:false · ออก / เพิกถอน = 503 · ประตูระบบ = 503 (โยน error ต่อ)
+// ตารางยังไม่ถูกสร้าง: อ่านรายการ = ready:false · ออก / เพิกถอน = 503 · ประตูระบบ = 503 (โยน error ต่อ)
+// สร้างได้สองทาง: admin กดปุ่ม "สร้างตาราง" ในหน้า Token ระบบ (createTable ข้างล่าง) หรือผู้ดูแลเซิร์ฟเวอร์รัน setup-db
 
 const noTable = e => !!e && e.code === '42P01';
-const notReady = () => {
-    const e = new Error('ยังไม่ได้สร้างตาราง system_tokens ในฐานข้อมูล — ต้องรัน setup-db ก่อน ถึงจะออก token ได้');
-    e.status = 503;
-    return e;
-};
+const noRight = e => !!e && e.code === '42501';
 const fail = (status, message) => {
     const e = new Error(message);
     e.status = status;
     return e;
 };
+const notReady = () => fail(503,
+    'ยังไม่ได้สร้างตาราง system_tokens ในฐานข้อมูล — กดปุ่ม "สร้างตาราง" ในหน้า Token ระบบ (หรือรัน setup-db) ก่อน ถึงจะออก token ได้');
+
+// ----- คำสั่งสร้างตาราง: อ่านจาก schema.sql ที่เดียว (ไม่มีสำเนาในโค้ด) และหยิบแค่ 2 คำสั่งของ system_tokens -----
+// ปุ่มในหน้าเว็บรันได้เท่านี้ — ไม่ใช่ setup-db ทั้งไฟล์ (ไฟล์นั้นมี ALTER / trigger ของตารางอื่น ซึ่งต้องมีคนตรวจก่อนรันบน prod)
+// [^;]* = หยุดที่ ; ตัวแรก คำสั่งเดียวจึงไม่มีทางลากไปถึงคำสั่งของตารางอื่น
+const SCHEMA_FILE = path.join(__dirname, '../../models/schema.sql');
+const TABLE_RE = /CREATE TABLE IF NOT EXISTS system_tokens \([^;]*\);/;
+const INDEX_RE = /CREATE INDEX IF NOT EXISTS idx_system_tokens_scope ON system_tokens\([^;]*;/;
+// คำที่การ "สร้างตารางเปล่า 1 ตาราง" ไม่ต้องใช้ — ถ้าวันหนึ่ง schema.sql ถูกแก้จนมีคำพวกนี้ในสองคำสั่งนี้ ปุ่มจะไม่รัน
+const NOT_ALLOWED = /\b(DROP|ALTER|TRUNCATE|DELETE|UPDATE|INSERT|GRANT|TRIGGER|REFERENCES)\b/i;
+
+function tableSql(schema) {
+    const text = typeof schema === 'string' ? schema : fs.readFileSync(SCHEMA_FILE, 'utf8');
+    const found = [TABLE_RE.exec(text), INDEX_RE.exec(text)];
+    if (found.some(m => !m)) throw new Error('schema.sql: ไม่พบคำสั่งสร้างตาราง system_tokens');
+    const statements = found.map(m => m[0].replace(/\r\n/g, '\n'));
+    if (statements.some(s => NOT_ALLOWED.test(s))) {
+        throw new Error('schema.sql: คำสั่งของ system_tokens มีมากกว่าการสร้างตาราง — ไม่รันจากหน้าเว็บ');
+    }
+    return statements;
+}
 const intId = id => { const n = Number(id); return Number.isInteger(n) && n > 0 && n <= 2147483647 ? n : null; };
 
 const LIST_COLS = 'id, name, scope, token_hint, created_by, created_at, last_used_at, revoked_at, revoked_by';
 const TOUCH_MINUTES = 10;
 
 const systemTokens = {
+    // สร้างตาราง system_tokens กับ index ของมัน (ปุ่มในหน้า Token ระบบ) — สองคำสั่งใน transaction เดียว: ได้ทั้งคู่หรือไม่ได้เลย
+    // IF NOT EXISTS ทั้งคู่: มีตารางอยู่แล้วก็ไม่เกิดอะไร · created = ก่อนกดยังไม่มีตาราง
+    // บัญชีฐานข้อมูลของแอปไม่มีสิทธิ์สร้างตาราง (42501) = 503 บอกให้ใช้ setup-db แทน
+    async createTable() {
+        const statements = tableSql();
+        try {
+            return await withTransaction(async client => {
+                const seen = await client.query("SELECT to_regclass('system_tokens') IS NOT NULL AS present");
+                for (const sql of statements) await client.query(sql);
+                return { created: !(seen.rows[0] && seen.rows[0].present) };
+            });
+        } catch (e) {
+            if (noRight(e)) {
+                throw fail(503, 'บัญชีฐานข้อมูลของแอปไม่มีสิทธิ์สร้างตาราง — ให้ผู้ดูแลเซิร์ฟเวอร์รัน npm run setup-db ในโฟลเดอร์ server หนึ่งครั้งแทน');
+            }
+            throw e;
+        }
+    },
+
     // รายการทั้งหมด (ที่ใช้งานอยู่ขึ้นก่อน แล้วใหม่ → เก่า) · ready:false = ยังไม่มีตาราง
     async list() {
         try {
@@ -106,4 +146,4 @@ const systemTokens = {
     }
 };
 
-module.exports = { systemTokens, TOUCH_MINUTES };
+module.exports = { systemTokens, tableSql, TOUCH_MINUTES };

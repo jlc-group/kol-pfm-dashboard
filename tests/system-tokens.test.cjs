@@ -34,6 +34,7 @@ base.withTransaction = async fn => fn({ query: base.query });
 const store = require(path.join(SRC, 'store'));
 const jwt = require(require.resolve('jsonwebtoken', { paths: [SRC] }));
 const tokens = require(path.join(SRC, 'services/systemTokens'));
+const { tableSql } = require(path.join(SRC, 'store/pg/systemTokens'));
 const { PRIVATE_KEYS } = require(path.join(SRC, 'data/privateFields'));
 const app = require(path.join(SRC, 'app'));
 
@@ -57,8 +58,11 @@ store.activity.log = async e => { LOG.push(e); return e; };
 let TABLE = [];
 let SEQ = 0;
 let CLOCK = 0;
-let BROKEN = null;      // error ที่ฐานจะโยนทุกคำสั่ง (เช่น ยังไม่มีตาราง)
+let BROKEN = null;      // error ที่ฐานจะโยนทุกคำสั่ง (เช่น ฐานขัดข้อง)
+let MISSING = false;    // ยังไม่มีตาราง system_tokens — ทุกคำสั่งได้ 42P01 จนกว่าจะมี CREATE TABLE
+let CREATE_ERROR = null; // error ที่ฐานจะโยนตอน CREATE TABLE (เช่น บัญชีฐานไม่มีสิทธิ์)
 let LEAK_HASH = false;  // ให้รายการพา token_hash ติดมาด้วย — ใช้ทดสอบว่าตัวกรอง JSON ตัดทิ้ง
+const noTableError = () => Object.assign(new Error('relation "system_tokens" does not exist'), { code: '42P01' });
 const pub = r => ({
     id: r.id, name: r.name, scope: r.scope, token_hint: r.token_hint, created_by: r.created_by,
     created_at: r.created_at, last_used_at: r.last_used_at, revoked_at: r.revoked_at, revoked_by: r.revoked_by
@@ -71,6 +75,20 @@ const tableQuery = async (text, params = []) => {
     }
     if (!/system_tokens/.test(text)) return { rows: [], rowCount: 0 };
     if (BROKEN) throw BROKEN;
+    // ปุ่ม "สร้างตาราง": ถามว่ามีตารางหรือยัง → CREATE TABLE → CREATE INDEX (จำลองไม่มี rollback — เทสต์ที่ CREATE พลาดจึงไม่มีอะไรให้ย้อน)
+    if (/^SELECT to_regclass\('system_tokens'\) IS NOT NULL AS present$/.test(text)) {
+        return { rows: [{ present: !MISSING }], rowCount: 1 };
+    }
+    if (/^CREATE TABLE IF NOT EXISTS system_tokens \(/.test(text)) {
+        if (CREATE_ERROR) throw CREATE_ERROR;
+        MISSING = false;
+        return { rows: [], rowCount: 0 };
+    }
+    if (/^CREATE INDEX IF NOT EXISTS idx_system_tokens_scope ON system_tokens\(/.test(text)) {
+        if (MISSING) throw noTableError();
+        return { rows: [], rowCount: 0 };
+    }
+    if (MISSING) throw noTableError();
     if (/^\s*INSERT INTO system_tokens/.test(text)) {
         const [name, scope, token_hash, token_hint, created_by_id, created_by, max] = params;
         if (TABLE.filter(t => t.scope === scope && !t.revoked_at).length >= max) return { rows: [], rowCount: 0 };
@@ -119,6 +137,8 @@ beforeEach(() => {
     SEQ = 0;
     CLOCK = 0;
     BROKEN = null;
+    MISSING = false;
+    CREATE_ERROR = null;
     LEAK_HASH = false;
     onQuery = tableQuery;
 });
@@ -181,7 +201,7 @@ test('ไม่ใช่ admin = ทำอะไรไม่ได้เลย �
     await issue();
     SQL.length = 0;
     LOG.length = 0;
-    for (const [method, url, body] of [['GET', ''], ['POST', '', { name: 'X', scope: 'ad-rights' }], ['POST', '/1/revoke']]) {
+    for (const [method, url, body] of [['GET', ''], ['POST', '', { name: 'X', scope: 'ad-rights' }], ['POST', '/1/revoke'], ['POST', '/setup']]) {
         const member = await call(2, method, url, body);
         assert.equal(member.status, 403, `${method} ${url}`);
         assert.deepEqual(member.body, { status: 'error', message: 'ไม่มีสิทธิ์ทำรายการนี้' });
@@ -208,7 +228,7 @@ test('token ระบบเปิดหน้า admin ไม่ได้ — �
     const { token } = (await issue()).body;
     SQL.length = 0;
     for (const headers of [{ [HEADER]: token }, { Authorization: 'Bearer ' + token }, { Authorization: token }]) {
-        for (const [method, url] of [['GET', ''], ['POST', ''], ['POST', '/1/revoke']]) {
+        for (const [method, url] of [['GET', ''], ['POST', ''], ['POST', '/1/revoke'], ['POST', '/setup']]) {
             const r = await raw(method, '/api/system-tokens' + url, headers, method === 'POST' && !url ? { name: 'X', scope: 'ad-rights' } : undefined);
             assert.equal(r.status, 401);
             assert.equal(r.body.status, 'error');
@@ -389,15 +409,15 @@ test('รายการ: ตัวที่ใช้งานอยู่ขึ
 
 // ===================== ฐานยังไม่พร้อม =====================
 
-test('ยังไม่มีตาราง (ยังไม่รัน setup-db): รายการบอก ready:false · ออก / เพิกถอน = 503 บอกให้รัน setup-db', async () => {
-    BROKEN = Object.assign(new Error('relation "system_tokens" does not exist'), { code: '42P01' });
+test('ยังไม่มีตาราง: รายการบอก ready:false · ออก / เพิกถอน = 503 บอกให้กดปุ่ม "สร้างตาราง" (หรือรัน setup-db)', async () => {
+    MISSING = true;
     const list = await call(1, 'GET');
     assert.equal(list.status, 200);
     assert.equal(list.body.ready, false);
     assert.deepEqual(list.body.data, []);
     assert.equal(list.body.doors.length, 1);
 
-    const message = 'ยังไม่ได้สร้างตาราง system_tokens ในฐานข้อมูล — ต้องรัน setup-db ก่อน ถึงจะออก token ได้';
+    const message = 'ยังไม่ได้สร้างตาราง system_tokens ในฐานข้อมูล — กดปุ่ม "สร้างตาราง" ในหน้า Token ระบบ (หรือรัน setup-db) ก่อน ถึงจะออก token ได้';
     const made = await issue();
     assert.equal(made.status, 503);
     assert.deepEqual(made.body, { status: 'error', message });
@@ -411,6 +431,129 @@ test('ยังไม่มีตาราง (ยังไม่รัน setup
     const r = await quiet(() => door(tokens.generate().token));
     assert.equal(r.status, 503);
     assert.equal(r.body.code, 'TOKEN_CHECK_UNAVAILABLE');
+    // ไม่มีเส้นไหนข้างบนสร้างตารางให้เอง — มีแต่ปุ่มของ admin
+    assert.ok(!SQL.some(q => /\b(CREATE|ALTER|DROP)\b/i.test(q.text)));
+    assert.equal(MISSING, true);
+});
+
+// ===================== ปุ่ม "สร้างตาราง" =====================
+
+test('ปุ่มสร้างตาราง: คำสั่งมาจาก schema.sql — แค่ 2 คำสั่งของ system_tokens ไม่มีตารางอื่นปน', () => {
+    const schema = fs.readFileSync(path.join(SRC, 'models/schema.sql'), 'utf8');
+    const sql = tableSql();
+    assert.equal(sql.length, 2);
+    assert.match(sql[0], /^CREATE TABLE IF NOT EXISTS system_tokens \(\n/);
+    assert.match(sql[0], /\n\);$/);
+    assert.equal(sql[1], 'CREATE INDEX IF NOT EXISTS idx_system_tokens_scope ON system_tokens(scope) WHERE revoked_at IS NULL;');
+    const cols = sql[0].split('\n').slice(1, -1).map(l => l.trim().split(/\s+/)[0]);
+    assert.deepEqual(cols, ['id', 'name', 'scope', 'token_hash', 'token_hint', 'created_by_id', 'created_by',
+        'created_at', 'last_used_at', 'revoked_at', 'revoked_by']);
+    for (const s of sql) {
+        assert.equal(s.indexOf(';'), s.length - 1);          // คำสั่งเดียว จบที่ ; ตัวเดียว
+        assert.ok(!s.includes('\r'));
+        assert.ok(schema.replace(/\r\n/g, '\n').includes(s)); // ตัวอักษรเดียวกับใน schema.sql — ไม่มีสำเนาในโค้ด
+        assert.ok(!/\b(DROP|ALTER|TRUNCATE|DELETE|UPDATE|INSERT|GRANT|TRIGGER|REFERENCES|FUNCTION)\b/i.test(s));
+    }
+    // ตารางอื่นของระบบ (มีข้อมูลจริง) ไม่ถูกเอ่ยถึงเลย
+    const others = [...schema.matchAll(/CREATE TABLE IF NOT EXISTS (\w+)/g)].map(m => m[1]).filter(n => n !== 'system_tokens');
+    assert.ok(others.length >= 15);
+    for (const name of others) for (const s of sql) assert.ok(!new RegExp('\\b' + name + '\\b').test(s), name);
+
+    // schema.sql ถูกแก้จนไม่ใช่ "สร้างตารางเปล่า 1 ตาราง" = ไม่ให้คำสั่งออกมา (ปุ่มไม่รัน)
+    const index = 'CREATE INDEX IF NOT EXISTS idx_system_tokens_scope ON system_tokens(scope) WHERE revoked_at IS NULL;';
+    assert.throws(() => tableSql('CREATE TABLE IF NOT EXISTS users (id SERIAL);'), /ไม่พบคำสั่งสร้างตาราง system_tokens/);
+    assert.throws(() => tableSql('CREATE TABLE IF NOT EXISTS system_tokens (id SERIAL);'), /ไม่พบคำสั่งสร้างตาราง system_tokens/);
+    assert.throws(() => tableSql(index), /ไม่พบคำสั่งสร้างตาราง system_tokens/);
+    assert.throws(
+        () => tableSql('CREATE TABLE IF NOT EXISTS system_tokens (id SERIAL, by_id INTEGER REFERENCES users(id));\n' + index),
+        /ไม่รันจากหน้าเว็บ/
+    );
+    assert.throws(
+        () => tableSql('CREATE TABLE IF NOT EXISTS system_tokens (id SERIAL);\n' + index.replace(';', ' AND id IN (DELETE FROM users RETURNING id);')),
+        /ไม่รันจากหน้าเว็บ/
+    );
+    // คำสั่งที่ตามหลังในไฟล์ไม่ติดมาด้วย (หยุดที่ ; ตัวแรก)
+    assert.deepEqual(
+        tableSql('CREATE TABLE IF NOT EXISTS system_tokens (id SERIAL); DROP TABLE users;\r\n' + index + ' TRUNCATE kols;'),
+        ['CREATE TABLE IF NOT EXISTS system_tokens (id SERIAL);', index]
+    );
+});
+
+test('ปุ่มสร้างตาราง: admin กดแล้วได้ตาราง + index เท่านั้น · ออก token ได้ทันที · ลง Activity Log · กดซ้ำไม่มีผล', async () => {
+    MISSING = true;
+    assert.equal((await call(1, 'GET')).body.ready, false);
+    SQL.length = 0;
+
+    const r = await call(1, 'POST', '/setup');
+    assert.equal(r.status, 200);
+    assert.equal(r.cache, 'no-store');
+    assert.deepEqual(r.body, { status: 'success', created: true, ready: true });
+    // ฐานได้รับ 3 คำสั่ง: ถามว่ามีตารางหรือยัง + สองคำสั่งจาก schema.sql — ไม่มีอย่างอื่น ไม่มีพารามิเตอร์จากคำขอ
+    assert.deepEqual(SQL.map(q => q.text), ["SELECT to_regclass('system_tokens') IS NOT NULL AS present", ...tableSql()]);
+    assert.ok(SQL.every(q => q.params === undefined));
+    assert.deepEqual(LOG, [{
+        user_id: 1, team_id: 1, action: 'create', project_id: null, project_name: 'Token ระบบ',
+        summary: 'สร้างตาราง system_tokens ในฐานข้อมูล (ปุ่มในหน้า Token ระบบ)'
+    }]);
+
+    const list = await call(1, 'GET');
+    assert.equal(list.body.ready, true);
+    assert.deepEqual(list.body.data, []);
+    const made = await issue();
+    assert.equal(made.status, 201);
+    assert.match(made.body.token, TOKEN_SHAPE);
+    assert.equal((await door(made.body.token)).status, 200);
+
+    // กดซ้ำ (หรือ admin อีกคนกด): ไม่สร้างใหม่ ไม่ลง log ซ้ำ token ที่ออกไปแล้วยังอยู่และยังใช้ได้
+    LOG.length = 0;
+    SQL.length = 0;
+    const again = await call(5, 'POST', '/setup', { drop: true, table: 'users' });
+    assert.equal(again.status, 200);
+    assert.deepEqual(again.body, { status: 'success', created: false, ready: true });
+    assert.deepEqual(SQL.map(q => q.text), ["SELECT to_regclass('system_tokens') IS NOT NULL AS present", ...tableSql()]);
+    assert.equal(LOG.length, 0);
+    assert.equal(TABLE.length, 1);
+    assert.equal(TABLE[0].revoked_at, null);
+    assert.equal((await door(made.body.token)).status, 200);
+});
+
+test('ปุ่มสร้างตาราง: บัญชีฐานของแอปไม่มีสิทธิ์สร้างตาราง = 503 บอกให้ใช้ setup-db · ฐานขัดข้อง = 500 · ไม่ลง log', async () => {
+    MISSING = true;
+    CREATE_ERROR = Object.assign(new Error('permission denied for schema public'), { code: '42501' });
+    const denied = await call(1, 'POST', '/setup');
+    assert.equal(denied.status, 503);
+    assert.deepEqual(denied.body, {
+        status: 'error',
+        message: 'บัญชีฐานข้อมูลของแอปไม่มีสิทธิ์สร้างตาราง — ให้ผู้ดูแลเซิร์ฟเวอร์รัน npm run setup-db ในโฟลเดอร์ server หนึ่งครั้งแทน'
+    });
+    assert.ok(!denied.text.includes('permission denied'));
+    assert.equal((await call(1, 'GET')).body.ready, false);
+    assert.equal((await issue()).status, 503);
+
+    CREATE_ERROR = new Error('connection terminated unexpectedly');
+    const down = await quiet(() => call(1, 'POST', '/setup'));
+    assert.equal(down.status, 500);
+    assert.equal(down.body.status, 'error');
+    assert.ok(!('created' in down.body));
+
+    BROKEN = new Error('connection terminated unexpectedly');
+    assert.equal((await quiet(() => call(1, 'POST', '/setup'))).status, 500);
+    assert.equal(LOG.length, 0);
+    assert.equal(MISSING, true);
+});
+
+test('ปุ่มสร้างตาราง: บันทึก Activity Log พลาด ไม่ทำให้การสร้างตารางพลาด', async () => {
+    MISSING = true;
+    const realLog = store.activity.log;
+    store.activity.log = async () => { throw new Error('activity down'); };
+    try {
+        const r = await call(1, 'POST', '/setup');
+        assert.equal(r.status, 200);
+        assert.deepEqual(r.body, { status: 'success', created: true, ready: true });
+    } finally {
+        store.activity.log = realLog;
+    }
+    assert.equal((await call(1, 'GET')).body.ready, true);
 });
 
 test('ฐานขัดข้องแบบอื่น = 500 และไม่มี token ในคำตอบ', async () => {
@@ -502,6 +645,13 @@ test('โค้ดฝั่ง server: ไม่มีเส้นไหนอ�
     assert.equal(prints.length, 1);
     assert.ok(!/sent|token\b|hash/i.test(prints[0].replace('system token check failed', '')));
     assert.match(route, /router\.use\(requireRole\('admin'\)\);/);
+    // ปุ่มสร้างตาราง: เส้นเดียว อยู่หลังด่าน admin · คำสั่ง CREATE ไม่ได้เขียนไว้ในโค้ด (อ่านจาก schema.sql) และไม่มีทางรัน setup-db ทั้งไฟล์
+    assert.ok(route.indexOf("router.post('/setup'") > route.indexOf("router.use(requireRole('admin'));"));
+    assert.equal(storeSrc.split('readFileSync').length, 2);
+    assert.ok(storeSrc.includes("path.join(__dirname, '../../models/schema.sql')"));
+    for (const [name, src] of [['route', route], ['store', storeSrc]]) {
+        assert.ok(!/child_process|setupDb|setup-db\.js|exec\(|spawn\(/.test(src.replace(/TABLE_RE\.exec\(|INDEX_RE\.exec\(/g, '')), name);
+    }
 
     const appSrc = fs.readFileSync(path.join(SRC, 'app.js'), 'utf8');
     assert.ok(appSrc.includes("app.use('/api/system-tokens', authenticate, blockPending, blockAgency, require('./routes/systemTokens'));"));
@@ -525,4 +675,9 @@ test('หน้าเว็บ: เมนู ADMIN + เส้นทางเฉ
     assert.ok(page.includes('`/system-tokens/${t.id}/revoke`'));
     assert.ok(page.includes('แสดงครั้งเดียว'));
     assert.ok(page.includes('npm run setup-db'));
+    // ปุ่ม "สร้างตาราง": ถามยืนยันก่อน แล้วเรียกเส้น setup — แสดงเฉพาะตอนยังไม่มีตาราง
+    assert.ok(page.includes("api('/system-tokens/setup', { method: 'POST' })"));
+    assert.match(page, /if \(!confirm\(ask\)\) return;/);
+    assert.match(page, /\{!ready && \(!loading \|\| creating\) && \(/);
+    assert.ok(page.includes("{creating ? 'กำลังสร้าง...' : 'สร้างตาราง'}"));
 });

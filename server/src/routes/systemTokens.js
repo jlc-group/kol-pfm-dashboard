@@ -32,12 +32,26 @@ function nameOf(v) {
     return { value: t };
 }
 
-// GET /api/system-tokens — รายการ token (ไม่มีตัวจริง ไม่มี hash) + ประตูที่ออกได้ · ready:false = ยังไม่มีตาราง (ต้องรัน setup-db)
+// GET /api/system-tokens — รายการ token (ไม่มีตัวจริง ไม่มี hash) + ประตูที่ออกได้ · ready:false = ยังไม่มีตาราง (หน้าเว็บแสดงปุ่ม "สร้างตาราง")
 router.get('/', async (_req, res, next) => {
     try {
         const { ready, rows } = await store.systemTokens.list();
         res.json({ status: 'success', data: rows, doors: DOORS, max_active_per_scope: MAX_ACTIVE_PER_SCOPE, ready });
     } catch (err) {
+        next(err);
+    }
+});
+
+// POST /api/system-tokens/setup — ปุ่ม "สร้างตาราง": สร้างตาราง system_tokens กับ index ของมัน เท่านั้น (store อ่านสองคำสั่งนี้จาก schema.sql)
+// deploy ไม่รัน setup-db ให้ (docs/we-platform-deployment.md) และเส้นนี้ก็ไม่ได้รัน setup-db — ไม่แตะตารางอื่น ไม่แตะข้อมูล
+// กดซ้ำ = ไม่เกิดอะไร (created:false) · ลง Activity Log เฉพาะครั้งที่สร้างจริง
+router.post('/setup', async (req, res, next) => {
+    try {
+        const { created } = await store.systemTokens.createTable();
+        if (created) await record(req, 'create', 'สร้างตาราง system_tokens ในฐานข้อมูล (ปุ่มในหน้า Token ระบบ)');
+        res.json({ status: 'success', created, ready: true });
+    } catch (err) {
+        if (err && err.status === 503) return fail(res, 503, err.message);
         next(err);
     }
 });

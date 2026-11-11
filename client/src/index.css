@@ -5387,6 +5387,10 @@ button { color: inherit; }
 /* ===== หน้า Token ระบบ (เมนู ADMIN · 11 พ.ย. 2026) ===== */
 .systok-setup { background: #fff7e6; color: #8a5a00; border: 1px solid #f6c667; padding: 12px 16px; border-radius: 12px; margin-bottom: 18px; font-size: 13.5px; line-height: 1.6; }
 .systok-setup code, .systok-hint code, .systok-table code { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 12.5px; background: var(--bg-soft); color: var(--text); padding: 1px 6px; border-radius: 6px; overflow-wrap: anywhere; }
+.systok-setup-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 10px; }
+.systok-setup-row .btn-primary { flex: 0 0 auto; white-space: nowrap; }
+.systok-setup-alt { flex: 1 1 280px; font-size: 12.5px; }
+.systok-setup-error { margin-top: 10px; padding: 8px 12px; border-radius: 9px; background: #fdecec; border: 1px solid #f3b4b4; color: #a12626; font-size: 13px; }
 .systok-issue { margin-bottom: 18px; }
 .systok-form { display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap; }
 .systok-form .field { flex: 1 1 240px; margin-bottom: 0; }

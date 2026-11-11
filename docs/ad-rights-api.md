@@ -11,18 +11,30 @@ edits `.env` or restarts the server.
 
 ## One-time setup after deploy
 
-The `system_tokens` table is new. Deployment never runs `setup-db`
-(`we-platform-deployment.md`), so it has to be run once, by hand, after the
-code is live:
+The `system_tokens` table is new and deployment never runs `setup-db`
+(`we-platform-deployment.md`), so the table is created once after the code is
+live. Two ways:
 
-```text
-cd server
-npm run setup-db
-```
+1. **On the web (no server access needed).** An admin opens "Token ระบบ". While
+   the table is missing the page shows a "สร้างตาราง" button; pressing it calls
+   `POST /api/system-tokens/setup`.
+   - It runs exactly two statements, read from `schema.sql` at that moment
+     (`tableSql()` in `store/pg/systemTokens.js`, no copy in code): the
+     `CREATE TABLE IF NOT EXISTS system_tokens` and its index, in one
+     transaction. It is not `setup-db`: no other table, no existing row is
+     touched. If those two statements ever contain anything but a plain create
+     (`ALTER`, `DROP`, `REFERENCES`, ...), the button refuses to run.
+   - Pressing again does nothing (`created: false`). The first creation is
+     written to Activity Log.
+   - Admin session only; nothing runs by itself on deploy or restart.
+   - If the app's database account may not create tables, the answer is `503`
+     with a message pointing to way 2.
+2. **On the server.** `cd server` then `npm run setup-db` (the whole
+   `schema.sql`, as for any other schema change).
 
 Until then the web app works as before (`system_tokens` is in
 `OPTIONAL_TABLES`), the door answers `503 TOKEN_CHECK_UNAVAILABLE`, and the
-"Token ระบบ" page says the table is missing instead of issuing a token.
+"Token ระบบ" page offers the button instead of issuing a token.
 
 ## System tokens
 
@@ -45,6 +57,7 @@ Admin API (admin session only, `Cache-Control: no-store`):
 
 ```text
 GET  /api/system-tokens              list + doors + ready flag
+POST /api/system-tokens/setup        create the table if missing -> { created, ready }
 POST /api/system-tokens              { name, scope } -> 201, token shown once
 POST /api/system-tokens/:id/revoke
 ```
@@ -166,4 +179,6 @@ A bad parameter is refused, never guessed (`limit=5000` is a 400, not 2000).
 
 `tests/ad-rights.test.cjs` (the door, the feed, the formula) and
 `tests/system-tokens.test.cjs` (issue, revoke, the cap, what is never stored
-or logged). Both run on in-memory stubs and never open a database connection.
+or logged, and the "สร้างตาราง" button: which statements it runs, who may
+press it, pressing twice). Both run on in-memory stubs and never open a
+database connection.
