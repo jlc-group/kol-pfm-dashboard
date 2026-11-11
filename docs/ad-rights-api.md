@@ -147,8 +147,9 @@ Field notes:
   holds the two equal). It is the last day ads may run, that day included: the
   day the DAY LEFT label reads "0 Days". Example: posted 2026-11-10, 60 days
   -> 2027-01-09.
-- `days` = `gencodeDays` (the row's `code_expire`, default 60; 0 for a "no
-  Gencode" group or a row without a Gencode).
+- `days` = `gencodeDays` (the row's `code_expire`, default 60; 0 only when the
+  row sits in a "no Gencode" group and has no Gencode of its own; a row with
+  no Gencode in a normal group is still counted, as the DAY LEFT label does).
 - `ad_rights_end` is `null` with `no_end_reason` = `no_gencode`,
   `no_post_date` (missing, malformed, or not a real date) or `no_days`.
   WeBoostX does nothing for a row without an end date.
@@ -182,3 +183,14 @@ A bad parameter is refused, never guessed (`limit=5000` is a 400, not 2000).
 or logged, and the "สร้างตาราง" button: which statements it runs, who may
 press it, pressing twice). Both run on in-memory stubs and never open a
 database connection.
+
+The stubs match SQL by its text and do not type-check it, so they cannot see
+an error only PostgreSQL raises. That is how the first release could not issue
+a token (2026-11-11): `$2` of the issue statement was used in two places and
+deduced as two types (`42P08`). Every parameter of that statement now carries
+its own cast and a test holds "a parameter used more than once is cast at
+every use". When a statement of this feature changes, also run it once on a
+throwaway local PostgreSQL loaded from `schema.sql`, never on the real
+database: the fix was checked that way through the real routers and store
+(table button, issue, list, the door with every feed parameter, last-use
+stamp, revoke, the 20-token cap).
