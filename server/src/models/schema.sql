@@ -528,3 +528,22 @@ ALTER TABLE submissions ADD COLUMN IF NOT EXISTS draft_checked_at TIMESTAMPTZ;
 -- แคมเปญ KOL: ค่าตัว 0 + fee_free = ทีมยืนยันว่าได้ฟรี (ไม่ใช่ "ยังไม่ใส่ค่าตัว") · ตั้งพร้อมกันทุกคลิปของคน · ใส่ค่าตัว > 0 = ไม่ฟรีแล้ว
 -- KOL รายคน (solo) ไม่ใช้คอลัมน์นี้ (ค่าตัว 0 = ได้ฟรีอยู่แล้ว)
 ALTER TABLE submissions ADD COLUMN IF NOT EXISTS fee_free BOOLEAN NOT NULL DEFAULT FALSE;
+
+-- ===== Token ระบบต่อระบบ (11 พ.ย. 2026 · มาตรฐาน token ของ JLC) =====
+-- ระบบอื่นที่มาดึงข้อมูลจาก KOL Dashboard (เช่น WeBoostX ดึงวันหมดสิทธิ์ยิงแอด) ใช้ token ที่ admin ออกให้จากหน้า "Token ระบบ"
+-- เก็บเฉพาะ SHA-256 ของ token (token_hash) + 4 ตัวท้าย (token_hint) — ไม่เก็บตัวจริง · scope = ประตูที่ token เปิดได้ (หนึ่ง token หนึ่งประตู)
+-- เพิกถอน = ใส่ revoked_at (ไม่ลบแถว) · last_used_at อัปเดตไม่ถี่กว่า 10 นาทีครั้ง
+CREATE TABLE IF NOT EXISTS system_tokens (
+    id             SERIAL PRIMARY KEY,
+    name           VARCHAR(100) NOT NULL,
+    scope          VARCHAR(40)  NOT NULL,
+    token_hash     CHAR(64)     NOT NULL UNIQUE,
+    token_hint     VARCHAR(8)   NOT NULL,
+    created_by_id  INTEGER,
+    created_by     VARCHAR(255),
+    created_at     TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    last_used_at   TIMESTAMPTZ,
+    revoked_at     TIMESTAMPTZ,
+    revoked_by     VARCHAR(255)
+);
+CREATE INDEX IF NOT EXISTS idx_system_tokens_scope ON system_tokens(scope) WHERE revoked_at IS NULL;

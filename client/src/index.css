@@ -5358,3 +5358,26 @@ button { color: inherit; }
 .perf-api-preview { display: flex; flex-direction: column; gap: 8px; padding-top: 10px; margin-top: 10px; border-top: 1px solid var(--border); font-size: 12px; }
 .perf-api-preview button { align-self: flex-start; }
 .kol-track-source { color: var(--muted); font-size: 10px; text-align: center; overflow-wrap: anywhere; }
+/* ===== หน้า Token ระบบ (เมนู ADMIN · 11 พ.ย. 2026) ===== */
+.systok-setup { background: #fff7e6; color: #8a5a00; border: 1px solid #f6c667; padding: 12px 16px; border-radius: 12px; margin-bottom: 18px; font-size: 13.5px; line-height: 1.6; }
+.systok-setup code, .systok-hint code, .systok-table code { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 12.5px; background: var(--bg-soft); color: var(--text); padding: 1px 6px; border-radius: 6px; overflow-wrap: anywhere; }
+.systok-issue { margin-bottom: 18px; }
+.systok-form { display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap; }
+.systok-form .field { flex: 1 1 240px; margin-bottom: 0; }
+.systok-form .btn-primary { flex: 0 0 auto; white-space: nowrap; }
+.systok-hint { color: var(--muted); font-size: 12.5px; line-height: 1.6; margin-top: 12px; }
+.systok-fresh { background: #fffbeb; border: 1px solid #f6c667; border-radius: var(--radius); padding: 16px 18px; margin-bottom: 18px; }
+.systok-fresh-title { display: flex; align-items: center; gap: 8px; font-weight: 700; color: #8a5a00; margin-bottom: 10px; }
+.systok-fresh-row { display: flex; gap: 10px; align-items: stretch; flex-wrap: wrap; }
+.systok-fresh-input { flex: 1 1 320px; min-width: 0; padding: 11px 13px; border: 1px solid #f6c667; border-radius: 11px; background: #fff; color: var(--text); font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 13.5px; }
+.systok-fresh-input:focus { outline: none; box-shadow: 0 0 0 3px rgba(246, 198, 103, .35); }
+.systok-fresh-note { color: #8a5a00; font-size: 12.5px; line-height: 1.6; margin-top: 10px; }
+.systok-fresh-close { margin-top: 8px; padding: 0; border: none; background: none; color: #8a5a00; font: inherit; font-size: 12.5px; text-decoration: underline; cursor: pointer; }
+.panel.no-pad.systok-table-wrap { overflow-x: auto; }
+.systok-table { min-width: 860px; }
+.systok-table td { vertical-align: top; }
+.systok-small { font-size: 12px; margin-top: 2px; }
+.systok-off td { color: var(--muted); }
+.systok-off td strong { font-weight: 600; }
+.btn-ghost.systok-revoke { padding: 5px 12px; font-size: 12.5px; white-space: nowrap; }
+.systok-notes { margin: 16px 0 0 20px; color: var(--muted); font-size: 12.5px; line-height: 1.75; }

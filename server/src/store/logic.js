@@ -767,6 +767,16 @@ function gencodeDayLeft(postDate, days, today = new Date()) {
     const expire = new Date(postDate + 'T00:00:00').getTime() + days * 86400000;
     return Math.ceil((expire - today.getTime()) / 86400000);
 }
+// วันครบอายุ Gencode = วันลงโพสต์ + จำนวนวัน (YYYY-MM-DD) — วันที่ป้าย DAY LEFT ขึ้น 0 Days (ยังยิงแอดได้ถึงสิ้นวันนั้น) วันถัดไป = หมดอายุแล้ว
+// คิดจากวันที่ล้วน ๆ ไม่ขึ้นกับเขตเวลาของเครื่อง · ข้อมูลไม่ครบ = null · ต้องตรงกับ gencodeExpireDate ใน client/src/data/dayLeft.js ทุกตัวอักษร
+// ใช้กับประตู /api/integrations/ad-rights (WeBoostX ปิดแอด KOL ตามวันนี้ · 11 พ.ย. 2026)
+function gencodeExpireDate(postDate, days) {
+    const n = Number(days);
+    const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(postDate || ''));
+    if (!m || !Number.isFinite(n) || n <= 0) return null;
+    const d = new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]) + n));
+    return d.toISOString().slice(0, 10);
+}
 // แท็บที่เปิดค้างจากก่อน deploy ไม่รู้จักคีย์ no_gencode → ยกค่าเดิมในฐานมา ไม่ให้ "-" หายเงียบ (แบบเดียวกับ carryProductConcepts)
 // ฟอร์มรุ่นใหม่ส่ง boolean เสมอ → ใช้ตามที่ส่งมา (ส่ง false = ผู้ใช้ปลดเอง · สตริง 'true' ไม่นับ)
 function carryNoGencode(incoming, stored) {
@@ -1310,7 +1320,7 @@ module.exports = {
     resolveInside, sameInstant, mergeHireItems, mergeBriefFiles, cleanFee, cleanHeadcount, safeId, safeSlug,
     linkGroupPlatforms, resolveGroupClips, resolveGroupTarget, productCodesIn, carryProductTargets, carryProductBudgets, carryProductConcepts, carryProductKols,
     carryProductBundles, blockBundles,
-    groupNoGencode, postNoGencode, carryNoGencode, gencodeDays, gencodeDayLeft,
+    groupNoGencode, postNoGencode, carryNoGencode, gencodeDays, gencodeDayLeft, gencodeExpireDate,
     resolveGroupProducts, resolveGroupCtype, resolveGroupMedia, resolveGroupCampaign,
     engagementOf, maybeStamp, stampWaitReason, stampFeeOnly, normalizeStamp,
     feeMissing, clipCostMetrics, costAxisRange, costAxisNorm, perfVerdict, feeCostAverages, pooledCpe, viewsMissingReason, firstByIdPost

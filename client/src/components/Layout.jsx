@@ -29,7 +29,9 @@ const ADMIN_NAV = [
     { to: '/payments', label: 'Payouts', icon: 'wallet' },
     { to: '/activity', label: 'Activity Log', icon: 'history' },
     { to: '/users', label: 'Users', icon: 'users' },
-    CATALOG_NAV
+    CATALOG_NAV,
+    // Token ระบบ — ออก / เพิกถอน token ให้ระบบอื่น (WeBoostX) มาดึงข้อมูล (11 พ.ย. 2026)
+    { to: '/system-tokens', label: 'Token ระบบ', icon: 'key' }
 ];
 
 // พับเมนูซ้ายให้เหลือแถบไอคอน — หน้าเนื้อหา (เช่นตารางหน้า Ads) จะได้กว้างขึ้น

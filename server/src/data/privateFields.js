@@ -4,7 +4,7 @@
 // หลายเส้นส่งแถว submissions แบบ SELECT * ออกไปตรง ๆ — ตัดที่ JSON ของทุกคำตอบ (app.set('json replacer')) ทีเดียว
 // แทนการไล่ตัดทีละเส้น (เส้นใหม่ในอนาคตก็ไม่หลุด) · หน้าเว็บได้รูปผ่าน row.thumb (/ads/:id/thumb?v=...) อย่างเดียว
 // thumbnail_fetched_at ตัดด้วย — หน้าเว็บไม่ได้ใช้ และบอกเอเจนซี่ได้ว่าโพสต์ไหนอยู่ใน KOL Studio ของ WeBoostX
-const PRIVATE_KEYS = new Set(['weboostx_thumbnail_path', 'thumbnail_local', 'thumbnail_error', 'thumbnail_fetched_at']);
+const PRIVATE_KEYS = new Set(['weboostx_thumbnail_path', 'thumbnail_local', 'thumbnail_error', 'thumbnail_fetched_at', 'token_hash']);
 const privateFieldReplacer = (key, value) => (PRIVATE_KEYS.has(key) ? undefined : value);
 
 module.exports = { PRIVATE_KEYS, privateFieldReplacer };
