@@ -157,6 +157,9 @@ app.use('/api/activity', authenticate, blockPending, blockAgency, require('./rou
 app.use('/api/ads-sync', require('./routes/adsSync'));
 // Read-only service feed for Beauterry PFM content import, one per brand (beauterry / jarvit / jernis · 9 ต.ค. 2026).
 // It authenticates with its own key. /api/integrations/beauterry/content-candidates is unchanged.
+// ประตูระบบ: WeBoostX ดึงวันหมดสิทธิ์ยิงแอดของโพสต์ KOL (11 พ.ย. 2026) — เปิดด้วย token ที่ admin ออกจากหน้า Token ระบบ เท่านั้น
+// (header X-KOL-Ad-Rights-Key · ล็อกอินของคนเปิดไม่ได้) · ต้องผูกก่อน /:brand ไม่งั้น ad-rights ถูกอ่านเป็นรหัสแบรนด์
+app.use('/api/integrations/ad-rights', require('./routes/adRights'));
 app.use('/api/integrations/:brand', require('./routes/contentExport'));
 app.use('/api/ads', authenticate, blockPending, blockAgency, require('./routes/ads'));
 app.use('/api/rate-requests', authenticate, blockPending, blockAgency, require('./routes/rateRequests'));
@@ -165,6 +168,8 @@ app.use('/api/hires', authenticate, blockPending, blockAgency, require('./routes
 app.use('/api/my-work', authenticate, blockPending, blockAgency, require('./routes/myWork'));
 // คลังสินค้า/Target ที่ Admin เพิ่มเอง (7 ต.ค. 2026) — ไม่มี blockAgency: หน้าเอเจนซี่ต้องอ่านชื่อสินค้าใหม่ได้ (แก้ได้แค่ admin ใน router)
 app.use('/api/catalog', authenticate, blockPending, require('./routes/catalog'));
+// หน้า Token ระบบ (admin เท่านั้น — ตรวจ role ใน route) · ออก / เพิกถอน token ของประตูระบบ
+app.use('/api/system-tokens', authenticate, blockPending, blockAgency, require('./routes/systemTokens'));
 app.use('/api/agency', require('./routes/agency')); // สาธารณะ (Agency ใช้ลิงก์)
 
 // Missing API routes and missing assets must not return successful HTML.

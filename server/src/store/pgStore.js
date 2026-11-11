@@ -25,6 +25,8 @@ const { hires } = require('./pg/hires');
 const { talents } = require('./pg/talents');
 const { talentJobs } = require('./pg/talentJobs');
 const { catalog } = require('./pg/catalog');
+const { systemTokens } = require('./pg/systemTokens');
+const { adRights } = require('./pg/adRights');
 const { tiktokEvidence } = require('./pg/tiktokEvidence');
 
 module.exports = {
@@ -35,7 +37,7 @@ module.exports = {
 
     teams, users, kols, projects, projectKols, dashboard, payments,
     installments, payBatches, budget, activity, submissions,
-    ads, adsSync, tiktokEvidence, contentExport, reports, rateRequests, hires, talents, talentJobs, catalog, meta,
+    ads, adsSync, tiktokEvidence, contentExport, reports, rateRequests, hires, talents, talentJobs, catalog, systemTokens, adRights, meta,
 
     _duplicateError: logic.duplicateError
 };

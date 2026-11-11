@@ -534,3 +534,22 @@ ALTER TABLE submissions ADD COLUMN IF NOT EXISTS fee_free BOOLEAN NOT NULL DEFAU
 -- ช่อง PRODUCTS หน้า Ads + ฟีดยิงแอดกางเซ็ตเป็นสินค้าข้างใน (store/productFamilies.js familyMapWith) · ป้ายใต้ชื่อ KOL ยังเป็นรหัสเซ็ต
 -- ค่าเริ่มต้นคงที่ — PostgreSQL 11+ แก้แค่โครงตาราง ไม่เขียนแถวเดิม · โค้ดขึ้นก่อนรันได้ (อ่าน = ไม่มีเซ็ต · บันทึกเซ็ต = 503 บอกให้ setup-db)
 ALTER TABLE catalog_products ADD COLUMN IF NOT EXISTS set_items TEXT[] NOT NULL DEFAULT '{}';
+
+-- ===== Token ระบบต่อระบบ (11 พ.ย. 2026 · มาตรฐาน token ของ JLC) =====
+-- ระบบอื่นที่มาดึงข้อมูลจาก KOL Dashboard (เช่น WeBoostX ดึงวันหมดสิทธิ์ยิงแอด) ใช้ token ที่ admin ออกให้จากหน้า "Token ระบบ"
+-- เก็บเฉพาะ SHA-256 ของ token (token_hash) + 4 ตัวท้าย (token_hint) — ไม่เก็บตัวจริง · scope = ประตูที่ token เปิดได้ (หนึ่ง token หนึ่งประตู)
+-- เพิกถอน = ใส่ revoked_at (ไม่ลบแถว) · last_used_at อัปเดตไม่ถี่กว่า 10 นาทีครั้ง
+CREATE TABLE IF NOT EXISTS system_tokens (
+    id             SERIAL PRIMARY KEY,
+    name           VARCHAR(100) NOT NULL,
+    scope          VARCHAR(40)  NOT NULL,
+    token_hash     CHAR(64)     NOT NULL UNIQUE,
+    token_hint     VARCHAR(8)   NOT NULL,
+    created_by_id  INTEGER,
+    created_by     VARCHAR(255),
+    created_at     TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    last_used_at   TIMESTAMPTZ,
+    revoked_at     TIMESTAMPTZ,
+    revoked_by     VARCHAR(255)
+);
+CREATE INDEX IF NOT EXISTS idx_system_tokens_scope ON system_tokens(scope) WHERE revoked_at IS NULL;

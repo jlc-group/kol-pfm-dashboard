@@ -8,7 +8,8 @@ const schema = fs.readFileSync(path.join(__dirname, '../models/schema.sql'), 'ut
 // talent_jobs (งานที่จ้างของคนใน Talent Book 1 ต.ค. 2026): กติกาเดียวกัน — อ่านได้ว่าง เส้นเพิ่มงานจะ error จนกว่าจะรัน setup-db
 // catalog_products / catalog_targets (หน้า Products & Targets 7 ต.ค. 2026): ไม่มีตาราง = ใช้รายการสินค้า/Target ตั้งต้นในโค้ด
 // (เส้นอ่านคืนค่าว่าง · เส้นบันทึกตอบ 503 บอกให้รัน setup-db)
-const OPTIONAL_TABLES = new Set(['talents', 'talent_jobs', 'catalog_products', 'catalog_targets']);
+// system_tokens (หน้า Token ระบบ 11 พ.ย. 2026): ไม่มีตาราง = หน้า admin บอกให้รัน setup-db · ประตู /api/integrations/ad-rights ตอบ 503
+const OPTIONAL_TABLES = new Set(['talents', 'talent_jobs', 'catalog_products', 'catalog_targets', 'system_tokens']);
 const tables = [...schema.matchAll(/CREATE TABLE IF NOT EXISTS\s+(\w+)/g)].map(match => match[1])
     .filter(name => !OPTIONAL_TABLES.has(name));
 
