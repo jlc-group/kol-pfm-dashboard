@@ -349,7 +349,7 @@ test('ประตูหนึ่งมี token ที่ใช้งานอ�
     assert.equal(TABLE.length, 20);
     assert.equal(LOG.length, 0);
     // นับกับเพิ่มอยู่ในคำสั่งเดียว (สองคนกดพร้อมกันไม่ทะลุเพดาน)
-    assert.match(inserts().at(-1).text, /WHERE \(SELECT COUNT\(\*\) FROM system_tokens WHERE scope = \$2 AND revoked_at IS NULL\) < \$7/);
+    assert.match(inserts().at(-1).text, /WHERE \(SELECT COUNT\(\*\) FROM system_tokens WHERE scope = \$2::text AND revoked_at IS NULL\) < \$7::int/);
 
     assert.equal((await call(1, 'POST', '/3/revoke')).status, 200);
     assert.equal((await issue({ name: 'ระบบ 21', scope: 'ad-rights' })).status, 201);
@@ -603,6 +603,26 @@ test('token ที่ออกจากหน้านี้เปิดปร�
     assert.equal(closed.body.code, 'INVALID_TOKEN');
     assert.equal((await door(token, DOOR + '/status')).status, 401);
     assert.equal((await door(second)).status, 200);
+});
+
+// ฐานจำลองในไฟล์นี้ไม่ตรวจชนิดของ parameter แต่ Postgres จริงตรวจ: parameter ตัวเดียวที่ถูกใช้สองที่แล้วเดาชนิดได้ไม่ตรงกัน
+// คำสั่งนั้นไม่รันเลย (42P08) — 11 พ.ย. 2026 หน้า Token ระบบบน prod ออก token ไม่ได้เพราะ $2 ของคำสั่งออก token (varchar กับ text)
+test('SQL ของ token ระบบ: parameter ที่ใช้มากกว่าหนึ่งที่ในคำสั่งเดียว ระบุชนิดเองทุกที่', async () => {
+    const { token, data } = (await issue()).body;
+    await call(1, 'GET');
+    await door(token);
+    await settle();
+    await call(1, 'POST', `/${data.id}/revoke`);
+
+    assert.ok(SQL.length >= 5);
+    for (const { text } of SQL) {
+        const uses = {};
+        for (const m of text.matchAll(/\$(\d+)(::[a-z]+)?/g)) (uses[m[1]] = uses[m[1]] || []).push(!!m[2]);
+        for (const [n, cast] of Object.entries(uses)) {
+            if (cast.length > 1) assert.ok(cast.every(Boolean), `$${n} ใช้ ${cast.length} ที่ แต่ระบุชนิดไม่ครบ — ${text.trim().slice(0, 70)}`);
+        }
+    }
+    assert.match(inserts()[0].text, /SELECT \$1::text, \$2::text, \$3::text, \$4::text, \$5::int, \$6::text\s+WHERE/);
 });
 
 // ===================== ของที่ต้องอยู่ในโค้ด =====================

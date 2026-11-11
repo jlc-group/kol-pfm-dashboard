@@ -78,13 +78,15 @@ const systemTokens = {
     },
 
     // ออก token: บันทึกแฮช + 4 ตัวท้าย · เกิน maxActive ตัวที่ใช้งานอยู่ในประตูเดียวกัน = ไม่ออก (คำสั่งเดียว นับกับเพิ่มไปด้วยกัน)
+    // ทุก parameter ระบุชนิดเอง: $2 ใช้สองที่ (ค่าที่ใส่ในคอลัมน์ varchar + เทียบ scope = ซึ่งเป็น text) ถ้าไม่ระบุ
+    // Postgres เดาได้สองชนิดแล้วไม่รันเลย (42P08 inconsistent types deduced for parameter $2) — ออก token ไม่ได้สักตัว
     async issue({ name, scope, tokenHash, tokenHint, byId, byName, maxActive }) {
         let r;
         try {
             r = await query(
                 `INSERT INTO system_tokens (name, scope, token_hash, token_hint, created_by_id, created_by)
-                 SELECT $1, $2, $3, $4, $5, $6
-                  WHERE (SELECT COUNT(*) FROM system_tokens WHERE scope = $2 AND revoked_at IS NULL) < $7
+                 SELECT $1::text, $2::text, $3::text, $4::text, $5::int, $6::text
+                  WHERE (SELECT COUNT(*) FROM system_tokens WHERE scope = $2::text AND revoked_at IS NULL) < $7::int
                  RETURNING ${LIST_COLS}`,
                 [name, scope, tokenHash, tokenHint, intId(byId), byName || null, maxActive]
             );
