@@ -170,7 +170,7 @@ test('+ Account (หลาย KOL ในฟอร์มเดียว): soloDup
 
 test('ฟอร์มไม่มีช่องทางติดต่อแล้ว (5 ต.ค. 2026): ค่าที่ฟอร์มส่ง (self / agency เดิม) server ยังรับ · บรีฟลิงก์ + รายละเอียดเก็บได้', () => {
     const base = {
-        platforms: [{ platform: 'TikTok', account_name: '@a', tier: 'Nano 1k - 10k', fee: 1000, content_type: ad.contentTypesFor('TikTok')[0] }],
+        platforms: [{ platform: 'TikTok', account_name: '@a', tier: 'Nano 1k - 10k', fee: 1000, content_type: ad.contentTypesFor('TikTok')[0], cart: false }],
         brand: 'B', products: ['P1'], clips: 1, owner: 'o', code_expire: 60
     };
     const self = server.soloInput({ ...base, contact_mode: 'self', agency: '', brief_link: 'https://drive.google.com/x', note: 'บรรทัด 1\nบรรทัด 2' });
@@ -225,7 +225,7 @@ test('ใส่ลิงก์ช่อง → เติมชื่อบัญ
     assert.equal(c.accWithLink(undefined, 'TikTok', 'https://www.tiktok.com/@new').account_name, 'new');
     // ชื่อที่เติมให้ผ่านเกณฑ์ server (ตัด @ · ไม่ว่าง)
     const r = server.soloInput({
-        platforms: [{ platform: 'TikTok', ...c.accWithLink(empty, 'TikTok', 'https://www.tiktok.com/@aom_chr'), tier: 'Nano 1k - 10k', fee: 1000, content_type: ad.contentTypesFor('TikTok')[0] }],
+        platforms: [{ platform: 'TikTok', ...c.accWithLink(empty, 'TikTok', 'https://www.tiktok.com/@aom_chr'), tier: 'Nano 1k - 10k', fee: 1000, content_type: ad.contentTypesFor('TikTok')[0], cart: true }],
         brand: 'B', products: ['P1'], clips: 1, owner: 'o', code_expire: 60, contact_mode: 'self', agency: ''
     });
     assert.equal(r.error, undefined, r.error);

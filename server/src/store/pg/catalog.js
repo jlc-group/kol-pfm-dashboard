@@ -11,8 +11,15 @@ const { query, withTransaction, asJson } = require('./_base');
 const { renameTargetInGroups, previewRename, usesTarget } = require('../targetRename');
 
 const noTable = e => !!e && e.code === '42P01';
+// คอลัมน์ set_items (สินค้าในเซ็ต · 11 พ.ย. 2026) ยังไม่ถูกเพิ่ม (โค้ดขึ้นก่อนรัน setup-db) — อ่าน = ไม่มีเซ็ต · เขียนเซ็ต = 503
+const noColumn = e => !!e && e.code === '42703';
 const notReady = () => {
     const e = new Error('ยังไม่ได้สร้างตารางของหน้านี้ในฐานข้อมูล — ต้องรัน setup-db ก่อน ถึงจะบันทึกได้');
+    e.status = 503;
+    return e;
+};
+const setsNotReady = () => {
+    const e = new Error('ยังไม่ได้เพิ่มช่องสินค้าในเซ็ตในฐานข้อมูล — ต้องรัน setup-db ก่อน ถึงจะบันทึกสินค้าในเซ็ตได้');
     e.status = 503;
     return e;
 };
@@ -22,6 +29,41 @@ const TARGET_COLS = 'id, product_code, target, hidden, created_by, updated_by, c
 
 // รหัสเรียงแบบตัวเลข (BTA4-08 ก่อน BTA4-10) — หน้าเว็บ / ฟีด PFM ใช้ลำดับเดียวกัน
 const byCode = (a, b) => String(a.code).localeCompare(String(b.code), 'en', { numeric: true });
+
+// ===== กติกาเซ็ตตรวจซ้ำใต้ล็อก (ผลรีวิว 11 พ.ย. 2026) =====
+// route ตรวจกับคลังที่อ่านไว้ก่อน (ตอบเร็ว ข้อความชัด) แล้วส่ง verify มาให้ตรวจซ้ำในธุรกรรมเดียวกับที่เขียน
+// ล็อก advisory ตัวเดียวกันทุกการเขียนที่ตรวจกติกาเซ็ต — สองคนบันทึกพร้อมกัน (A ตั้ง X เป็นเซ็ตที่มี Y · B ตั้ง Y เป็นเซ็ต) ต้องไม่ผ่านทั้งคู่
+// verify(rows) คืน { status, message } = ไม่ผ่าน (ROLLBACK ไม่มีอะไรถูกเขียน) · null = ผ่าน
+async function lockedSetRows(client) {
+    await client.query("SELECT pg_advisory_xact_lock(hashtext('catalog_product_sets'))");
+    // เช็คคอลัมน์ก่อน (ไม่ลองแล้วรอ error — error ในธุรกรรมทำให้คำสั่งถัดไปใช้ไม่ได้ทั้งธุรกรรม)
+    const col = (await client.query(`SELECT EXISTS (SELECT 1 FROM information_schema.columns
+        WHERE table_schema = current_schema() AND table_name = 'catalog_products' AND column_name = 'set_items') AS has`)).rows[0];
+    const rows = (await client.query(`SELECT code, brand${col && col.has ? ', set_items' : ''} FROM catalog_products`)).rows || [];
+    return rows.filter(r => r && typeof r.code === 'string')
+        .map(r => ({ code: r.code, brand: r.brand, set_items: Array.isArray(r.set_items) ? r.set_items : [] }));
+}
+async function runVerify(client, verify) {
+    if (typeof verify !== 'function') return;
+    const problem = await verify(await lockedSetRows(client));
+    if (problem) {
+        const e = new Error(problem.message);
+        e.status = problem.status || 409;
+        throw e;
+    }
+}
+
+// แถวสินค้า + set_items · ยังไม่มีคอลัมน์ = อ่านแบบเดิมแล้วถือว่าไม่มีเซ็ต (sets: false — หน้าเว็บปิดปุ่มตั้งเซ็ต)
+async function selectProducts(tail = '', params = []) {
+    try {
+        const rows = (await query(`SELECT ${PRODUCT_COLS}, set_items FROM catalog_products${tail}`, params)).rows;
+        return { sets: true, rows: rows.map(r => ({ ...r, set_items: Array.isArray(r.set_items) ? r.set_items : [] })) };
+    } catch (e) {
+        if (!noColumn(e)) throw e;
+    }
+    const rows = (await query(`SELECT ${PRODUCT_COLS} FROM catalog_products${tail}`, params)).rows;
+    return { sets: false, rows: rows.map(r => ({ ...r, set_items: [] })) };
+}
 
 // เพิ่ม / ซ่อน / เอากลับ Target 1 ตัวของสินค้า 1 ตัว (ใน transaction ของคนเรียก) — ชื่อเดิม (ไม่สนตัวพิมพ์/ช่องว่าง) อัปเดตแถวเดิม
 async function upsertTarget(client, code, target, hidden, byId, byName) {
@@ -36,24 +78,34 @@ async function upsertTarget(client, code, target, hidden, byId, byName) {
 }
 
 const catalog = {
-    // ส่วนต่างทั้งหมด → { ready, products, targets }
+    // ส่วนต่างทั้งหมด → { ready, sets, products, targets } · sets = มีคอลัมน์สินค้าในเซ็ตแล้ว (รัน setup-db แล้ว)
+    // แถวสินค้ามี set_items (สินค้าในเซ็ต · [] = ไม่ใช่เซ็ต)
     async overlay() {
         try {
-            const products = (await query(`SELECT ${PRODUCT_COLS} FROM catalog_products`)).rows.sort(byCode);
+            const { sets, rows } = await selectProducts();
+            const products = rows.sort(byCode);
             const targets = (await query(`SELECT ${TARGET_COLS} FROM catalog_targets ORDER BY id`)).rows;
-            return { ready: true, products, targets };
+            return { ready: true, sets, products, targets };
         } catch (e) {
-            if (noTable(e)) return { ready: false, products: [], targets: [] };
+            if (noTable(e)) return { ready: false, sets: false, products: [], targets: [] };
             throw e;
         }
     },
 
-    // สินค้าที่ใช้คิดกลุ่มสี (ฟีด PFM) — รวมที่ซ่อนด้วย (คลิปเก่าที่รีวิวสีนั้นยังต้องกางครบ)
-    // แถวที่ไม่มี code / brand เป็นข้อความ (เช่น ตัวจำลองในเทสต์คืนแถวอื่นมา) ทิ้งไป
+    // สินค้าที่ใช้คิดกลุ่มสี + เซ็ต (ฟีด PFM) — รวมที่ซ่อนด้วย (คลิปเก่าที่รีวิวสีนั้นยังต้องกางครบ)
+    // แถวที่ไม่มี code / brand เป็นข้อความ (เช่น ตัวจำลองในเทสต์คืนแถวอื่นมา) ทิ้งไป · ยังไม่มีคอลัมน์ set_items = ไม่มีเซ็ต
     async familyProducts() {
         try {
-            const rows = (await query('SELECT code, brand FROM catalog_products')).rows || [];
-            return rows.filter(r => r && typeof r.code === 'string' && typeof r.brand === 'string').sort(byCode);
+            let rows;
+            try {
+                rows = (await query('SELECT code, brand, set_items FROM catalog_products')).rows || [];
+            } catch (e) {
+                if (!noColumn(e)) throw e;
+                rows = (await query('SELECT code, brand FROM catalog_products')).rows || [];
+            }
+            return rows.filter(r => r && typeof r.code === 'string' && typeof r.brand === 'string')
+                .map(r => ({ code: r.code, brand: r.brand, set_items: Array.isArray(r.set_items) ? r.set_items : [] }))
+                .sort(byCode);
         } catch (e) {
             if (noTable(e)) return [];
             throw e;
@@ -62,7 +114,7 @@ const catalog = {
 
     async findProduct(code) {
         try {
-            return (await query(`SELECT ${PRODUCT_COLS} FROM catalog_products WHERE code = $1`, [code])).rows[0] || null;
+            return (await selectProducts(' WHERE code = $1', [code])).rows[0] || null;
         } catch (e) {
             if (noTable(e)) throw notReady();
             throw e;
@@ -70,19 +122,48 @@ const catalog = {
     },
 
     // เพิ่มสินค้าใหม่ + Target ที่เลือกมา (targets = [ชื่อ]) ใน transaction เดียว — สำเร็จทั้งชุดหรือไม่มีอะไรถูกบันทึก
+    // items = สินค้าในเซ็ต (ไม่ส่ง / ว่าง = ไม่ใช่เซ็ต — ใช้ INSERT แบบเดิม ไม่แตะคอลัมน์ set_items)
+    // verify = ตรวจกติกาเซ็ตซ้ำใต้ล็อกก่อนเขียน (ดู runVerify) · ไม่ส่ง = ไม่ตรวจ
     // รหัสซ้ำในตาราง = error 23505 (เส้น API ตอบ 409)
-    async addProduct({ code, name, brand }, { byId, byName } = {}, targets = []) {
+    async addProduct({ code, name, brand, items }, { byId, byName } = {}, targets = [], verify = null) {
+        const set = Array.isArray(items) && items.length ? items : null;
         try {
             return await withTransaction(async client => {
-                const r = await client.query(
-                    `INSERT INTO catalog_products (code, name, brand, hidden, created_by_id, created_by, updated_by)
-                     VALUES ($1, $2, $3, false, $4, $5, $5) RETURNING ${PRODUCT_COLS}`,
-                    [code, name, brand, intId(byId), byName || null]);
+                await runVerify(client, verify);
+                const r = set
+                    ? await client.query(
+                        `INSERT INTO catalog_products (code, name, brand, hidden, created_by_id, created_by, updated_by, set_items)
+                         VALUES ($1, $2, $3, false, $4, $5, $5, $6::text[]) RETURNING ${PRODUCT_COLS}`,
+                        [code, name, brand, intId(byId), byName || null, set])
+                    : await client.query(
+                        `INSERT INTO catalog_products (code, name, brand, hidden, created_by_id, created_by, updated_by)
+                         VALUES ($1, $2, $3, false, $4, $5, $5) RETURNING ${PRODUCT_COLS}`,
+                        [code, name, brand, intId(byId), byName || null]);
                 for (const t of targets || []) await upsertTarget(client, code, t, false, byId, byName);
                 return r.rows[0];
             });
         } catch (e) {
             if (noTable(e)) throw notReady();
+            if (noColumn(e)) throw setsNotReady();
+            throw e;
+        }
+    },
+
+    // ตั้งสินค้าในเซ็ต (items = [] = ไม่เป็นเซ็ตแล้ว) — เฉพาะแถวที่มีอยู่ · คืนแถว หรือ null ถ้าไม่มีสินค้ารหัสนี้
+    // verify = ตรวจกติกาเซ็ตซ้ำใต้ล็อกในธุรกรรมเดียวกับที่เขียน (ดู runVerify)
+    async setSetItems(code, items, { byName } = {}, verify = null) {
+        try {
+            return await withTransaction(async client => {
+                await runVerify(client, verify);
+                const r = await client.query(
+                    `UPDATE catalog_products SET set_items = $2::text[], updated_at = now(), updated_by = $3
+                     WHERE code = $1 RETURNING ${PRODUCT_COLS}, set_items`,
+                    [code, Array.isArray(items) ? items : [], byName || null]);
+                return r.rows[0] || null;
+            });
+        } catch (e) {
+            if (noTable(e)) throw notReady();
+            if (noColumn(e)) throw setsNotReady();
             throw e;
         }
     },

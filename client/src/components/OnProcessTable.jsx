@@ -5,7 +5,8 @@ import DatePicker from './DatePicker.jsx';
 import DraftModal from './DraftModal.jsx';
 import PerfModal from './PerfModal.jsx';
 import { asTargetArray } from '../data/products.js';
-import { mediaFor, contentTypesOf, quotaOf, targetFor, conceptText, conceptOneLine, groupNoGencode, postNoGencode, productKolProgress } from '../data/adGroups.js';
+import { mediaFor, contentTypesOf, quotaOf, targetFor, conceptText, conceptOneLine, groupNoGencode, postNoGencode, productKolProgress, cartFor } from '../data/adGroups.js';
+import CartTag from './CartTag.jsx';
 import { productLabel } from '../data/products.js';
 import { ProductSummary } from './ProductChips.jsx';
 import ProductFilter from './ProductFilter.jsx';
@@ -123,6 +124,8 @@ function ProcessRow({ sub, putSubmission, reload, showAds = false, group = null,
     // Content Type ผูกกับคน (1 Platform ในกลุ่มเดียวมีได้หลายอย่าง) — ของเก่าที่ยังไม่ระบุค่อยถอยไปใช้ของกลุ่ม
     const ctype = sub.content_type || (group ? (contentTypesOf(group, sub.platform)[0] || null) : null);
     const media = group ? mediaFor(group, sub.platform, ctype) : { media_type: null, content_format: null };
+    // ติดตะกร้า (TikTok · 11 พ.ย. 2026) — ตาม Content Type ของคลิปนี้ · ช่องที่เอเจนซี่ใส่ลิงก์โพสต์ จึงเตือนตรงนี้ด้วย
+    const cart = group ? cartFor(group, sub.platform, ctype) : null;
     // Target ตามสินค้าของคลิปนี้ (แคมเปญที่ตั้ง Target ต่อสินค้า) — ไม่รู้สินค้าก็ใช้ Target รวมของ Platform
     const tgt = group ? asTargetArray(targetFor(group, sub.platform, sub.product)) : [];
     // ยิงแอดไปแล้ว = ล็อก ลิงก์โพสต์ / Gencode / ID Post ไว้ก่อน เพราะเป็นข้อมูลที่แอดที่ยิงไปแล้วอ้างอิงอยู่
@@ -256,10 +259,11 @@ function ProcessRow({ sub, putSubmission, reload, showAds = false, group = null,
                     : <span className="ctype-none">— ยังไม่ระบุ —</span>}
             </div>
             <div className="proc-cell proc-fmt-cell">
-                {media.media_type || media.content_format ? (
+                {media.media_type || media.content_format || cart !== null ? (
                     <>
                         {media.media_type && <span className="proc-ctype-chip media">{media.media_type}</span>}
                         {splitCsv(media.content_format).map(x => <span className="proc-ctype-chip fmt" key={x}>{x}</span>)}
+                        <CartTag value={cart} agency />
                     </>
                 ) : <span className="muted">—</span>}
             </div>

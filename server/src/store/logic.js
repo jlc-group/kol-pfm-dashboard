@@ -20,6 +20,11 @@ const CAMPAIGN_PLATFORMS = ['TikTok', 'Facebook', 'Instagram'];
 // ต้องตรงกับ CAMPAIGN_AS_CTYPE / SOCIAL_CAMPAIGNS ฝั่งหน้าเว็บ (client/src/data/adGroups.js)
 const CAMPAIGN_AS_CTYPE = ['Facebook', 'Instagram'];
 const SOCIAL_CAMPAIGNS = ['Awareness', 'Engagement', 'Reels'];
+// ติดตะกร้า / ไม่ติดตะกร้า (11 พ.ย. 2026) — ตั้งต่อชุด Content Type (set.cart / allocation.cart = true | false) · TikTok อย่างเดียวก่อน
+// ต้องตรงกับ CART_PLATFORMS ฝั่งหน้าเว็บ (client/src/data/adGroups.js — tests/cart-tag.test.cjs เทียบให้)
+const CART_PLATFORMS = ['TikTok'];
+// นับเฉพาะ true / false ตรงตัว (สตริง 'true' / ค่าอื่น = ยังไม่เลือก)
+const cartValue = v => (v === true ? true : v === false ? false : null);
 
 // ค่าแอดขั้นต่ำที่ถือว่า "ยิงจริงจังแล้ว" — ถึงเกณฑ์นี้ระบบจึงล็อกผลตัดสินคุ้ม/ไม่คุ้ม
 // (ต่ำกว่านี้ตัวเลขยังแกว่ง ตัดสินไปก็ไม่มีความหมาย)
@@ -792,6 +797,33 @@ function carryNoGencode(incoming, stored) {
     });
 }
 
+// ติดตะกร้า (11 พ.ย. 2026): แท็บที่เปิดค้างจากก่อน deploy ไม่รู้จัก cart → ส่งชุด / allocations มาโดยไม่มีคีย์นี้ (ฟอร์มรุ่นใหม่ส่ง true / false / null เสมอ)
+// ยกค่าเดิมในฐานมา ไม่ให้ค่าที่เลือกไว้หายเงียบ — จับคู่ กลุ่ม (key) → บล็อก (Platform) → ชุด (Content Type) แบบเดียวกับ resolveGroupCart
+// แล้วจัดค่าให้ตรงตัว: Platform ที่ไม่ใช้ = ไม่มีคีย์ (กันค่าค้าง) · TikTok = true / false / null
+function carryCart(incoming, stored) {
+    if (!Array.isArray(incoming)) return incoming;
+    const olds = Array.isArray(stored) ? stored : [];
+    return incoming.map(g => {
+        if (!g || typeof g !== 'object') return g;
+        const old = g.key ? olds.find(o => o && o.key === g.key) : null;
+        const oldCart = (platform, ct) => (old ? resolveGroupCart(old, platform, ct) : null);
+        const fix = (row, platform) => {
+            if (!row || typeof row !== 'object') return row;
+            if (!CART_PLATFORMS.includes(platform)) {
+                if (!('cart' in row)) return row;
+                const { cart, ...rest } = row;
+                return rest;
+            }
+            const cart = row.cart === undefined ? oldCart(platform, row.content_type || null) : cartValue(row.cart);
+            return { ...row, cart };
+        };
+        const out = { ...g };
+        if (Array.isArray(g.blocks)) out.blocks = g.blocks.map(b => (b && Array.isArray(b.sets) ? { ...b, sets: b.sets.map(s => fix(s, b.platform)) } : b));
+        if (Array.isArray(g.allocations)) out.allocations = g.allocations.map(a => fix(a, a && a.platform));
+        return out;
+    });
+}
+
 // Concept แยกต่อสินค้า (ต่อ Platform): แท็บที่เปิดค้างจากก่อน deploy ส่งบล็อกมาโดยไม่มี concept_split (ฟอร์มรุ่นใหม่ส่ง true/false เสมอ)
 // ของในฐานแยกอยู่ + Concept หลักของกลุ่มเท่าเดิม → ยก Concept ต่อสินค้าเดิมมาต่อ (เฉพาะสินค้าที่ยังอยู่ในบล็อก · ชุด = เฉพาะหัวชุด)
 // ต้องตรงกับ packConcepts ฝั่งหน้าเว็บ
@@ -1020,6 +1052,20 @@ function resolveGroupCampaign(g, platform, contentType) {
         && (!platform || !a.platform || a.platform === platform)
         && (!contentType || a.content_type === contentType));
     return hit ? hit.campaign : null;
+}
+
+// ติดตะกร้าของ (Platform + Content Type) — คอลัมน์ KOL หน้า Ads (11 พ.ย. 2026) · true / false / null
+// null = ไม่ใช่ TikTok / แคมเปญที่บันทึกก่อนมีช่องนี้ / ไม่เจอชุด · Content Type ต้องตรงตัวแบบ resolveGroupCampaign (ไม่รู้ = ชุดแรกที่เลือกไว้)
+// อ่าน blocks[].sets ก่อน (allocations ข้ามชุดที่ยังไม่มี Tier) แล้วค่อยถอยไป allocations · ไม่มีค่าระดับกลุ่ม (กันค่า TikTok รั่วไป Platform อื่น)
+// ต้องตรงกับ cartFor ฝั่งหน้าเว็บ (client/src/data/adGroups.js)
+function resolveGroupCart(g, platform, contentType) {
+    if (!g || !CART_PLATFORMS.includes(platform)) return null;
+    const match = x => x && cartValue(x.cart) !== null && (!contentType || x.content_type === contentType);
+    const b = (Array.isArray(g.blocks) ? g.blocks : []).find(x => x && x.platform === platform);
+    const s = b && (Array.isArray(b.sets) ? b.sets : []).find(match);
+    if (s) return s.cart;
+    const a = (Array.isArray(g.allocations) ? g.allocations : []).find(x => x && x.platform === platform && match(x));
+    return a ? a.cart : null;
 }
 
 function engagementOf(s) {
@@ -1307,7 +1353,7 @@ function postCheckDecision(action, note, byName, at) {
 }
 
 module.exports = {
-    GOOD_CPM, GOOD_CPE, TARGET_PLATFORMS, CAMPAIGN_PLATFORMS, CAMPAIGN_AS_CTYPE, SOCIAL_CAMPAIGNS,
+    GOOD_CPM, GOOD_CPE, TARGET_PLATFORMS, CAMPAIGN_PLATFORMS, CAMPAIGN_AS_CTYPE, SOCIAL_CAMPAIGNS, CART_PLATFORMS, cartValue,
     AD_STAMP_AT, AD_STAMP_BY_BRAND, stampAtFor, now, todayTH, clone, normCampaignType,
     POST_CHECK_FIELDS, POST_CHECK_OPEN, postCheckWaiting, nextPostCheck, postCheckDecision, updateLatest,
     duplicateError, inScope, scopeProjects, hireRemaining, hireRowFee,
@@ -1320,8 +1366,8 @@ module.exports = {
     resolveInside, sameInstant, mergeHireItems, mergeBriefFiles, cleanFee, cleanHeadcount, safeId, safeSlug,
     linkGroupPlatforms, resolveGroupClips, resolveGroupTarget, productCodesIn, carryProductTargets, carryProductBudgets, carryProductConcepts, carryProductKols,
     carryProductBundles, blockBundles,
-    groupNoGencode, postNoGencode, carryNoGencode, gencodeDays, gencodeDayLeft, gencodeExpireDate,
-    resolveGroupProducts, resolveGroupCtype, resolveGroupMedia, resolveGroupCampaign,
+    groupNoGencode, postNoGencode, carryNoGencode, carryCart, gencodeDays, gencodeDayLeft, gencodeExpireDate,
+    resolveGroupProducts, resolveGroupCtype, resolveGroupMedia, resolveGroupCampaign, resolveGroupCart,
     engagementOf, maybeStamp, stampWaitReason, stampFeeOnly, normalizeStamp,
     feeMissing, clipCostMetrics, costAxisRange, costAxisNorm, perfVerdict, feeCostAverages, pooledCpe, viewsMissingReason, firstByIdPost
 };

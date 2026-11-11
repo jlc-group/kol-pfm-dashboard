@@ -18,8 +18,9 @@ import {
     groupPlatforms, kolInScope, contentTypesOf, mediaFor, quotaOf,
     toBlocks, blockKol, blocksKol, blocksBudget, num, isSplitBudget, hasOwnConcepts,
     contentCells, cellKeyOf, cellKey, clipCountFor, targetFor, groupNoGencode, productsFor, allocsInScope, conceptOneLine,
-    isKolSplit, productKolOf, productKolProgress, productRows
+    isKolSplit, productKolOf, productKolProgress, productRows, cartFor, needCart
 } from '../data/adGroups.js';
+import CartTag from '../components/CartTag.jsx';
 import { collapseByPerson, countPeople } from '../data/clips.js';
 import ProductFilter from '../components/ProductFilter.jsx';
 import { knownProductCodes, matchProducts, productFilterOptions, pickProduct } from '../data/productFilter.js';
@@ -882,6 +883,8 @@ export default function ProjectDetail() {
                     : <span className="ctype-none">— ยังไม่ได้ตั้ง Content Type —</span>}
                 {m.media_type && <span className="proc-ctype-chip media">{m.media_type}</span>}
                 {splitCsv(m.content_format).map(x => <span className="proc-ctype-chip fmt" key={x}>{x}</span>)}
+                {/* ติดตะกร้า (TikTok · 11 พ.ย. 2026) — คำเดียวกับที่เอเจนซี่เห็น */}
+                <CartTag value={cartFor(g, c.platform, c.contentType)} agency />
                 <span className="ag-tb-count">{total != null ? total : countPeople(rows)}<span>/{quota || '—'}</span> คน</span>
             </div>
         );
@@ -1229,6 +1232,8 @@ export default function ProjectDetail() {
                                                                             : <span className="muted">ยังไม่ตั้ง Content Type</span>}
                                                                         {s.media_type && <span className="chip-ctype media">{s.media_type}</span>}
                                                                         {splitCsv(s.content_format).map(x => <span className="chip-ctype fmt" key={x}>{x}</span>)}
+                                                                        {/* ติดตะกร้า (TikTok · 11 พ.ย. 2026) · แคมเปญก่อนมีช่องนี้ = ไม่มีป้าย */}
+                                                                        {needCart(b.platform) && <CartTag value={s.cart} />}
                                                                     </div>
                                                                     {/* Tier ใช้ร่วมทุก Content Type ไม่มีจำนวนต่อ Tier แล้ว (6 ต.ค. 2026) — โชว์ชื่อ Tier + จำนวนคนรวมของ Content Type นี้ */}
                                                                     <div className="adg-set-tiers">

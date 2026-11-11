@@ -1,6 +1,6 @@
 const express = require('express');
 const store = require('../store');
-const { CODE_SHAPE } = require('../store/productFamilies');
+const { CODE_SHAPE, familiesWith, setItemsOf } = require('../store/productFamilies');
 const { canManageCatalog, seesAllBrands, canSeeBrand, allowedBrands } = require('../data/roles');
 const catalogBrands = require('../store/catalogBrands');
 
@@ -56,6 +56,73 @@ function codesOf(v) {
     }
     return { value: out };
 }
+// ---- สินค้าในเซ็ต (ผู้ใช้สั่ง 11 พ.ย. 2026 — JNPSET1 หน้า Ads ขึ้นเป็น JNP1, JNP2, JNP3) ----
+// ตั้งได้เฉพาะสินค้าที่เพิ่มในหน้านี้ · สินค้าข้างในต้องอยู่ในคลัง แบรนด์เดียวกับเซ็ต · ไม่ซ้อนเซ็ต · รหัสในกลุ่มสีตั้งเป็นเซ็ตไม่ได้
+// ช่อง PRODUCTS หน้า Ads + ฟีดยิงแอดกางเซ็ตเป็นสินค้าข้างใน (store/productFamilies.js familyMapWith / หน้าเว็บ data/products.js)
+const SET_MAX = 30;
+function itemsOf(v, self) {
+    if (!Array.isArray(v)) return { error: 'สินค้าในเซ็ตต้องเป็นรายการรหัสสินค้า' };
+    if (v.length > SET_MAX) return { error: `ใส่สินค้าในเซ็ตได้ไม่เกิน ${SET_MAX} ตัว` };
+    const out = [];
+    for (const c of v) {
+        const r = codeOf(c);
+        if (r.error) return r;
+        if (r.value === self) return { error: `ใส่ ${self} เป็นสินค้าในเซ็ตของตัวเองไม่ได้` };
+        if (!out.includes(r.value)) out.push(r.value);
+    }
+    return { value: out };
+}
+// กลุ่มสีแบบเดียวกับที่หน้าเว็บเห็น — คลังตั้งต้นทั้งหมด (ไม่ใช่แค่กลุ่มที่เขียนไว้ใน productFamilies.js) + แถวที่เพิ่มเอง + แถวที่จะเพิ่ม
+// (สินค้าตั้งต้นตัวเดี่ยวอย่าง T6A + T6B ที่เพิ่มทีหลัง = กลุ่มสีบนหน้าเว็บ · ผลรีวิว 11 พ.ย.) · แถวในฐานของสินค้าตั้งต้นยึดแบรนด์ตามโค้ด
+async function familiesForGuard(rows, extra) {
+    const builtin = await catalogBrands.builtinBrands();
+    return familiesWith([
+        ...[...builtin].map(([code, brand]) => ({ code, brand })),
+        ...rows.filter(p => !builtin.has(p.code)),
+        ...(extra ? [extra] : [])
+    ]);
+}
+const isSetRow = (rows, code) => rows.some(p => p.code === code && setItemsOf(p).length > 0);
+
+// สินค้าใหม่ที่จะเข้ากลุ่มสีเดียวกับเซ็ตที่มีอยู่ = ไม่รับ (เซ็ตต้องไม่อยู่ในกลุ่มสี — ไม่งั้นสีพี่น้องกางออกมาเป็นรหัสเซ็ตดิบ · ผลรีวิว 11 พ.ย.)
+async function siblingOfSetProblem(code, brand, products) {
+    const rows = Array.isArray(products) ? products.filter(p => p && typeof p.code === 'string' && p.code !== code) : [];
+    if (!rows.some(p => setItemsOf(p).length)) return null;
+    let fams;
+    // โหลดคลังตั้งต้นไม่ได้ = ใช้กลุ่มจากแถวในฐาน + กลุ่มตั้งต้นในโค้ด (ไม่ขวางการเพิ่มสินค้าธรรมดา)
+    try { fams = await familiesForGuard(rows, { code, brand }); } catch { fams = familiesWith([...rows, { code, brand }]); }
+    const sets = (fams.get(code) || []).filter(c => c !== code && isSetRow(rows, c));
+    return sets.length
+        ? { status: 409, message: `รหัส ${code} จะไปเข้ากลุ่มสีเดียวกับเซ็ต ${sets.join(', ')} — ใช้รหัสอื่น หรือเอา ${sets.join(', ')} ออกจากการเป็นเซ็ตก่อน` }
+        : null;
+}
+
+// ตรวจเซ็ตกับคลังตอนนี้ (products = แถว catalog_products พร้อม set_items) → { status, message } หรือ null
+// items ว่าง (เอาออกจากการเป็นเซ็ต) ผ่านเสมอ · โหลดคลังตั้งต้นไม่ได้ = throw (route ตอบ 503 ไม่ปล่อยผ่าน)
+async function setProblem(code, brand, items, products) {
+    if (!items.length) return null;
+    const rows = Array.isArray(products) ? products.filter(p => p && typeof p.code === 'string') : [];
+    const brands = await catalogBrands.brandsOf(items, rows);
+    const missing = items.filter(c => !brands.has(c));
+    if (missing.length) return { status: 400, message: `ไม่มีสินค้า ${missing.join(', ')} ในคลัง` };
+    const other = items.filter(c => brands.get(c) !== brand);
+    if (other.length) return { status: 400, message: `${other.map(c => `${c} (${brands.get(c)})`).join(', ')} ไม่ใช่สินค้าของ ${brand} — ใส่ได้เฉพาะสินค้าแบรนด์เดียวกับเซ็ต` };
+    const sets = rows.filter(p => p.code !== code && setItemsOf(p).length);
+    const nested = items.filter(c => sets.some(p => p.code === c));
+    if (nested.length) return { status: 409, message: `${nested.join(', ')} เป็นเซ็ตอยู่แล้ว — ใส่เซ็ตซ้อนในเซ็ตไม่ได้` };
+    const parents = sets.filter(p => setItemsOf(p).includes(code)).map(p => p.code);
+    if (parents.length) return { status: 409, message: `${code} อยู่ในเซ็ต ${parents.join(', ')} แล้ว — สินค้าที่อยู่ในเซ็ตอื่นตั้งเป็นเซ็ตไม่ได้` };
+    // รหัสในกลุ่มสี (BTA4-09 ฯลฯ) กางทุกสีอยู่แล้ว — เป็นเซ็ตด้วยจะกางสองแบบชนกัน
+    if ((await familiesForGuard(rows.filter(p => p.code !== code), { code, brand })).has(code)) {
+        return { status: 409, message: `${code} อยู่ในกลุ่มสี (ช่อง PRODUCTS กางทุกสีอยู่แล้ว) — ตั้งเป็นเซ็ตไม่ได้` };
+    }
+    return null;
+}
+
+// ตัวตรวจที่ส่งให้ store ตรวจซ้ำใต้ล็อกในธุรกรรม (pg/catalog.js runVerify) — ตรวจไม่ได้ = 503 ไม่ปล่อยผ่าน (ROLLBACK)
+const SET_CHECK_DOWN = { status: 503, message: 'ตรวจสินค้าในเซ็ตไม่ได้ในตอนนี้ — ลองใหม่อีกครั้ง' };
+const safeVerify = fn => async rows => { try { return await fn(rows); } catch { return SET_CHECK_DOWN; } };
+
 const fail = (res, status, message) => res.status(status).json({ status: 'error', message });
 const sendOverlay = async (res, status = 200) => res.status(status).json({ status: 'success', data: await store.catalog.overlay() });
 const handle = (err, res, next) => (err && err.status ? fail(res, err.status, err.message) : next(err));
@@ -83,7 +150,7 @@ router.get('/', async (req, res, next) => {
     try { await sendOverlay(res); } catch (err) { handle(err, res, next); }
 });
 
-// POST /api/catalog/products — เพิ่มสินค้าใหม่ { code, name, brand, targets?: [ชื่อ Target] }
+// POST /api/catalog/products — เพิ่มสินค้าใหม่ { code, name, brand, targets?: [ชื่อ Target], items?: [รหัสสินค้าในเซ็ต] }
 router.post('/products', requireCatalogEditor, async (req, res, next) => {
     try {
         const b = req.body || {};
@@ -91,20 +158,39 @@ router.post('/products', requireCatalogEditor, async (req, res, next) => {
         const name = textOf(b.name, 'ชื่อสินค้า', 200); if (name.error) return fail(res, 400, name.error);
         const brand = textOf(b.brand, 'แบรนด์', 100); if (brand.error) return fail(res, 400, brand.error);
         if (!canSeeBrand(req.account, brand.value)) return fail(res, 403, `เพิ่มสินค้าได้เฉพาะแบรนด์ที่คุณมีสิทธิ์ (${brand.value})`);
+        const items = b.items === undefined || b.items === null ? { value: [] } : itemsOf(b.items, code.value);
+        if (items.error) return fail(res, 400, items.error);
         // รหัสของสินค้าตั้งต้น / ชนกลุ่มสีของแบรนด์อื่น = ไม่รับ (ทุกคน) · ตรวจไม่ได้: admin ผ่านแบบเดิม · ทีม Ads = 503
         let clash = null;
-        try { clash = await catalogBrands.newProductProblem(code.value, brand.value, (await store.catalog.overlay()).products); }
-        catch { if (!seesAllBrands(req.account)) return fail(res, 503, 'ตรวจรหัสสินค้าไม่ได้ในตอนนี้ — ลองใหม่อีกครั้ง'); }
+        let overlay = null;
+        try {
+            overlay = await store.catalog.overlay();
+            clash = await catalogBrands.newProductProblem(code.value, brand.value, overlay.products);
+        } catch { if (!seesAllBrands(req.account)) return fail(res, 503, 'ตรวจรหัสสินค้าไม่ได้ในตอนนี้ — ลองใหม่อีกครั้ง'); }
         if (clash) return fail(res, 409, clash);
+        // สินค้าในเซ็ต + สินค้าใหม่ต้องไม่ไปเข้ากลุ่มสีเดียวกับเซ็ตที่มีอยู่ — ตรวจตอนนี้ (ข้อความชัด) แล้วตรวจซ้ำใต้ล็อกตอนบันทึก (verifyAdd)
+        // ตรวจเซ็ตไม่ได้ = ไม่ปล่อยผ่าน (ทุกคน · เซ็ตผิดทำให้ช่อง PRODUCTS / ฟีดยิงแอดส่งรหัสผิด) · สินค้าธรรมดา อ่านคลังพลาดตรงนี้ไม่ขวาง (ตรวจซ้ำตอนบันทึกอยู่แล้ว)
+        const verifyAdd = async rows => (items.value.length ? await setProblem(code.value, brand.value, items.value, rows) : null)
+            || await siblingOfSetProblem(code.value, brand.value, rows);
+        {
+            let problem = null;
+            try {
+                if (!overlay) overlay = await store.catalog.overlay();
+                problem = await verifyAdd(overlay.products);
+            } catch { if (items.value.length) return fail(res, 503, SET_CHECK_DOWN.message); }
+            if (problem) return fail(res, problem.status, problem.message);
+        }
         const targets = [];
         for (const t of Array.isArray(b.targets) ? b.targets : []) {
             const r = targetOf(t); if (r.error) return fail(res, 400, r.error);
             if (!targets.some(x => x.toLowerCase() === r.value.toLowerCase())) targets.push(r.value);
         }
         if (await store.catalog.findProduct(code.value)) return fail(res, 409, `มีสินค้ารหัส ${code.value} อยู่แล้ว`);
-        // สินค้า + Target ทั้งหมดบันทึกใน transaction เดียว — พลาดกลางทาง = ไม่มีอะไรค้าง (กดบันทึกใหม่ได้ ไม่ติด "มีอยู่แล้ว")
-        await store.catalog.addProduct({ code: code.value, name: name.value, brand: brand.value }, by(req), targets);
-        await record(req, 'create', `เพิ่มสินค้า ${code.value} - ${name.value} (${brand.value})${targets.length ? ' · Target: ' + targets.join(', ') : ''}`);
+        // สินค้า + Target (+ สินค้าในเซ็ต) บันทึกใน transaction เดียว — พลาดกลางทาง = ไม่มีอะไรค้าง (กดบันทึกใหม่ได้ ไม่ติด "มีอยู่แล้ว")
+        await store.catalog.addProduct({ code: code.value, name: name.value, brand: brand.value, ...(items.value.length ? { items: items.value } : {}) }, by(req), targets,
+            safeVerify(verifyAdd));
+        await record(req, 'create', `เพิ่มสินค้า ${code.value} - ${name.value} (${brand.value})${targets.length ? ' · Target: ' + targets.join(', ') : ''}`
+            + (items.value.length ? ' · สินค้าในเซ็ต: ' + items.value.join(', ') : ''));
         await sendOverlay(res, 201);
     } catch (err) {
         if (err && err.code === '23505') return fail(res, 409, 'มีสินค้ารหัสนี้อยู่แล้ว');
@@ -112,7 +198,7 @@ router.post('/products', requireCatalogEditor, async (req, res, next) => {
     }
 });
 
-// PATCH /api/catalog/products/:code — ซ่อน / เอากลับ { hidden } · แก้ชื่อสินค้าที่เพิ่มเอง { name }
+// PATCH /api/catalog/products/:code — ซ่อน / เอากลับ { hidden } · แก้ชื่อสินค้าที่เพิ่มเอง { name } · สินค้าในเซ็ต { items: [...] } (11 พ.ย. 2026)
 // สินค้าตั้งต้นที่ยังไม่มีแถว ต้องส่ง name + brand มาด้วย (เก็บไว้เป็นข้อมูลอ้างอิง — หน้าเว็บยึดชื่อตามโค้ด)
 router.patch('/products/:code', requireCatalogEditor, async (req, res, next) => {
     try {
@@ -132,6 +218,29 @@ router.patch('/products/:code', requireCatalogEditor, async (req, res, next) => 
             }
             await record(req, 'update', `${b.hidden ? 'ซ่อนสินค้า' : 'เอาสินค้ากลับมาใช้'} ${code.value}`);
             // ต้อง await ใน try — อ่านส่วนต่างพลาดแล้วไม่ await = promise ค้างไม่มีคนรับ server ล้มทั้งตัว
+            await sendOverlay(res);
+            return;
+        }
+        if (b.items !== undefined) {
+            // สินค้าในเซ็ต { items: [รหัส] } · [] = ไม่เป็นเซ็ตแล้ว — เฉพาะสินค้าที่ Admin เพิ่มเอง (สินค้าตั้งต้นเป็นสินค้าเดี่ยวตามโค้ด)
+            const items = itemsOf(b.items, code.value); if (items.error) return fail(res, 400, items.error);
+            let builtin;
+            try { builtin = await catalogBrands.builtinBrands(); }
+            catch { return fail(res, 503, 'ตรวจสินค้าในเซ็ตไม่ได้ในตอนนี้ — ลองใหม่อีกครั้ง'); }
+            if (builtin.has(code.value)) return fail(res, 400, `${code.value} เป็นสินค้าตั้งต้น — ตั้งสินค้าในเซ็ตได้เฉพาะสินค้าที่เพิ่มในหน้านี้`);
+            if (!cur) return fail(res, 404, `ไม่มีสินค้า ${code.value} ในคลัง`);
+            let problem;
+            try { problem = await setProblem(code.value, cur.brand, items.value, (await store.catalog.overlay()).products); }
+            catch { return fail(res, 503, 'ตรวจสินค้าในเซ็ตไม่ได้ในตอนนี้ — ลองใหม่อีกครั้ง'); }
+            if (problem) return fail(res, problem.status, problem.message);
+            const before = setItemsOf(cur);
+            // ตรวจซ้ำใต้ล็อกในธุรกรรมเดียวกับที่เขียน — สองคนบันทึกเซ็ตพร้อมกันต้องไม่ได้เซ็ตซ้อนเซ็ต
+            const row = await store.catalog.setSetItems(code.value, items.value, by(req),
+                safeVerify(rows => setProblem(code.value, cur.brand, items.value, rows)));
+            if (!row) return fail(res, 404, `ไม่มีสินค้า ${code.value} ในคลัง`);
+            await record(req, 'update', items.value.length
+                ? `ตั้งสินค้าในเซ็ต ${code.value}: ${items.value.join(', ')}${before.length ? ` (เดิม ${before.join(', ')})` : ''}`
+                : `${code.value} ไม่เป็นเซ็ตแล้ว${before.length ? ` (เดิม ${before.join(', ')})` : ''}`);
             await sendOverlay(res);
             return;
         }

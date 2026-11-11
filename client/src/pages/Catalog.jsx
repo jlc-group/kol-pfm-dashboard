@@ -5,7 +5,8 @@ import { BRANDS, visibleBrands } from '../data/brands.js';
 import { useAuth } from '../auth/AuthContext.jsx';
 import ColumnFilter from '../components/ColumnFilter.jsx';
 import { sortProducts, prefixOptions, codePrefix, SORT_MODES, isSortMode } from '../data/catalogSort.js';
-import { productsByBrand, productInfo, targetEntriesOf, targetsForProduct, sharedTargetsExcept, PRODUCT_CATALOG } from '../data/products.js';
+import { productsByBrand, productInfo, targetEntriesOf, targetsForProduct, sharedTargetsExcept, PRODUCT_CATALOG,
+    isProductSet, setsContaining, expandProductFamilies, productName, inColorFamily } from '../data/products.js';
 import { setCatalogFromServer } from '../data/catalogLoader.js';
 import { useCatalogVersion } from '../data/useCatalog.js';
 
@@ -72,8 +73,95 @@ function TargetNameField({ value, onChange, confirmed, onConfirm, autoFocus, ign
     );
 }
 
-function AddProductModal({ brand, brands, onClose, onSaved }) {
+// ===== สินค้าในเซ็ต (ผู้ใช้สั่ง 11 พ.ย. 2026 — JNPSET1 หน้า Ads ขึ้นเป็น JNP1, JNP2, JNP3) =====
+// ตัวเลือก = สินค้าแบรนด์เดียวกัน ไม่ใช่ตัวเอง ไม่ใช่เซ็ต (ไม่ซ้อนเซ็ต) · ที่ซ่อนอยู่ไม่ขึ้น ยกเว้นที่เลือกไว้แล้ว (กดเอาออกได้)
+// ลำดับที่เก็บ = ลำดับในคลัง (JNP1, JNP2, JNP3) ไม่ใช่ลำดับที่กด — หน้า Ads / ฟีดเรียงตามนี้
+const SET_MAX = 30;   // เท่ากับ server routes/catalog.js SET_MAX
+const catalogOrder = codes => {
+    const idx = new Map(PRODUCT_CATALOG.map((p, i) => [p.code, i]));
+    return [...codes].sort((a, b) => (idx.has(a) ? idx.get(a) : 1e9) - (idx.has(b) ? idx.get(b) : 1e9));
+};
+function setCandidates(brand, self, value) {
+    return productsByBrand(brand).filter(p => p.code !== self && !isProductSet(p.code) && (!p.hidden || value.includes(p.code)));
+}
+function SetItemsPicker({ brand, self, value, onChange }) {
+    const list = setCandidates(brand, self, value);
+    const toggle = c => onChange(catalogOrder(value.includes(c) ? value.filter(x => x !== c) : [...value, c]));
+    if (!list.length) return <small className="catg-hint">แบรนด์นี้ยังไม่มีสินค้าอื่นให้ใส่ในเซ็ต</small>;
+    return (
+        <div className="catg-pick" role="group" aria-label="สินค้าในเซ็ต">
+            {list.map(p => (
+                <button type="button" key={p.code} className={'catg-pick-item' + (value.includes(p.code) ? ' on' : '')} aria-pressed={value.includes(p.code)}
+                    title={p.name} onClick={() => toggle(p.code)}>
+                    {value.includes(p.code) ? '☑' : '☐'} {p.code}{p.hidden ? ' · ซ่อน' : ''}
+                </button>
+            ))}
+        </div>
+    );
+}
+// สรุปผลบนหน้า Ads — สินค้าข้างในที่มีหลายสีกางทุกสี (เหมือนช่อง PRODUCTS จริง)
+function SetPreview({ code, items }) {
+    const name = code || 'รหัสนี้';
+    if (!items.length) return <span>ไม่ติ๊กเลย = {name} ไม่เป็นเซ็ต · หน้า Ads ขึ้น {name} ตามเดิม</span>;
+    return (
+        <span>หน้า Ads ช่อง PRODUCTS และฟีดยิงแอด: <b>{name}</b> → <b>{expandProductFamilies(items).join(', ')}</b>
+            {' '}· ป้ายใต้ชื่อ KOL ยังขึ้น {name} ตามที่รีวิวจริง · คลิปเดิมที่รีวิว {name} บนหน้า Ads เปลี่ยนตามทันที</span>
+    );
+}
+
+function SetItemsModal({ product, onClose, onSaved }) {
+    const [items, setItems] = useState(() => catalogOrder(product.items || []));
+    const [error, setError] = useState('');
+    const [saving, setSaving] = useState(false);
+    const before = catalogOrder(product.items || []);
+    const parents = setsContaining(product.code);
+    const unchanged = items.length === before.length && items.every((c, i) => c === before[i]);
+    const problems = [];
+    if (items.length && parents.length) problems.push(`${product.code} อยู่ในเซ็ต ${parents.join(', ')} แล้ว — ตั้งเป็นเซ็ตไม่ได้`);
+    if (items.length > SET_MAX) problems.push(`ใส่สินค้าในเซ็ตได้ไม่เกิน ${SET_MAX} ตัว (ตอนนี้ ${items.length})`);
+    if (unchanged) problems.push('ยังไม่ได้เปลี่ยนสินค้าในเซ็ต');
+    const close = () => { if (!saving) onClose(); };
+    async function submit(e) {
+        e.preventDefault();
+        if (saving) return;
+        if (problems.length) { setError(problems.join(' · ')); return; }
+        setError(''); setSaving(true);
+        try {
+            const res = await api(`/catalog/products/${encodeURIComponent(product.code)}`, { method: 'PATCH', body: { items } });
+            onSaved(res.data, items.length ? `ตั้งสินค้าในเซ็ต ${product.code} แล้ว (${items.join(', ')})` : `${product.code} ไม่เป็นเซ็ตแล้ว`);
+        } catch (err) { setError(err.message); }
+        finally { setSaving(false); }
+    }
+    return (
+        <Modal title={`สินค้าในเซ็ต · ${product.code}`} onClose={close}>
+            {error && <div className="alert-error">{error}</div>}
+            <form onSubmit={submit}>
+                <div className="field">
+                    <label>เซ็ต</label>
+                    <div><b>{product.code}</b> - {product.name}</div>
+                </div>
+                <div className="field">
+                    <div className="catg-label-row">
+                        <label>สินค้าข้างในเซ็ต <span className="catg-opt">{items.length} ตัว</span></label>
+                        {items.length > 0 && <button type="button" className="catg-link" onClick={() => setItems([])}>ไม่เลือกเลย</button>}
+                    </div>
+                    <SetItemsPicker brand={product.brand} self={product.code} value={items} onChange={setItems} />
+                </div>
+                {parents.length > 0 && <div className="catg-warn" role="alert">⚠ {product.code} อยู่ในเซ็ต {parents.join(', ')} แล้ว — ตั้งเป็นเซ็ตซ้อนไม่ได้</div>}
+                {items.length > SET_MAX && <div className="catg-warn" role="alert">⚠ ใส่สินค้าในเซ็ตได้ไม่เกิน {SET_MAX} ตัว (ตอนนี้ {items.length})</div>}
+                <div className="catg-warn catg-usage" role="status"><SetPreview code={product.code} items={items} /></div>
+                <div className="modal-actions">
+                    <button type="button" className="btn-ghost" onClick={close} disabled={saving}>ยกเลิก</button>
+                    <button type="submit" className="btn-primary" disabled={saving || problems.length > 0}>{saving ? 'กำลังบันทึก...' : 'บันทึก'}</button>
+                </div>
+            </form>
+        </Modal>
+    );
+}
+
+function AddProductModal({ brand, brands, setsReady, onClose, onSaved }) {
     const [form, setForm] = useState({ brand, code: '', name: '' });
+    const [items, setItems] = useState([]);            // สินค้าในเซ็ต (ไม่บังคับ — ติ๊กเฉพาะสินค้าที่เป็นเซ็ต)
     const [picked, setPicked] = useState([]);          // Target ที่เลือก (จากของแบรนด์ หรือพิมพ์ใหม่)
     const [typed, setTyped] = useState('');
     const [confirmed, setConfirmed] = useState(false);
@@ -93,6 +181,7 @@ function AddProductModal({ brand, brands, onClose, onSaved }) {
     else if (dup) problems.push(`รหัส ${code} มีอยู่แล้ว (${dup.brand})`);
     if (!form.name.trim()) problems.push('ชื่อสินค้า');
     if (newTargets.length && !confirmed) problems.push('ติ๊กยืนยันชื่อ Target ใหม่');
+    if (setsReady && items.filter(c => c !== code).length > SET_MAX) problems.push(`สินค้าในเซ็ตไม่เกิน ${SET_MAX} ตัว`);
     // พิมพ์ชื่อไว้แต่ยังไม่กด "+ ใส่" — ไม่ส่งไปเงียบ ๆ (ต้องผ่านช่องติ๊กยืนยันชื่อก่อน)
     if (typed.trim()) problems.push('กด "+ ใส่" ชื่อ Target ที่พิมพ์ไว้ (หรือลบออก)');
     const togglePick = t => setPicked(p => (p.includes(t) ? p.filter(x => x !== t) : [...p, t]));
@@ -110,8 +199,9 @@ function AddProductModal({ brand, brands, onClose, onSaved }) {
         if (problems.length) { setError('ยังไม่ครบ: ' + problems.join(', ')); return; }
         setError(''); setSaving(true);
         try {
-            const res = await api('/catalog/products', { method: 'POST', body: { code, name: form.name.trim(), brand: form.brand, targets: picked } });
-            onSaved(res.data, `เพิ่มสินค้า ${code} แล้ว`);
+            const set = setsReady ? items.filter(c => c !== code) : [];
+            const res = await api('/catalog/products', { method: 'POST', body: { code, name: form.name.trim(), brand: form.brand, targets: picked, ...(set.length ? { items: set } : {}) } });
+            onSaved(res.data, `เพิ่มสินค้า ${code} แล้ว${set.length ? ` (เซ็ต: ${set.join(', ')})` : ''}`);
         } catch (err) { setError(err.message); }
         finally { setSaving(false); }
     }
@@ -121,7 +211,7 @@ function AddProductModal({ brand, brands, onClose, onSaved }) {
             <form onSubmit={submit}>
                 <div className="field">
                     <label>แบรนด์ *</label>
-                    <select value={form.brand} onChange={e => { setForm(f => ({ ...f, brand: e.target.value })); setPicked([]); }} aria-label="แบรนด์">
+                    <select value={form.brand} onChange={e => { setForm(f => ({ ...f, brand: e.target.value })); setPicked([]); setItems([]); }} aria-label="แบรนด์">
                         {brands.map(b => <option key={b} value={b}>{b}</option>)}
                     </select>
                 </div>
@@ -137,6 +227,15 @@ function AddProductModal({ brand, brands, onClose, onSaved }) {
                     </div>
                 </div>
                 {dup && <div className="catg-warn" role="alert">⚠ รหัส {code} มีอยู่แล้ว: {dup.code} - {dup.name} ({dup.brand}){dup.hidden ? ' · ซ่อนอยู่ (กดเอากลับในตารางได้)' : ''}</div>}
+                {setsReady && (
+                    <div className="field">
+                        <label>สินค้าในเซ็ต <span className="catg-opt">ไม่บังคับ · ติ๊กเฉพาะสินค้าที่เป็นเซ็ต (เช่น JNPSET1 = JNP1 + JNP2 + JNP3)</span></label>
+                        <SetItemsPicker brand={form.brand} self={code} value={items.filter(c => c !== code)} onChange={setItems} />
+                        {items.filter(c => c !== code).length > 0 && (
+                            <small className="catg-hint"><SetPreview code={code} items={items.filter(c => c !== code)} /></small>
+                        )}
+                    </div>
+                )}
                 <div className="field">
                     <label>Target <span className="catg-opt">ไม่บังคับ · เพิ่มทีหลังได้</span></label>
                     {brandTargets.length > 0 && (
@@ -523,6 +622,9 @@ export default function Catalog() {
     const [sortMode, setSortMode] = useState(readSort);
     const [prefix, setPrefix] = useState('');   // '' = ทุกรหัส · เปลี่ยนแบรนด์แล้วล้าง (ตัวอักษรของแต่ละแบรนด์ไม่เหมือนกัน)
     const [ready, setReady] = useState(null);     // null = กำลังเช็ค · false = ยังไม่ได้ setup-db
+    // ตั้งสินค้าในเซ็ตได้ไหม — server ต้องตอบ sets: true (มีคอลัมน์ set_items แล้ว + server รุ่นที่รู้จักเซ็ต · 11 พ.ย. 2026)
+    // server รุ่นเก่า (deploy แล้วยังไม่รีสตาร์ต) ไม่ส่งช่องนี้ = ปิดปุ่มไว้ก่อน ไม่ส่งไปให้ตอบ error
+    const [setsReady, setSetsReady] = useState(false);
     const [modal, setModal] = useState(null);
     const [error, setError] = useState('');
     const [note, setNote] = useState('');
@@ -530,7 +632,7 @@ export default function Catalog() {
 
     useEffect(() => {
         api('/catalog')
-            .then(res => { setCatalogFromServer(res.data); setReady(res.data ? res.data.ready !== false : true); })
+            .then(res => { setCatalogFromServer(res.data); setReady(res.data ? res.data.ready !== false : true); setSetsReady(!!(res.data && res.data.sets === true)); })
             .catch(err => { setError(err.message); setReady(true); });
     }, []);
     useEffect(() => {
@@ -540,7 +642,11 @@ export default function Catalog() {
     }, [note]);
     const pickBrand = b => { setBrand(b); saveLastBrand(b); setPrefix(''); };
     const pickSort = v => { setSortMode(v); saveSort(v); };
-    const saved = (data, msg) => { setCatalogFromServer(data); setModal(null); setError(''); setNote(msg); };
+    const saved = (data, msg) => {
+        setCatalogFromServer(data);
+        if (data && typeof data === 'object') setSetsReady(data.sets === true);
+        setModal(null); setError(''); setNote(msg);
+    };
 
     async function patch(key, url, body, msg) {
         setBusy(key); setError('');
@@ -632,14 +738,26 @@ export default function Catalog() {
                                 <tr><td colSpan="4" className="empty">{all.length ? 'ทุกสินค้าของแบรนด์นี้ถูกซ่อนอยู่ — ติ๊ก "แสดงที่ซ่อนไว้"' : (brand ? `แบรนด์ ${brand} ยังไม่มีสินค้าในคลัง — กด "เพิ่มสินค้า"` : 'ยังไม่ได้รับสิทธิ์แบรนด์ — ติดต่อผู้ดูแลระบบ')}</td></tr>
                             ) : rows.map(p => {
                                 const targets = targetEntriesOf(p.code).filter(t => showHidden || !t.hidden);
+                                const inSets = setsContaining(p.code);
                                 return (
                                     <tr key={p.code} className={p.hidden ? 'catg-hidden-row' : ''}>
                                         <td className="catg-code">
                                             <b>{p.code}</b>
                                             {!p.builtin && <span className="catg-badge new">เพิ่มเอง</span>}
+                                            {p.items.length > 0 && <span className="catg-badge set">เซ็ต</span>}
                                             {p.hidden && <span className="catg-badge off">ซ่อนอยู่</span>}
                                         </td>
-                                        <td>{p.name}</td>
+                                        <td>
+                                            {p.name}
+                                            {/* สินค้าในเซ็ต — หน้า Ads ช่อง PRODUCTS + ฟีดยิงแอดขึ้นรหัสเหล่านี้แทนรหัสเซ็ต (11 พ.ย. 2026) */}
+                                            {p.items.length > 0 && (
+                                                <div className="catg-set" title="หน้า Ads ช่อง PRODUCTS และฟีดยิงแอดขึ้นสินค้าเหล่านี้แทนรหัสเซ็ต">
+                                                    <span className="catg-set-label">ในเซ็ต:</span>
+                                                    {p.items.map(c => <span key={c} className="catg-set-chip" title={productName(c) || c}>{c}</span>)}
+                                                </div>
+                                            )}
+                                            {inSets.length > 0 && <div className="catg-inset">อยู่ในเซ็ต {inSets.join(', ')}</div>}
+                                        </td>
                                         <td>
                                             <div className="catg-targets">
                                                 {targets.map(t => (
@@ -667,6 +785,15 @@ export default function Catalog() {
                                         </td>
                                         <td className="actions">
                                             <span className="row-actions">
+                                                {/* ตั้งสินค้าในเซ็ต — เฉพาะสินค้าที่เพิ่มเอง (สินค้าตั้งต้นเป็นสินค้าเดี่ยว) · สินค้าที่อยู่ในเซ็ตอื่นแล้ว / อยู่ในกลุ่มสี ไม่มีปุ่ม
+                                                    (server ไม่รับ) — เว้นแต่เป็นเซ็ตอยู่แล้ว ให้เปิดเอาออกได้ */}
+                                                {!p.builtin && !p.hidden && (p.items.length > 0 || (!inSets.length && !inColorFamily(p.code))) && (
+                                                    <button type="button" className={'catg-set-btn' + (p.items.length ? ' on' : '')} disabled={locked || !setsReady}
+                                                        title={lockTip || (!setsReady ? 'ยังตั้งสินค้าในเซ็ตไม่ได้ — ต้องรัน setup-db / รอ server อัปเดต' : 'ตั้งสินค้าในเซ็ต')}
+                                                        aria-label={`สินค้าในเซ็ต ${p.code}`} onClick={() => setModal({ kind: 'set', product: p })}>
+                                                        เซ็ต
+                                                    </button>
+                                                )}
                                                 {!p.builtin && !p.hidden && (
                                                     <button type="button" className="icon-btn" disabled={locked} title={lockTip || 'แก้ชื่อ'} aria-label={`แก้ชื่อ ${p.code}`}
                                                         onClick={() => setModal({ kind: 'rename', product: p })}><Icon name="edit" size={15} /></button>
@@ -684,9 +811,10 @@ export default function Catalog() {
                     </table>
                 </div>
             </div>
-            <p className="catg-foot">กด ✎ ที่ Target = แก้ชื่อ (แคมเปญเดิมที่ใช้ชื่อนั้นเปลี่ยนตามด้วย) · กด × ที่ Target = ซ่อน (ถามก่อนว่าแคมเปญเดิมจะคงชื่อเดิมหรือเปลี่ยนเป็นชื่ออื่น · กด ↺ เอากลับได้) · ซ่อนสินค้า = แคมเปญใหม่เลือกไม่ได้ · รหัสสินค้าแก้/ลบไม่ได้ · เพิ่มแบรนด์ใหม่ต้องแก้ในระบบ</p>
+            <p className="catg-foot">กด ✎ ที่ Target = แก้ชื่อ (แคมเปญเดิมที่ใช้ชื่อนั้นเปลี่ยนตามด้วย) · กด × ที่ Target = ซ่อน (ถามก่อนว่าแคมเปญเดิมจะคงชื่อเดิมหรือเปลี่ยนเป็นชื่ออื่น · กด ↺ เอากลับได้) · กด "เซ็ต" = ตั้งสินค้าในเซ็ต (หน้า Ads ช่อง PRODUCTS + ฟีดยิงแอดขึ้นสินค้าข้างในแทนรหัสเซ็ต) · ซ่อนสินค้า = แคมเปญใหม่เลือกไม่ได้ · รหัสสินค้าแก้/ลบไม่ได้ · เพิ่มแบรนด์ใหม่ต้องแก้ในระบบ</p>
 
-            {modal && modal.kind === 'product' && <AddProductModal brand={brand} brands={brands} onClose={() => setModal(null)} onSaved={saved} />}
+            {modal && modal.kind === 'product' && <AddProductModal brand={brand} brands={brands} setsReady={setsReady} onClose={() => setModal(null)} onSaved={saved} />}
+            {modal && modal.kind === 'set' && <SetItemsModal product={modal.product} onClose={() => setModal(null)} onSaved={saved} />}
             {modal && modal.kind === 'target' && <AddTargetModal brand={brand} preset={modal.codes} onClose={() => setModal(null)} onSaved={saved} />}
             {modal && modal.kind === 'rename' && <RenameModal product={modal.product} onClose={() => setModal(null)} onSaved={saved} />}
             {modal && modal.kind === 'edit-target' && <EditTargetModal brand={brand} product={modal.product} target={modal.target} onClose={() => setModal(null)} onSaved={saved} />}

@@ -9,7 +9,7 @@ import ProductChips from '../components/ProductChips.jsx';
 import { feeOf, locksOnFee } from '../components/DivideFeesModal.jsx';
 import { stampAtFor } from '../data/stamp.js';
 import { asTargetArray } from '../data/products.js';
-import { groupNoGencode, conceptOneLine, campaignIsCtype } from '../data/adGroups.js';
+import { groupNoGencode, conceptOneLine, campaignIsCtype, needCart, cartValue, CART_LABEL } from '../data/adGroups.js';
 import {
     SOLO_STEP_LABEL, soloStepOf, baht, followersText, soloAccountsOf, soloPlatformsOf, soloPlatformOrder, soloEditLimits,
     OLD_SERVER_FEE_MSG, OLD_SERVER_TEXT
@@ -119,7 +119,9 @@ export default function SoloKolDetail({ project, reload }) {
             !social && s.campaign && ['Campaign', s.campaign],
             s.media_type && ['Photo/VDO', s.media_type],
             s.content_format && ['Format', s.content_format],
-            target.length > 0 && ['Target', target.join(', ')]
+            target.length > 0 && ['Target', target.join(', ')],
+            // ติดตะกร้า (TikTok · 11 พ.ย. 2026) — การจ้างที่บันทึกก่อนมีช่องนี้ = "ยังไม่เลือก" (กดแก้ไขแล้วเลือกได้)
+            needCart(p) && ['ตะกร้า', cartValue(s.cart) === null ? 'ยังไม่เลือก' : CART_LABEL[s.cart]]
         ].filter(Boolean);
     };
     const platInfo = plats.map(p => ({ p, items: infoOf(p) })).filter(x => x.items.length > 0);

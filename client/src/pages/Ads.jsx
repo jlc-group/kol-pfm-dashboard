@@ -21,6 +21,11 @@ import { wxPfmBadge, isWxPlatform, WX_PFM_TITLE } from '../data/wxPfm.js';
 import { sortByPfm } from '../data/pfmSort.js';
 import { sortByDayLeft, gencodeExpireDate } from '../data/dayLeft.js';
 import DayLeft from '../components/DayLeft.jsx';
+import CartTag from '../components/CartTag.jsx';
+
+// ตัวกรองติดตะกร้า (TikTok · 11 พ.ย. 2026) — 'yes' ติด / 'no' ไม่ติด / 'none' TikTok ที่แคมเปญยังไม่เลือก · Platform อื่น = null (ไม่อยู่ในตัวเลือกไหน)
+const CART_OPTS = [['yes', '🛒 ติดตะกร้า'], ['no', 'ไม่ติดตะกร้า'], ['none', 'TikTok ที่ยังไม่ระบุ']];
+const cartBucket = r => (r.cart === true ? 'yes' : r.cart === false ? 'no' : r.platform === 'TikTok' ? 'none' : null);
 
 
 // คอลัมน์ "สถานะ" กลับเป็นปุ่ม ✓ ยิงแล้ว / ยังไม่ยิง แบบเดิม (ผู้ใช้สั่ง 12 ต.ค. 2026 — เลิกช่อง "หลักฐานการเริ่มยิง" + หน้าต่างยืนยัน)
@@ -351,6 +356,8 @@ function AdRow({ row, onSaved, canCost, noAd = false }) {
                 <div className="ads-name-meta">
                     <span className="ads-acc">{row.account_name}</span>
                     <span className="ads-plat">{row.platform || '—'}</span>
+                    {/* ติดตะกร้า / ไม่ติดตะกร้า (TikTok · 11 พ.ย. 2026) — ตั้งต่อชุด Content Type ในฟอร์มแคมเปญ · แคมเปญก่อนมีช่องนี้ = ไม่มีป้าย */}
+                    <CartTag value={row.cart} />
                     {clipCodes.length > 0 && (
                         <div className="ads-clip-prods" title="รหัสสินค้าที่ KOL รีวิวในคลิปนี้">
                             <ProductChips products={clipCodes} collapseAt={2} />
@@ -363,7 +370,8 @@ function AdRow({ row, onSaved, canCost, noAd = false }) {
                 {row.brand && <span className="tag">{row.brand}</span>}
             </div>
             <div className="ads-cell ads-stack">
-                {/* ทุกสีของสินค้าที่คลิปรีวิว (ระบบยิงแอดดึงค่าเดียวกันนี้ไปจากฟีด) — โชว์ 3 รหัสแรก ที่เหลือกด +N · ชี้ดูชื่อสีครบ */}
+                {/* ทุกสีของสินค้าที่คลิปรีวิว (ระบบยิงแอดดึงค่าเดียวกันนี้ไปจากฟีด) — โชว์ 3 รหัสแรก ที่เหลือกด +N · ชี้ดูชื่อสีครบ
+                    เซ็ตที่ตั้งสินค้าข้างในไว้ในหน้า Products & Targets ขึ้นเป็นสินค้าข้างใน (JNPSET1 → JNP1, JNP2, JNP3 · 11 พ.ย. 2026) */}
                 <ProductSummary value={expandProductFamilies(row.product)} max={3} />
             </div>
             {/* CAMPAIGN (อยู่หน้า TARGET) — ตั้งไว้ที่ชุด Content Type ของกลุ่ม · แคมเปญที่บันทึกก่อนมีช่องนี้จะเป็น — */}
@@ -529,6 +537,7 @@ export default function Ads() {
     const [status, setStatus] = useState('');
     const [platform, setPlatform] = useState('');
     const [late, setLate] = useState('');   // '' | ontime | warn | bad
+    const [cart, setCart] = useState('');   // '' | yes | no | none (ติดตะกร้า · ดู cartBucket)
     const [missingPerf, setMissingPerf] = useState(false);
     // เรียงตามคะแนน PFM (22 ต.ค. 2026) — คอลัมน์ STAMPED PFM 🔒 ('stamp') หรือ PFM ('live') ทีละคอลัมน์ · '' = ลำดับเดิม (วันลงงานใหม่สุดก่อน)
     // + DAY LEFT ('left' · 10 พ.ย. 2026) วัน Gencode ที่เหลือ (data/dayLeft.js)
@@ -539,7 +548,7 @@ export default function Ads() {
     const [tab, setTabState] = useState(readAdsTab);
     // เปลี่ยนแท็บ = ล้างตัวกรอง Platform / สถานะ / ระยะเวลายิง (คำค้นหาคงไว้) — ตัวกรองของอีกแท็บที่ปุ่มหายไปจะไม่ค้างจนตารางว่าง
     const setTab = t => {
-        if (t !== tab) { setPlatform(''); setStatus(''); setLate(''); }
+        if (t !== tab) { setPlatform(''); setStatus(''); setLate(''); setCart(''); }
         setTabState(t);
         try { localStorage.setItem(ADS_TAB_KEY, t); } catch { /* จำไม่ได้ก็ไม่เป็นไร */ }
     };
@@ -594,6 +603,7 @@ export default function Ads() {
         (skip === 'platform' || !platform || r.platform === platform) &&
         (skip === 'status' || !status || shownStatusOf(r) === status) &&
         (skip === 'late' || !late || lateBucket(r) === late) &&
+        (skip === 'cart' || !cart || cartBucket(r) === cart) &&
         (!missingPerf || !r.performance) &&
         matchAdsSearch(r, search);
 
@@ -617,9 +627,9 @@ export default function Ads() {
     // ปุ่ม Platform: Platform ที่เลือกค้างไว้แต่แท็บนี้ไม่มีคลิป ยังต้องมีปุ่ม (ไม่งั้นแถบหายทั้งที่ยังกรองอยู่ กดออกไม่ได้)
     const platformPick = platform && !platformOptions.includes(platform) ? [...platformOptions, platform] : platformOptions;
     // narrowed = มีตัวกรองที่ตัดแถวออกจริง (ใช้เลือกข้อความตอนตารางว่าง) · การเรียงไม่ตัดแถว แต่ปุ่มล้างตัวกรองล้างให้ด้วย
-    const narrowed = !!(platform || status || late || search.trim() || missingPerf);
+    const narrowed = !!(platform || status || late || cart || search.trim() || missingPerf);
     const hasFilter = narrowed || !!pfmSort.key;
-    const clearFilters = () => { setPlatform(''); setStatus(''); setLate(''); setSearch(''); setMissingPerf(false); setPfmSort({ key: '', dir: '' }); };
+    const clearFilters = () => { setPlatform(''); setStatus(''); setLate(''); setCart(''); setSearch(''); setMissingPerf(false); setPfmSort({ key: '', dir: '' }); };
     const pickPfmSort = key => dir => setPfmSort(dir ? { key, dir } : { key: '', dir: '' });
     const ratedCount = tabRows.filter(r => r.performance).length;
     // ค่า insight เพิ่มเติม (คำนวณจากข้อมูลที่มี)
@@ -814,6 +824,10 @@ export default function Ads() {
                                     <ColumnFilter label="Platform" value={platform} onPick={setPlatform}
                                         options={[{ value: '', label: 'ทุก Platform', count: countIf('platform', () => true) },
                                         ...platformOptions.map(p => ({ value: p, label: p, count: countIf('platform', r => r.platform === p) }))]} />
+                                    {/* ติดตะกร้า (TikTok · 11 พ.ย. 2026) — ปุ่ม 🛒 แยกจาก ▾ ของ Platform */}
+                                    <ColumnFilter label="ตะกร้า" icon="🛒" value={cart} onPick={setCart}
+                                        options={[{ value: '', label: 'ทั้งหมด', count: countIf('cart', () => true) },
+                                        ...CART_OPTS.map(([v, l]) => ({ value: v, label: l, count: countIf('cart', r => cartBucket(r) === v) }))]} />
                                 </span>
                                 <span>BRANDS</span><span>PRODUCTS</span><span>CAMPAIGN</span><span>TARGET</span><span>CONTENT TYPE</span><span>FORMAT</span>
                                 <span>GENCODE</span><span>ID POST</span><span>วันลงโพสต์</span><span>วันเริ่มยิง</span>

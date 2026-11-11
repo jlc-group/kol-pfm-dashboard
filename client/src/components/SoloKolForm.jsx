@@ -5,7 +5,7 @@ import { useAuth } from '../auth/AuthContext.jsx';
 import { visibleBrands } from '../data/brands.js';
 import { pickableProducts, targetsForProducts, allTargetsForProducts } from '../data/products.js';
 import { useCatalogVersion } from '../data/useCatalog.js';
-import { contentTypesFor, CAMPAIGN_TYPES, SOCIAL_CAMPAIGNS, campaignIsCtype, needCampaign, needTarget } from '../data/adGroups.js';
+import { contentTypesFor, CAMPAIGN_TYPES, SOCIAL_CAMPAIGNS, campaignIsCtype, needCampaign, needTarget, needCart, cartValue } from '../data/adGroups.js';
 import { CONTENT_FORMATS } from '../data/contentFormats.js';
 import {
     SOLO_PLATFORMS, SOLO_TIERS, SOLO_MEDIA, SOLO_CODE_EXPIRE, SOLO_MAX_CLIPS,
@@ -44,7 +44,9 @@ const LINK_PH = {
 // ค่าต่อ Platform เก็บเป็น map ตามชื่อ Platform — เอาติ๊กออกแล้วติ๊กกลับ ค่าที่กรอกไว้ยังอยู่ · ตรวจ/ส่งเฉพาะ Platform ที่เลือก
 // autoName = ชื่อบัญชีที่เติมจากลิงก์ช่องรอบล่าสุด (accWithLink — ไม่ทับชื่อที่พิมพ์เอง) · ไม่ส่งไป server
 const ACC_EMPTY = { account_name: '', link_account: '', followers: '', tier: '', tierTouched: false, autoName: '' };
-const AD_EMPTY = { content_type: '', campaign: '', media_type: '', content_format: '', target: [] };
+// cart = ติดตะกร้า (TikTok · 11 พ.ย. 2026) true / false · null = ยังไม่เลือก (บังคับเลือก)
+const AD_EMPTY = { content_type: '', campaign: '', media_type: '', content_format: '', target: [], cart: null };
+const CART_CHOICES = ['ติดตะกร้า', 'ไม่ติดตะกร้า'];
 // 1 การ์ด = 1 KOL — เลือก Platform ในการ์ดของตัวเอง (ผู้ใช้สั่ง 5 ต.ค. 2026: เดิมเลือกครั้งเดียวด้านบน + Account แล้วติด TikTok เปลี่ยนไม่ได้)
 // platforms = Platform ของ KOL คนนี้ · acc = บัญชีต่อ Platform (เอาติ๊กออกแล้วติ๊กกลับ ค่าที่กรอกไว้ยังอยู่ · ตรวจ/ส่งเฉพาะที่เลือก)
 // key ไว้ผูกการ์ดกับ React และเอาคนที่บันทึกแล้วออกจากฟอร์ม
@@ -53,7 +55,7 @@ let kolSeq = 0;
 const newKol = (platforms = ['TikTok'], acc = {}) => ({ key: 'kol' + (++kolSeq), platforms: [...platforms], acc });
 const KOL_EMPTY = (platforms = ['TikTok']) => ({ kols: [newKol(platforms)], contact_mode: 'self', agency: '' });
 const JOB_EMPTY = brand => ({
-    brand, products: [], clips: 1, clip_names: ['', '', '', '', ''], fee: {}, owner: readLastOwner(),
+    brand, products: [], clips: 1, clip_names: Array(SOLO_MAX_CLIPS).fill(''), fee: {}, owner: readLastOwner(),
     ad: {}, code_expire: 60, no_gencode: false, concept: '', brief_link: '', note: ''
 });
 // Facebook / Instagram เลือก Campaign (Awareness / Engagement / Reels) ที่ช่อง Content Type
@@ -116,7 +118,9 @@ function fromProject(p, clipNames) {
             // Facebook / Instagram: Campaign = Content Type (เก็บไว้ทั้งสองช่องของชุด)
             content_type: set.content_type || (social ? set.campaign : '') || '', campaign: social ? '' : (set.campaign || ''),
             media_type: set.media_type || '', content_format: set.content_format || '',
-            target: needTarget(pl) && Array.isArray(b.target) ? [...b.target] : []
+            target: needTarget(pl) && Array.isArray(b.target) ? [...b.target] : [],
+            // การจ้างที่บันทึกก่อนมีช่องนี้ = null → ต้องเลือกก่อนบันทึก
+            cart: needCart(pl) ? cartValue(set.cart) : null
         };
     });
     // ช่องทางติดต่อไม่อยู่ในฟอร์มแล้ว — เก็บค่าเดิมไว้ส่งกลับ (server เขียนทุกครั้ง · Agency เดิมต้องไม่กลายเป็นติดต่อเอง)
@@ -126,7 +130,7 @@ function fromProject(p, clipNames) {
     };
     const j = {
         brand: p.brand || '', products: [...(g.products || s.products || [])],
-        clips, clip_names: [0, 1, 2, 3, 4].map(i => (clips > 1 ? String(clipNames[i] || '') : '')),
+        clips, clip_names: Array.from({ length: SOLO_MAX_CLIPS }, (_, i) => (clips > 1 ? String(clipNames[i] || '') : '')),
         fee: {}, owner: p.owner || '', ad,
         code_expire: Number(g.code_expire) || 60, no_gencode: g.no_gencode === true,
         concept: g.concept || '', brief_link: p.brief_link || '', note: p.objective || ''
@@ -337,6 +341,7 @@ export default function SoloKolForm({ onClose, onSaved, project = null, clipName
             // ต้องเป็นตัวเลือกของ Platform นี้ — กันค่าแปลกที่มองไม่เห็นในปุ่มหลุดไปบันทึก
             if (!d.content_type || !ctypeOptionsOf(p).includes(d.content_type)) e['ct_' + p] = tag(p, campaignIsCtype(p) ? 'เลือก Campaign' : 'เลือก Content Type');
             if (targetOptionsOf(p).length && !d.target.length) e['tg_' + p] = tag(p, 'เลือก Target อย่างน้อย 1 กลุ่ม (หน้า Ads และระบบยิงแอดใช้ค่านี้)');
+            if (needCart(p) && cartValue(d.cart) === null) e['cart_' + p] = tag(p, 'เลือก ติดตะกร้า / ไม่ติดตะกร้า (หน้า Ads ขึ้นป้ายให้คนยิงแอด)');
         });
         return e;
     }
@@ -388,7 +393,9 @@ export default function SoloKolForm({ onClose, onSaved, project = null, clipName
                 // Facebook/Instagram: Campaign = Content Type · TikTok: Campaign แยกช่อง (ไม่บังคับ) · Platform อื่นไม่มี Campaign
                 campaign: social ? d.content_type : (needCampaign(p) ? d.campaign : ''),
                 media_type: d.media_type, content_format: d.content_format,
-                target: needTarget(p) ? d.target : []
+                target: needTarget(p) ? d.target : [],
+                // ติดตะกร้า — ส่งเฉพาะ Platform ที่ใช้ (TikTok)
+                ...(needCart(p) ? { cart: cartValue(d.cart) } : {})
             };
         });
         const shared = {
@@ -648,7 +655,8 @@ export default function SoloKolForm({ onClose, onSaved, project = null, clipName
                     <section className="qf-sec">
                         <h3 className="qf-sec-head"><span className="qf-num">3</span>ข้อมูลยิงแอด
                             <span className="qf-sec-sub">
-                                {anyTarget ? 'Content Type / Campaign และ Target บังคับ (ระบบยิงแอดใช้)' : 'Content Type / Campaign บังคับ'} · ที่เหลือไม่บังคับ
+                                {anyTarget ? 'Content Type / Campaign และ Target บังคับ (ระบบยิงแอดใช้)' : 'Content Type / Campaign บังคับ'}
+                                {plats.some(needCart) ? ' · TikTok เลือกติดตะกร้าด้วย' : ''} · ที่เหลือไม่บังคับ
                             </span></h3>
                         {plats.map(p => {
                             const d = adOf(p);
@@ -666,6 +674,14 @@ export default function SoloKolForm({ onClose, onSaved, project = null, clipName
                                         <Field label="Target" req={tOpts.length > 0} err={E['tg_' + p]} labelId={id('tg-' + p)}
                                             hint={j.products.length ? (tOpts.length ? '' : 'สินค้าที่เลือกไม่มี Target ให้เลือก') : 'เลือกสินค้าก่อน'}>
                                             {tChips.length > 0 && <Chips options={tChips} value={d.target} onPick={t => toggleTarget(p, t)} multi labelId={id('tg-' + p)} />}
+                                        </Field>
+                                    )}
+                                    {/* ติดตะกร้า (TikTok · 11 พ.ย. 2026) — บังคับเลือก · หน้า Ads ขึ้นป้ายให้คนยิงแอด */}
+                                    {needCart(p) && (
+                                        <Field label="ตะกร้า" req err={E['cart_' + p]} labelId={id('cart-' + p)}>
+                                            <Chips options={CART_CHOICES} labelId={id('cart-' + p)}
+                                                value={d.cart === true ? CART_CHOICES[0] : d.cart === false ? CART_CHOICES[1] : ''}
+                                                onPick={v => upAd(p, { cart: v === CART_CHOICES[0] })} />
                                         </Field>
                                     )}
                                     {needCampaign(p) && !social && (

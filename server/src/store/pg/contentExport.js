@@ -54,6 +54,7 @@ async function listCandidates({ brand, limit = 100, updatedSince = null } = {}) 
     );
 
     // สีใหม่ที่ Admin เพิ่มในหน้า Products & Targets (7 ต.ค. 2026) กางครบเหมือนสีตั้งต้น · อ่านคลังไม่ได้ = ใช้กลุ่มตั้งต้น (ฟีดไม่ล่ม)
+    // + เซ็ตที่ตั้งสินค้าข้างในไว้ (11 พ.ย. 2026) กางเป็นสินค้าข้างใน เช่น JNPSET1 → "JNP1, JNP2, JNP3"
     let familyOf;
     try { familyOf = familyMapWith(await catalog.familyProducts()); } catch { familyOf = undefined; }
 
@@ -63,7 +64,7 @@ async function listCandidates({ brand, limit = 100, updatedSince = null } = {}) 
         // Target ยังเลือกจากรหัสที่ KOL รีวิวจริง (Target ตั้งต่อสินค้าได้) — กางทุกสีแค่ช่อง product
         const target = resolveGroupTarget(grp, row.platform, row.product);
         // product = ทุกสีของสินค้าที่คลิปรีวิว (ระบบยิงแอดยิงครอบทุกสี) เหมือนช่อง PRODUCTS หน้า Ads
-        // เช่น คลิปรีวิว BTA4-01 → "BTA4-00, BTA4-01, ..., BTA4-07" · สินค้าที่ไม่มีหลายสีส่งตามเดิม
+        // เช่น คลิปรีวิว BTA4-01 → "BTA4-00, BTA4-01, ..., BTA4-07" · คลิปรีวิว JNPSET1 (เซ็ต) → "JNP1, JNP2, JNP3" · สินค้าอื่นส่งตามเดิม
         const products = expandProductFamilies(row.product || resolveGroupProducts(grp, row.platform), familyOf);
         return {
         submission_id: row.submission_id,

@@ -12,9 +12,10 @@ import ProductChips, { ProductSummary } from '../components/ProductChips.jsx';
 import GroupNeedHead, { groupClipNeed } from '../components/GroupNeedHead.jsx';
 import { productLabel } from '../data/products.js';
 import {
-    groupPlatforms, allocsInScope, contentTypesOf, mediaFor,
+    groupPlatforms, allocsInScope, contentTypesOf, mediaFor, cartFor,
     tiersOf, productsFor, quotaOf, contentCells, cellKeyOf, cellKey, productKolProgress, conceptOneLine
 } from '../data/adGroups.js';
+import CartTag from '../components/CartTag.jsx';
 import { collapseByPerson, countPeople } from '../data/clips.js';
 import { NO_GROUP, normalizeGroupSel, groupFilterOptions } from '../data/groupFilter.js';
 import ProductFilter from '../components/ProductFilter.jsx';
@@ -310,6 +311,8 @@ function TypeBox({ token, group, platform, contentType, saved, total, quota, age
                     : <span className="ctype-none">— ยังไม่ได้ตั้ง Content Type —</span>}
                 {media.media_type && <span className="proc-ctype-chip media">{media.media_type}</span>}
                 {splitCsv(media.content_format).map(x => <span className="proc-ctype-chip fmt" key={x}>{x}</span>)}
+                {/* ติดตะกร้า (TikTok · 11 พ.ย. 2026) — บอกเอเจนซี่ว่าชุดนี้ KOL ต้องติดตะกร้าในคลิปหรือไม่ */}
+                <CartTag value={cartFor(group, platform, contentType)} agency />
                 <span className="ag-tb-count">{total != null ? total : saved.length}<span>/{quota || '—'}</span> คน</span>
             </div>
             {hidden > 0 && (
