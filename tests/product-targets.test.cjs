@@ -87,18 +87,19 @@ test('toBlocks keeps product_targets and marks older blocks as not split yet', (
 
 test('legacy union target is split per product by each product\'s own options', () => {
     // L3 = กันแดด, L4 = ฝ้า (TARGET_MAP ใน client/src/data/products.js)
+    // ฟอร์มเก็บ Target ต่อแถว (row_targets · แถวสินค้ารุ่น 2 — 12 พ.ย. 2026) · 1 สินค้าเดี่ยว = 1 แถว key = รหัส
     const sun = web.withProductTargets({ platform: 'TikTok', products: ['L3'], target: [] });
-    assert.deepEqual(sun.product_targets, { L3: [] });
+    assert.deepEqual(sun.row_targets, { L3: [] });
     return import(pathToFileURL(path.join(__dirname, '../client/src/data/products.js')).href).then(({ targetsForProduct }) => {
         const [s1] = targetsForProduct('L3');
         const [m1, m2] = targetsForProduct('L4');
         const b = web.withProductTargets({ platform: 'TikTok', products: ['L3', 'L4'], target: [s1, m2, 'ไม่มีในรายการ'] });
-        assert.deepEqual(b.product_targets, { L3: [s1], L4: [m2] });
+        assert.deepEqual(b.row_targets, { L3: [s1], L4: [m2] });
         assert.deepEqual(b.legacy_orphans, ['ไม่มีในรายการ']);
-        assert.ok(!b.product_targets.L4.includes(m1));
-        // บันทึกแบบใหม่แล้ว = เชื่อค่าที่บันทึก ไม่แบ่งซ้ำ และไม่มีคำเตือน
+        assert.ok(!b.row_targets.L4.includes(m1));
+        // บันทึกแบบใหม่แล้ว (มี Target ต่อสินค้า) = เชื่อค่าที่บันทึก ไม่แบ่งซ้ำ และไม่มีคำเตือน
         const saved = web.withProductTargets({ platform: 'TikTok', products: ['L3', 'L4'], target: [s1, m1], product_targets: { L3: [], L4: [m1] } });
-        assert.deepEqual(saved.product_targets, { L3: [], L4: [m1] });
+        assert.deepEqual(saved.row_targets, { L3: [], L4: [m1] });
         assert.deepEqual(saved.legacy_orphans, []);
     });
 });

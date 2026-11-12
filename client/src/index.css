@@ -3263,6 +3263,7 @@ a.ads-thumb:focus-visible { outline: 2px solid var(--mint-dark); outline-offset:
 .pbd-make:not(:disabled) { border-style: solid; border-color: #a78bfa; background: #f3e8ff; }
 .pbd-make:disabled { opacity: .6; cursor: default; }
 .pbd-hint { font-size: 11px; color: #7d938d; }
+.pbd-hint.warn { color: #b45309; font-weight: 700; }   /* ชุดที่จะรวมซ้ำกับชุดที่มีอยู่ (12 พ.ย. 2026) */
 .pbd-pick { flex: 0 0 auto; display: inline-flex; align-items: center; padding-top: 5px; }
 /* .modal input ตั้ง width 100% + padding ให้ทุกช่อง — checkbox ต้องคืนขนาดปกติ */
 .pbd-pick input[type="checkbox"] { width: 14px; height: 14px; margin: 0; padding: 0; cursor: pointer; accent-color: #7c3aed; box-shadow: none; }

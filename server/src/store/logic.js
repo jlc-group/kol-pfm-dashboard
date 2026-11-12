@@ -740,18 +740,53 @@ function productCodesIn(value, known) {
     return out;
 }
 
-// Target ของคลิป: บล็อกที่ตั้ง Target แยกต่อสินค้า (product_targets) → เอาเฉพาะของสินค้าในคลิป
-// ไม่รู้สินค้า / ไม่มีข้อมูลต่อสินค้า → Target รวมของ Platform ตามเดิม · ต้องตรงกับ targetFor ฝั่งหน้าเว็บ
+// Target ของแถวที่บันทึกไว้ เทียบกับ Target ต่อรหัส (product_targets) — ปกติเท่ากัน (ฟอร์มเขียนพร้อมกัน) คืน row_targets ตามเดิม
+// ต่างกัน = product_targets ถูกแก้จากที่อื่น (server รุ่นก่อนที่ยังไม่รีสตาร์ตแก้ชื่อ Target — ผลรีวิว 12 พ.ย.)
+//   → ชื่อที่ไม่อยู่ใน Target ต่อรหัสของรหัสไหนในแถวแล้วตัดทิ้ง · แถวเดี่ยวเติมชื่อจาก Target ต่อรหัสที่ไม่ใช่ของแถวอื่น
+// ต้องตรงกับ savedRowTargets ฝั่งหน้าเว็บ (client/src/data/adGroups.js)
+function savedRowTargets(b, rows, r) {
+    const isMap = v => !!v && typeof v === 'object' && !Array.isArray(v);
+    const list = v => (Array.isArray(v) ? v : (v ? [v] : [])).filter(Boolean);
+    const rt = isMap(b.row_targets) ? b.row_targets : {};
+    const own = list(rt[r.key]);
+    const pt = isMap(b.product_targets) ? b.product_targets : null;
+    if (!pt) return own;
+    const ok = own.filter(t => r.codes.some(c => list(pt[c]).includes(t)));
+    if (ok.length === own.length) return own;
+    if (r.codes.length !== 1) return ok;
+    const c = r.codes[0];
+    const others = new Set(rows.filter(x => x.key !== r.key && x.codes.includes(c)).flatMap(x => list(rt[x.key])));
+    return [...new Set([...ok, ...list(pt[c]).filter(t => !others.has(t))])];
+}
+
+// Target ของคลิปจากแถวสินค้า — รุ่น 2 (มี singles · 12 พ.ย. 2026): แถวที่รหัสในคลิปตรงกันพอดี (row_targets) ก่อน
+// ไม่ตรงแถวไหน / แถวนั้นยังไม่มี Target / ข้อมูลรุ่นเก่า = รวม Target ต่อรหัสของทุกรหัสในคลิป (product_targets — กติกาเดิม)
+// คืน [] = ไม่รู้ · ต้องตรงกับ clipRowTargets ฝั่งหน้าเว็บ (client/src/data/adGroups.js)
+function clipRowTargets(b, product) {
+    const isMap = v => !!v && typeof v === 'object' && !Array.isArray(v);
+    const list = v => (Array.isArray(v) ? v : (v ? [v] : [])).filter(Boolean);
+    const pt = isMap(b.product_targets) ? b.product_targets : null;
+    const v2 = hasRowModel(b) && isMap(b.row_targets);
+    if (!product || (!pt && !v2)) return [];
+    const known = v2 ? [...new Set([...(Array.isArray(b.products) ? b.products : []).map(String), ...(pt ? Object.keys(pt) : [])])] : Object.keys(pt);
+    const codes = productCodesIn(product, known);
+    if (!codes.length) return [];
+    if (v2) {
+        const rows = blockRows(b);
+        const row = rows.find(r => r.codes.length === codes.length && r.codes.every(c => codes.includes(c)));
+        const own = row ? savedRowTargets(b, rows, row) : [];
+        if (own.length) return own;
+    }
+    return pt ? [...new Set(codes.flatMap(c => list(pt[c])))] : [];
+}
+
+// Target ของคลิป: แถวสินค้าที่คลิปอยู่ (clipRowTargets) → ไม่รู้ = Target รวมของ Platform ตามเดิม · ต้องตรงกับ targetFor ฝั่งหน้าเว็บ
 function resolveGroupTarget(g, platform, product) {
     if (!g) return null;
     const b = (g.blocks || []).find(x => x.platform === platform);
     if (b) {
-        const pt = b.product_targets;
-        if (product && pt && typeof pt === 'object' && !Array.isArray(pt)) {
-            const picked = [...new Set(productCodesIn(product, Object.keys(pt))
-                .flatMap(c => (Array.isArray(pt[c]) ? pt[c] : (pt[c] ? [pt[c]] : [])).filter(Boolean)))];
-            if (picked.length) return picked;
-        }
+        const picked = clipRowTargets(b, product);
+        if (picked.length) return picked;
         const t = b.target;
         return (Array.isArray(t) ? t.length : !!t) ? t : null;
     }
@@ -851,34 +886,89 @@ function carryProductConcepts(incoming, stored) {
     });
 }
 
-// ชุดสินค้า (bundles) — สินค้าที่ KOL 1 คนรีวิวรวมในคลิปเดียว [['L8A','L8B'], ...] ต่อ Platform
-// 1 รหัสอยู่ได้ชุดเดียว · เฉพาะรหัสที่อยู่ในบล็อก · ชุดต้องมีอย่างน้อย 2 รหัส · ต้องตรงกับ blockBundles ฝั่งหน้าเว็บ (client/src/data/adGroups.js)
-// งบ / จำนวนคน / Concept ของชุดเก็บที่หัวชุด (รหัสแรก) ตัวเดียว · Target ยังเก็บต่อสินค้า (ทุกรหัสในชุดได้ชุดเดียวกัน)
+// ---------- แถวสินค้า: สินค้าเดี่ยว + ชุดสินค้า (KOL 1 คนรีวิวหลายสินค้ารวมในคลิปเดียว) ต่อ Platform ----------
+// สินค้าเดียวกันอยู่ได้หลายแถว (ผู้ใช้สั่ง 12 พ.ย. 2026): แถว L10 เดี่ยว + ชุด L10 + L20 + ชุด L10 + L23 พร้อมกัน — แต่ละแถวมี คน / งบ / Concept / Target ของตัวเอง
+// รุ่น 2 (มี singles): singles = รหัสที่มีแถวเดี่ยว · bundles ซ้อนกันได้ (ชุดรหัสเดียวกันซ้ำ = ตัดทิ้ง) · ค่าของแถวเก็บที่ key ของแถว
+//   key: เดี่ยว = รหัส · ชุด = รหัสเรียงแล้วต่อด้วย + ("L10+L20") · row_targets { key: [Target] } · product_targets = รวมของทุกแถวที่มีรหัสนั้น
+// รุ่นเก่า (ไม่มี singles — แคมเปญก่อน 12 พ.ย. / KOL รายคน): 1 รหัสอยู่ได้ชุดเดียว · ค่าของชุดเก็บที่หัวชุด (รหัสแรก) · Target เก็บต่อรหัส
+// ต้องตรงกับ client/src/data/adGroups.js (blockBundles / blockSingles / productRows / rowKeyOf) ทุกตัวอักษร — tests/product-row-overlap.test.cjs เทียบสองฝั่ง
+const hasRowModel = b => !!b && Array.isArray(b.singles);
+const rowKeyOf = codes => (codes.length === 1 ? String(codes[0]) : codes.map(String).sort().join('+'));
+// products = ใช้รายการนี้แทน b.products (carryProductBundles ตรวจชุดเดิมกับสินค้าที่ส่งมา)
 function blockBundles(b, products) {
-    const list = (Array.isArray(products) ? products : (b && Array.isArray(b.products) ? b.products : [])).map(String);
+    const list = [...new Set((Array.isArray(products) ? products : (b && Array.isArray(b.products) ? b.products : [])).map(String))];
+    const v2 = hasRowModel(b);
     const used = new Set();
+    const seen = new Set();
     const out = [];
     (b && Array.isArray(b.bundles) ? b.bundles : []).forEach(raw => {
         if (!Array.isArray(raw)) return;
         const codes = [];
-        raw.map(String).forEach(c => { if (list.includes(c) && !used.has(c) && !codes.includes(c)) codes.push(c); });
+        raw.map(String).forEach(c => { if (list.includes(c) && (v2 || !used.has(c)) && !codes.includes(c)) codes.push(c); });
         if (codes.length < 2) return;
-        codes.forEach(c => used.add(c));
+        if (v2) {
+            const k = rowKeyOf(codes);
+            if (seen.has(k)) return;
+            seen.add(k);
+        } else codes.forEach(c => used.add(c));
         out.push(codes);
     });
     return out;
 }
-// รหัสที่เก็บค่าของแต่ละแถวสินค้า (สินค้าเดี่ยว = ตัวเอง · ชุด = หัวชุดครั้งเดียว) ตามลำดับสินค้า — เหมือน productRows ฝั่งหน้าเว็บ
-function rowHeads(b) {
-    const products = b && Array.isArray(b.products) ? b.products.map(String) : [];
-    const bundles = blockBundles(b, products);
-    const heads = [];
-    products.forEach(c => {
-        const bd = bundles.find(x => x.includes(c));
-        const h = bd ? bd[0] : c;
-        if (!heads.includes(h)) heads.push(h);
+// รหัสที่มีแถวเดี่ยว — รุ่นเก่า = ไม่อยู่ในชุดไหน · รุ่น 2 = อยู่ใน singles + รหัสที่ไม่อยู่ในแถวไหนเลย
+function blockSingles(b) {
+    const products = [...new Set((b && Array.isArray(b.products) ? b.products : []).map(String))];
+    const inBundle = new Set(blockBundles(b).flat());
+    if (!hasRowModel(b)) return products.filter(c => !inBundle.has(c));
+    const listed = new Set(b.singles.map(String));
+    return products.filter(c => listed.has(c) || !inBundle.has(c));
+}
+// แถวสินค้าตามลำดับสินค้า → [{ key, head, codes, label, bundle }] — เหมือน productRows ฝั่งหน้าเว็บ
+function blockRows(b) {
+    const products = [...new Set((b && Array.isArray(b.products) ? b.products : []).map(String))];
+    const bundles = blockBundles(b);
+    const singles = new Set(blockSingles(b));
+    const rows = [];
+    const doneSingle = new Set();
+    const doneBundle = new Set();
+    products.forEach(code => {
+        if (singles.has(code) && !doneSingle.has(code)) {
+            doneSingle.add(code);
+            rows.push({ key: code, head: code, codes: [code], label: code, bundle: false });
+        }
+        bundles.forEach((bd, k) => {
+            if (doneBundle.has(k) || !bd.includes(code)) return;
+            doneBundle.add(k);
+            rows.push({ key: rowKeyOf(bd), head: bd[0], codes: bd, label: bd.join(' + '), bundle: true });
+        });
     });
-    return heads;
+    return rows;
+}
+// ที่เก็บค่าของแต่ละแถว (product_kols / product_budgets / product_concepts) ตามลำดับแถว — รุ่น 2 = key · รุ่นเก่า = หัวชุด (เดี่ยว = รหัส)
+function rowHeads(b) {
+    const v2 = hasRowModel(b);
+    const out = [];
+    blockRows(b).forEach(r => { const k = v2 ? r.key : r.head; if (!out.includes(k)) out.push(k); });
+    return out;
+}
+
+// แท็บฟอร์มแคมเปญที่เปิดค้างจากก่อน deploy (ไม่รู้จักแถวรุ่น 2) — ส่งบล็อกมาโดยไม่มี singles
+// ถ้าบล็อกเดียวกันในฐานเป็นรุ่น 2 แล้ว (มี singles) บันทึกต่อจะทำให้แถวที่ซ้อนกัน (เดี่ยว + ชุด / หลายชุด) และค่าของแต่ละแถวหาย
+// → คืนชื่อ "กลุ่มที่ N · Platform" ที่ชนกัน ให้ route ตอบ 409 บอกให้กด F5 (ไม่บันทึกอะไร) · ไม่ชน = []
+function staleRowBlocks(incoming, stored) {
+    if (!Array.isArray(incoming) || !Array.isArray(stored)) return [];
+    const out = [];
+    incoming.forEach((g, gi) => {
+        if (!g || !Array.isArray(g.blocks) || !g.key) return;
+        const old = stored.find(s => s && s.key === g.key);
+        if (!old || !Array.isArray(old.blocks)) return;
+        g.blocks.forEach(b => {
+            if (!b || hasRowModel(b)) return;
+            const ob = old.blocks.find(x => x && x.platform === b.platform);
+            if (ob && hasRowModel(ob)) out.push(`กลุ่มที่ ${gi + 1} · ${b.platform}`);
+        });
+    });
+    return out;
 }
 
 // ชุดสินค้า: แท็บที่เปิดค้างจากก่อน deploy ส่งบล็อกมาโดยไม่มี bundles (ฟอร์มรุ่นใหม่ส่งอาเรย์เสมอ ว่าง = ไม่มีชุด)
@@ -1365,7 +1455,7 @@ module.exports = {
     PERSON_FIELDS, personPatch,
     resolveInside, sameInstant, mergeHireItems, mergeBriefFiles, cleanFee, cleanHeadcount, safeId, safeSlug,
     linkGroupPlatforms, resolveGroupClips, resolveGroupTarget, productCodesIn, carryProductTargets, carryProductBudgets, carryProductConcepts, carryProductKols,
-    carryProductBundles, blockBundles,
+    carryProductBundles, blockBundles, blockSingles, blockRows, rowKeyOf, hasRowModel, staleRowBlocks, clipRowTargets,
     groupNoGencode, postNoGencode, carryNoGencode, carryCart, gencodeDays, gencodeDayLeft, gencodeExpireDate,
     resolveGroupProducts, resolveGroupCtype, resolveGroupMedia, resolveGroupCampaign, resolveGroupCart,
     engagementOf, maybeStamp, stampWaitReason, stampFeeOnly, normalizeStamp,

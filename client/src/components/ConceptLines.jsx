@@ -20,7 +20,7 @@ export default function ConceptLines({ group, products, platforms, className = '
                     <span className="concept-codes">
                         {r.main && own.length
                             ? <span className="concept-code rest" title={r.items.map(it => it.label).join(', ')}>สินค้าอื่น ๆ ({r.items.length})</span>
-                            : r.items.map(it => <span className="concept-code" key={it.label} title={productLabel(it.code)}>{it.label}</span>)}
+                            : r.items.map(it => <span className="concept-code" key={it.label} title={(it.codes || [it.code]).map(productLabel).join('\n')}>{it.label}</span>)}
                     </span>
                     {/* 1 สินค้ามีได้หลาย Concept — แยกบรรทัดให้อ่านง่าย มีเลขนำเมื่อมีตั้งแต่ 2 อัน
                         คอนเซปต์เดียว (ข้อมูลเดิมทั้งหมด) ต้องออกมาหน้าตาเดิมเป๊ะ จึงไม่ขึ้นบรรทัดและป้ายต่อท้ายเหมือนเดิม */}

@@ -100,7 +100,8 @@ export const emptySet = (over = {}) => ({ campaign: '', content_type: '', media_
 // concept_split / product_concepts = Concept แยกต่อสินค้าของ Platform นี้ (ว่าง = ใช้ Concept หลักของกลุ่ม)
 // kol_split / product_kols = จำนวน KOL แยกต่อสินค้าของ Platform นี้ { รหัส: จำนวนคน } (ผลรวม = จำนวนคนจากแถว Tier พอดี)
 // bundles = ชุดสินค้าที่ KOL 1 คนรีวิวรวมในคลิปเดียว [['L8A','L8B'], ...] (ดู blockBundles)
-export const emptyBlock = platform => ({ platform, target: [], product_targets: {}, budget: '', budget_mode: 'total', product_budgets: {}, concept_split: false, product_concepts: {}, kol_split: false, product_kols: {}, bundles: [], products: [], clips: [], sets: [emptySet()] });
+// singles / row_targets = แถวสินค้ารุ่น 2 (สินค้าเดียวกันอยู่ได้หลายแถว — ดู productRows) · บล็อกใหม่เป็นรุ่น 2 เสมอ
+export const emptyBlock = platform => ({ platform, target: [], product_targets: {}, row_targets: {}, budget: '', budget_mode: 'total', product_budgets: {}, concept_split: false, product_concepts: {}, kol_split: false, product_kols: {}, singles: [], bundles: [], products: [], clips: [], sets: [emptySet()] });
 
 export const setKol = s => (s.tiers || []).reduce((n, t) => n + (Number(t.kols) || 0), 0);
 export const blockKol = b => (b.sets || []).reduce((n, s) => n + setKol(s), 0);
@@ -162,6 +163,8 @@ export function toBlocks(g, platformCsv) {
                 product_kols: isMap(b.product_kols) ? { ...b.product_kols } : {},
                 // ชุดสินค้า (รีวิวรวมในคลิปเดียว) — ข้อมูลเก่าที่ไม่มีช่องนี้ = ไม่มีชุด ทุกสินค้าเป็นแถวเดี่ยว
                 bundles: Array.isArray(b.bundles) ? b.bundles.filter(Array.isArray).map(x => x.map(String)) : [],
+                // แถวสินค้ารุ่น 2 (สินค้าเดียวกันอยู่ได้หลายแถว · 12 พ.ย. 2026) — ไม่มี = ข้อมูลรุ่นเก่า (upgradeRows แปลงให้ด้านล่าง)
+                ...(Array.isArray(b.singles) ? { singles: b.singles.map(String), row_targets: isMap(b.row_targets) ? { ...b.row_targets } : {} } : {}),
                 products: [...(b.products || [])],
                 clips: [...(b.clips || [])],
                 sets: (b.sets && b.sets.length ? b.sets : [emptySet()]).map(s => ({
@@ -178,7 +181,8 @@ export function toBlocks(g, platformCsv) {
         });
         // บล็อกที่บันทึกไว้ก่อนมีช่องงบ -> เกลี่ยงบของกลุ่มลงไปให้ ไม่ให้กลายเป็น 0
         // บล็อกที่บันทึกก่อนมีช่องสินค้า/คลิป -> ยกของกลุ่มลงไปให้
-        const filled = kept.map(b => ({
+        // แถวสินค้า: ข้อมูลรุ่นเก่าแปลงเป็นรุ่น 2 (แถวเท่าเดิม ค่าเท่าเดิม) — ทุกหน้าที่อ่านผ่าน toBlocks / ฟอร์ม ใช้รูปเดียวกัน
+        const filled = kept.map(b => upgradeRows({
             ...b,
             products: b.products.length ? b.products : [...(g.products || [])],
             clips: b.clips.length ? b.clips : [...(g.clips || [])]
@@ -210,7 +214,7 @@ export function toBlocks(g, platformCsv) {
         })]
     }));
     // ข้อมูลเก่ามีงบก้อนเดียวต่อกลุ่ม — เกลี่ยลงแต่ละ Platform ตามสัดส่วนจำนวนคน
-    return spreadBudget(legacy, g.budget);
+    return spreadBudget(legacy.map(upgradeRows), g.budget);
 }
 
 // แบนโครง 3 ชั้นออกเป็น allocations — 1 แถว = Platform + Content Type + Tier
@@ -260,147 +264,335 @@ export function productCodesIn(value, known) {
     return out;
 }
 
+// Target ของแถวที่บันทึกไว้ เทียบกับ Target ต่อรหัส (product_targets) — ใช้ตอนอ่านข้อมูลที่บันทึกแล้วเท่านั้น (ไม่ใช่ state ของฟอร์มที่กำลังแก้)
+// ปกติ product_targets = รวมของทุกแถว (packProductTargets เขียนพร้อมกัน) จึงคืน row_targets ตามเดิม
+// ต่างกัน = มีคนแก้ product_targets จากที่อื่น (server รุ่นก่อนที่ยังไม่รีสตาร์ตแก้ชื่อ Target ในหน้า Products & Targets — ผลรีวิว 12 พ.ย.)
+//   → ชื่อที่ไม่อยู่ใน Target ต่อรหัสแล้วตัดทิ้ง · แถวเดี่ยวเติมชื่อจาก Target ต่อรหัสที่ไม่ใช่ของแถวอื่น (ได้ชื่อใหม่ที่ถูกแก้แทน)
+// ต้องตรงกับ savedRowTargets ฝั่ง server (server/src/store/logic.js)
+function savedRowTargets(b, rows, r) {
+    const rt = isMap(b.row_targets) ? b.row_targets : {};
+    const own = asArr(rt[r.key]);
+    const pt = isMap(b.product_targets) ? b.product_targets : null;
+    if (!pt) return own;
+    // ชุด: ชื่อที่ยังอยู่ใน Target ต่อรหัสของรหัสไหนในชุดก็ได้ = ยังใช้ (ข้อมูลเก่าที่ Target ของแต่ละรหัสในชุดไม่เท่ากันไม่หาย)
+    const ok = own.filter(t => r.codes.some(c => asArr(pt[c]).includes(t)));
+    if (ok.length === own.length) return own;
+    if (r.codes.length !== 1) return ok;
+    const c = r.codes[0];
+    const others = new Set(rows.filter(x => x.key !== r.key && x.codes.includes(c)).flatMap(x => asArr(rt[x.key])));
+    return [...new Set([...ok, ...asArr(pt[c]).filter(t => !others.has(t))])];
+}
+
+// Target ของคลิปจากแถวสินค้า — รุ่น 2: แถวที่รหัสในคลิปตรงกันพอดี (row_targets) ก่อน
+// ไม่ตรงแถวไหน / แถวนั้นยังไม่มี Target / ข้อมูลรุ่นเก่า = รวม Target ต่อรหัสของทุกรหัสในคลิป (product_targets — กติกาเดิม)
+// คืน [] = ไม่รู้ (ผู้เรียกถอยไปใช้ Target รวมของ Platform)
+function clipRowTargets(b, product) {
+    const pt = isMap(b.product_targets) ? b.product_targets : null;
+    const v2 = hasRowModel(b) && isMap(b.row_targets);
+    if (!product || (!pt && !v2)) return [];
+    // รหัสที่รู้จัก: รุ่นเก่าใช้คีย์ของ product_targets ตามเดิม · รุ่น 2 รวมสินค้าของบล็อกด้วย (แถวจับคู่จากรายการสินค้า)
+    const known = v2 ? uniqStr([...(b.products || []), ...(pt ? Object.keys(pt) : [])]) : Object.keys(pt);
+    const codes = productCodesIn(product, known);
+    if (!codes.length) return [];
+    if (v2) {
+        const rows = productRows(b);
+        const row = rows.find(r => sameCodes(r.codes, codes));
+        const own = row ? savedRowTargets(b, rows, row) : [];
+        if (own.length) return own;
+    }
+    return pt ? [...new Set(codes.flatMap(c => asArr(pt[c])))] : [];
+}
+
 // Target ของ Platform นั้น (ของเก่าเก็บไว้ระดับกลุ่ม)
-// ส่ง product (สินค้าของคลิป) มาด้วย = เอาเฉพาะ Target ของสินค้านั้น · ไม่รู้สินค้า/ไม่มีข้อมูลต่อสินค้า = Target รวมของ Platform
+// ส่ง product (สินค้าของคลิป) มาด้วย = Target ของแถวสินค้าที่คลิปนั้นอยู่ (clipRowTargets) · ไม่รู้สินค้า/ไม่มีข้อมูลต่อสินค้า = Target รวมของ Platform
 // ต้องตรงกับ resolveGroupTarget ฝั่ง server (server/src/store/logic.js)
 export function targetFor(g, platform, product) {
     if (Array.isArray(g.blocks) && g.blocks.length) {
         const b = g.blocks.find(x => x.platform === platform);
         if (b) {
-            const pt = b.product_targets;
-            if (product && pt && typeof pt === 'object' && !Array.isArray(pt)) {
-                const codes = productCodesIn(product, Object.keys(pt));
-                const picked = [...new Set(codes.flatMap(c => asArr(pt[c])))];
-                if (picked.length) return picked;
-            }
+            const picked = clipRowTargets(b, product);
+            if (picked.length) return picked;
             return asArr(b.target);
         }
     }
     return needTarget(platform) ? asArr(g.target) : [];
 }
 
-// ฟอร์มแคมเปญ: เตรียม Target แยกต่อสินค้าของบล็อก (1 แถว = 1 สินค้า)
-// แคมเปญที่บันทึกก่อนมีแบบนี้เก็บ Target รวมก้อนเดียวต่อ Platform — แบ่งให้อัตโนมัติ:
-// สินค้าได้ Target เดิมที่อยู่ในรายการของสินค้านั้น · Target เดิมที่ไม่ตรงสินค้าไหนเลยเก็บใน legacy_orphans ไว้เตือน
-export function withProductTargets(b) {
+// ฟอร์มแคมเปญ: เตรียม Target ของแต่ละแถวสินค้า (row_targets — บล็อกผ่าน upgradeRows มาแล้ว)
+// แคมเปญที่บันทึกก่อนมี Target ต่อสินค้า (row_targets = null) เก็บ Target รวมก้อนเดียวต่อ Platform — แบ่งให้อัตโนมัติ:
+// แถวได้ Target เดิมที่อยู่ในรายการของสินค้าในแถว · Target เดิมที่ไม่ตรงแถวไหนเลยเก็บใน legacy_orphans ไว้เตือน
+export function withProductTargets(b0) {
+    const b = upgradeRows(b0);
     const union = asArr(b.target);
-    const pt0 = b.product_targets;
-    const saved = pt0 && typeof pt0 === 'object' && !Array.isArray(pt0) ? pt0 : null;
-    const pt = {};
-    (b.products || []).forEach(code => {
+    const saved = isMap(b.row_targets) ? b.row_targets : null;
+    const rows = productRows(b);
+    const rt = {};
+    rows.forEach(r => {
         // นับ Target ที่ Admin ซ่อนแล้วด้วย (หน้า Products & Targets) — แคมเปญเก่าที่เลือกไว้ไม่กลายเป็น Target ค้าง
-        pt[code] = saved ? asArr(saved[code]) : union.filter(t => allTargetsForProduct(code).includes(t));
+        // ที่บันทึกไว้ = เทียบกับ Target ต่อรหัสก่อน (savedRowTargets — กันชื่อ Target ที่ถูกแก้จากที่อื่นกลับมา)
+        rt[r.key] = saved ? savedRowTargets(b, rows, r) : union.filter(t => r.codes.some(c => allTargetsForProduct(c).includes(t)));
     });
-    const used = new Set(Object.values(pt).flat());
-    return { ...b, product_targets: pt, legacy_orphans: saved ? [] : union.filter(t => !used.has(t)) };
+    const used = new Set(Object.values(rt).flat());
+    return { ...b, row_targets: rt, legacy_orphans: saved ? [] : union.filter(t => !used.has(t)) };
 }
 
 const isMap = v => !!v && typeof v === 'object' && !Array.isArray(v);
 
-// ---------- ชุดสินค้า (Bundle) — สินค้าที่ KOL 1 คนรีวิวรวมในคลิปเดียว เช่น L8A + L8B (ต่อ Platform) ----------
-// b.bundles = [['L8A','L8B'], ...] · 1 รหัสอยู่ได้ชุดเดียว · เฉพาะรหัสที่ยังอยู่ในบล็อก · ชุดต้องมีอย่างน้อย 2 รหัส
-// แถวสินค้า (row) = สินค้าเดี่ยว หรือ ทั้งชุด → งบ / จำนวนคน / Concept ของชุดเก็บที่ "หัวชุด" (รหัสแรกของชุด) ที่เดียว รหัสอื่นในชุดไม่มีค่า
-// Target ยังเก็บต่อสินค้าเหมือนเดิม (ทุกรหัสในชุดได้ Target ชุดเดียวกัน) — targetFor / resolveGroupTarget อ่านต่อสินค้าได้เลย
-// ข้อมูลเก่าไม่มี bundles = ทุกสินค้าเป็นแถวเดี่ยว (ทุกอย่างเหมือนเดิม) · ต้องตรงกับ blockBundles ฝั่ง server (server/src/store/logic.js)
+// ---------- แถวสินค้า: สินค้าเดี่ยว + ชุดสินค้า (Bundle — KOL 1 คนรีวิวหลายสินค้ารวมในคลิปเดียว เช่น L8A + L8B) ต่อ Platform ----------
+// สินค้าเดียวกันอยู่ได้หลายแถว (ผู้ใช้สั่ง 12 พ.ย. 2026): แถว L10 เดี่ยว + ชุด L10 + L20 + ชุด L10 + L23 พร้อมกัน
+//   แต่ละแถวมี จำนวนคน / งบ / Concept / Target ของตัวเอง · คลิปนับเข้าแถวที่รหัสในช่องสินค้าตรงกันพอดี ("L10" = แถว L10 · "L10,L20" = ชุด L10 + L20)
+// รูปข้อมูลของบล็อก (รุ่น 2 — มี singles):
+//   products = รหัสทุกตัวที่อยู่ในแถวไหนก็ได้ (ไม่ซ้ำ — หน้าอื่น / server ใช้เป็น "สินค้าของ Platform" เหมือนเดิม)
+//   singles  = รหัสที่มีแถวเดี่ยวของตัวเอง · bundles = [[รหัส...], ...] ชุดละอย่างน้อย 2 รหัส ซ้อนกันได้ (ชุดรหัสเดียวกันซ้ำ = ตัดทิ้ง)
+//   ค่าของแถว (product_kols / product_budgets / product_concepts) เก็บที่ key ของแถว — เดี่ยว = รหัส · ชุด = รหัสเรียงแล้วต่อด้วย + ("L10+L20")
+//   row_targets { key: [Target] } = Target ของแต่ละแถว · product_targets { รหัส: [Target] } = รวม Target ของทุกแถวที่มีรหัสนั้น (ให้ตัวอ่านแบบต่อรหัสใช้ต่อได้)
+// ข้อมูลรุ่นเก่า (ไม่มี singles — แคมเปญก่อน 12 พ.ย. / KOL รายคน ที่ server สร้าง): 1 รหัสอยู่ได้ชุดเดียว · รหัสที่ไม่อยู่ในชุด = แถวเดี่ยว
+//   ค่าของชุดเก็บที่หัวชุด (รหัสแรก) · Target เก็บต่อรหัส (ทุกรหัสในชุดเท่ากัน) — อ่านได้ตรงเดิมทุกจุด (rowValue / rowTargetsOf) ฟอร์มแปลงเป็นรุ่น 2 ตอนเปิด (upgradeRows)
+// ต้องตรงกับ server/src/store/logic.js (blockBundles / blockSingles / blockRows / rowKeyOf) ทุกตัวอักษร — tests/product-row-overlap.test.cjs เทียบสองฝั่ง
+export const hasRowModel = b => !!b && Array.isArray(b.singles);
+export const rowKeyOf = codes => (codes.length === 1 ? String(codes[0]) : codes.map(String).sort().join('+'));
+const uniqStr = list => [...new Set((list || []).map(String))];
+const sameCodes = (a, b) => a.length === b.length && a.every(c => b.includes(c));
+
+// ชุดสินค้าของบล็อก — เฉพาะรหัสที่อยู่ในบล็อก · ชุดละอย่างน้อย 2 รหัส · รุ่นเก่า: 1 รหัสอยู่ได้ชุดเดียว (ชุดหลังที่ใช้รหัสซ้ำถูกตัดรหัสนั้น)
+// รุ่น 2: ซ้อนกันได้ แต่ชุดที่มีรหัสชุดเดียวกัน (ไม่สนลำดับ) ซ้ำ = เก็บอันแรก
 export function blockBundles(b) {
-    const products = ((b && b.products) || []).map(String);
+    const products = uniqStr(b && b.products);
+    const v2 = hasRowModel(b);
     const used = new Set();
+    const seen = new Set();
     const out = [];
     (b && Array.isArray(b.bundles) ? b.bundles : []).forEach(raw => {
         if (!Array.isArray(raw)) return;
         const codes = [];
-        raw.map(String).forEach(c => { if (products.includes(c) && !used.has(c) && !codes.includes(c)) codes.push(c); });
+        raw.map(String).forEach(c => { if (products.includes(c) && (v2 || !used.has(c)) && !codes.includes(c)) codes.push(c); });
         if (codes.length < 2) return;
-        codes.forEach(c => used.add(c));
+        if (v2) {
+            const k = rowKeyOf(codes);
+            if (seen.has(k)) return;
+            seen.add(k);
+        } else codes.forEach(c => used.add(c));
         out.push(codes);
     });
     return out;
 }
 
-// แถวสินค้าของบล็อกตามลำดับสินค้า (ชุดอยู่ตรงตำแหน่งรหัสแรกของชุดที่เจอ)
-// → [{ head, codes, label, bundle }] · label ของชุด = "L8A + L8B" · ไม่มีชุด = 1 สินค้า 1 แถวเหมือนเดิม
+// รหัสที่มีแถวเดี่ยว — รุ่นเก่า = รหัสที่ไม่อยู่ในชุดไหน · รุ่น 2 = ที่อยู่ใน singles + รหัสที่ไม่อยู่ในแถวไหนเลย (ไม่ให้สินค้าหายจากตา)
+export function blockSingles(b) {
+    const products = uniqStr(b && b.products);
+    const inBundle = new Set(blockBundles(b).flat());
+    if (!hasRowModel(b)) return products.filter(c => !inBundle.has(c));
+    const listed = new Set(b.singles.map(String));
+    return products.filter(c => listed.has(c) || !inBundle.has(c));
+}
+
+// แถวสินค้าของบล็อกตามลำดับสินค้า: ไล่รหัสตามลำดับ → แถวเดี่ยวของรหัสนั้น (ถ้ามี) แล้วชุดที่มีรหัสนั้นที่ยังไม่ได้ขึ้น
+// → [{ key, head, codes, label, bundle }] · key = ที่เก็บค่าของแถว (รุ่น 2) · head = รหัสแรกของแถว (ที่เก็บค่าของชุดในข้อมูลรุ่นเก่า)
+// label ของชุด = "L8A + L8B" · ข้อมูลรุ่นเก่าได้แถวเหมือนเดิมทุกอย่าง
 export function productRows(b) {
+    const products = uniqStr(b && b.products);
     const bundles = blockBundles(b);
+    const singles = new Set(blockSingles(b));
     const rows = [];
-    ((b && b.products) || []).forEach(code => {
-        const bd = bundles.find(x => x.includes(code));
-        if (!bd) { rows.push({ head: code, codes: [code], label: code, bundle: false }); return; }
-        if (rows.some(r => r.head === bd[0])) return;
-        rows.push({ head: bd[0], codes: bd, label: bd.join(' + '), bundle: true });
+    const doneSingle = new Set();
+    const doneBundle = new Set();
+    products.forEach(code => {
+        if (singles.has(code) && !doneSingle.has(code)) {
+            doneSingle.add(code);
+            rows.push({ key: code, head: code, codes: [code], label: code, bundle: false });
+        }
+        bundles.forEach((bd, k) => {
+            if (doneBundle.has(k) || !bd.includes(code)) return;
+            doneBundle.add(k);
+            rows.push({ key: rowKeyOf(bd), head: bd[0], codes: bd, label: bd.join(' + '), bundle: true });
+        });
     });
     return rows;
 }
 
-// รหัสที่เก็บค่าของแถวที่สินค้านี้อยู่ (อยู่ในชุด = หัวชุด · ไม่อยู่ในชุด = ตัวเอง)
-export const rowHeadOf = (b, code) => { const bd = blockBundles(b).find(x => x.includes(code)); return bd ? bd[0] : code; };
+// ที่เก็บค่าของแถว: รุ่น 2 = key · รุ่นเก่า = หัวชุด (แถวเดี่ยว key = head = รหัสอยู่แล้ว)
+const slotOf = (b, r) => (hasRowModel(b) ? r.key : r.head);
+// ค่าของแถวจาก map ต่อแถว (product_kols / product_budgets / product_concepts) — อ่านได้ทั้งสองรุ่น
+export const rowValue = (b, name, r) => (b && isMap(b[name]) ? b[name][slotOf(b, r)] : undefined);
+// Target ของแถว — รุ่น 2 = row_targets[key] · รุ่นเก่า = รวม Target ต่อรหัสของทุกรหัสในแถว (ชุดมีค่าเท่ากันทุกรหัสอยู่แล้ว)
+export function rowTargetsOf(b, r) {
+    if (hasRowModel(b) && isMap(b.row_targets)) return asArr(b.row_targets[r.key]);
+    const pt = b && isMap(b.product_targets) ? b.product_targets : {};
+    return [...new Set(r.codes.flatMap(c => asArr(pt[c])))];
+}
+// แถวที่รหัสในช่องสินค้าของคลิปตรงกันพอดี (ไม่สนลำดับ) — ไม่มี = null
+export function rowOfProduct(b, product) {
+    const codes = productCodesIn(product, uniqStr(b && b.products));
+    if (!codes.length) return null;
+    return productRows(b).find(r => sameCodes(r.codes, codes)) || null;
+}
 
-// รวมแถวที่ติ๊กเป็นชุดเดียว (ติ๊กแถวที่เป็นชุดอยู่แล้ว = เอาทั้งชุดมารวมด้วย) — ต้องได้อย่างน้อย 2 แถว ไม่งั้นคืนบล็อกเดิม
-// รหัสในชุดเรียงตามลำดับสินค้าในบล็อก → หัวชุด = ตัวแรก
-// ค่าที่ใส่ไว้ไม่หาย: งบ / จำนวนคน = ผลรวมของแถวที่รวม (ยอดรวมของ Platform เท่าเดิม) · Concept = ทุกคอนเซปต์ที่ใส่ไว้ (ไม่ซ้ำ ต่อบรรทัด)
-// Target = รวมทุก Target ที่เลือกไว้ แล้วให้ทุกรหัสในชุด
-export function makeBundle(b, codes) {
-    const want = (codes || []).map(String);
-    const picked = productRows(b).filter(r => r.codes.some(c => want.includes(c)));
-    if (picked.length < 2) return b;
-    const members = (b.products || []).filter(c => picked.some(r => r.codes.includes(c)));
-    const head = members[0];
-    const heads = picked.map(r => r.head);
-    const pb = { ...(isMap(b.product_budgets) ? b.product_budgets : {}) };
-    const pk = { ...(isMap(b.product_kols) ? b.product_kols : {}) };
-    const pc = { ...(isMap(b.product_concepts) ? b.product_concepts : {}) };
-    const pt = { ...(isMap(b.product_targets) ? b.product_targets : {}) };
-    const bsum = heads.reduce((n, h) => n + num(pb[h]), 0);
-    const ksum = heads.reduce((n, h) => n + num(pk[h]), 0);
-    const cons = [...new Set(heads.flatMap(h => conceptParts(pc[h])))];
-    const tg = [...new Set(members.flatMap(c => asArr(pt[c])))];
-    members.forEach(c => { delete pb[c]; delete pk[c]; delete pc[c]; pt[c] = [...tg]; });
-    if (bsum > 0) pb[head] = String(bsum);
-    if (ksum > 0) pk[head] = String(ksum);
-    if (cons.length) pc[head] = cons.join('\n');
-    const bundles = [...blockBundles(b).filter(x => !x.some(c => members.includes(c))), members];
-    const next = { ...b, bundles, product_budgets: pb, product_kols: pk, product_concepts: pc, product_targets: pt };
+// แปลงบล็อกรุ่นเก่าเป็นรุ่น 2 (ฟอร์มแคมเปญ / ร่าง เรียกตอนเปิด) — แถวเท่าเดิม ค่าเท่าเดิม แค่ย้ายที่เก็บ
+// ค่าของชุดย้ายจากหัวชุดไปที่ key ของแถว · Target ต่อแถว = Target ต่อรหัสเดิม (null = แคมเปญก่อนมี Target ต่อสินค้า ให้ withProductTargets แบ่งเอง)
+export function upgradeRows(b) {
+    if (!b || hasRowModel(b)) return b;
+    const rows = productRows(b);
+    const remap = name => {
+        if (!isMap(b[name])) return b[name];
+        const m = {};
+        rows.forEach(r => { const v = b[name][r.head]; if (v !== undefined) m[r.key] = v; });
+        return m;
+    };
+    return {
+        ...b,
+        singles: rows.filter(r => !r.bundle).map(r => r.key),
+        bundles: rows.filter(r => r.bundle).map(r => [...r.codes]),
+        product_kols: remap('product_kols'),
+        product_budgets: remap('product_budgets'),
+        product_concepts: remap('product_concepts'),
+        row_targets: isMap(b.product_targets) ? Object.fromEntries(rows.map(r => [r.key, rowTargetsOf(b, r)])) : null
+    };
+}
+
+// map ต่อแถว: เก็บเฉพาะแถวที่ยังอยู่ (ใช้ตอนแถวเปลี่ยน — รวมชุด / แยกชุด / เอาแถวออก)
+const keepRowValues = (b, name) => {
+    const m = isMap(b[name]) ? b[name] : {};
+    const out = {};
+    productRows(b).forEach(r => { if (m[r.key] !== undefined) out[r.key] = m[r.key]; });
+    return out;
+};
+// แถวเปลี่ยนแล้ว: เก็บเฉพาะค่าของแถวที่ยังอยู่ + งบรวม (ตอนแยกงบ) คิดใหม่
+function tidyRows(b) {
+    const next = {
+        ...b,
+        product_kols: keepRowValues(b, 'product_kols'),
+        product_budgets: keepRowValues(b, 'product_budgets'),
+        product_concepts: keepRowValues(b, 'product_concepts'),
+        row_targets: keepRowValues(b, 'row_targets')
+    };
     if (!isSplitBudget(next)) return next;
     const sum = productBudgetSum(next);
     return { ...next, budget: sum > 0 ? String(sum) : '' };
 }
 
-// แยกชุดกลับเป็นทีละสินค้า: งบ / จำนวนคน / Concept ของชุดอยู่ที่หัวชุด (ตัวแรก) ตามเดิม · รหัสอื่นเริ่มว่าง (ไม่เดาตัวเลขให้)
-// Target: ทุกรหัสคง Target ของชุดไว้ (เอาออกเองทีละแถวได้) · ยอดรวมงบ / จำนวนคนของ Platform ไม่เปลี่ยน
-export function splitBundle(b, head) {
-    return { ...b, bundles: blockBundles(b).filter(x => !x.includes(head)) };
-}
-
-// เอาสินค้าออกจากบล็อก = หลุดจากชุดด้วย · ถ้าเป็นหัวชุด ค่าของชุด (งบ / จำนวนคน / Concept) ย้ายไปที่รหัสถัดไปในชุด
-// ชุดที่เหลือรหัสเดียว = กลายเป็นแถวปกติ (รหัสที่เหลือได้ค่าของชุดไป) · เรียกได้ทั้งก่อนและหลังเอารหัสออกจาก products
-export function dropFromBundle(b, code) {
-    const has = (b.products || []).includes(code);
-    const bundles = blockBundles(has ? b : { ...b, products: [...(b.products || []), code] });
-    const bd = bundles.find(x => x.includes(code));
-    if (!bd) return b;
-    const rest = bd.filter(c => c !== code);
-    const next = { ...b, bundles: bundles.map(x => (x === bd ? rest : x)).filter(x => x.length >= 2) };
-    if (bd[0] !== code) return next;
-    const move = key => {
-        const m = { ...(isMap(b[key]) ? b[key] : {}) };
-        if (m[code] !== undefined) m[rest[0]] = m[code];
-        delete m[code];
-        return m;
+// แถวที่ติ๊ก (key) รวมเป็นชุดเดียว — ติ๊กชุดที่มีอยู่ = เอารหัสทั้งชุดมารวม · ต้องได้อย่างน้อย 2 แถว และชุดนี้ต้องยังไม่มี ไม่งั้นคืนบล็อกเดิม
+// แถวที่ติ๊กกลายเป็นชุดเดียว (แถวเดี่ยว / ชุดเดิมที่ติ๊กหายไป) — แถวอื่นที่มีรหัสเดียวกันไม่โดน (เพิ่มแถวเดี่ยวคืนได้ที่ช่องเลือกสินค้า)
+// รหัสในชุดเรียงตามลำดับสินค้าในบล็อก · ค่าที่ใส่ไว้ไม่หาย: งบ / จำนวนคน = ผลรวมของแถวที่รวม · Concept = ทุกคอนเซปต์ (ไม่ซ้ำ ต่อบรรทัด) · Target = รวมทุกแถว
+export function makeBundle(b0, keys) {
+    const b = upgradeRows(b0);
+    const want = (keys || []).map(String);
+    const rows = productRows(b);
+    const picked = rows.filter(r => want.includes(r.key));
+    if (picked.length < 2) return b0;
+    const members = uniqStr(b.products).filter(c => picked.some(r => r.codes.includes(c)));
+    const key = rowKeyOf(members);
+    if (rows.some(r => r.bundle && r.key === key && !picked.includes(r))) return b0;
+    const val = name => (isMap(b[name]) ? b[name] : {});
+    const pb = { ...val('product_budgets') };
+    const pk = { ...val('product_kols') };
+    const pc = { ...val('product_concepts') };
+    const rt = { ...val('row_targets') };
+    const bsum = picked.reduce((n, r) => n + num(pb[r.key]), 0);
+    const ksum = picked.reduce((n, r) => n + num(pk[r.key]), 0);
+    const cons = [...new Set(picked.flatMap(r => conceptParts(pc[r.key])))];
+    const tg = [...new Set(picked.flatMap(r => asArr(rt[r.key])))];
+    picked.forEach(r => { delete pb[r.key]; delete pk[r.key]; delete pc[r.key]; delete rt[r.key]; });
+    if (bsum > 0) pb[key] = String(bsum);
+    if (ksum > 0) pk[key] = String(ksum);
+    if (cons.length) pc[key] = cons.join('\n');
+    rt[key] = tg;
+    const pickedSingles = picked.filter(r => !r.bundle).map(r => r.key);
+    const pickedBundles = picked.filter(r => r.bundle).map(r => r.key);
+    const next = {
+        ...b,
+        singles: blockSingles(b).filter(c => !pickedSingles.includes(c)),
+        bundles: [...blockBundles(b).filter(bd => !pickedBundles.includes(rowKeyOf(bd))), members],
+        product_budgets: pb, product_kols: pk, product_concepts: pc, row_targets: rt
     };
-    return { ...next, product_budgets: move('product_budgets'), product_kols: move('product_kols'), product_concepts: move('product_concepts') };
+    return tidyRows(next);
 }
 
-// ตอนบันทึก: เขียน bundles เป็นอาเรย์เสมอ (ว่าง = ไม่มีชุด) — server (carryProductBundles) ใช้แยกฟอร์มรุ่นใหม่ออกจากแท็บเก่าที่ไม่รู้จักช่องนี้
-// เก็บเฉพาะชุดที่ถูกต้อง (รหัสยังอยู่ในบล็อก ไม่ซ้ำชุด อย่างน้อย 2 รหัส)
-export const packBundles = b => ({ ...b, bundles: blockBundles(b) });
+// แยกชุดกลับเป็นทีละสินค้า: รหัสที่ยังไม่มีแถวเดี่ยวได้แถวเดี่ยว · งบ / จำนวนคน / Concept ของชุดไปอยู่ที่แถวเดี่ยวแรกที่เพิ่งเกิด (ตัวอื่นเริ่มว่าง)
+// Target: แถวเดี่ยวที่เพิ่งเกิดได้ Target ของชุดไป · รหัสที่มีแถวเดี่ยวอยู่แล้วคงค่าเดิม
+// ทุกรหัสมีแถวเดี่ยวอยู่แล้ว = ค่าของชุดบวกเข้าแถวเดี่ยวของรหัสแรก (ยอดรวมไม่หาย)
+export function splitBundle(b0, key) {
+    const b = upgradeRows(b0);
+    const row = productRows(b).find(r => r.bundle && r.key === key);
+    if (!row) return b0;
+    const had = new Set(blockSingles(b));
+    const fresh = row.codes.filter(c => !had.has(c));
+    const val = name => ({ ...(isMap(b[name]) ? b[name] : {}) });
+    const pb = val('product_budgets'), pk = val('product_kols'), pc = val('product_concepts'), rt = val('row_targets');
+    if (fresh.length) {
+        const to = fresh[0];
+        if (pb[key] !== undefined) pb[to] = pb[key];
+        if (pk[key] !== undefined) pk[to] = pk[key];
+        if (pc[key] !== undefined) pc[to] = pc[key];
+        fresh.forEach(c => { rt[c] = asArr(rt[key]); });
+    } else {
+        // ทุกรหัสมีแถวเดี่ยวอยู่แล้ว (ผลรีวิว 12 พ.ย.): ค่าของชุดรวมเข้าแถวเดี่ยวของรหัสแรก — จำนวนคน / งบรวมของ Platform ไม่หาย
+        // Concept ต่อท้าย (ไม่ซ้ำ) · Target รวมกัน
+        const to = row.codes[0];
+        const add = (m, v) => { const n = num(m[to]) + num(v); if (n > 0) m[to] = String(n); };
+        if (pb[key] !== undefined) add(pb, pb[key]);
+        if (pk[key] !== undefined) add(pk, pk[key]);
+        const cons = [...new Set([...conceptParts(pc[to]), ...conceptParts(pc[key])])];
+        if (cons.length) pc[to] = cons.join('\n');
+        rt[to] = [...new Set([...asArr(rt[to]), ...asArr(rt[key])])];
+    }
+    const next = {
+        ...b,
+        singles: [...blockSingles(b), ...fresh],
+        bundles: blockBundles(b).filter(bd => rowKeyOf(bd) !== key),
+        product_budgets: pb, product_kols: pk, product_concepts: pc, row_targets: rt
+    };
+    return tidyRows(next);
+}
+
+// เอาแถวออก (× ที่แถว): แถวเดี่ยว = เอาแถวนั้นออก · ชุด = เอาชุดนั้นออก
+// รหัสที่ไม่เหลือแถวไหนแล้ว = ออกจากสินค้าของ Platform ด้วย (เหมือนติ๊กออกที่ช่องเลือกสินค้า) · ค่าของแถวที่เอาออกหายไปด้วย
+export function removeRow(b0, key) {
+    const b = upgradeRows(b0);
+    const rows = productRows(b);
+    const row = rows.find(r => r.key === key);
+    if (!row) return b0;
+    const rest = rows.filter(r => r !== row);
+    const left = new Set(rest.flatMap(r => r.codes));
+    const next = {
+        ...b,
+        products: uniqStr(b.products).filter(c => left.has(c)),
+        singles: rest.filter(r => !r.bundle).map(r => r.key),
+        bundles: rest.filter(r => r.bundle).map(r => [...r.codes])
+    };
+    return tidyRows(next);
+}
+
+// เพิ่มแถวเดี่ยวของรหัส (ช่องเลือกสินค้า) — ยังไม่มีในสินค้าของ Platform = เพิ่มต่อท้าย · อยู่ในชุดแล้ว = ได้แถวเดี่ยวเพิ่มอีกแถว (ชุดไม่โดน)
+// targets = Target เริ่มต้นของแถวใหม่ (ฟอร์มส่งกติกาเดียวกับตอนติ๊กสินค้า)
+export function addSingle(b0, code, targets = []) {
+    const b = upgradeRows(b0);
+    const c = String(code);
+    if (blockSingles(b).includes(c)) return b0;
+    const products = uniqStr(b.products);
+    return {
+        ...b,
+        products: products.includes(c) ? products : [...products, c],
+        singles: [...blockSingles(b), c],
+        row_targets: { ...(isMap(b.row_targets) ? b.row_targets : {}), [c]: asArr(targets) }
+    };
+}
+
+// ตอนบันทึก: เขียนรูปรุ่น 2 เสมอ (singles + bundles เป็นอาเรย์) — server ใช้ singles แยกฟอร์มรุ่นใหม่ออกจากแท็บที่เปิดค้างก่อน deploy
+// เก็บเฉพาะแถวที่ถูกต้อง (รหัสยังอยู่ในบล็อก · ชุดอย่างน้อย 2 รหัส · ชุดไม่ซ้ำ)
+export function packBundles(b0) {
+    const b = upgradeRows(b0);
+    return { ...b, singles: blockSingles(b), bundles: blockBundles(b).map(x => [...x]) };
+}
 
 // งบของ Platform แยกต่อสินค้าไหม (ไม่มีค่า / ข้อมูลเก่า = งบรวมก้อนเดียว)
 export const isSplitBudget = b => !!b && b.budget_mode === 'split';
 
 // ผลรวมงบของสินค้าที่ยังอยู่ในบล็อก — ชุดนับครั้งเดียว (งบอยู่ที่หัวชุด)
 export function productBudgetSum(b) {
-    const pb = isMap(b.product_budgets) ? b.product_budgets : {};
-    return productRows(b).reduce((n, r) => n + num(pb[r.head]), 0);
+    return productRows(b).reduce((n, r) => n + num(rowValue(b, 'product_budgets', r)), 0);
 }
+// งบของแถวสินค้า (r = แถวจาก productRows) — 1 แถว = 1 งบ (ชุด = งบเดียวของชุด)
+export const rowBudgetOf = (b, r) => num(rowValue(b, 'product_budgets', r));
 
 // ตอนบันทึก: แยกต่อสินค้า → เก็บงบเฉพาะสินค้าที่ยังอยู่ (ชุด = เก็บที่หัวชุดตัวเดียว) และ budget = ผลรวม (งบกลุ่ม/งบแคมเปญ/แบ่งค่าตัวที่อ่าน budget ใช้ต่อได้เหมือนเดิม)
 // ก้อนเดียว → เขียน budget_mode 'total' ไว้ชัด ๆ (server ใช้แยกฟอร์มรุ่นใหม่ออกจากแท็บเก่าที่ไม่รู้จักช่องนี้) และไม่เก็บงบรายสินค้า
@@ -409,7 +601,7 @@ export function packBudgets(b) {
     const { budget_before_split, product_budgets, ...rest } = b;
     if (!isSplitBudget(b)) return { ...rest, budget_mode: 'total' };
     const pb = {};
-    productRows(rest).forEach(r => { pb[r.head] = num(isMap(product_budgets) ? product_budgets[r.head] : 0); });
+    productRows(rest).forEach(r => { pb[r.key] = num(rowValue(b, 'product_budgets', r)); });
     const sum = Object.values(pb).reduce((n, v) => n + v, 0);
     return { ...rest, budget_mode: 'split', product_budgets: pb, budget: sum > 0 ? String(sum) : '' };
 }
@@ -437,28 +629,29 @@ export function conceptRows(g, only, platforms) {
     const main = ctext(g && g.concept);
     if (!isSplitConcept(g, platforms)) return main ? [{ concept: main, items: [], main: true }] : [];
     const entries = [];
-    // นับ Concept ของทุกคู่ (สินค้า, Platform) ที่เห็น รวมที่ว่าง — สินค้าที่มี Concept แค่บาง Platform ต้องมีชื่อ Platform กำกับ
+    // นับ Concept ของทุกคู่ (แถวสินค้า, Platform) ที่เห็น รวมที่ว่าง — แถวที่มี Concept แค่บาง Platform ต้องมีชื่อ Platform กำกับ
+    // 1 รายการ = 1 แถวสินค้า (สินค้าเดี่ยว "L10" / ชุด "L10 + L20") — สินค้าเดียวกันอยู่หลายแถวได้ แต่ละแถวมี Concept ของตัวเอง (12 พ.ย. 2026)
     const conceptsOf = {};
+    const nameOf = {};
     g.blocks.forEach(b => {
         if (!b || (platforms && platforms.length && !platforms.includes(b.platform))) return;
-        const pc = isBlockSplitConcept(b) && isMap(b.product_concepts) ? b.product_concepts : {};
-        // สินค้าในชุด (รีวิวรวมในคลิปเดียว) ใช้ Concept ของชุด (เก็บที่หัวชุด) — ทุกรหัสในชุดโชว์ Concept เดียวกัน
-        const headOf = {};
-        productRows(b).forEach(r => r.codes.forEach(c => { headOf[c] = r.head; }));
-        (b.products || []).filter(c => !only || only.includes(c)).forEach(code => {
-            const own = ctext(pc[headOf[code] || code]);
+        const split = isBlockSplitConcept(b);
+        productRows(b).filter(r => !only || r.codes.some(c => only.includes(c))).forEach(r => {
+            const own = split ? ctext(rowValue(b, 'product_concepts', r)) : '';
             const concept = own || main;
-            (conceptsOf[code] = conceptsOf[code] || new Set()).add(concept);
-            if (concept) entries.push({ code, platform: b.platform, concept, own: !!own });
+            // ชุดเดียวกันแต่ละ Platform อาจติ๊กคนละลำดับ ("L8A + L8B" / "L8B + L8A") — นับด้วย key ของแถว ชื่อใช้แบบแรกที่เจอ (ผลรีวิว 12 พ.ย.)
+            if (!nameOf[r.key]) nameOf[r.key] = r.label;
+            (conceptsOf[r.key] = conceptsOf[r.key] || new Set()).add(concept);
+            if (concept) entries.push({ code: r.head, codes: r.codes, key: r.key, platform: b.platform, concept, own: !!own });
         });
     });
     const rows = [];
     entries.forEach(e => {
-        const label = conceptsOf[e.code].size > 1 ? e.code + ' · ' + e.platform : e.code;
+        const label = conceptsOf[e.key].size > 1 ? nameOf[e.key] + ' · ' + e.platform : nameOf[e.key];
         let row = rows.find(r => r.concept === e.concept);
         if (!row) { row = { concept: e.concept, items: [], main: true }; rows.push(row); }
         if (e.own) row.main = false;
-        if (!row.items.some(it => it.label === label)) row.items.push({ code: e.code, label });
+        if (!row.items.some(it => it.label === label)) row.items.push({ code: e.code, label, ...(e.codes.length > 1 ? { codes: e.codes } : {}) });
     });
     return rows;
 }
@@ -492,9 +685,9 @@ export function packConcepts(b) {
     const { product_concepts, ...rest } = b;
     if (!isBlockSplitConcept(b)) return { ...rest, concept_split: false };
     const pc = {};
-    productRows(rest).forEach(({ head: c }) => {
-        const v = conceptParts(isMap(product_concepts) ? product_concepts[c] : '').join('\n');
-        if (v) pc[c] = v;
+    productRows(rest).forEach(r => {
+        const v = conceptParts(rowValue(b, 'product_concepts', r)).join('\n');
+        if (v) pc[r.key] = v;
     });
     return { ...rest, concept_split: true, product_concepts: pc };
 }
@@ -505,9 +698,10 @@ export function packConcepts(b) {
 // ชุดสินค้า (bundles) นับเป็น 1 แถว — จำนวนคนของชุดเก็บที่หัวชุดตัวเดียว (ดู productRows)
 // จำนวนคนรวมยังมาจากแถว Tier ที่เดียวเหมือนเดิม — ตัวเลขต่อสินค้าเป็นแค่การแบ่งยอดนั้น (โควตา / allocations ไม่เปลี่ยน)
 export const isKolSplit = b => !!b && b.kol_split === true;
-export const productKolOf = (b, code) => num(b && isMap(b.product_kols) ? b.product_kols[code] : 0);
-// ผลรวมจำนวนคนของสินค้าที่ยังอยู่ในบล็อก — ชุดนับครั้งเดียว
-export const productKolSum = b => (b ? productRows(b) : []).reduce((n, r) => n + productKolOf(b, r.head), 0);
+// จำนวนคนของแถวสินค้า — r = แถวจาก productRows (หรือ key ของแถวในบล็อกรุ่น 2)
+export const productKolOf = (b, r) => num(typeof r === 'string' ? (b && isMap(b.product_kols) ? b.product_kols[r] : 0) : rowValue(b, 'product_kols', r));
+// ผลรวมจำนวนคนของแถวสินค้าที่ยังอยู่ในบล็อก — 1 แถว = 1 จำนวน
+export const productKolSum = b => (b ? productRows(b) : []).reduce((n, r) => n + productKolOf(b, r), 0);
 
 // สถานะของบล็อกที่แยกจำนวนคน (null = ไม่ได้แยก) — ฟอร์มใช้ทั้งป้ายหัวรายการสินค้าและตัวตรวจก่อนบันทึก
 // total = จำนวนคนจากแถว Tier · sum = ผลรวมที่ใส่ · filled / count = ใส่แล้วกี่แถว / ทั้งหมดกี่แถว (ชุด = 1 แถว)
@@ -515,7 +709,7 @@ export const productKolSum = b => (b ? productRows(b) : []).reduce((n, r) => n +
 export function kolSplitState(b) {
     if (!isKolSplit(b)) return null;
     const rows = productRows(b);
-    const missing = rows.filter(r => productKolOf(b, r.head) < 1).map(r => r.label);
+    const missing = rows.filter(r => productKolOf(b, r) < 1).map(r => r.label);
     const sum = productKolSum(b);
     const total = blockKol(b);
     return {
@@ -545,9 +739,9 @@ export function packKols(b) {
     const { product_kols, ...rest } = b;
     if (!isKolSplit(b)) return { ...rest, kol_split: false };
     const pk = {};
-    productRows(rest).forEach(({ head: c }) => {
-        const n = num(isMap(product_kols) ? product_kols[c] : 0);
-        if (n > 0) pk[c] = n;
+    productRows(rest).forEach(r => {
+        const n = num(rowValue(b, 'product_kols', r));
+        if (n > 0) pk[r.key] = n;
     });
     return { ...rest, kol_split: true, product_kols: pk };
 }
@@ -614,7 +808,7 @@ export function seedKolSplit(b) {
     if (!b || isKolSplit(b)) return b;
     const rows = productRows(b);
     const total = blockKol(b);
-    const product_kols = rows.length === 1 && total > 0 ? { [rows[0].head]: String(total) } : {};
+    const product_kols = rows.length === 1 && total > 0 ? { [slotOf(b, rows[0])]: String(total) } : {};
     return { ...b, kol_split: true, product_kols };
 }
 
@@ -623,39 +817,57 @@ export function seedKolSplit(b) {
 // ไม่คัดลอก งบ / Concept / Target (ของใคร Platform มัน):
 //   งบ / Concept ของปลายทาง เก็บไว้เฉพาะแถวที่ยังเป็นแถวเดียวกับเดิม (สินค้าเดี่ยวเดิม / ชุดเดิมครบทุกตัว) · แถวที่เปลี่ยนรูปเริ่มว่าง
 //   Target ของปลายทาง เก็บไว้ต่อรหัสที่ยังอยู่ · รหัสที่เพิ่งเข้ามาได้ seedTarget(code) (ฟอร์มส่งกติกาเดียวกับตอนติ๊กสินค้า) · ทุกรหัสในชุดได้ Target ชุดเดียวกัน
-export function copyProductSet(dst, src, seedTarget = () => []) {
-    const products = [...new Set(((src && src.products) || []).map(String))];
-    const bundles = blockBundles({ products, bundles: src && src.bundles }).map(x => [...x]);
-    const rows = productRows({ products, bundles });
+export function copyProductSet(dst0, src0, seedTarget = () => []) {
+    const dst = upgradeRows(dst0);
+    const src = upgradeRows(src0 || {});
+    const products = uniqStr(src.products);
+    const singles = blockSingles(src);
+    const bundles = blockBundles(src).map(x => [...x]);
+    const shape = { products, singles, bundles };
+    const rows = productRows(shape);
     const pk = {};
-    rows.forEach(r => { const n = productKolOf(src, r.head); if (n > 0) pk[r.head] = String(n); });
-    // แถวเดิมของปลายทางที่มีรหัสชุดเดียวกัน — ไม่ดูหัวชุด (ชุดเดียวกันแต่ละ Platform อาจมีหัวคนละตัว ตามลำดับที่ติ๊กสินค้า)
-    const oldRows = productRows(dst);
-    const oldOf = r => oldRows.find(o => o.codes.length === r.codes.length && o.codes.every(c => r.codes.includes(c)));
-    const keep = key => {
-        const m = isMap(dst[key]) ? dst[key] : {};
+    rows.forEach(r => { const n = productKolOf(src, r); if (n > 0) pk[r.key] = String(n); });
+    // แถวเดิมของปลายทางที่มีรหัสชุดเดียวกัน — key ของแถวเรียงรหัสแล้ว (ชุดเดียวกันแต่ละ Platform ติ๊กคนละลำดับก็ได้ key เดียวกัน)
+    const oldKeys = new Set(productRows(dst).map(r => r.key));
+    const keep = name => {
+        const m = isMap(dst[name]) ? dst[name] : {};
         const out = {};
-        rows.forEach(r => { const o = oldOf(r); if (o && m[o.head] !== undefined) out[r.head] = m[o.head]; });
+        rows.forEach(r => { if (oldKeys.has(r.key) && m[r.key] !== undefined) out[r.key] = m[r.key]; });
         return out;
     };
-    const oldPt = isMap(dst.product_targets) ? dst.product_targets : {};
-    const pt = {};
-    products.forEach(c => { pt[c] = Object.prototype.hasOwnProperty.call(oldPt, c) ? asArr(oldPt[c]) : asArr(seedTarget(c)); });
-    bundles.forEach(bd => { const tg = [...new Set(bd.flatMap(c => pt[c]))]; bd.forEach(c => { pt[c] = [...tg]; }); });
-    const next = { ...dst, products, bundles, kol_split: true, product_kols: pk,
-        product_budgets: keep('product_budgets'), product_concepts: keep('product_concepts'), product_targets: pt };
+    // Target: แถวเดิมของปลายทางคงไว้ · แถวที่เพิ่งเข้ามา = รวม Target ของแต่ละรหัสในแถว
+    //   รหัสที่ปลายทางมีแถวเดี่ยวอยู่ = Target ของแถวเดี่ยวนั้น · อยู่แค่ในชุด = Target ของชุดที่มีรหัสนั้น (ผลรีวิว 12 พ.ย. — เดิมเก็บต่อรหัสจึงไม่หาย)
+    //   ไม่มีในปลายทางเลย = Target เริ่มต้น (กติกาเดียวกับตอนติ๊กสินค้า)
+    const oldRows = productRows(dst);
+    const oldRt = isMap(dst.row_targets) ? dst.row_targets : {};
+    const has = (m, k) => Object.prototype.hasOwnProperty.call(m, k);
+    const codeTargets = c => {
+        if (oldKeys.has(c) && has(oldRt, c)) return asArr(oldRt[c]);
+        const inRows = oldRows.filter(o => o.codes.includes(c) && has(oldRt, o.key));
+        return inRows.length ? [...new Set(inRows.flatMap(o => asArr(oldRt[o.key])))] : asArr(seedTarget(c));
+    };
+    const rt = {};
+    rows.forEach(r => {
+        rt[r.key] = oldKeys.has(r.key) && has(oldRt, r.key)
+            ? asArr(oldRt[r.key])
+            : [...new Set(r.codes.flatMap(codeTargets))];
+    });
+    const next = { ...dst, ...shape, kol_split: true, product_kols: pk,
+        product_budgets: keep('product_budgets'), product_concepts: keep('product_concepts'), row_targets: rt };
     if (!isSplitBudget(next)) return next;
     const sum = productBudgetSum(next);
     return { ...next, budget: sum > 0 ? String(sum) : '' };
 }
 // สินค้า + ชุดรวม + จำนวนคน เหมือนกันแล้วไหม (ไม่สนลำดับ) — ปุ่มคัดลอกขึ้น "✓ เหมือนแล้ว"
-const productSetSig = b => productRows(b).map(r => [...r.codes].sort().join('+') + '=' + productKolOf(b, r.head)).sort().join('|');
+const productSetSig = b => productRows(b).map(r => (r.bundle ? 'B:' : 'S:') + rowKeyOf(r.codes) + '=' + productKolOf(b, r)).sort().join('|');
 export const sameProductSet = (a, b) => !!a && !!b && (a.products || []).length > 0 && productSetSig(a) === productSetSig(b);
 
 // ความคืบหน้าต่อสินค้าของกลุ่ม (เฉพาะบล็อกที่แยกจำนวนคน) — หน้าเอเจนซี่ / แท็บรายชื่อ / On Process ใช้ตัวเดียวกัน
 // คืน [{ platform, rows: [{ code, need, sent, over, full, codes? }] }] (codes เฉพาะแถวที่เป็นชุด) · ไม่มีบล็อกไหนแยก = []
-// sent = จำนวน "คน" (person_key) ของ Platform นั้นในกลุ่มนี้ที่ยังไม่ถูกปฏิเสธ — 1 คนที่ช่องสินค้ามีหลายรหัส นับให้ทุกรหัสที่มี
-// ชุดสินค้า = 1 แถว (code = "L8A + L8B" · codes = รหัสในชุด) — คนที่ช่องสินค้ามีรหัสไหนของชุดก็ได้ นับให้ชุดนั้น 1 ครั้ง
+// sent = จำนวน "คน" (person_key) ของ Platform นั้นในกลุ่มนี้ที่ยังไม่ถูกปฏิเสธ
+// คนนับเข้าแถวที่รหัสในช่องสินค้าตรงกันพอดี ("L10" = แถว L10 · "L10,L20" = ชุด L10 + L20 · ผู้ใช้สั่ง 12 พ.ย. 2026)
+// ไม่ตรงแถวไหนเลย = กติกาเดิม: นับให้ทุกแถวที่มีรหัสไหนของคนนั้น (คลิปเก่าที่ใส่รหัสเดียวของชุด / คนที่รีวิวหลายสินค้าเดี่ยว)
+// ชุดสินค้า = 1 แถว (code = "L8A + L8B" · codes = รหัสในชุด)
 // subs = รายชื่อที่ผู้ดูเห็น (เอเจนซี่ = ของลิงก์ตัวเอง) · platforms = Platform ในขอบเขตที่ดูอยู่ (ว่าง = ทุก Platform)
 export function productKolProgress(g, subs, platforms) {
     if (!g || !Array.isArray(g.blocks)) return [];
@@ -663,18 +875,23 @@ export function productKolProgress(g, subs, platforms) {
     return g.blocks
         .filter(b => isKolSplit(b) && (b.products || []).length && (!pf.length || pf.includes(b.platform)))
         .map(b => {
-            const people = {};
+            const rows = productRows(b);
+            const people = rows.map(() => new Set());
+            const products = uniqStr(b.products);
             (subs || []).forEach(s => {
                 if (!s || s.group_key !== g.key || s.platform !== b.platform || s.status === 'rejected') return;
                 const who = s.person_key || ('sub:' + s.id);
-                productCodesIn(s.product, b.products).forEach(c => { (people[c] = people[c] || new Set()).add(who); });
+                const codes = productCodesIn(s.product, products);
+                if (!codes.length) return;
+                const exact = rows.findIndex(r => sameCodes(r.codes, codes));
+                if (exact >= 0) { people[exact].add(who); return; }
+                rows.forEach((r, k) => { if (r.codes.some(c => codes.includes(c))) people[k].add(who); });
             });
             return {
                 platform: b.platform,
-                rows: productRows(b).map(r => {
-                    const need = productKolOf(b, r.head);
-                    const who = new Set(r.codes.flatMap(c => [...(people[c] || [])]));
-                    const sent = who.size;
+                rows: rows.map((r, k) => {
+                    const need = productKolOf(b, r);
+                    const sent = people[k].size;
                     const row = { code: r.label, need, sent, over: sent > need, full: need > 0 && sent === need };
                     return r.bundle ? { ...row, codes: r.codes } : row;
                 })
@@ -732,19 +949,18 @@ export function packCart(b) {
     return { ...b, sets: (b.sets || []).map(s => ({ ...s, cart: use ? cartValue(s.cart) : null })) };
 }
 
-// ตอนบันทึก: เก็บ Target เฉพาะสินค้าที่ยังอยู่ในบล็อก และคิด Target รวม (b.target) ใหม่จากทุกสินค้า
-// ให้หน้าที่ยังอ่าน Target รวมได้ค่าตรงกับที่เลือกจริง · Platform ที่ไม่ใช้ Target เก็บเป็นว่าง · ตัดตัวช่วยเตือนของฟอร์มทิ้ง
-export function packProductTargets(b) {
-    const { legacy_orphans, ...rest } = b;
-    const src = rest.product_targets && typeof rest.product_targets === 'object' ? rest.product_targets : {};
+// ตอนบันทึก: เก็บ Target ของแถวที่ยังอยู่ (row_targets) + Target ต่อรหัส (product_targets = รวม Target ของทุกแถวที่มีรหัสนั้น)
+// + Target รวม (b.target) ใหม่จากทุกแถว — หน้าที่ยังอ่านแบบต่อรหัส / แบบรวม (server รุ่นก่อนที่ยังไม่รีสตาร์ต / หน้า Products & Targets) ได้ค่าตรงกับที่เลือกจริง
+// Platform ที่ไม่ใช้ Target เก็บเป็นว่าง · ตัดตัวช่วยเตือนของฟอร์มทิ้ง · บล็อกต้องเป็นรุ่น 2 แล้ว (packBundles มาก่อน)
+export function packProductTargets(b0) {
+    const { legacy_orphans, ...rest } = upgradeRows(b0);
+    const src = isMap(rest.row_targets) ? rest.row_targets : {};
+    const rows = productRows(rest);
+    const rt = {};
+    rows.forEach(r => { rt[r.key] = needTarget(rest.platform) ? asArr(src[r.key]) : []; });
     const pt = {};
-    (rest.products || []).forEach(code => { pt[code] = needTarget(rest.platform) ? asArr(src[code]) : []; });
-    // ชุดสินค้า: ทุกรหัสในชุดได้ Target ชุดเดียวกัน (รวมของทุกรหัสในชุด) — หน้าอื่น / server อ่าน Target ต่อสินค้าได้ตรงกัน
-    blockBundles(rest).forEach(bd => {
-        const union = [...new Set(bd.flatMap(c => pt[c] || []))];
-        bd.forEach(c => { pt[c] = [...union]; });
-    });
-    return { ...rest, product_targets: pt, target: [...new Set(Object.values(pt).flat())] };
+    uniqStr(rest.products).forEach(c => { pt[c] = [...new Set(rows.filter(r => r.codes.includes(c)).flatMap(r => rt[r.key]))]; });
+    return { ...rest, row_targets: rt, product_targets: pt, target: [...new Set(Object.values(rt).flat())] };
 }
 
 // จำนวน KOL ในขอบเขตที่ระบุ — ใช้ตอนตั้งลิงก์เอเจนซี่ (เจ้าที่รับแค่ TikTok ต้องได้จำนวนของ TikTok)

@@ -16,7 +16,7 @@ const {
     mergeHireItems, mergeBriefFiles, hireRowFee, cleanFee, cleanHeadcount, safeId,
     HIRE_BOOKED, BOOK_PENDING, BOOK_FEE, HIRE_JOB_CLOSED, hireBookings, newHireRow, payableWithoutFee, hireScope,
     PERSON_FIELDS, personPatch, releaseToRequest, bookingConfirm, bookingFeeDecision, bookingUnavailable, carryProductTargets, carryProductBudgets, carryProductConcepts,
-    carryProductKols, carryProductBundles, carryNoGencode, carryCart, normCampaignType, todayTH
+    carryProductKols, carryProductBundles, carryNoGencode, carryCart, staleRowBlocks, normCampaignType, todayTH
 } = require('../store/logic');
 const { soloInput, buildSoloGroup, soloPersons, soloAccountsText, soloName, soloDeleteBlock } = require('../store/soloKol');
 const { isMixedTier, mixedTierError } = require('../data/tiers');
@@ -457,6 +457,13 @@ router.put('/:id', async (req, res, next) => {
         // ชุดสินค้า (carryProductBundles) ต้องยกก่อน — งบ / จำนวนคน / Concept ของชุดอยู่ที่หัวชุด ตัวยกพวกนั้นอ่านชุดของบล็อก
         if (Array.isArray(patch.ad_groups) && curProject) {
             const stored = curProject.ad_groups;
+            // แถวสินค้ารุ่น 2 (สินค้าเดียวกันอยู่ได้หลายแถว · 12 พ.ย. 2026): แท็บที่เปิดค้างก่อน deploy ไม่รู้จัก singles / ค่าต่อแถว
+            // บันทึกทับบล็อกที่เป็นรุ่น 2 แล้ว = แถวที่ซ้อนกันและค่าของแต่ละแถวหาย → ไม่บันทึก บอกให้รีเฟรช (ยกค่าคืนแบบตัวอื่นไม่ได้ เพราะแท็บเก่าส่งรูปที่ผิดมาทั้งก้อน)
+            const stale = staleRowBlocks(patch.ad_groups, stored);
+            if (stale.length) {
+                return res.status(409).json({ status: 'error', code: 'STALE_FORM',
+                    message: `หน้าฟอร์มนี้เป็นรุ่นเก่า (เปิดค้างไว้ก่อนระบบอัปเดต) — กด F5 เพื่อโหลดหน้าใหม่แล้วแก้อีกครั้ง (${stale.join(', ')})` });
+            }
             patch.ad_groups = carryNoGencode(carryProductKols(
                 carryProductConcepts(carryProductBudgets(carryProductTargets(carryProductBundles(patch.ad_groups, stored), stored), stored), stored), stored), stored);
             // ติดตะกร้า (11 พ.ย. 2026): แท็บเก่าที่ไม่ส่ง cart → ยกค่าเดิมจากฐาน · ตัวอื่นแตะแค่คีย์ของตัวเอง ลำดับไม่มีผล

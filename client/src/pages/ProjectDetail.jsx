@@ -18,7 +18,7 @@ import {
     groupPlatforms, kolInScope, contentTypesOf, mediaFor, quotaOf,
     toBlocks, blockKol, blocksKol, blocksBudget, num, isSplitBudget, hasOwnConcepts,
     contentCells, cellKeyOf, cellKey, clipCountFor, targetFor, groupNoGencode, productsFor, allocsInScope, conceptOneLine,
-    isKolSplit, productKolOf, productKolProgress, productRows, cartFor, needCart
+    isKolSplit, productKolOf, productKolProgress, productRows, rowBudgetOf, cartFor, needCart
 } from '../data/adGroups.js';
 import CartTag from '../components/CartTag.jsx';
 import { collapseByPerson, countPeople } from '../data/clips.js';
@@ -1199,9 +1199,9 @@ export default function ProjectDetail() {
                                                                         <span className="adg-label">{kSplit ? 'สินค้า · จำนวนคน' : 'สินค้า'} <span className="adg-count">({rows.length})</span></span>
                                                                         <div className="adg-val">
                                                                             {rows.length ? rows.map(r => (
-                                                                                <span className={(kSplit ? 'adg-pbud adg-pkol' : 'adg-prow') + (r.bundle ? ' adg-pbd' : '')} key={r.head}
+                                                                                <span className={(kSplit ? 'adg-pbud adg-pkol' : 'adg-prow') + (r.bundle ? ' adg-pbd' : '')} key={r.key}
                                                                                     title={(r.bundle ? 'รีวิวรวมในคลิปเดียว\n' : '') + r.codes.map(productLabel).join('\n')}>
-                                                                                    {r.bundle && '🔗 '}<b>{r.label}</b>{kSplit && <> {productKolOf(b, r.head)} คน</>}
+                                                                                    {r.bundle && '🔗 '}<b>{r.label}</b>{kSplit && <> {productKolOf(b, r)} คน</>}
                                                                                 </span>
                                                                             )) : <span className="muted">ไม่ระบุ</span>}
                                                                         </div>
@@ -1214,8 +1214,8 @@ export default function ProjectDetail() {
                                                                     <span className="adg-label">งบต่อสินค้า</span>
                                                                     <div className="adg-val">
                                                                         {productRows(b).map(r => (
-                                                                            <span className="adg-pbud" key={r.head} title={r.codes.map(productLabel).join('\n')}>
-                                                                                <b>{r.label}</b> ฿{num((b.product_budgets || {})[r.head]).toLocaleString('th-TH')}
+                                                                            <span className="adg-pbud" key={r.key} title={r.codes.map(productLabel).join('\n')}>
+                                                                                <b>{r.label}</b> ฿{rowBudgetOf(b, r).toLocaleString('th-TH')}
                                                                             </span>
                                                                         ))}
                                                                     </div>

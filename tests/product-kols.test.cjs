@@ -291,12 +291,14 @@ test('copyProductSet / sameProductSet: ใช้สินค้าเหมื�
     // ปลายทางว่าง: ได้สินค้า/ชุด/จำนวนเหมือนต้นทาง ลำดับตามต้นทาง · Target ใหม่มาจาก seedTarget · งบ/Concept ไม่ตามมา
     const ig = blkOf({ platform: 'Instagram', products: [], product_kols: {} });
     const out = web.copyProductSet(ig, tt, c => (c === 'L3' ? ['seed'] : []));
+    // แถวสินค้ารุ่น 2 (12 พ.ย. 2026): ปลายทางได้ singles + bundles · ค่าของชุดเก็บที่ key ของแถว ("L8A+L8B") · Target ต่อแถว (row_targets)
     assert.deepEqual(out.products, ['L3', 'L8A', 'L8B', 'L10']);
     assert.deepEqual(out.bundles, [['L8A', 'L8B']]);
-    assert.deepEqual(out.product_kols, { L3: '4', L8A: '3', L10: '2' });
+    assert.deepEqual(out.singles, ['L3', 'L10']);
+    assert.deepEqual(out.product_kols, { L3: '4', 'L8A+L8B': '3', L10: '2' });
     assert.equal(out.kol_split, true);
     assert.deepEqual([out.product_budgets, out.product_concepts], [{}, {}]);
-    assert.deepEqual(out.product_targets, { L3: ['seed'], L8A: [], L8B: [], L10: [] });
+    assert.deepEqual(out.row_targets, { L3: ['seed'], 'L8A+L8B': [], L10: [] });
     assert.equal(out.platform, 'Instagram');
     assert.equal(out.sets, ig.sets, 'ชุด Content Type / Tier ของปลายทางไม่แตะ');
     assert.equal(web.sameProductSet(out, tt), true);
@@ -310,11 +312,14 @@ test('copyProductSet / sameProductSet: ใช้สินค้าเหมื�
     });
     const rep = web.copyProductSet(old, tt, () => ['N']);
     assert.deepEqual(rep.products, ['L3', 'L8A', 'L8B', 'L10']);
-    assert.deepEqual(rep.product_kols, { L3: '4', L8A: '3', L10: '2' }, 'จำนวนคนของเดิมถูกแทนที่');
+    assert.deepEqual(rep.product_kols, { L3: '4', 'L8A+L8B': '3', L10: '2' }, 'จำนวนคนของเดิมถูกแทนที่');
     assert.deepEqual(rep.product_budgets, { L3: '200' }, 'L8A เปลี่ยนเป็นชุด = เริ่มว่าง · L20 หายไป');
     assert.equal(rep.budget, '200', 'แยกงบอยู่ = งบรวมคิดใหม่');
     assert.deepEqual(rep.product_concepts, { L3: 'old-c' });
-    assert.deepEqual(rep.product_targets, { L3: ['B'], L8A: ['A', 'N'], L8B: ['A', 'N'], L10: ['N'] });
+    // แถวเดิม (L3) คง Target · ชุดใหม่ = Target ของแถวเดี่ยว L8A เดิม + Target เริ่มต้นของ L8B · แถวใหม่ L10 = Target เริ่มต้น
+    assert.deepEqual(rep.row_targets, { L3: ['B'], 'L8A+L8B': ['A', 'N'], L10: ['N'] });
+    assert.deepEqual(web.packProductTargets(web.packBundles(rep)).product_targets, { L3: ['B'], L8A: ['A', 'N'], L8B: ['A', 'N'], L10: ['N'] },
+        'Target ต่อรหัส (ให้ตัวอ่านแบบเดิม) = รวมของทุกแถวที่มีรหัสนั้น — เท่ากับของเดิม');
     assert.equal(web.sameProductSet(rep, tt), true);
     assert.equal(web.sameProductSet(old, tt), false);
     // จำนวนคนต่างกันอย่างเดียว = ยังไม่เหมือน · ลำดับต่างกันไม่สน · ต้นทางว่าง = ไม่เหมือน
@@ -326,8 +331,8 @@ test('copyProductSet / sameProductSet: ใช้สินค้าเหมื�
         budget_mode: 'split', budget: '5000', product_budgets: { L8B: '5000' }, concept_split: true, product_concepts: { L8B: 'c1\nc2' } });
     const moved = web.copyProductSet(igB, tt);
     assert.deepEqual(moved.bundles, [['L8A', 'L8B']]);
-    assert.deepEqual([moved.product_budgets, moved.budget, moved.product_concepts], [{ L8A: '5000' }, '5000', { L8A: 'c1\nc2' }]);
-    assert.deepEqual(web.packBudgets(moved).product_budgets, { L3: 0, L8A: 5000, L10: 0 });
+    assert.deepEqual([moved.product_budgets, moved.budget, moved.product_concepts], [{ 'L8A+L8B': '5000' }, '5000', { 'L8A+L8B': 'c1\nc2' }]);
+    assert.deepEqual(web.packBudgets(moved).product_budgets, { L3: 0, 'L8A+L8B': 5000, L10: 0 });
     // ชุดในต้นทางที่เสีย (รหัสไม่อยู่ในสินค้า) ไม่ตามมา
     const broken = web.copyProductSet(ig, { ...tt, bundles: [['L8A', 'L99']] });
     assert.deepEqual(broken.bundles, []);

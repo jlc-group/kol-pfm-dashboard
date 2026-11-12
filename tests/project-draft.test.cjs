@@ -120,10 +120,19 @@ test('กู้ร่าง: Target ที่ถูกเปลี่ยนช�
         { platform: 'Instagram', products: ['L3'], product_targets: null },
         { platform: 'Facebook', products: ['L10'], product_targets: { L10: 'OLD_ONE' } }] }, { key: 'g2' }];
     const r = D.refreshDraftTargets(groups, c => ok[c] || []);
-    assert.deepEqual(r.groups[0].blocks[0].product_targets, { L3: ['F_SUN_MASS_18_54'], L10: ['F_SUN_MASS_18_54'] });
+    // ร่างจากก่อน 12 พ.ย. (Target ต่อรหัส) แปลงเป็น Target ต่อแถว (row_targets) แล้วค่อยกรอง
+    assert.deepEqual(r.groups[0].blocks[0].row_targets, { L3: ['F_SUN_MASS_18_54'], L10: ['F_SUN_MASS_18_54'] });
+    assert.deepEqual(r.groups[0].blocks[0].singles, ['L3', 'L10']);
     assert.equal(r.groups[0].blocks[0].budget, '10');
     assert.equal(r.groups[0].blocks[1].product_targets, null);
-    assert.deepEqual(r.groups[0].blocks[2].product_targets, { L10: [] });
+    assert.equal(r.groups[0].blocks[1].row_targets, null, 'ร่างที่ยังไม่มี Target ต่อสินค้า = ให้ฟอร์มแบ่งเองเหมือนเดิม');
+    assert.deepEqual(r.groups[0].blocks[2].row_targets, { L10: [] });
+    // ชุดสินค้า: เลือกได้ทุก Target ของทุกรหัสในชุด (เดิมกรองต่อรหัส — Target ที่ใช้ได้กับอีกรหัสในชุดถูกนับว่าหาย)
+    const bundleDraft = [{ key: 'b', blocks: [{ platform: 'TikTok', products: ['L3', 'L10'], singles: [], bundles: [['L3', 'L10']],
+        row_targets: { 'L10+L3': ['MF_SUN_MASS_18_55', 'F_SUN_MASS_18_54', 'GONE'] } }] }];
+    const rb = D.refreshDraftTargets(bundleDraft, c => ok[c] || []);
+    assert.deepEqual(rb.groups[0].blocks[0].row_targets, { 'L10+L3': ['MF_SUN_MASS_18_55', 'F_SUN_MASS_18_54'] });
+    assert.deepEqual(rb.dropped, ['GONE']);
     assert.deepEqual(r.dropped, ['MF_SUN_MASS_18_54', 'OLD_ONE']);
     assert.deepEqual(r.groups[1], { key: 'g2' });
     assert.deepEqual(D.refreshDraftTargets(groups, c => ok[c] || []).groups[0].concept, 'x');

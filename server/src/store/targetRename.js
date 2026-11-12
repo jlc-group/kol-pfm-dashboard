@@ -17,6 +17,8 @@
  *   • เทียบชื่อแบบตัดช่องว่างหัวท้าย ตรงทุกตัวอักษร · ชื่อใหม่มีในรายการอยู่แล้ว (ไม่สนตัวพิมพ์) = ใช้ตัวสะกดที่มีอยู่ รวมเป็นอันเดียว
  *   • ไม่แตะช่องอื่นของแคมเปญเลย · ไม่มีอะไรเปลี่ยน = changed false (ไม่ต้องเขียนแคมเปญนั้น)
  */
+const { blockRows, hasRowModel } = require('./logic');
+
 const norm = v => (typeof v === 'string' ? v.trim() : '');
 const key = v => norm(v).toLowerCase();
 const up = c => String(c).trim().toUpperCase();
@@ -50,7 +52,8 @@ function swapUnion(list, from, to, stillOld) {
     const present = out.some(x => norm(x) === to || (norm(x) !== from && key(x) === key(to)));
     return present ? out : [...out, to];
 }
-// ชุดสินค้าของบล็อก — เฉพาะรหัสที่อยู่ในบล็อก · ชุดละอย่างน้อย 2 รหัส (กติกาเดียวกับ blockBundles ใน store/logic.js)
+// ชุดสินค้าของบล็อกรุ่นเก่า (ไม่มี singles) — เฉพาะรหัสที่อยู่ในบล็อก · ชุดละอย่างน้อย 2 รหัส · 1 รหัสอยู่ได้ชุดเดียว (กติกาเดียวกับ blockBundles ใน store/logic.js)
+// บล็อกรุ่น 2 ใช้แถวจาก logic.blockRows ด้านล่าง (Target ต่อแถว)
 function bundlesOf(b) {
     const list = (isArr(b.products) ? b.products : []).map(up);
     const used = new Set();
@@ -93,7 +96,30 @@ function renameTargetInGroups(groups, codes, fromRaw, toRaw, { keep } = {}) {
                 const picked = new Set(pick);
                 bundlesOf(b).forEach(bd => { if (bd.some(c => pick.has(c))) bd.forEach(c => picked.add(c)); });
                 let touched = false;
-                if (isMap(b.product_targets)) {
+                if (hasRowModel(b) && isMap(b.row_targets)) {
+                    // แถวสินค้ารุ่น 2 (12 พ.ย. 2026): Target เก็บต่อแถว — แถวที่มีสินค้าที่เลือก (แถวเดี่ยว / ทุกชุดที่มีสินค้านั้น) เปลี่ยนทั้งแถว
+                    // รหัสอื่นในชุดที่โดนไปด้วยคืนใน bundled · แถวเดี่ยวของรหัสที่ไม่ได้เลือกไม่โดน · Target ต่อรหัส (product_targets) คิดใหม่จากแถว
+                    const rows = blockRows(b);
+                    const rt = { ...b.row_targets };
+                    rows.forEach(r => {
+                        const rc = r.codes.map(up);
+                        if (!rc.some(c => pick.has(c)) || !listHas(rt[r.key], from)) return;
+                        rt[r.key] = swap(rt[r.key], from, to);
+                        rc.filter(c => !pick.has(c)).forEach(c => bundled.add(c));
+                        touched = true; places++;
+                    });
+                    if (touched) {
+                        b.row_targets = rt;
+                        const asList = l => (isArr(l) ? l : (l ? [l] : []));
+                        const pt = { ...(isMap(b.product_targets) ? b.product_targets : {}) };
+                        [...new Set(rows.flatMap(r => r.codes))].forEach(c => {
+                            pt[c] = [...new Set(rows.filter(r => r.codes.includes(c)).flatMap(r => asList(rt[r.key])))];
+                        });
+                        b.product_targets = pt;
+                        const stillOld = Object.values(rt).some(l => listHas(l, from));
+                        if (isArr(b.target) || listHas(b.target, from)) b.target = swapUnion(b.target, from, to, stillOld);
+                    }
+                } else if (isMap(b.product_targets)) {
                     const pt = { ...b.product_targets };
                     for (const code of Object.keys(pt)) {
                         if (!picked.has(up(code)) || !listHas(pt[code], from)) continue;
@@ -122,7 +148,8 @@ function renameTargetInGroups(groups, codes, fromRaw, toRaw, { keep } = {}) {
             if (hasBlocks) {
                 if (groupTouched) {
                     const stillOld = g.blocks.some(b => isMap(b) && (listHas(b.target, from)
-                        || (isMap(b.product_targets) && Object.values(b.product_targets).some(l => listHas(l, from)))));
+                        || (isMap(b.product_targets) && Object.values(b.product_targets).some(l => listHas(l, from)))
+                        || (hasRowModel(b) && isMap(b.row_targets) && Object.values(b.row_targets).some(l => listHas(l, from)))));
                     g.target = swapUnion(g.target, from, to, stillOld);
                 }
             } else {

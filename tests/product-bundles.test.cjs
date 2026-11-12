@@ -40,59 +40,62 @@ test('bundles: normalised to codes still in the block, each code in one bundle, 
     assert.deepEqual(web.blockBundles(null), []);
     assert.deepEqual(web.productRows(blk({ products: ['L3', 'L8A', 'L8B', 'L10'], bundles: [['L8B', 'L10']] })).map(r => [r.head, r.label, r.bundle]),
         [['L3', 'L3', false], ['L8A', 'L8A', false], ['L8B', 'L8B + L10', true]]);
-    assert.equal(web.rowHeadOf(bundled(), 'L8B'), 'L8A');
-    assert.equal(web.rowHeadOf(bundled(), 'L3'), 'L3');
+    // ข้อมูลรุ่นเก่า (ไม่มี singles): key ของชุด = รหัสเรียงต่อด้วย + แต่ค่าของชุดยังอ่านจากหัวชุดได้ (rowValue)
+    const rowsB = web.productRows(bundled());
+    assert.deepEqual(rowsB.map(r => [r.key, r.head]), [['L3', 'L3'], ['L8A+L8B', 'L8A']]);
+    assert.equal(web.rowValue(bundled(), 'product_kols', rowsB[1]), 3);
+    assert.deepEqual(web.rowTargetsOf(bundled(), rowsB[1]), ['M1', 'M2']);
     // ไม่มีชุด = 1 สินค้า 1 แถวเหมือนเดิม
     assert.deepEqual(web.productRows(blk()).map(r => r.label), ['L3', 'L8A', 'L8B']);
 });
 
-test('make bundle: one row, values summed under the head, concepts merged, targets unioned for every code', () => {
+// แถวสินค้ารุ่น 2 (12 พ.ย. 2026): ฟอร์มทำงานกับ key ของแถว — ค่าของชุดเก็บที่ "L8A+L8B" · Target ต่อแถว (row_targets)
+test('make bundle: one row from the ticked rows (by key), values summed, concepts merged, targets unioned', () => {
     const m = web.makeBundle(blk(), ['L8B', 'L8A']);
-    assert.deepEqual(m.bundles, [['L8A', 'L8B']], 'เรียงตามลำดับสินค้าในบล็อก → หัวชุด = L8A');
-    assert.deepEqual(m.product_budgets, { L3: '10000', L8A: '7000' });
-    assert.deepEqual(m.product_kols, { L3: '3', L8A: '3' });
-    assert.deepEqual(m.product_concepts, { L8A: 'ผิวฉ่ำ\nติดทน' }, 'Concept ไม่ซ้ำ ต่อบรรทัด');
-    assert.deepEqual(m.product_targets, { L3: ['T1'], L8A: ['M1', 'M2'], L8B: ['M1', 'M2'] });
+    assert.deepEqual(m.bundles, [['L8A', 'L8B']], 'เรียงตามลำดับสินค้าในบล็อก');
+    assert.deepEqual(m.singles, ['L3'], 'แถวเดี่ยวที่ติ๊กรวมเป็นชุดไปแล้ว (เพิ่มคืนได้ที่ช่องเลือกสินค้า)');
+    assert.deepEqual(m.product_budgets, { L3: '10000', 'L8A+L8B': '7000' });
+    assert.deepEqual(m.product_kols, { L3: '3', 'L8A+L8B': '3' });
+    assert.deepEqual(m.product_concepts, { 'L8A+L8B': 'ผิวฉ่ำ\nติดทน' }, 'Concept ไม่ซ้ำ ต่อบรรทัด');
+    assert.deepEqual(m.row_targets, { L3: ['T1'], 'L8A+L8B': ['M1', 'M2'] });
     assert.equal(m.budget, '17000', 'งบรวมของ Platform เท่าเดิม');
     assert.deepEqual(web.productRows(m).map(r => r.label), ['L3', 'L8A + L8B']);
-    // ติ๊กแถวเดียว = ไม่รวม
+    // ติ๊กแถวเดียว / key ที่ไม่มี = ไม่รวม
     const one = blk();
     assert.equal(web.makeBundle(one, ['L8A']), one);
+    assert.equal(web.makeBundle(one, ['L8A', 'X9']), one);
     // ติ๊กแถวชุดที่มีอยู่ + อีกสินค้า = ชุดใหญ่ชุดเดียว (ค่ารวมกัน)
-    const big = web.makeBundle(m, ['L8B', 'L3']);
+    const big = web.makeBundle(m, ['L8A+L8B', 'L3']);
     assert.deepEqual(big.bundles, [['L3', 'L8A', 'L8B']]);
-    assert.deepEqual([big.product_budgets, big.product_kols], [{ L3: '17000' }, { L3: '6' }]);
-    assert.deepEqual(big.product_targets.L8B, ['T1', 'M1', 'M2']);
+    assert.deepEqual(big.singles, []);
+    assert.deepEqual([big.product_budgets, big.product_kols], [{ 'L3+L8A+L8B': '17000' }, { 'L3+L8A+L8B': '6' }]);
+    assert.deepEqual(big.row_targets['L3+L8A+L8B'], ['T1', 'M1', 'M2']);
     // ยังไม่ได้ใส่อะไร = ไม่มีค่าค้าง
     const empty = web.makeBundle(blk({ product_budgets: {}, product_kols: {}, product_concepts: {}, budget: '' }), ['L8A', 'L8B']);
     assert.deepEqual([empty.product_budgets, empty.product_kols, empty.product_concepts, empty.budget], [{}, {}, {}, '']);
 });
 
-test('split bundle: the head keeps the values, other codes start empty, targets stay', () => {
-    const s = web.splitBundle(bundled(), 'L8A');
-    assert.deepEqual(s.bundles, []);
+test('split bundle: codes without a single row get one (first gets the bundle values), existing single rows keep theirs', () => {
+    const s = web.splitBundle(bundled(), 'L8A+L8B');
+    assert.deepEqual([s.bundles, s.singles], [[], ['L3', 'L8A', 'L8B']]);
     assert.deepEqual([s.product_budgets, s.product_kols], [{ L3: 10000, L8A: 7000 }, { L3: 3, L8A: 3 }]);
-    assert.deepEqual(s.product_targets.L8B, ['M1', 'M2']);
+    assert.deepEqual([s.row_targets.L8A, s.row_targets.L8B], [['M1', 'M2'], ['M1', 'M2']]);
     assert.equal(web.productBudgetSum(s), 17000, 'ยอดรวมไม่เปลี่ยน');
     const st = web.kolSplitState(s);
     assert.deepEqual([st.missing, st.sum, st.total, st.ok], [['L8B'], 6, 6, false], 'L8B ต้องใส่จำนวนเอง');
+    const bb = bundled();
+    assert.equal(web.splitBundle(bb, 'L3'), bb, 'ไม่ใช่ชุด = คืนตัวเดิม');
 });
 
-test('removing a product leaves its bundle; removing the head moves the bundle values to the next code', () => {
+test('remove a row: single row / whole bundle · codes left in no row leave the platform · values of the removed row go too', () => {
     const three = web.makeBundle(blk({ products: ['L3', 'L8A', 'L8B', 'L10'] }), ['L8A', 'L8B', 'L10']);
     assert.deepEqual(three.bundles, [['L8A', 'L8B', 'L10']]);
-    const noHead = web.dropFromBundle(three, 'L8A');
-    assert.deepEqual(noHead.bundles, [['L8B', 'L10']]);
-    assert.deepEqual([noHead.product_budgets, noHead.product_kols, noHead.product_concepts], [{ L3: '10000', L8B: '7000' }, { L3: '3', L8B: '3' }, { L8B: 'ผิวฉ่ำ\nติดทน' }]);
-    const noTail = web.dropFromBundle(three, 'L10');
-    assert.deepEqual([noTail.bundles, noTail.product_kols], [[['L8A', 'L8B']], three.product_kols]);
-    // ชุด 2 รหัสเหลือรหัสเดียว = แถวปกติ และได้ค่าของชุดไป · เรียกหลังเอาออกจาก products แล้วก็ได้
-    const two = bundled();
-    const after = web.dropFromBundle({ ...two, products: ['L3', 'L8B'] }, 'L8A');
-    assert.deepEqual([after.bundles, after.product_kols, after.product_budgets], [[], { L3: 3, L8B: 3 }, { L3: 10000, L8B: 7000 }]);
-    assert.deepEqual(web.productRows(after).map(r => r.label), ['L3', 'L8B']);
-    // ไม่อยู่ในชุด = ไม่แตะอะไร
-    assert.equal(web.dropFromBundle(two, 'L3'), two);
+    const noBundle = web.removeRow(three, 'L10+L8A+L8B');
+    assert.deepEqual([noBundle.products, noBundle.bundles, noBundle.singles], [['L3'], [], ['L3']]);
+    assert.deepEqual([noBundle.product_kols, noBundle.product_budgets, noBundle.budget], [{ L3: '3' }, { L3: '10000' }, '10000']);
+    const noL3 = web.removeRow(three, 'L3');
+    assert.deepEqual([noL3.products, noL3.singles, noL3.product_kols], [['L8A', 'L8B', 'L10'], [], { 'L10+L8A+L8B': '3' }]);
+    assert.equal(web.removeRow(three, 'X9'), three, 'ไม่มีแถวนี้ = คืนตัวเดิม');
 });
 
 test('sums and validation count a bundle as one row (no missing warning for the non-head code, no double count)', () => {
@@ -111,11 +114,13 @@ test('pack: bundles always written, budgets / counts / concepts under the head o
     const raw = bundled({ bundles: [['L8A', 'L8B'], ['X1', 'L3']], product_kols: { L3: '3', L8A: '3', L8B: '9' }, product_budgets: { L3: '10000', L8A: '7000', L8B: '1' },
         product_concepts: { L8A: 'ผิวฉ่ำ', L8B: 'ค้าง' }, product_targets: { L3: ['T1'], L8A: ['M1'], L8B: ['M2'] } });
     const p = web.packCampaigns(web.packProductTargets(web.packBudgets(web.packConcepts(web.packKols(web.packBundles(raw))))));
-    assert.deepEqual(p.bundles, [['L8A', 'L8B']]);
-    assert.deepEqual(p.product_budgets, { L3: 10000, L8A: 7000 });
+    // บันทึกเป็นรุ่น 2 เสมอ: singles + ค่าที่ key ของแถว + Target ต่อแถว · Target ต่อรหัส (ตัวอ่านแบบเดิม) = รวมของทุกแถวที่มีรหัสนั้น
+    assert.deepEqual([p.bundles, p.singles], [[['L8A', 'L8B']], ['L3']]);
+    assert.deepEqual(p.product_budgets, { L3: 10000, 'L8A+L8B': 7000 });
     assert.equal(p.budget, '17000');
-    assert.deepEqual(p.product_kols, { L3: 3, L8A: 3 });
-    assert.deepEqual(p.product_concepts, { L8A: 'ผิวฉ่ำ' });
+    assert.deepEqual(p.product_kols, { L3: 3, 'L8A+L8B': 3 });
+    assert.deepEqual(p.product_concepts, { 'L8A+L8B': 'ผิวฉ่ำ' });
+    assert.deepEqual(p.row_targets, { L3: ['T1'], 'L8A+L8B': ['M1', 'M2'] });
     assert.deepEqual(p.product_targets, { L3: ['T1'], L8A: ['M1', 'M2'], L8B: ['M1', 'M2'] });
     assert.deepEqual([...p.target].sort(), ['M1', 'M2', 'T1']);
     assert.deepEqual(web.packBundles(blk({ bundles: undefined })).bundles, [], 'ไม่มีชุด = อาเรย์ว่าง (server ใช้แยกแท็บเก่า)');
@@ -133,12 +138,14 @@ test('toBlocks keeps bundles; old data without bundles reads as no bundles', () 
     assert.deepEqual(web.emptyBlock('TikTok').bundles, []);
 });
 
-test('concept display: every code of a bundle shows the bundle concept', () => {
+test('concept display: a bundle is one entry "L8A + L8B" with the bundle concept', () => {
     const g = { concept: 'หลัก', blocks: [bundled()] };
     const rows = web.conceptRows(g);
-    assert.deepEqual(rows.map(r => [r.concept, r.items.map(i => i.label), r.main]), [['หลัก', ['L3'], true], ['ผิวฉ่ำ\nติดทน', ['L8A', 'L8B'], false]]);
+    // 1 รายการ = 1 แถวสินค้า (12 พ.ย. 2026 — สินค้าเดียวกันอยู่ได้หลายแถว แต่ละแถวมี Concept ของตัวเอง)
+    assert.deepEqual(rows.map(r => [r.concept, r.items.map(i => i.label), r.main]), [['หลัก', ['L3'], true], ['ผิวฉ่ำ\nติดทน', ['L8A + L8B'], false]]);
+    assert.deepEqual(rows[1].items[0].codes, ['L8A', 'L8B']);
     // หน้าเอเจนซี่ที่เห็นแค่ L8B ก็ได้ Concept ของชุด
-    assert.equal(web.conceptText(g, false, ['L8B']), 'L8B = ผิวฉ่ำ / ติดทน');
+    assert.equal(web.conceptText(g, false, ['L8B']), 'L8A + L8B = ผิวฉ่ำ / ติดทน');
     // ไม่มีชุด = เหมือนเดิม (L8B ไม่มี Concept ของตัวเอง → Concept หลัก)
     const plain = { concept: 'หลัก', blocks: [blk({ product_concepts: { L8A: 'ผิวฉ่ำ' } })] };
     assert.deepEqual(web.conceptRows(plain).map(r => r.items.map(i => i.label)), [['L3', 'L8B'], ['L8A']]);

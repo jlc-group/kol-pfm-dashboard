@@ -465,27 +465,9 @@ function resolveGroupClips(g, platform) {
 const TARGET_PLATFORMS = ['TikTok'];
 // Target ตั้งแยกต่อ Platform และมีเฉพาะ Platform ที่ใช้ยิงแอด
 // กลุ่มที่ลง TikTok + Facebook จะมี Target แค่ฝั่ง TikTok เท่านั้น
-// Target ต่อสินค้าของคลิป (product_targets) → ไม่มี/ไม่รู้สินค้า ใช้ Target รวมของ Platform — เหมือน logic.js
-function resolveGroupTarget(g, platform, product) {
-    if (!g) return null;
-    const b = (g.blocks || []).find(x => x.platform === platform);
-    if (b) {
-        const pt = b.product_targets;
-        if (product && pt && typeof pt === 'object' && !Array.isArray(pt)) {
-            const keys = Object.keys(pt);
-            const codes = [];
-            String(product).split(/[,，]/).map(s => s.trim()).filter(Boolean).forEach(tok => {
-                const hit = keys.find(k => tok === k || tok.startsWith(k + ' '));
-                if (hit && !codes.includes(hit)) codes.push(hit);
-            });
-            const picked = [...new Set(codes.flatMap(c => (Array.isArray(pt[c]) ? pt[c] : (pt[c] ? [pt[c]] : [])).filter(Boolean)))];
-            if (picked.length) return picked;
-        }
-        const t = b.target;
-        return (Array.isArray(t) ? t.length : !!t) ? t : null;
-    }
-    return TARGET_PLATFORMS.includes(platform) ? (g.target || null) : null;
-}
+// Target ของแถวสินค้าที่คลิปอยู่ → ไม่มี/ไม่รู้สินค้า ใช้ Target รวมของ Platform
+// ใช้ตัวเดียวกับ logic.js (12 พ.ย. 2026 — เดิมเป็นสำเนาแยก · แถวสินค้ารุ่น 2 / Target ต่อแถว ต้องไม่ต่างกันสองที่)
+const resolveGroupTarget = require('./logic').resolveGroupTarget;
 // สินค้าของ Platform นั้นในกลุ่ม — ไม่มีค่อยถอยไปใช้ของทั้งกลุ่ม
 function resolveGroupProducts(g, platform) {
     if (!g) return [];

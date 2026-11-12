@@ -6,6 +6,8 @@
 //     localStorage ใช้ไม่ได้ (โหมดส่วนตัว / ถูกบล็อก / เต็ม) = ใช้หน่วยความจำอย่างเดียว (ปิด-เปิดหน้าต่างยังได้ แค่รีเฟรชแล้วหาย)
 // สร้างแคมเปญสำเร็จ / กด "ล้างฟอร์ม" = ลบร่าง · ฟอร์มแก้ไขแคมเปญไม่ใช้ร่าง · ร่างเก่าเกิน 7 วันทิ้ง
 
+import { upgradeRows, productRows } from '../data/adGroups.js';
+
 const VER = 1;
 const TTL = 7 * 24 * 60 * 60 * 1000;
 const keyOf = uid => `kol:project-draft:${uid == null ? 'anon' : uid}`;
@@ -98,24 +100,30 @@ export function readProjectDraft(uid, now = Date.now()) {
     return draftHasContent(d) || d.lostFiles.length ? d : null;
 }
 
-// ร่างเก็บได้ถึง 7 วัน ระหว่างนั้น Admin อาจเปลี่ยนชื่อ/ซ่อน Target (หน้า Products & Targets) — ตอนกู้เอาเฉพาะ Target ที่สินค้ายังเลือกได้
+// ร่างเก็บได้ถึง 7 วัน ระหว่างนั้น Admin อาจเปลี่ยนชื่อ/ซ่อน Target (หน้า Products & Targets) — ตอนกู้เอาเฉพาะ Target ที่แถวนั้นยังเลือกได้
 // ที่หายไปคืนใน dropped ให้ฟอร์มบอก (แถวนั้นกลับเป็นยังไม่เลือก Target ให้เลือกใหม่) · targetsOf(code) = Target ที่เลือกได้ของสินค้านั้น
+// Target เก็บต่อแถว (row_targets · 12 พ.ย. 2026) — ชุด = เลือกได้ทุก Target ของทุกรหัสในชุด · ร่างจากก่อนหน้านั้น (Target ต่อรหัส) แปลงเป็นต่อแถวก่อน
 export function refreshDraftTargets(groups, targetsOf) {
     const dropped = [];
     const out = (Array.isArray(groups) ? groups : []).map(g => {
         if (!isMap(g) || !Array.isArray(g.blocks)) return g;
         return {
             ...g,
-            blocks: g.blocks.map(b => {
-                if (!isMap(b) || !isMap(b.product_targets)) return b;
-                const pt = {};
-                Object.entries(b.product_targets).forEach(([code, list]) => {
-                    const ok = targetsOf(code);
+            blocks: g.blocks.map(b0 => {
+                if (!isMap(b0)) return b0;
+                const b = upgradeRows(b0);
+                if (!isMap(b.row_targets)) return b;
+                const rows = productRows(b);
+                const rt = {};
+                Object.entries(b.row_targets).forEach(([key, list]) => {
+                    const row = rows.find(r => r.key === key);
+                    if (!row) return;   // แถวที่ไม่มีแล้ว — ตอนบันทึกก็ไม่เก็บอยู่แล้ว ไม่ต้องบอก
+                    const ok = [...new Set(row.codes.flatMap(c => targetsOf(c)))];
                     const arr = Array.isArray(list) ? list : (list ? [list] : []);
-                    pt[code] = arr.filter(t => ok.includes(t));
+                    rt[key] = arr.filter(t => ok.includes(t));
                     arr.filter(t => !ok.includes(t)).forEach(t => { if (!dropped.includes(t)) dropped.push(t); });
                 });
-                return { ...b, product_targets: pt };
+                return { ...b, row_targets: rt };
             })
         };
     });

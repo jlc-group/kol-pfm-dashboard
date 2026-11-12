@@ -16,7 +16,8 @@ import {
     isSplitConcept, isBlockSplitConcept, packConcepts, conceptParts,
     isKolSplit, productKolOf, productKolSum, kolSplitState, kolSplitProblem, packKols, kolAutoTier, syncAutoKols, seedKolSplit,
     blockTierNames, unifyTiers, setSetKols, setKol, settleKols, KOL_TIERS, MIXED_TIER,
-    productRows, makeBundle, splitBundle, dropFromBundle, packBundles, copyProductSet, sameProductSet,
+    productRows, makeBundle, splitBundle, removeRow, addSingle, blockSingles, blockBundles, rowKeyOf, rowTargetsOf, rowBudgetOf,
+    packBundles, copyProductSet, sameProductSet,
     needCart, setCartOk, cartValue, packCart, withSetCart, cartConflicts
 } from '../data/adGroups.js';
 
@@ -63,12 +64,13 @@ function AutoTextarea({ value, ...rest }) {
     return <textarea {...rest} ref={ref} rows={1} value={value} onInput={e => fit(e.target)} />;
 }
 
-function CheckMultiSelect({ options, selected, onToggle, disabled, disabledText, placeholder, emptyText, allLabel = 'ทั้งหมด', buttonText, buttonTitle }) {
+// skipAll = ค่าที่ปุ่ม "เลือกทั้งหมด" ไม่ต้องติ๊กให้ (ช่องเลือกสินค้า: สินค้าที่อยู่ในชุดแล้ว — ติ๊กเองทีละตัวได้ ผลรีวิว 12 พ.ย.)
+function CheckMultiSelect({ options, selected, onToggle, disabled, disabledText, placeholder, emptyText, allLabel = 'ทั้งหมด', buttonText, buttonTitle, skipAll = [] }) {
     const [open, setOpen] = useState(false);
     if (disabled) return <div className="product-picker pms-disabled">{disabledText}</div>;
-    const allSelected = options.length > 0 && options.every(o => selected.includes(o.value));
+    const allSelected = options.length > 0 && options.every(o => selected.includes(o.value) || skipAll.includes(o.value));
     // เลือก/ยกเลิกทุกตัวในครั้งเดียว (toggle เฉพาะตัวที่ต่างจากสถานะที่ต้องการ)
-    const selectAll = () => options.forEach(o => { if (!selected.includes(o.value)) onToggle(o.value); });
+    const selectAll = () => options.forEach(o => { if (!selected.includes(o.value) && !skipAll.includes(o.value)) onToggle(o.value); });
     const clearAll = () => options.forEach(o => { if (selected.includes(o.value)) onToggle(o.value); });
     return (
         <div className="pms">
@@ -254,14 +256,13 @@ export default function ProjectForm({ editing, onClose, onSaved }) {
     // ทุกการแก้บล็อกผ่านตรงนี้ — Platform ที่มี Content Type เดียว + Tier เดียว เขียนจำนวนรวมจากสินค้าลงแถว Tier ให้ทุกครั้ง (syncAutoKols)
     const mapBlock = (i, bi, fn) => setAdGroups(gs => gs.map((x, idx) =>
         idx !== i ? x : ({ ...x, blocks: (x.blocks || []).map((b, j) => j !== bi ? b : syncAutoKols(settleKols(fn(b)))) })));
-    // Target ของแถวสินค้าในบล็อก (1 แถว = 1 สินค้า หรือ 1 ชุด) — Target รวมของบล็อกคิดใหม่ตอนบันทึก
-    // ชุดสินค้า: ติ๊กทีเดียวได้ทุกรหัสในชุด (Target ยังเก็บต่อสินค้า หน้าอื่นอ่านได้เหมือนเดิม)
-    const toggleRowTarget = (i, bi, codes, t) => mapBlock(i, bi, b => {
-        const pt = { ...(b.product_targets || {}) };
-        const cur = [...new Set(codes.flatMap(c => asTargetArray(pt[c])))];
-        const next = cur.includes(t) ? cur.filter(v => v !== t) : [...cur, t];
-        codes.forEach(c => { pt[c] = [...next]; });
-        return { ...b, product_targets: pt };
+    // Target ของแถวสินค้าในบล็อก (1 แถว = 1 สินค้า หรือ 1 ชุด) — เก็บต่อแถว (row_targets) · Target ต่อรหัส / รวมของบล็อกคิดใหม่ตอนบันทึก
+    // สินค้าเดียวกันอยู่หลายแถวได้ (12 พ.ย. 2026) — แถว L10 กับชุด L10 + L20 เลือก Target ต่างกันได้
+    const toggleRowTarget = (i, bi, key, t) => mapBlock(i, bi, b => {
+        const rt = { ...(b.row_targets || {}) };
+        const cur = asTargetArray(rt[key]);
+        rt[key] = cur.includes(t) ? cur.filter(v => v !== t) : [...cur, t];
+        return { ...b, row_targets: rt };
     });
     // เพิ่มชุด Content Type — ก๊อป Campaign / Format (Photo/VDO) / Style ของชุดก่อนหน้ามาให้ กรอกน้อยลง
     // Facebook / Instagram ไม่ก๊อป Campaign — ช่องนี้คือตัวแยกชุด (แทน Content Type) ชุดใหม่ต้องเลือกเอง ไม่งั้นได้ชุดซ้ำ
@@ -287,26 +288,12 @@ export default function ProjectForm({ editing, onClose, onSaved }) {
         const sum = productBudgetSum(b);
         return { ...b, budget_mode: 'total', budget: sum > 0 ? String(sum) : (b.budget_before_split || '') };
     });
-    const setProductBudget = (i, bi, code, v) => mapBlock(i, bi, b => {
-        const pb = { ...(b.product_budgets || {}), [code]: String(v).replace(/[^0-9]/g, '') };
+    // ค่าของแถว (งบ / Concept / จำนวนคน) เก็บที่ key ของแถว — สินค้าเดี่ยว = รหัส · ชุด = "L10+L20" (ดู productRows ใน adGroups.js)
+    const setProductBudget = (i, bi, key, v) => mapBlock(i, bi, b => {
+        const pb = { ...(b.product_budgets || {}), [key]: String(v).replace(/[^0-9]/g, '') };
         const sum = productBudgetSum({ ...b, product_budgets: pb });
         return { ...b, product_budgets: pb, budget: sum > 0 ? String(sum) : '' };
     });
-    // เอาสินค้าออกจากบล็อก = งบ / Concept / จำนวนคน ของสินค้านั้นหายไปด้วย และงบรวม (ตอนแยกงบ) คิดใหม่
-    // อยู่ในชุด = หลุดจากชุดก่อน (เป็นหัวชุด → ค่าของชุดย้ายไปรหัสถัดไป · ชุดเหลือรหัสเดียว = แถวปกติ) — dropFromBundle
-    const dropProductExtras = (b0, code) => {
-        const b = dropFromBundle(b0, code);
-        const pb = { ...(b.product_budgets || {}) };
-        delete pb[code];
-        const pc = { ...(b.product_concepts || {}) };
-        delete pc[code];
-        const pk = { ...(b.product_kols || {}) };
-        delete pk[code];
-        const next = { ...b, product_budgets: pb, product_concepts: pc, product_kols: pk };
-        if (!isSplitBudget(next)) return next;
-        const sum = productBudgetSum(next);
-        return { ...next, budget: sum > 0 ? String(sum) : '' };
-    };
     // สินค้า / คลิปต่อคน ย้ายมาอยู่ระดับ Platform แล้ว
     // เลือก/เอาสินค้าออก — แถว Target ของสินค้านั้นเกิด/หายตามไปด้วย
     // Target เริ่มต้นของสินค้าที่เพิ่งเข้ามาในบล็อก (ติ๊กเพิ่มทีละตัว / ใช้สินค้าเหมือน Platform อื่น)
@@ -317,18 +304,14 @@ export default function ProjectForm({ editing, onClose, onSaved }) {
         const back = asTargetArray(b.legacy_orphans).filter(t => targetsForProduct(code).includes(t));
         return [...new Set([...only, ...back])];
     };
-    const toggleBlockProduct = (i, bi, code) => mapBlock(i, bi, b => {
-        const on = (b.products || []).includes(code);
-        const pt = { ...(b.product_targets || {}) };
-        if (on) delete pt[code]; else pt[code] = pt[code] || seedTargetOf(b, code);
-        const next = { ...b, products: on ? b.products.filter(c => c !== code) : [...(b.products || []), code], product_targets: pt };
-        return on ? dropProductExtras(next, code) : next;
-    });
-    const removeBlockProduct = (i, bi, code) => mapBlock(i, bi, b => {
-        const pt = { ...(b.product_targets || {}) };
-        delete pt[code];
-        return dropProductExtras({ ...b, products: (b.products || []).filter(c => c !== code), product_targets: pt }, code);
-    });
+    // ช่องเลือกสินค้า = แถวเดี่ยว (12 พ.ย. 2026 — สินค้าเดียวกันอยู่ได้หลายแถว)
+    // ติ๊ก = เพิ่มแถวเดี่ยวของสินค้านั้น (รวมเป็นชุดไปแล้วก็ติ๊กเพิ่มแถวเดี่ยวได้อีก) · ติ๊กออก = เอาแถวเดี่ยวออก (ชุดที่มีสินค้านั้นไม่โดน)
+    // สินค้าที่ไม่เหลือแถวไหนแล้ว = ออกจาก Platform นี้ · ค่าของแถวที่เอาออก (งบ / Concept / จำนวนคน / Target) หายไปด้วย งบรวมคิดใหม่ — removeRow
+    const toggleBlockProduct = (i, bi, code) => mapBlock(i, bi, b => (blockSingles(b).includes(code)
+        ? removeRow(b, code)
+        : addSingle(b, code, seedTargetOf(b, code))));
+    // × ที่แถว — แถวเดี่ยว = เอาแถวนั้นออก · ชุด = เอาชุดนั้นออก
+    const removeBlockRow = (i, bi, key) => mapBlock(i, bi, b => removeRow(b, key));
     const addBlockClip = (i, bi) => mapBlock(i, bi, b => ({ ...b, clips: [...(b.clips || []), ''] }));
     const removeBlockClip = (i, bi, ci) => mapBlock(i, bi, b => ({ ...b, clips: (b.clips || []).filter((_, j) => j !== ci) }));
     const setBlockClip = (i, bi, ci, v) => mapBlock(i, bi, b => ({ ...b, clips: (b.clips || []).map((c, j) => j === ci ? v : c) }));
@@ -360,25 +343,25 @@ export default function ProjectForm({ editing, onClose, onSaved }) {
     const setGroupField = (i, k, v) => setAdGroups(g => g.map((x, idx) => idx === i ? { ...x, [k]: v } : x));
     // Concept แยกต่อสินค้า (ต่อ Platform) — ปิดแล้วข้อความที่พิมพ์ไว้ยังอยู่ในฟอร์ม (เปิดใหม่ได้คืน) แต่ไม่ถูกบันทึก
     const toggleConceptSplit = (i, bi) => mapBlock(i, bi, b => ({ ...b, concept_split: !b.concept_split }));
-    const setProductConcept = (i, bi, code, v) => mapBlock(i, bi, b => ({ ...b, product_concepts: { ...(b.product_concepts || {}), [code]: v } }));
+    const setProductConcept = (i, bi, key, v) => mapBlock(i, bi, b => ({ ...b, product_concepts: { ...(b.product_concepts || {}), [key]: v } }));
     // จำนวน KOL ต่อสินค้า (ต่อ Platform) — ใส่ที่แถวสินค้าเสมอ (6 ต.ค. 2026 เอาปุ่มเปิด/ปิดออก)
     // รับเฉพาะตัวเลขจำนวนเต็ม (ตัด 0 นำหน้า) — 0 / ว่าง = ยังไม่ใส่ (แถวขึ้นแดง)
-    const setProductKol = (i, bi, code, v) => mapBlock(i, bi, b => ({
-        ...b, product_kols: { ...(b.product_kols || {}), [code]: String(v).replace(/[^0-9]/g, '').replace(/^0+(?=\d)/, '') }
+    const setProductKol = (i, bi, key, v) => mapBlock(i, bi, b => ({
+        ...b, product_kols: { ...(b.product_kols || {}), [key]: String(v).replace(/[^0-9]/g, '').replace(/^0+(?=\d)/, '') }
     }));
     // ชุดสินค้า (KOL 1 คนรีวิวหลายสินค้ารวมในคลิปเดียว) ต่อ Platform — ติ๊กแถว ☐ แล้วกด 🔗 รวมเป็นชุด · แถวชุดมีปุ่ม ✂ แยกชุด
     // ชุด = 1 แถว: งบ / จำนวนคน / Concept / Target ชุดเดียว (ดู makeBundle / splitBundle ใน adGroups.js)
+    // ติ๊กเก็บเป็น key ของแถว (สินค้าเดียวกันอยู่หลายแถวได้ — แถว L10 กับชุด L10 + L20 เป็นคนละแถว)
     const pickKeyOf = (g, i, b) => (g.key || 'g' + i) + '::' + b.platform;
-    const togglePick = (key, codes) => setBundlePick(m => {
+    const togglePick = (key, rowKey) => setBundlePick(m => {
         const cur = m[key] || [];
-        const on = codes.some(c => cur.includes(c));
-        return { ...m, [key]: on ? cur.filter(c => !codes.includes(c)) : [...cur, ...codes] };
+        return { ...m, [key]: cur.includes(rowKey) ? cur.filter(k => k !== rowKey) : [...cur, rowKey] };
     });
-    const bundleRows = (i, bi, key, codes) => {
-        mapBlock(i, bi, b => makeBundle(b, codes));
+    const bundleRows = (i, bi, key, rowKeys) => {
+        mapBlock(i, bi, b => makeBundle(b, rowKeys));
         setBundlePick(m => ({ ...m, [key]: [] }));
     };
-    const unbundle = (i, bi, head) => mapBlock(i, bi, b => splitBundle(b, head));
+    const unbundle = (i, bi, key) => mapBlock(i, bi, b => splitBundle(b, key));
     // ใช้สินค้าเหมือน Platform อื่นในกลุ่มเดียวกัน (ผู้ใช้สั่ง 6 ต.ค. 2026) — สินค้า + ชุดรวม + จำนวนคน แทนที่ของเดิมทั้งหมด
     // มีสินค้าเลือกไว้แล้ว = ถามยืนยันก่อน · งบ / Concept / Target ไม่คัดลอก (ดู copyProductSet ใน adGroups.js)
     const copyProductsFrom = (i, bi, srcPlatform) => {
@@ -431,7 +414,7 @@ export default function ProjectForm({ editing, onClose, onSaved }) {
                 // Target บังคับเฉพาะ Platform ที่ใช้ Target — ทุกสินค้าที่มี Target ให้เลือกต้องเลือกอย่างน้อย 1 กลุ่ม
                 // ชุดสินค้า = 1 แถว เลือก Target ครั้งเดียวทั้งชุด
                 if (needTarget(b.platform) && productRows(b).some(r => r.codes.some(code => targetsForProduct(code).length > 0)
-                    && r.codes.every(code => asTargetArray((b.product_targets || {})[code]).length === 0))) return false;
+                    && rowTargetsOf(b, r).length === 0)) return false;
                 if (!(b.sets || []).length) return false;
                 // Facebook / Instagram เลือกที่ช่อง Campaign แทน Content Type — ต้องเลือกทุกชุดเหมือนเดิม
                 // ยกเว้นกลุ่มที่ไม่ใช้ Gencode (ไม่ได้ยิงแอด) ที่สองช่องนี้ถูกปิดไว้ — ดู setTypeOk
@@ -447,7 +430,7 @@ export default function ProjectForm({ editing, onClose, onSaved }) {
         // แยกงบต่อสินค้า = ทุกแถวสินค้าในบล็อกต้องใส่งบ (ชุด = งบเดียวที่หัวชุด) · ก้อนเดียว = งบของ Platform ต้องมากกว่า 0
         const budgetOk = adGroups.length > 0 && adGroups.every(g => (g.blocks || []).length > 0
             && g.blocks.every(b => (isSplitBudget(b)
-                ? (b.products || []).length > 0 && productRows(b).every(r => num((b.product_budgets || {})[r.head]) > 0)
+                ? (b.products || []).length > 0 && productRows(b).every(r => rowBudgetOf(b, r) > 0)
                 : num(b.budget) > 0)));
         if (!budgetOk) m.push('Budget ของแต่ละ Platform ในกลุ่มสินค้า (ถ้าแยกงบต่อสินค้า ทุกสินค้าต้องใส่งบ)');
         // แยกจำนวน KOL ต่อสินค้า: ทุกสินค้าใส่อย่างน้อย 1 คน และรวมแล้วต้องเท่าจำนวน KOL ของ Platform พอดี
@@ -695,28 +678,32 @@ export default function ProjectForm({ editing, onClose, onSaved }) {
                                     ) : (g.blocks || []).map((b, bi) => {
                                         const single = (g.blocks || []).length === 1;
                                         const withTarget = needTarget(b.platform);
-                                        const ptOf = code => asTargetArray((b.product_targets || {})[code]);
-                                        // แถวสินค้า: 1 แถว = 1 สินค้า หรือ 1 ชุดสินค้า (รีวิวรวมในคลิปเดียว) — ค่าของแถวเก็บที่ r.head
+                                        // แถวสินค้า: 1 แถว = 1 สินค้า หรือ 1 ชุดสินค้า (รีวิวรวมในคลิปเดียว) — ค่าของแถวเก็บที่ r.key
+                                        // สินค้าเดียวกันอยู่ได้หลายแถว (12 พ.ย. 2026): แถว L10 + ชุด L10 + L20 + ชุด L10 + L23 — แต่ละแถวมีค่าของตัวเอง
                                         const rows = productRows(b);
                                         const rowNeedsTarget = r => r.codes.some(code => targetsForProduct(code).length > 0);
-                                        const rowTargets = r => [...new Set(r.codes.flatMap(ptOf))];
+                                        const rowTargets = r => rowTargetsOf(b, r);
                                         const needCount = rows.filter(rowNeedsTarget).length;
                                         const doneCount = rows.filter(r => rowNeedsTarget(r) && rowTargets(r).length > 0).length;
-                                        // ติ๊กแถวเพื่อรวมเป็นชุด — ต้องมีอย่างน้อย 2 แถวถึงจะรวมได้
+                                        // ติ๊กแถวเพื่อรวมเป็นชุด (เก็บ key ของแถว) — ต้องมีอย่างน้อย 2 แถวถึงจะรวมได้
                                         const pickKey = pickKeyOf(g, i, b);
-                                        const picked = (bundlePick[pickKey] || []).filter(c => (b.products || []).includes(c));
-                                        const rowPicked = r => r.codes.some(c => picked.includes(c));
+                                        const picked = (bundlePick[pickKey] || []).filter(k => rows.some(r => r.key === k));
+                                        const rowPicked = r => picked.includes(r.key);
                                         const pickedRows = rows.filter(rowPicked);
                                         const canBundle = rows.length >= 2;
+                                        // ชุดที่จะได้ซ้ำกับชุดที่มีอยู่แล้ว (ที่ไม่ได้ติ๊ก) = รวมไม่ได้ — บอกให้ใส่จำนวนเพิ่มที่ชุดเดิมแทน
+                                        const pickedCodes = (b.products || []).filter(c => pickedRows.some(r => r.codes.includes(c)));
+                                        const dupBundle = pickedRows.length >= 2
+                                            ? rows.find(r => r.bundle && !rowPicked(r) && r.key === rowKeyOf(pickedCodes)) : null;
                                         const pickBox = r => canBundle && (
                                             <span className="pbd-pick" title="ติ๊กสินค้าที่ KOL 1 คนรีวิวรวมในคลิปเดียว แล้วกด 🔗 รวมเป็นชุด">
                                                 <input type="checkbox" checked={rowPicked(r)} aria-label={`เลือก ${r.label} เพื่อรวมเป็นชุด`}
-                                                    onChange={() => togglePick(pickKey, r.codes)} />
+                                                    onChange={() => togglePick(pickKey, r.key)} />
                                             </span>
                                         );
                                         const splitBtn = r => (
-                                            <button type="button" className="pbd-split" title="แยกกลับเป็นทีละสินค้า — งบ / จำนวนคน / Concept ของชุดอยู่ที่ตัวแรก ตัวอื่นเริ่มว่าง"
-                                                onClick={() => unbundle(i, bi, r.head)}>✂ แยกชุด</button>
+                                            <button type="button" className="pbd-split" title="แยกกลับเป็นทีละสินค้า — สินค้าที่ยังไม่มีแถวเดี่ยวได้แถวเดี่ยว (งบ / จำนวนคน / Concept ของชุดไปอยู่แถวแรก) · ทุกสินค้ามีแถวเดี่ยวแล้ว = ค่าของชุดบวกเข้าแถวเดี่ยวแรก"
+                                                onClick={() => unbundle(i, bi, r.key)}>✂ แยกชุด</button>
                                         );
                                         // ช่องสินค้าในแถว: ชุด = "🔗 L8A + L8B" + ปุ่มแยกชุด · สินค้าเดี่ยว = รหัส + ชื่อ (เหมือนเดิม)
                                         const prodCell = r => (
@@ -725,24 +712,26 @@ export default function ProjectForm({ editing, onClose, onSaved }) {
                                                 {r.bundle ? splitBtn(r) : <span>{productLabel(r.head).replace(r.head + ' - ', '')}</span>}
                                             </div>
                                         );
-                                        // ชุดไม่มีปุ่ม × (เอาสินค้าออกได้ที่ช่องเลือกสินค้า — สินค้านั้นหลุดจากชุดเอง)
-                                        const rmBtn = r => !r.bundle && (
-                                            <button type="button" className="ptgt-rm" title={`เอา ${r.head} ออกจาก Platform นี้`}
-                                                onClick={() => removeBlockProduct(i, bi, r.head)}>×</button>
+                                        // × ที่แถว: แถวเดี่ยว = เอาแถวนั้นออก (สินค้าที่ยังอยู่ในชุดยังอยู่) · ชุด = เอาชุดนั้นออก (12 พ.ย. 2026 ชุดมี × ด้วย)
+                                        // สินค้าที่ไม่เหลือแถวไหนแล้ว = ออกจาก Platform นี้
+                                        const rmBtn = r => (
+                                            <button type="button" className="ptgt-rm" title={r.bundle ? `เอาชุด ${r.label} ออก` : `เอาแถว ${r.head} ออก`}
+                                                aria-label={r.bundle ? `เอาชุด ${r.label} ออก` : `เอา ${r.head} ออก`}
+                                                onClick={() => removeBlockRow(i, bi, r.key)}>×</button>
                                         );
-                                        // Target เดิมที่ยังไม่มีสินค้าไหนใช้ — คิดสดทุกครั้ง (เลือกคืนให้สินค้าแล้วคำเตือนหายเอง)
-                                        const orphans = withTarget ? asTargetArray(b.legacy_orphans).filter(t => !(b.products || []).some(c => ptOf(c).includes(t))) : [];
+                                        // Target เดิมที่ยังไม่มีแถวไหนใช้ — คิดสดทุกครั้ง (เลือกคืนให้สินค้าแล้วคำเตือนหายเอง)
+                                        const orphans = withTarget ? asTargetArray(b.legacy_orphans).filter(t => !rows.some(r => rowTargets(r).includes(t))) : [];
                                         // งบแยกต่อสินค้า
                                         const split = isSplitBudget(b);
-                                        const pbOf = code => num((b.product_budgets || {})[code]);
-                                        const budgetMissing = split ? rows.filter(r => pbOf(r.head) <= 0) : [];
+                                        const pbOf = key => num((b.product_budgets || {})[key]);
+                                        const budgetMissing = split ? rows.filter(r => pbOf(r.key) <= 0) : [];
                                         // Concept แยกต่อสินค้า — ช่องในแถวสินค้า (ว่าง = ใช้ Concept หลักของกลุ่ม)
                                         const cSplit = isBlockSplitConcept(b);
-                                        const cOf = code => String((b.product_concepts || {})[code] || '');
+                                        const cOf = key => String((b.product_concepts || {})[key] || '');
                                         // 1 สินค้าใส่ได้หลาย Concept — กด Enter ขึ้นบรรทัดใหม่ในช่องเดิม (ไม่ต้องกดปุ่มเพิ่ม)
                                         // ป้ายนับจำนวนขึ้นเมื่อมีตั้งแต่ 2 อัน เพื่อให้เห็นว่าระบบนับให้แล้วกี่คอนเซปต์
                                         const conceptField = (r, inline) => {
-                                            const code = r.head;
+                                            const code = r.key;
                                             const n = conceptParts(cOf(code)).length;
                                             return (
                                                 <div className={'pcon' + (inline ? ' inline' : '')}>
@@ -758,7 +747,7 @@ export default function ProjectForm({ editing, onClose, onSaved }) {
                                         // จำนวน KOL แยกต่อสินค้า — ช่อง "คน" ในแถวสินค้า · รวมแล้วต้องเท่าจำนวน KOL ของ Platform (แถว Tier ด้านล่าง) พอดี
                                         const kSplit = isKolSplit(b);
                                         const kst = kolSplitState(b);
-                                        const kOf = code => productKolOf(b, code);
+                                        const kOf = key => productKolOf(b, key);
                                         const kolDiff = kst ? kst.total - kst.sum : 0;
                                         // Content Type เดียว + Tier เดียว: จำนวนรวม = ผลรวมจากสินค้า (ไม่มีเป้าให้ขาด/เกิน) · แคมเปญเก่าที่ยังไม่แบ่งบอกยอดเดิมไว้
                                         const auto = kolAutoTier(b);
@@ -771,7 +760,7 @@ export default function ProjectForm({ editing, onClose, onSaved }) {
                                                 ใส่จำนวนแล้ว {kst.filled} / {kst.count} สินค้า · รวม {kst.sum} / {kst.total} คน
                                                 {kolDiff !== 0 && (kolDiff > 0 ? ` — ขาด ${kolDiff} คน` : ` — เกิน ${-kolDiff} คน`)}
                                             </span>);
-                                        const kolInput = ({ head: code, label }) => (
+                                        const kolInput = ({ key: code, label }) => (
                                             // ช่องข้อความรับเฉพาะตัวเลข (แบบช่องงบ) — type=number ปล่อยให้พิมพ์จุด/e ได้แล้วค่าหายกลางคัน
                                             <div className={'ptgt-kol' + (kOf(code) >= 1 ? '' : ' need')}>
                                                 <input type="text" inputMode="numeric" placeholder="0" aria-label={`จำนวน KOL ของ ${label}`}
@@ -781,7 +770,7 @@ export default function ProjectForm({ editing, onClose, onSaved }) {
                                             </div>
                                         );
                                         const rowLabel = [withTarget && 'Target', split && 'งบ', kSplit && 'จำนวนคน', cSplit && 'Concept'].filter(Boolean).join(' + ') + ' ของแต่ละสินค้า';
-                                        const moneyInput = ({ head: code, label }) => (
+                                        const moneyInput = ({ key: code, label }) => (
                                             // div ไม่ใช่ label — .field label ของฟอร์มบังคับเป็น block ตัวอักษรใหญ่ ทำให้ ฿ ตกบรรทัด
                                             <div className={'ptgt-money' + (pbOf(code) > 0 ? '' : ' need')}>
                                                 <input type="text" inputMode="numeric" placeholder="ใส่งบ" aria-label={`งบของ ${label}`}
@@ -809,18 +798,33 @@ export default function ProjectForm({ editing, onClose, onSaved }) {
                                                     </label>
                                                 )}
                                             </div>
-                                            {/* สินค้าของ Platform นี้ */}
-                                            <CheckMultiSelect
-                                                disabled={!form.brand}
-                                                disabledText="— เลือกแบรนด์ก่อน —"
-                                                placeholder="+ เลือกสินค้า"
-                                                emptyText="ไม่มีสินค้าในแบรนด์นี้"
-                                                allLabel="ทุกสินค้า"
-                                                // สินค้าที่ Admin ซ่อน (หน้า Products & Targets) ไม่ขึ้นให้เลือก ยกเว้นที่เลือกไว้แล้ว / แคมเปญนี้บันทึกไว้ (เอาออกแล้วติ๊กกลับได้)
-                                                options={pickableProducts(form.brand, [...savedCodes, ...(b.products || [])]).map(p => ({ value: p.code, label: `${p.code} - ${p.name}` }))}
-                                                selected={b.products || []}
-                                                onToggle={code => toggleBlockProduct(i, bi, code)}
-                                            />
+                                            {/* สินค้าของ Platform นี้ — ติ๊ก = มีแถวเดี่ยว (12 พ.ย. 2026)
+                                                สินค้าที่รวมเป็นชุดไปแล้วติ๊กอีกครั้งได้ = เพิ่มแถวเดี่ยวของสินค้านั้น (ชุดเดิมยังอยู่) · ติ๊กออก = เอาแถวเดี่ยวออก (ชุดไม่โดน) */}
+                                            {(() => {
+                                                const singles = blockSingles(b);
+                                                const inBundle = new Set(blockBundles(b).flat());
+                                                const nBundle = rows.filter(r => r.bundle).length;
+                                                return (
+                                                    <CheckMultiSelect
+                                                        disabled={!form.brand}
+                                                        disabledText="— เลือกแบรนด์ก่อน —"
+                                                        placeholder="+ เลือกสินค้า"
+                                                        emptyText="ไม่มีสินค้าในแบรนด์นี้"
+                                                        allLabel="ทุกสินค้า"
+                                                        buttonText={nBundle ? `+ เลือกสินค้า (สินค้าเดี่ยว ${singles.length} · ชุด ${nBundle})` : undefined}
+                                                        buttonTitle={nBundle ? 'ติ๊ก = มีแถวเดี่ยว · สินค้าที่อยู่ในชุดแล้วติ๊กเพิ่มเป็นแถวเดี่ยวได้อีก (ชุดไม่โดน)' : undefined}
+                                                        // สินค้าที่ Admin ซ่อน (หน้า Products & Targets) ไม่ขึ้นให้เลือก ยกเว้นที่เลือกไว้แล้ว / แคมเปญนี้บันทึกไว้ (เอาออกแล้วติ๊กกลับได้)
+                                                        options={pickableProducts(form.brand, [...savedCodes, ...(b.products || [])]).map(p => ({
+                                                            value: p.code,
+                                                            label: `${p.code} - ${p.name}${inBundle.has(p.code) && !singles.includes(p.code) ? ' · อยู่ในชุดแล้ว (ติ๊ก = เพิ่มแถวเดี่ยว)' : ''}`
+                                                        }))}
+                                                        selected={singles}
+                                                        // "เลือกทุกสินค้า" ไม่เพิ่มแถวเดี่ยวให้สินค้าที่อยู่ในชุดแล้ว (ต้องการแถวเดี่ยวด้วย ติ๊กเองทีละตัว)
+                                                        skipAll={[...inBundle].filter(c => !singles.includes(c))}
+                                                        onToggle={code => toggleBlockProduct(i, bi, code)}
+                                                    />
+                                                );
+                                            })()}
                                             {/* ใช้สินค้าเหมือน Platform อื่นในกลุ่มนี้ (6 ต.ค. 2026) — 1 ปุ่มต่อ Platform ที่เลือกสินค้าไว้แล้ว
                                                 คัดลอก สินค้า + ชุดรวม + จำนวนคน · เหมือนกันอยู่แล้ว = ปุ่มขึ้น ✓ กดไม่ได้ */}
                                             {(g.blocks || []).some((o, oj) => oj !== bi && (o.products || []).length > 0) && (
@@ -858,14 +862,15 @@ export default function ProjectForm({ editing, onClose, onSaved }) {
                                                 ชุด = 1 แถว มีงบ / จำนวนคน / Concept / Target ชุดเดียว · แยกกลับได้ที่ปุ่ม ✂ แยกชุด ในแถวของชุด */}
                                             {canBundle && (
                                                 <div className="pbd-bar">
-                                                    <button type="button" className="pbd-make" disabled={pickedRows.length < 2}
+                                                    <button type="button" className="pbd-make" disabled={pickedRows.length < 2 || !!dupBundle}
                                                         title="รวมสินค้าที่ติ๊กไว้เป็นชุดเดียว (KOL 1 คนรีวิวรวมในคลิปเดียว)"
                                                         onClick={() => bundleRows(i, bi, pickKey, picked)}>
                                                         🔗 รวมเป็นชุด{pickedRows.length >= 2 ? ` (${pickedRows.map(r => r.label).join(' + ')})` : ''}
                                                     </button>
-                                                    <span className="pbd-hint">
-                                                        {pickedRows.length >= 2 ? 'ชุดจะมีงบ / จำนวนคน / Concept / Target ชุดเดียว'
-                                                            : 'ติ๊ก ☐ หน้าสินค้าที่ KOL 1 คนรีวิวรวมในคลิปเดียว (อย่างน้อย 2 ตัว) แล้วกดรวม'}
+                                                    <span className={'pbd-hint' + (dupBundle ? ' warn' : '')}>
+                                                        {dupBundle ? `มีชุด ${dupBundle.label} อยู่แล้ว — ใส่จำนวนคนเพิ่มที่ชุดเดิมแทน`
+                                                            : pickedRows.length >= 2 ? 'ชุดจะมีงบ / จำนวนคน / Concept / Target ชุดเดียว · ต้องการแถวเดี่ยวด้วย ติ๊กสินค้านั้นเพิ่มที่ช่องเลือกสินค้าได้อีก'
+                                                            : 'ติ๊ก ☐ หน้าสินค้าที่ KOL 1 คนรีวิวรวมในคลิปเดียว (อย่างน้อย 2 ตัว) แล้วกดรวม · สินค้าเดียวกันอยู่ได้หลายแถว (เดี่ยว + หลายชุด)'}
                                                     </span>
                                                 </div>
                                             )}
@@ -883,7 +888,7 @@ export default function ProjectForm({ editing, onClose, onSaved }) {
                                                         </span>
                                                     </div>
                                                     {rows.map(r => (
-                                                        <div className={'ptgt-row' + (r.bundle ? ' pbd-row' : '') + (split && pbOf(r.head) <= 0 ? ' need-budget' : '') + (kSplit && kOf(r.head) < 1 ? ' need-kol' : '')} key={r.head}>
+                                                        <div className={'ptgt-row' + (r.bundle ? ' pbd-row' : '') + (split && pbOf(r.key) <= 0 ? ' need-budget' : '') + (kSplit && kOf(r.key) < 1 ? ' need-kol' : '')} key={r.key}>
                                                             {pickBox(r)}
                                                             {prodCell(r)}
                                                             {/* ไม่มีงบในแถว = Concept อยู่บรรทัดเดียวกับสินค้า (ช่อง "คน" เล็ก ชิดขวาได้) · มีงบด้วย = Concept ขึ้นบรรทัดที่สอง */}
@@ -900,12 +905,13 @@ export default function ProjectForm({ editing, onClose, onSaved }) {
                                                 <div className="prodchip-wrap" style={{ marginBottom: 8 }}>
                                                     {/* ไม่ได้แยกอะไรเลย ชุดก็ยังโชว์เป็นชิปเดียว "🔗 L8A + L8B" ให้เห็นว่ารวมกันอยู่ */}
                                                     {rows.map(r => r.bundle ? (
-                                                        <span className="prodchip pbd-chip" key={r.head} title={r.codes.map(productLabel).join('\n')}>
+                                                        <span className="prodchip pbd-chip removable" key={r.key} title={r.codes.map(productLabel).join('\n')}>
                                                             {pickBox(r)}🔗 {r.label}{splitBtn(r)}
+                                                            <button type="button" onClick={() => removeBlockRow(i, bi, r.key)} title={`เอาชุด ${r.label} ออก`} aria-label={`เอาชุด ${r.label} ออก`}>×</button>
                                                         </span>
                                                     ) : (
-                                                        <span className="prodchip removable" key={r.head} title={productLabel(r.head)}>
-                                                            {pickBox(r)}{r.head}<button type="button" onClick={() => removeBlockProduct(i, bi, r.head)} title="เอาออก">×</button>
+                                                        <span className="prodchip removable" key={r.key} title={productLabel(r.head)}>
+                                                            {pickBox(r)}{r.head}<button type="button" onClick={() => removeBlockRow(i, bi, r.key)} title="เอาออก" aria-label={`เอา ${r.head} ออก`}>×</button>
                                                         </span>
                                                     ))}
                                                 </div>
@@ -937,10 +943,10 @@ export default function ProjectForm({ editing, onClose, onSaved }) {
                                                         const sel = rowTargets(r);
                                                         const need = rowNeedsTarget(r) && sel.length === 0;
                                                         // ยังไม่ใส่งบ / จำนวนคน (ตอนแยก) — แถวแดง แต่ปุ่ม Target ไม่แดง (Target เลือกแล้ว)
-                                                        const needBudget = split && pbOf(r.head) <= 0;
-                                                        const needKol = kSplit && kOf(r.head) < 1;
+                                                        const needBudget = split && pbOf(r.key) <= 0;
+                                                        const needKol = kSplit && kOf(r.key) < 1;
                                                         return (
-                                                            <div className={'ptgt-row' + (r.bundle ? ' pbd-row' : '') + (need ? ' need' : '') + (needBudget ? ' need-budget' : '') + (needKol ? ' need-kol' : '')} key={r.head}>
+                                                            <div className={'ptgt-row' + (r.bundle ? ' pbd-row' : '') + (need ? ' need' : '') + (needBudget ? ' need-budget' : '') + (needKol ? ' need-kol' : '')} key={r.key}>
                                                                 {pickBox(r)}
                                                                 {prodCell(r)}
                                                                 <div className="ptgt-pick">
@@ -953,7 +959,7 @@ export default function ProjectForm({ editing, onClose, onSaved }) {
                                                                         buttonTitle={sel.length ? sel.join('\n') : undefined}
                                                                         options={opts.map(t => ({ value: t, label: t }))}
                                                                         selected={sel}
-                                                                        onToggle={t => toggleRowTarget(i, bi, r.codes, t)}
+                                                                        onToggle={t => toggleRowTarget(i, bi, r.key, t)}
                                                                     />
                                                                 </div>
                                                                 {kSplit && kolInput(r)}
