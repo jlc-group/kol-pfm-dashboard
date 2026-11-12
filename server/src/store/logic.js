@@ -1445,7 +1445,7 @@ function postCheckDecision(action, note, byName, at) {
 module.exports = {
     GOOD_CPM, GOOD_CPE, TARGET_PLATFORMS, CAMPAIGN_PLATFORMS, CAMPAIGN_AS_CTYPE, SOCIAL_CAMPAIGNS, CART_PLATFORMS, cartValue,
     AD_STAMP_AT, AD_STAMP_BY_BRAND, stampAtFor, now, todayTH, clone, normCampaignType,
-    POST_CHECK_FIELDS, POST_CHECK_OPEN, postCheckWaiting, nextPostCheck, postCheckDecision, updateLatest,
+    POST_CHECK_FIELDS, POST_CHECK_OPEN, POST_CHECK_WAITING, postCheckWaiting, nextPostCheck, postCheckDecision, updateLatest,
     duplicateError, inScope, scopeProjects, hireRemaining, hireRowFee,
     HIRE_JOB_CLOSED, hireWaiting, hireNeedMore, hireStage,
     BOOK_PENDING, BOOK_FEE, BOOK_OK, HIRE_BOOKED, HIRE_AGREED, bookingState, bookingOpen, hireBookings,

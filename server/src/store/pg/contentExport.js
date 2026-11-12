@@ -1,12 +1,16 @@
 const { query } = require('./_base');
-const { resolveGroupProducts, resolveGroupTarget } = require('../logic');
+const { resolveGroupProducts, resolveGroupTarget, POST_CHECK_WAITING } = require('../logic');
 const { expandProductFamilies, familyMapWith } = require('../productFamilies');
 const { catalog } = require('./catalog');
 
 const AD_STATUS = 'ยังไม่ยิง';
+// เวลาที่แถวเปลี่ยนล่าสุดสำหรับฟีด (ตัวกรอง updated_since / ลำดับ / updated_at ที่ส่งออก)
+// รวมเวลาตรวจข้อมูลโพสต์ด้วย (12 พ.ย. 2026) — ทีมกด "ยืนยันถูกต้อง" ไม่ได้ขยับ updated_at (ตาราง submissions ไม่มี trigger)
+// ถ้าไม่รวม คลิปที่ถูกกันไว้ตอนรอตรวจ แล้วยืนยันทีหลัง จะไม่ถูกส่งให้ระบบที่ดึงแบบ updated_since อีกเลย · GREATEST ข้ามค่า NULL
+const CHANGED_AT = 'GREATEST(COALESCE(s.updated_at, s.submitted_at), s.post_check_at)';
 
 async function listCandidates({ brand, limit = 100, updatedSince = null } = {}) {
-    const values = [brand, AD_STATUS, Math.max(1, Math.min(Number(limit) || 100, 501))];
+    const values = [brand, AD_STATUS, Math.max(1, Math.min(Number(limit) || 100, 501)), POST_CHECK_WAITING];
     const where = [
         'p.brand = $1',
         's.ad_status = $2',
@@ -16,12 +20,15 @@ async function listCandidates({ brand, limit = 100, updatedSince = null } = {}) 
         // 5 ต.ค. 2026: ไม่ส่งคลิปในกลุ่มที่ตั้งว่าไม่ใช้ Gencode (ไม่ต้องยิงแอด) — กติกาเดียวกับ logic.js postNoGencode
         // (กลุ่ม no_gencode === true และคลิปยังไม่มี Gencode) · @> เทียบกับ jsonb array ของกลุ่ม: มีกลุ่ม key ตรงที่ no_gencode เป็น true
         // ad_groups เป็น JSONB array (NOT NULL DEFAULT '[]') · group_key ว่าง = jsonb null ไม่มีกลุ่มไหนตรง = ไม่ตัด
-        "NOT (NULLIF(BTRIM(s.gencode), '') IS NULL AND p.ad_groups @> jsonb_build_array(jsonb_build_object('key', s.group_key, 'no_gencode', true)))"
+        "NOT (NULLIF(BTRIM(s.gencode), '') IS NULL AND p.ad_groups @> jsonb_build_array(jsonb_build_object('key', s.group_key, 'no_gencode', true)))",
+        // 12 พ.ย. 2026 (ผู้ใช้สั่ง "ทำเลย"): ไม่ส่งคลิปที่ข้อมูลโพสต์ยังรอทีมตรวจ (เอเจนซี่เพิ่งส่ง / ทีมส่งกลับให้แก้) — กติกาเดียวกับหน้า Ads (logic.js postCheckWaiting)
+        // เดิมฟีดส่งไปด้วย ระบบยิงแอดยิงโพสต์ที่ทีมยังไม่ยืนยัน · ยืนยันแล้ว (ok) / แก้หลังยิง (changed) / ไม่มีการตรวจ (NULL) = ส่งตามเดิม
+        '(s.post_check IS NULL OR NOT (s.post_check = ANY($4::text[])))'
     ];
 
     if (updatedSince) {
         values.push(updatedSince);
-        where.push(`COALESCE(s.updated_at, s.submitted_at) > $${values.length}`);
+        where.push(`${CHANGED_AT} > $${values.length}`);
     }
 
     const result = await query(
@@ -40,11 +47,11 @@ async function listCandidates({ brand, limit = 100, updatedSince = null } = {}) 
                     s.product,
                     s.group_key,
                     p.ad_groups,
-                    COALESCE(s.updated_at, s.submitted_at) AS updated_at
+                    ${CHANGED_AT} AS updated_at
                FROM submissions s
                JOIN projects p ON p.id = s.project_id
               WHERE ${where.join(' AND ')}
-              ORDER BY BTRIM(s.id_post), COALESCE(s.updated_at, s.submitted_at) DESC, s.id DESC
+              ORDER BY BTRIM(s.id_post), ${CHANGED_AT} DESC, s.id DESC
         )
         SELECT *
           FROM candidates
