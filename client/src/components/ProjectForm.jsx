@@ -16,7 +16,7 @@ import {
     isSplitConcept, isBlockSplitConcept, packConcepts, conceptParts,
     isKolSplit, productKolOf, productKolSum, kolSplitState, kolSplitProblem, packKols, kolAutoTier, syncAutoKols, seedKolSplit,
     blockTierNames, unifyTiers, setSetKols, setKol, settleKols, KOL_TIERS, MIXED_TIER,
-    productRows, makeBundle, splitBundle, removeRow, addSingle, blockSingles, blockBundles, rowKeyOf, rowTargetsOf, rowBudgetOf,
+    productRows, makeBundle, splitBundle, removeRow, addSingle, blockSingles, blockBundles, rowKeyOf, rowTargetsOf,
     packBundles, copyProductSet, sameProductSet,
     needCart, setCartOk, cartValue, packCart, withSetCart, cartConflicts
 } from '../data/adGroups.js';
@@ -107,6 +107,10 @@ function CheckMultiSelect({ options, selected, onToggle, disabled, disabledText,
 //     -> ชุด Content Type (Campaign / Content Type / Format / Style)
 //        -> แถว Tier (Tier / จำนวน KOL)  <- จำนวนคนอยู่ชั้นนี้ที่เดียว
 const emptyAlloc = () => ({ tier: '', kols: '' });
+// งบใส่ 0 ได้ (ผู้ใช้สั่ง 12 พ.ย. 2026 — แคมเปญ / สินค้าที่ไม่เสียค่าใช้จ่าย) · ช่องว่าง = ยังไม่ได้ใส่ (ต่างจาก 0)
+const moneyFilled = v => v !== undefined && v !== null && String(v).trim() !== '';
+// รับเฉพาะตัวเลข · ตัด 0 นำหน้า ("007" → "7" · "0" ยังเป็น "0")
+const cleanMoney = v => String(v).replace(/[^0-9]/g, '').replace(/^0+(?=\d)/, '');
    // Platform ย้ายไปอยู่ระดับกลุ่มแล้ว (allocation เหลือแค่ Tier/จำนวน)
 const genKey = () => 'g' + Math.random().toString(36).slice(2, 9);
 const newGroup = (over = {}) => ({ key: genKey(), platform: '', concept: '', clips: [], target: [], content_type: '', media_type: '', content_format: '', products: [], allocations: [emptyAlloc()], blocks: [], brief: '', draft: '', budget: '', code_expire: 60, no_gencode: false, ...over });
@@ -274,7 +278,7 @@ export default function ProjectForm({ editing, onClose, onSaved }) {
             tiers: blockTierNames(b).map(tier => ({ tier, kols: '' })) })] };
     });
     const removeSet = (i, bi, si) => mapBlock(i, bi, b => ({ ...b, sets: b.sets.length > 1 ? b.sets.filter((_, j) => j !== si) : b.sets }));
-    const setBlockBudget = (i, bi, v) => mapBlock(i, bi, b => ({ ...b, budget: v.replace(/[^0-9]/g, '') }));
+    const setBlockBudget = (i, bi, v) => mapBlock(i, bi, b => ({ ...b, budget: cleanMoney(v) }));
     // งบของ Platform: รวมก้อนเดียว ↔ แยกต่อสินค้า — ตอนแยก b.budget = ผลรวมของสินค้าเสมอ (งบกลุ่ม/รวมทั้งกลุ่มอ่านค่านี้)
     // เปลี่ยนเป็นแยก: ช่องงบของแต่ละสินค้าเริ่มว่าง (ไม่เดาตัวเลขให้) · กลับเป็นก้อนเดียว: ยกผลรวมที่ใส่ไว้มา ถ้ายังไม่ได้ใส่คืนงบก้อนเดิม
     const setBudgetMode = (i, bi, mode) => mapBlock(i, bi, b => {
@@ -286,11 +290,13 @@ export default function ProjectForm({ editing, onClose, onSaved }) {
         }
         if (!isSplitBudget(b)) return b;
         const sum = productBudgetSum(b);
-        return { ...b, budget_mode: 'total', budget: sum > 0 ? String(sum) : (b.budget_before_split || '') };
+        // ใส่งบของสินค้าไว้แล้ว (รวม 0 = ไม่มีค่าใช้จ่าย) = ยกผลรวมมา · ยังไม่ได้ใส่สักแถว = คืนงบก้อนเดิม
+        const any = productRows(b).some(r => moneyFilled((b.product_budgets || {})[r.key]));
+        return { ...b, budget_mode: 'total', budget: any ? String(sum) : (b.budget_before_split || '') };
     });
     // ค่าของแถว (งบ / Concept / จำนวนคน) เก็บที่ key ของแถว — สินค้าเดี่ยว = รหัส · ชุด = "L10+L20" (ดู productRows ใน adGroups.js)
     const setProductBudget = (i, bi, key, v) => mapBlock(i, bi, b => {
-        const pb = { ...(b.product_budgets || {}), [key]: String(v).replace(/[^0-9]/g, '') };
+        const pb = { ...(b.product_budgets || {}), [key]: cleanMoney(v) };
         const sum = productBudgetSum({ ...b, product_budgets: pb });
         return { ...b, product_budgets: pb, budget: sum > 0 ? String(sum) : '' };
     });
@@ -428,11 +434,12 @@ export default function ProjectForm({ editing, onClose, onSaved }) {
         if (!form.owner) m.push('Project Owner');   // ช่องบนสุด (เดิม Project Creator) — บังคับเหมือนช่อง Owner เดิม
         // งบกรอกที่ชั้น Platform — ต้องมีทุกบล็อก
         // แยกงบต่อสินค้า = ทุกแถวสินค้าในบล็อกต้องใส่งบ (ชุด = งบเดียวที่หัวชุด) · ก้อนเดียว = งบของ Platform ต้องมากกว่า 0
+        // ใส่ 0 ได้ (ไม่เสียค่าใช้จ่าย · 12 พ.ย. 2026) — บังคับแค่ว่าต้องใส่ ไม่ปล่อยว่าง
         const budgetOk = adGroups.length > 0 && adGroups.every(g => (g.blocks || []).length > 0
             && g.blocks.every(b => (isSplitBudget(b)
-                ? (b.products || []).length > 0 && productRows(b).every(r => rowBudgetOf(b, r) > 0)
-                : num(b.budget) > 0)));
-        if (!budgetOk) m.push('Budget ของแต่ละ Platform ในกลุ่มสินค้า (ถ้าแยกงบต่อสินค้า ทุกสินค้าต้องใส่งบ)');
+                ? (b.products || []).length > 0 && productRows(b).every(r => moneyFilled((b.product_budgets || {})[r.key]))
+                : moneyFilled(b.budget))));
+        if (!budgetOk) m.push('Budget ของแต่ละ Platform ในกลุ่มสินค้า (ไม่เสียค่าใช้จ่ายใส่ 0 · ถ้าแยกงบต่อสินค้า ทุกสินค้าต้องใส่งบ)');
         // แยกจำนวน KOL ต่อสินค้า: ทุกสินค้าใส่อย่างน้อย 1 คน และรวมแล้วต้องเท่าจำนวน KOL ของ Platform พอดี
         m.push(...kolProblems());
         m.push(...cartProblems());
@@ -724,7 +731,9 @@ export default function ProjectForm({ editing, onClose, onSaved }) {
                                         // งบแยกต่อสินค้า
                                         const split = isSplitBudget(b);
                                         const pbOf = key => num((b.product_budgets || {})[key]);
-                                        const budgetMissing = split ? rows.filter(r => pbOf(r.key) <= 0) : [];
+                                        // ใส่แล้ว = มีตัวเลข (รวม 0 = ไม่มีค่าใช้จ่าย · 12 พ.ย. 2026) · ช่องว่าง = ยังไม่ใส่
+                                        const pbSet = key => moneyFilled((b.product_budgets || {})[key]);
+                                        const budgetMissing = split ? rows.filter(r => !pbSet(r.key)) : [];
                                         // Concept แยกต่อสินค้า — ช่องในแถวสินค้า (ว่าง = ใช้ Concept หลักของกลุ่ม)
                                         const cSplit = isBlockSplitConcept(b);
                                         const cOf = key => String((b.product_concepts || {})[key] || '');
@@ -772,9 +781,10 @@ export default function ProjectForm({ editing, onClose, onSaved }) {
                                         const rowLabel = [withTarget && 'Target', split && 'งบ', kSplit && 'จำนวนคน', cSplit && 'Concept'].filter(Boolean).join(' + ') + ' ของแต่ละสินค้า';
                                         const moneyInput = ({ key: code, label }) => (
                                             // div ไม่ใช่ label — .field label ของฟอร์มบังคับเป็น block ตัวอักษรใหญ่ ทำให้ ฿ ตกบรรทัด
-                                            <div className={'ptgt-money' + (pbOf(code) > 0 ? '' : ' need')}>
+                                            <div className={'ptgt-money' + (pbSet(code) ? '' : ' need')}>
                                                 <input type="text" inputMode="numeric" placeholder="ใส่งบ" aria-label={`งบของ ${label}`}
-                                                    value={pbOf(code) > 0 ? pbOf(code).toLocaleString('en-US') : ''}
+                                                    title="ไม่เสียค่าใช้จ่าย ใส่ 0"
+                                                    value={pbSet(code) ? pbOf(code).toLocaleString('en-US') : ''}
                                                     onChange={e => setProductBudget(i, bi, code, e.target.value)} />
                                                 <span>฿</span>
                                             </div>
@@ -791,8 +801,10 @@ export default function ProjectForm({ editing, onClose, onSaved }) {
                                                     </span>
                                                 ) : (
                                                     <label className="plat-blk-budget">
-                                                        <input type="text" inputMode="numeric" placeholder="0"
-                                                            value={b.budget ? num(b.budget).toLocaleString('en-US') : ''}
+                                                        {/* placeholder ไม่ใช้ "0" แล้ว — ใส่ 0 ได้จริง (ไม่เสียค่าใช้จ่าย · 12 พ.ย. 2026) ต้องแยกออกจากช่องที่ยังว่าง */}
+                                                        <input type="text" inputMode="numeric" placeholder="ใส่งบ" aria-label="งบของ Platform"
+                                                            title="ไม่เสียค่าใช้จ่าย ใส่ 0"
+                                                            value={moneyFilled(b.budget) ? num(b.budget).toLocaleString('en-US') : ''}
                                                             onChange={e => setBlockBudget(i, bi, e.target.value)} />
                                                         <span className="pb-baht">฿</span>
                                                     </label>
@@ -888,7 +900,7 @@ export default function ProjectForm({ editing, onClose, onSaved }) {
                                                         </span>
                                                     </div>
                                                     {rows.map(r => (
-                                                        <div className={'ptgt-row' + (r.bundle ? ' pbd-row' : '') + (split && pbOf(r.key) <= 0 ? ' need-budget' : '') + (kSplit && kOf(r.key) < 1 ? ' need-kol' : '')} key={r.key}>
+                                                        <div className={'ptgt-row' + (r.bundle ? ' pbd-row' : '') + (split && !pbSet(r.key) ? ' need-budget' : '') + (kSplit && kOf(r.key) < 1 ? ' need-kol' : '')} key={r.key}>
                                                             {pickBox(r)}
                                                             {prodCell(r)}
                                                             {/* ไม่มีงบในแถว = Concept อยู่บรรทัดเดียวกับสินค้า (ช่อง "คน" เล็ก ชิดขวาได้) · มีงบด้วย = Concept ขึ้นบรรทัดที่สอง */}
@@ -943,7 +955,7 @@ export default function ProjectForm({ editing, onClose, onSaved }) {
                                                         const sel = rowTargets(r);
                                                         const need = rowNeedsTarget(r) && sel.length === 0;
                                                         // ยังไม่ใส่งบ / จำนวนคน (ตอนแยก) — แถวแดง แต่ปุ่ม Target ไม่แดง (Target เลือกแล้ว)
-                                                        const needBudget = split && pbOf(r.key) <= 0;
+                                                        const needBudget = split && !pbSet(r.key);
                                                         const needKol = kSplit && kOf(r.key) < 1;
                                                         return (
                                                             <div className={'ptgt-row' + (r.bundle ? ' pbd-row' : '') + (need ? ' need' : '') + (needBudget ? ' need-budget' : '') + (needKol ? ' need-kol' : '')} key={r.key}>
