@@ -225,7 +225,10 @@ test('Dashboard top KOLs: no fee = null CPM/CPE and nothing earned on the cost a
     assert.deepEqual([part(c, 'cpm').note, part(c, 'cpe').note], ['ยังไม่ใส่ค่าตัว', 'ยังไม่ใส่ค่าตัว']);
     // น้องซี ER กับยอดวิวสูงสุด ได้ 35 + 25 = 60 (เดิมได้ 100)
     assert.equal(c.score, 60);
-    assert.deepEqual(d.top_kols.filter(k => k.measured).map(k => k.name), ['น้องเอ', 'น้องซี', 'น้องบี']);
+    // ตารางเรียงตามยอดวิว (13 พ.ย. 2026 · ซี 300K · เอ 200K · บี 100K) — อันดับคะแนนยังนับจากคะแนน (เอ 1 · ซี 2 · บี 3)
+    assert.deepEqual(d.top_kols.filter(k => k.measured).map(k => k.name), ['น้องซี', 'น้องเอ', 'น้องบี']);
+    assert.deepEqual([a.score_rank, c.score_rank, b.score_rank], [1, 2, 3]);
+    assert.equal(a.score_pool, 3);
     assert.equal(by('น้องดี').score, null);
     assert.equal(by('น้องดี').fee_missing, true);
 });

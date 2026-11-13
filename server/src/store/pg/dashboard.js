@@ -188,16 +188,17 @@ const dashboard = {
             kolRows.forEach(k => { k.score = null; k.score_parts = null; });
         }
 
-        const topKols = kolRows
-            .sort((a, b) =>
-                (b.measured - a.measured) ||            // คนที่กรอกผลงานแล้วขึ้นก่อน
-                ((b.score || 0) - (a.score || 0)) ||    // คะแนนรวมสูงกว่า
-                (b.views - a.views)                     // ตัดเสมอด้วยยอดวิว
-            )
-            .slice(0, 20);
-        // อันดับในกลุ่มที่เอามาเทียบคะแนนกัน (ใช้บอกในหน้าอธิบายคะแนน)
-        let rank = 0;
-        topKols.forEach(k => { k.score_rank = k.measured ? ++rank : null; });
+        // เรียงตามยอดวิวคอนเทนต์ (คอลัมน์ Views) เป็นหลัก — ผู้ใช้สั่ง 13 พ.ย. 2026 (เดิมเรียงตามคะแนนรวม)
+        // คนที่ยังไม่กรอกผลงาน (views 0) จึงตกท้ายเอง · ยอดวิวเท่ากัน = คะแนนสูงกว่าขึ้นก่อน
+        const byViews = (a, b) => (b.views - a.views) || ((b.score || 0) - (a.score || 0)) || (a.kol_id - b.kol_id);
+        const topKols = kolRows.sort(byViews).slice(0, 20);
+        // อันดับคะแนน (ใช้บอกในหน้าอธิบายคะแนน "อันดับ X จาก Y") — เทียบคะแนนกับทุกคนที่กรอกผลงานแล้ว
+        // ไม่ใช่ลำดับในตาราง (ตารางเรียงตามยอดวิวแล้ว)
+        const scoreRank = new Map();
+        scored.slice()
+            .sort((a, b) => ((b.score || 0) - (a.score || 0)) || (b.views - a.views) || (a.kol_id - b.kol_id))
+            .forEach((k, i) => scoreRank.set(k.kol_id, i + 1));
+        topKols.forEach(k => { k.score_rank = k.measured ? scoreRank.get(k.kol_id) : null; });
         topKols.forEach(k => { k.score_pool = scored.length; });
         // ป๊อปอัปแถว Top Influencer (ผู้ใช้สั่ง 13 พ.ย. 2026): ทุกคลิปของคนนี้ในช่วงที่เลือก — ส่งแค่ของ 20 อันดับ
         const subById = {}; subs.forEach(s => { subById[s.id] = s; });
