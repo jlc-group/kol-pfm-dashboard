@@ -1,10 +1,11 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { api } from '../api/client.js';
 import Icon from '../components/Icon.jsx';
 import DatePicker from '../components/DatePicker.jsx';
 import BudgetTrendModal from '../components/BudgetTrendModal.jsx';
 import { ProductSummary } from '../components/ProductChips.jsx';
 import ScoreModal from '../components/ScoreModal.jsx';
+import OverviewDetailModal from '../components/OverviewDetailModal.jsx';
 import { visibleBrands } from '../data/brands.js';
 import { useAuth } from '../auth/AuthContext.jsx';
 
@@ -30,6 +31,26 @@ const fmtMoney = n => '฿' + (Number(n) || 0).toLocaleString('th-TH');
 //  แต่ช่องงบด้านบนเป็นยอดทั้งแคมเปญ อ่านคู่กันแล้วเข้าใจผิดว่าเหลืองบเยอะ)
 const ALL_TIME = { from: '', to: '' };
 
+// ตัวกรองหน้า → query ของ /stats/dashboard (การ์ด) และ /stats/dashboard/details (ป๊อปอัป) — ชุดเดียวกันเสมอ
+function queryOf(filters) {
+    const q = new URLSearchParams();
+    if (filters.brand) q.set('brand', filters.brand);
+    if (filters.from) q.set('from', filters.from);
+    if (filters.to) q.set('to', filters.to);
+    if (filters.projectId) q.set('project_id', filters.projectId);
+    return q.toString();
+}
+
+// การ์ดที่กดเปิดป๊อปอัปได้ (ผู้ใช้สั่ง 13 พ.ย. 2026) — ใช้ div เดิม (ข้างในมีป้าย/ข้อความ) จึงให้คีย์บอร์ดกดได้ด้วย Enter / Space
+function cardProps(open) {
+    return {
+        role: 'button', tabIndex: 0, 'aria-haspopup': 'dialog',
+        onClick: open,
+        onKeyDown: e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(); } }
+    };
+}
+const MORE = <span className="ov-more" aria-hidden="true">ดูรายละเอียด ›</span>;
+
 export default function Dashboard() {
     const { user } = useAuth();
     const BRANDS = visibleBrands(user);   // เห็นเฉพาะแบรนด์ที่ตัวเองดูแล
@@ -39,17 +60,31 @@ export default function Dashboard() {
     const [showTrend, setShowTrend] = useState(false);
     const [showAllKols, setShowAllKols] = useState(false);   // Top Influencer: 5 อันดับแรก vs ทั้ง 20
     const [scoreOf, setScoreOf] = useState(null);            // แถวที่กำลังเปิดดูที่มาของคะแนน
+    const [detail, setDetail] = useState(null);              // ป๊อปอัปของการ์ดที่กดอยู่ { kind, arg }
+    const query = queryOf(filters);
+
+    // รายละเอียดของป๊อปอัปโหลดตอนกดการ์ดครั้งแรก แล้วเก็บไว้ต่อตัวกรอง (กดการ์ดอื่นไม่ต้องโหลดใหม่) · โหลดพลาด = ลบทิ้งให้ลองใหม่ได้
+    // การ์ดโหลดใหม่ทุกครั้งที่เปลี่ยนตัวกรอง — ล้างแคชพร้อมกัน ป๊อปอัปจะได้ไม่ค้างตัวเลขเก่ากว่าการ์ด (กลับมาตัวกรองเดิมก็โหลดใหม่)
+    const detailCache = useRef({});
 
     useEffect(() => {
-        const q = new URLSearchParams();
-        if (filters.brand) q.set('brand', filters.brand);
-        if (filters.from) q.set('from', filters.from);
-        if (filters.to) q.set('to', filters.to);
-        if (filters.projectId) q.set('project_id', filters.projectId);
-        api(`/stats/dashboard?${q.toString()}`)
+        detailCache.current = {};
+        api(`/stats/dashboard?${query}`)
             .then(res => setData(res.data))
             .catch(err => setError(err.message));
-    }, [filters]);
+    }, [query]);
+
+    const getDetails = useCallback(() => {
+        const c = detailCache.current;
+        if (!c[query]) {
+            c[query] = api(`/stats/dashboard/details?${query}`)
+                .then(res => res.data)
+                .catch(err => { delete c[query]; throw err; });
+        }
+        return c[query];
+    }, [query]);
+    const closeDetail = useCallback(() => setDetail(null), []);
+    const open = (kind, arg = null) => () => setDetail({ kind, arg });
 
     function setF(patch) { setFilters(f => ({ ...f, ...patch })); }
 
@@ -79,6 +114,13 @@ export default function Dashboard() {
     const campaignList = data?.campaigns || [];
     const soloCampaigns = campaignList.filter(c => c.campaign_type === 'solo');
     const maxBrandBudget = Math.max(1, ...(data?.brand_summary || []).map(b => b.budget));
+    // บอกในป๊อปอัปว่าตัวเลขมาจากตัวกรองไหน
+    const pickedCampaign = filters.projectId ? campaignList.find(c => String(c.id) === String(filters.projectId)) : null;
+    const filterLabel = [
+        filters.brand || 'ทุกแบรนด์',
+        filters.from || filters.to ? `${filters.from || 'เริ่มต้น'} ถึง ${filters.to || 'ปัจจุบัน'}` : 'ทุกช่วงเวลา',
+        pickedCampaign ? pickedCampaign.name : null
+    ].filter(Boolean).join(' · ');
 
     return (
         <div className="dashboard-page">
@@ -123,7 +165,7 @@ export default function Dashboard() {
             <div className="dash-section"><span className="dash-bar" /> สรุปภาพรวม</div>
             <div className="dash-bento">
                 {/* การ์ดใหญ่ (ไล่สีมินต์) */}
-                <div className="bento-hero">
+                <div className="bento-hero ov-click" {...cardProps(open('budget'))}>
                     <div className="bento-hero-top">
                         <span className="bento-hero-label">งบประมาณแคมเปญทั้งหมด</span>
                         <div className="bento-hero-ico"><Icon name="coins" size={20} /></div>
@@ -165,39 +207,42 @@ export default function Dashboard() {
                             )}
                         </div>
                     </div>
+                    <span className="ov-more on-hero" aria-hidden="true">ดูรายละเอียด ›</span>
                 </div>
 
                 {/* การ์ดเล็กซ้อน */}
                 <div className="bento-stack">
-                    <div className="bento-mini">
+                    <div className="bento-mini ov-click" {...cardProps(open('views'))}>
                         <div className="bento-mini-top"><span className="summary-label">ยอดวิวรวม</span><div className="mini-ico"><Icon name="eye" size={18} /></div></div>
                         <div className="bento-mini-value">{data ? fmtNum(data.total_views) : '—'}</div>
                         <div className="summary-sub">จากทุกแพลตฟอร์ม</div>
+                        {MORE}
                     </div>
-                    <div className="bento-mini">
+                    <div className="bento-mini ov-click" {...cardProps(open('avg'))}>
                         <div className="bento-mini-top"><span className="summary-label">Avg Cost / Clip</span><div className="mini-ico"><Icon name="star" size={18} /></div></div>
                         <div className="bento-mini-value">{data ? fmtMoney(data.avg_cost_per_clip ?? data.avg_cost_per_kol) : '—'}</div>
                         <div className="summary-sub">
                             ค่าเฉลี่ยต่อคลิป
                             {data && data.total_clips > data.total_kols && <><br />ต่อคน {fmtMoney(data.avg_cost_per_kol)}</>}
                         </div>
+                        {MORE}
                     </div>
                 </div>
             </div>
 
             {/* การ์ดเมตริกไอคอน */}
             <div className="metric-tiles">
-                <div className="metric-tile">
+                <div className="metric-tile ov-click" {...cardProps(open('cpm'))}>
                     <div className="metric-tile-ico g1"><Icon name="bars" size={22} /></div>
-                    <div><div className="metric-tile-val">{data ? fmtMoney(data.cpm) : '—'}</div><div className="metric-tile-label">CPM · ต่อ 1,000 วิว</div></div>
+                    <div><div className="metric-tile-val">{data && data.cpm != null ? fmtMoney(data.cpm) : '—'}</div><div className="metric-tile-label">CPM · ต่อ 1,000 วิว</div>{MORE}</div>
                 </div>
-                <div className="metric-tile">
+                <div className="metric-tile ov-click" {...cardProps(open('cpe'))}>
                     <div className="metric-tile-ico g2"><Icon name="target" size={22} /></div>
-                    <div><div className="metric-tile-val">{data && data.cpe != null ? fmtMoney(data.cpe) : '—'}</div><div className="metric-tile-label">CPE · ค่าตัวต่อ engagement</div></div>
+                    <div><div className="metric-tile-val">{data && data.cpe != null ? fmtMoney(data.cpe) : '—'}</div><div className="metric-tile-label">CPE · ค่าตัวต่อ engagement</div>{MORE}</div>
                 </div>
-                <div className="metric-tile">
+                <div className="metric-tile ov-click" {...cardProps(open('campaigns'))}>
                     <div className="metric-tile-ico g4"><Icon name="folder" size={20} /></div>
-                    <div><div className="metric-tile-val">{data ? (data.campaigns || []).length : '—'}</div><div className="metric-tile-label">Campaign ทั้งหมด</div></div>
+                    <div><div className="metric-tile-val">{data ? (data.campaigns || []).length : '—'}</div><div className="metric-tile-label">Campaign ทั้งหมด</div>{MORE}</div>
                 </div>
             </div>
 
@@ -207,7 +252,7 @@ export default function Dashboard() {
                 {PLATFORM_CARDS.map(pc => {
                     const m = platformMap[pc.key];
                     return (
-                        <div className="platform-card" key={pc.key}>
+                        <div className="platform-card ov-click" key={pc.key} {...cardProps(open('platform', pc.key))}>
                             <div className="platform-bar" style={{ background: pc.bar }} />
                             <div className="platform-card-body">
                                 <div className="platform-badge" style={{ background: pc.badgeBg || pc.color, color: pc.badgeBg ? '#fff' : '#fff' }}>{pc.badge}</div>
@@ -219,6 +264,7 @@ export default function Dashboard() {
                                     <div className="pm-row"><span>Engagement</span><span>{m && m.engagement != null ? m.engagement + '%' : '-'}</span></div>
                                     <div className="pm-row"><span>Avg Cost</span><span>{m && m.avg_cost ? fmtMoney(m.avg_cost) : '-'}</span></div>
                                 </div>
+                                {MORE}
                             </div>
                         </div>
                     );
@@ -236,7 +282,7 @@ export default function Dashboard() {
                             <p className="empty-illus-sub">เมื่อมีแคมเปญและ KOL ในช่วงที่เลือก กราฟเทียบงบแต่ละแบรนด์จะแสดงที่นี่</p>
                         </div>
                     ) : data.brand_summary.map(b => (
-                        <div className="brand-bar-row" key={b.brand}>
+                        <div className="brand-bar-row ov-click" key={b.brand} {...cardProps(open('brand', b.brand))} title="กดดูแคมเปญของแบรนด์นี้">
                             <div className="brand-bar-name">{b.brand}</div>
                             <div className="brand-bar-track">
                                 <div className="brand-bar-fill" style={{ width: `${Math.round((b.budget / maxBrandBudget) * 100)}%` }} />
@@ -269,7 +315,11 @@ export default function Dashboard() {
                             ) : shownKols.map((k, i) => (
                                 <tr key={k.kol_id}>
                                     <td><span className={'rank rank-' + (i + 1)}>{i + 1}</span></td>
-                                    <td><strong>{k.name}</strong></td>
+                                    <td>
+                                        <button type="button" className="ti-name" onClick={open('kol', k)} aria-haspopup="dialog" title="กดดูทุกคลิปของคนนี้">
+                                            <strong>{k.name}</strong> <span className="ov-more" aria-hidden="true">›</span>
+                                        </button>
+                                    </td>
                                     <td>
                                         {k.post_url
                                             ? <a href={k.post_url} target="_blank" rel="noreferrer" className="ka-link" title="เปิดคลิป"><Icon name="eye" size={15} /></a>
@@ -313,6 +363,19 @@ export default function Dashboard() {
 
             {showTrend && <BudgetTrendModal brand={filters.brand} onClose={() => setShowTrend(false)} />}
             {scoreOf && <ScoreModal k={scoreOf} onClose={() => setScoreOf(null)} />}
+            {detail && (
+                <OverviewDetailModal
+                    detail={detail}
+                    getDetails={getDetails}
+                    filterLabel={filterLabel}
+                    filtered={!!(filters.brand || filters.projectId)}
+                    onClose={closeDetail}
+                    onShowTrend={detail.kind === 'budget' ? () => { setDetail(null); setShowTrend(true); } : null}
+                    onFilterBrand={detail.kind === 'brand' && BRANDS.includes(detail.arg) && filters.brand !== detail.arg
+                        ? () => { setDetail(null); setF({ brand: detail.arg }); }
+                        : null}
+                />
+            )}
         </div>
     );
 }

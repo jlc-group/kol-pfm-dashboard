@@ -207,7 +207,8 @@ test('Dashboard: totals unchanged, fee_missing_clips counts the same clips as to
     assert.equal((await dashboard.overview({})).fee_missing_clips, 4);
     const none = await dashboard.overview({ scopeBrands: [] });
     assert.equal(none.fee_missing_clips, 0);
-    assert.equal(none.cpm, 0);
+    // ไม่มีอะไรให้คิด CPM = null (การ์ดขึ้น "—" เหมือน CPE · 13 พ.ย. 2026 — เดิม 0 ขึ้น ฿0 · ป๊อปอัปการ์ดใช้ค่าเดียวกัน)
+    assert.equal(none.cpm, null);
 });
 
 test('Dashboard top KOLs: no fee = null CPM/CPE and nothing earned on the cost axes', async () => {

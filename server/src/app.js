@@ -100,6 +100,22 @@ app.get('/api/stats/dashboard', authenticate, blockPending, blockAgency, async (
     } catch (err) { next(err); }
 });
 
+// รายละเอียดของการ์ดหน้า Overview (ป๊อปอัปเมื่อกดการ์ด · 13 พ.ย. 2026) — สิทธิ์และตัวกรองชุดเดียวกับ /api/stats/dashboard
+app.get('/api/stats/dashboard/details', authenticate, blockPending, blockAgency, async (req, res, next) => {
+    try {
+        const scopeBrands = allowedBrands(req.account || req.user);
+        const { brand, from, to, project_id } = req.query;
+        const data = await store.dashboard.details({
+            scopeBrands,
+            brand: brand || undefined,
+            from: from || undefined,
+            to: to || undefined,
+            projectId: project_id || undefined
+        });
+        res.json({ status: 'success', data });
+    } catch (err) { next(err); }
+});
+
 // สรุปงบประมาณ ตามตัวกรอง (เดือน/แบรนด์) + เคารพสิทธิ์ทีม
 app.get('/api/stats/budget', authenticate, blockPending, blockAgency, async (req, res, next) => {
     try {

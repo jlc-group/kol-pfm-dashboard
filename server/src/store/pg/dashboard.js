@@ -13,31 +13,37 @@ const { loadSnapshot } = require('./_snapshot');
 const { scopeProjects, feeMissing, clipCostMetrics, costAxisRange, costAxisNorm, hireRemaining, pooledCpe, engagementOf } = require('../logic');
 
 // ============================ dashboard (สรุปตามตัวกรอง) ============================
+// คัดข้อมูลตามสิทธิ์ + ตัวกรอง — overview (การ์ด) กับ details (ป๊อปอัปของการ์ด · 13 พ.ย. 2026) ใช้ตัวเดียวกัน ตัวเลขรวมจึงตรงกันพอดี
+//   projects = ตามสิทธิ์ + แบรนด์ / แคมเปญ (ไม่กรองด้วยวันที่ — ไปกรองที่ตัว KOL แทน) · scoped = ตามสิทธิ์อย่างเดียว (รายการแคมเปญ)
+//   subs = KOL ที่คัดเลือกแล้วของ projects · ช่วงเวลากรองตามวันลงงาน (post_date) — ยังไม่ลงงาน = นับรวม (คอมมิตแล้ว)
+function scopeOf(snap, filters = {}) {
+    const { scopeBrands = null, brand, from, to, projectId } = filters;
+    const scoped = scopeProjects(snap.projects.slice(), scopeBrands);
+    let projects = scoped.slice();
+    if (brand) projects = projects.filter(p => p.brand === brand);
+    if (projectId) projects = projects.filter(p => p.id === Number(projectId));
+    const projectIds = new Set(projects.map(p => p.id));
+    const projById = {}; projects.forEach(p => { projById[p.id] = p; });
+    const inRange = s => {
+        const d = s.post_date;
+        if (!d) return true;
+        if (from && d < from) return false;
+        if (to && d > to) return false;
+        return true;
+    };
+    const subs = snap.submissions.filter(s => s.status === 'confirmed' && projectIds.has(s.project_id) && inRange(s));
+    return { scoped, projects, projectIds, projById, inRange, subs };
+}
+const personOf = s => s.person_key || ('sub:' + s.id);
+
 const dashboard = {
     // filters: { scopeBrands, brand, from, to, projectId }
     async overview(filters = {}) {
         const snap = await loadSnapshot(['projects', 'submissions']);
-        const { scopeBrands = null, brand, from, to, projectId } = filters;
 
-        // 1) คัดกรอง projects ตามสิทธิ์ + ตัวกรอง (แบรนด์/แคมเปญ) — ไม่กรองด้วยวันที่ตรงนี้ (ไปกรองที่ตัว KOL แทน)
-        let projects = snap.projects.slice();
-        projects = scopeProjects(projects, scopeBrands);
-        if (brand) projects = projects.filter(p => p.brand === brand);
-        if (projectId) projects = projects.filter(p => p.id === Number(projectId));
-
-        const projectIds = new Set(projects.map(p => p.id));
-        const projById = {}; projects.forEach(p => { projById[p.id] = p; });
-
-        // 2) KOL ที่คัดเลือกแล้ว (จาก submissions = ข้อมูลจริงที่เอเจนซี่ส่ง/ทีมคัดเลือก)
-        //    ช่วงเวลา: กรองตามวันลงงาน (post_date) ถ้ามี — ยังไม่ลงงาน = นับรวม (คอมมิตแล้ว)
-        const inRange = s => {
-            const d = s.post_date;
-            if (!d) return true;
-            if (from && d < from) return false;
-            if (to && d > to) return false;
-            return true;
-        };
-        const subs = snap.submissions.filter(s => s.status === 'confirmed' && projectIds.has(s.project_id) && inRange(s));
+        // 1) คัดกรอง projects ตามสิทธิ์ + ตัวกรอง (แบรนด์/แคมเปญ) · 2) KOL ที่คัดเลือกแล้ว (จาก submissions) — ดู scopeOf
+        const { projects, projById, subs } = scopeOf(snap, filters);
+        const { scopeBrands = null } = filters;
 
         // 3) ตัวเลขรวม
         const totalBudget = projects.reduce((s, p) => s + (Number(p.budget) || 0), 0);   // งบที่วางไว้รวม
@@ -79,7 +85,9 @@ const dashboard = {
         const feeSubs = subs.filter(s => !feeMissing(s.budget, typeOfSub(s), s.fee_free));
         const feeSum = feeSubs.reduce((a, s) => a + (Number(s.budget) || 0), 0);
         const feeReach = feeSubs.reduce((a, s) => a + (Number(s.ad_reach) || 0), 0);
-        const cpm = feeReach > 0 ? Math.round(feeSum / (feeReach / 1000)) : 0;
+        // คิดไม่ได้ (ยังไม่มี Reach ของคลิปที่ใส่ค่าตัว / ทุกคลิปได้ฟรี) = null → การ์ดขึ้น "—" (13 พ.ย. 2026 · เดิม 0 ขึ้น ฿0 ดูคุ้มเกินจริง)
+        // ต้องตรงกับ details().totals.cpm
+        const cpm = feeReach > 0 && feeSum > 0 ? Math.round(feeSum / (feeReach / 1000)) : null;
         // CPE รวม (2 ต.ค. 2026 — เดิมเป็น 0 ตายตัว) = ค่าตัว ÷ engagement รวม ของคลิปที่ใส่ค่าตัวแล้วและมี engagement (ไม่รวมค่าแอด · 5 ต.ค.)
         // สูตรเดียวกับ CPE รายคลิปด้านล่าง (clipCostMetrics) · ยังไม่มีคลิปให้คิด = null (หน้าเว็บขึ้น "—")
         const cpe = pooledCpe(subs.map(s => ({ fee: s.budget, adSpend: s.ad_spend, engagement: engagementOf(s), campaignType: typeOfSub(s), feeFree: s.fee_free }))).cpe;
@@ -115,6 +123,7 @@ const dashboard = {
             return {
                 kol_id: s.id, name: s.account_name, platform: s.platform || null,
                 brand: (projById[s.project_id] || {}).brand || null,   // แบรนด์มาจากแคมเปญที่ KOL คนนี้สังกัด
+                project_id: s.project_id, project_name: (projById[s.project_id] || {}).name || null,
                 product: s.product || null,
                 post_url: s.post_url || null,
                 fee, fee_missing, fee_free: fee_free === true, ad_spend: adSpend, cost,
@@ -190,6 +199,18 @@ const dashboard = {
         let rank = 0;
         topKols.forEach(k => { k.score_rank = k.measured ? ++rank : null; });
         topKols.forEach(k => { k.score_pool = scored.length; });
+        // ป๊อปอัปแถว Top Influencer (ผู้ใช้สั่ง 13 พ.ย. 2026): ทุกคลิปของคนนี้ในช่วงที่เลือก — ส่งแค่ของ 20 อันดับ
+        const subById = {}; subs.forEach(s => { subById[s.id] = s; });
+        const rowsByPerson = {};
+        kolRows.forEach(k => { const p = personOf(subById[k.kol_id]); (rowsByPerson[p] = rowsByPerson[p] || []).push(k); });
+        topKols.forEach(k => {
+            k.person_key = personOf(subById[k.kol_id]);
+            k.clips = (rowsByPerson[k.person_key] || []).map(c => ({
+                kol_id: c.kol_id, platform: c.platform, product: c.product, project_id: c.project_id, project_name: c.project_name,
+                post_url: c.post_url, fee: c.fee, fee_missing: c.fee_missing, fee_free: c.fee_free,
+                views: c.views, ad_reach: c.ad_reach, engagement: c.engagement, cpm: c.cpm, cpe: c.cpe
+            }));
+        });
 
         // 7) สรุปตามแบรนด์ (งบที่วางไว้ + จำนวน KOL ที่คัดเลือก)
         const brandMap = {};
@@ -246,6 +267,107 @@ const dashboard = {
             top_kols: topKols,
             brand_summary: brandSummary,
             campaigns
+        };
+    },
+
+    // ป๊อปอัปของแต่ละการ์ดหน้า Overview (ผู้ใช้สั่ง 13 พ.ย. 2026 — กดการ์ดแล้วเห็นรายละเอียด)
+    // ข้อมูลชุดเดียวกับ overview (scopeOf) แยกมุมต่าง ๆ — ผลรวมของแต่ละตารางเท่าตัวเลขบนการ์ดพอดี
+    //   ยอดวิวของการ์ด = Reach จากแอด (ad_reach) · CPM = ค่าตัวของคลิปที่ใส่ค่าตัวแล้ว ÷ Reach ของคลิปเหล่านั้น · CPE = pooledCpe
+    //   ค่าเฉลี่ยต่อคลิป = ค่าตัวรวม ÷ จำนวนคลิป (คลิปที่ยังไม่ใส่ค่าตัวนับเป็น 0 เหมือนการ์ด — บอกจำนวนไว้ใน fee_missing)
+    // campaigns = ทุกแคมเปญตามสิทธิ์ (การ์ด "Campaign ทั้งหมด" นับแบบนี้) · in_filter = อยู่ในตัวกรองแบรนด์ / แคมเปญตอนนี้
+    async details(filters = {}) {
+        const snap = await loadSnapshot(['projects', 'submissions']);
+        const { scoped, projects, projectIds, inRange, subs } = scopeOf(snap, filters);
+        const projAll = {}; scoped.forEach(p => { projAll[p.id] = p; });
+        const typeOf = s => (projAll[s.project_id] || {}).campaign_type;
+        const num = v => Number(v) || 0;
+        const total = (list, f) => list.reduce((a, s) => a + num(f(s)), 0);
+        const missingOf = s => feeMissing(s.budget, typeOf(s), s.fee_free);
+        const agg = list => {
+            const clips = list.length;
+            const fee = total(list, s => s.budget);
+            const feeSubs = list.filter(s => !missingOf(s));
+            const feeSum = total(feeSubs, s => s.budget);
+            const feeReach = total(feeSubs, s => s.ad_reach);
+            const measured = list.filter(s => num(s.views) > 0);
+            const contentViews = total(measured, s => s.views);
+            const eng = measured.reduce((a, s) => a + engagementOf(s), 0);
+            return {
+                clips, kols: new Set(list.map(personOf)).size, fee, reach: total(list, s => s.ad_reach),
+                fee_missing: list.filter(missingOf).length,
+                no_reach: list.filter(s => !(num(s.ad_reach) > 0)).length,
+                avg_cost: clips ? Math.round(fee / clips) : 0,
+                // คิดไม่ได้ (ยังไม่มี Reach / ทุกคลิปได้ฟรี) = null — หน้าเว็บขึ้น "—" ไม่ขึ้น ฿0 ที่ดูคุ้มเกินจริง
+                cpm: feeReach > 0 && feeSum > 0 ? Math.round(feeSum / (feeReach / 1000)) : null,
+                cpe: pooledCpe(list.map(s => ({ fee: s.budget, adSpend: s.ad_spend, engagement: engagementOf(s), campaignType: typeOf(s), feeFree: s.fee_free }))).cpe,
+                engagement: contentViews > 0 ? Number(((eng / contentViews) * 100).toFixed(2)) : null
+            };
+        };
+        const groupBy = (list, keyOf) => {
+            const m = new Map();
+            list.forEach(s => { const k = keyOf(s); if (!m.has(k)) m.set(k, []); m.get(k).push(s); });
+            return m;
+        };
+        const rowsBy = (list, keyOf, name) => [...groupBy(list, keyOf)].map(([k, l]) => ({ [name]: k, ...agg(l) }));
+        const brandOf = s => (projAll[s.project_id] || {}).brand || 'อื่นๆ';
+        const platformOf = s => s.platform || 'อื่นๆ';
+        const tierOf = s => (String(s.tier || '').trim() || 'ไม่ระบุ Tier');
+        const clipRow = s => {
+            const p = projAll[s.project_id] || {};
+            const fee = num(s.budget), reach = num(s.ad_reach);
+            // ป้ายรอค่าตัว / ได้ฟรี ใช้กติกาเดียวกับตาราง Top Influencer (clipCostMetrics) — KOL รายคนค่าตัว 0 = ได้ฟรี แม้ช่อง fee_free เป็น false
+            const m = clipCostMetrics({ fee, adSpend: s.ad_spend, views: 0, engagement: 0, campaignType: p.campaign_type, feeFree: s.fee_free });
+            return {
+                id: s.id, name: s.account_name, platform: s.platform || null, brand: p.brand || null, project_id: s.project_id,
+                project_name: p.name || null, product: s.product || null, tier: s.tier || null, post_url: s.post_url || null,
+                fee, fee_missing: m.fee_missing, fee_free: m.fee_free === true, reach, views: num(s.views),
+                // CPM ของคลิป = ค่าตัว ÷ Reach (สูตรเดียวกับการ์ด CPM) · ไม่มีค่าตัว / ได้ฟรี / ยังไม่มี Reach = null
+                cpm: !m.fee_missing && fee > 0 && reach > 0 ? Math.round(fee / (reach / 1000)) : null
+            };
+        };
+        const byReach = (a, b) => num(b.ad_reach) - num(a.ad_reach) || a.id - b.id;
+
+        // แคมเปญทุกตัวตามสิทธิ์ (KOL ที่คัดเลือกแล้วตามช่วงวันที่เลือก) — ใหม่สุดก่อน แบบเดียวกับรายการแคมเปญของ overview
+        const allSubs = snap.submissions.filter(s => s.status === 'confirmed' && projAll[s.project_id] && inRange(s));
+        const subsOfProject = groupBy(allSubs, s => s.project_id);
+        const campaigns = scoped.slice()
+            .sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''))
+            .map(p => ({
+                id: p.id, name: p.name, brand: p.brand || 'อื่นๆ',
+                campaign_type: p.campaign_type === 'solo' || p.campaign_type === 'other' ? p.campaign_type : 'kol',
+                status: p.status || null, start_date: p.start_date || null, end_date: p.end_date || null,
+                budget: num(p.budget), kol_target: num(p.kol_target), in_filter: projectIds.has(p.id),
+                ...agg(subsOfProject.get(p.id) || [])
+            }));
+
+        // แบรนด์ในตัวกรอง — งบจากแคมเปญ (เท่าแถบ "งบประมาณตามแบรนด์") + ตัวเลขจากคลิป
+        const brandBudget = {};
+        projects.forEach(p => { const b = p.brand || 'อื่นๆ'; brandBudget[b] = (brandBudget[b] || 0) + num(p.budget); });
+        const subsOfBrand = groupBy(subs, brandOf);
+        const brands = Object.keys(brandBudget).map(b => ({ brand: b, budget: brandBudget[b], ...agg(subsOfBrand.get(b) || []) }))
+            .sort((a, b) => b.budget - a.budget);
+
+        const platforms = [...groupBy(subs, platformOf)].map(([platform, l]) => ({
+            platform, ...agg(l),
+            brands: rowsBy(l, brandOf, 'brand').sort((a, b) => b.reach - a.reach),
+            tiers: rowsBy(l, tierOf, 'tier').sort((a, b) => b.clips - a.clips),
+            top: l.slice().sort(byReach).slice(0, 10).map(clipRow)
+        }));
+
+        // คลิปที่คิด CPM ได้ (ใส่ค่าตัวแล้ว + มี Reach) — ถูกสุด / แพงสุด 5 อันดับ
+        // คลิปน้อยกว่า 10 = รายการแพงสุดเอาเฉพาะคลิปที่ไม่อยู่ในรายการถูกสุด (ไม่ขึ้นคลิปเดียวกันสองตาราง)
+        const priced = subs.map(clipRow).filter(c => c.cpm != null);
+        const cheap = priced.slice().sort((a, b) => a.cpm - b.cpm || a.id - b.id);
+
+        return {
+            totals: agg(subs),
+            campaigns,
+            brands,
+            platforms,
+            tiers: rowsBy(subs, tierOf, 'tier').sort((a, b) => b.clips - a.clips),
+            top_reach: subs.slice().sort(byReach).slice(0, 10).map(clipRow),
+            cpm_best: cheap.slice(0, 5),
+            cpm_worst: cheap.slice(Math.max(5, cheap.length - 5)).reverse()
         };
     }
 };
