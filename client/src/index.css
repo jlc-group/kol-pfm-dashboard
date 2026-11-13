@@ -5455,10 +5455,6 @@ button { color: inherit; }
 .ovd-chip { display: inline-block; margin-left: 4px; padding: 1px 8px; border-radius: 10px; background: #eef2f7; color: #475569; font-size: 10.5px; font-weight: 700; white-space: nowrap; }
 .ovd-bar { height: 8px; background: var(--bg-soft); border-radius: 6px; overflow: hidden; min-width: 60px; flex: 1; }
 .ovd-bar i { display: block; height: 100%; background: linear-gradient(90deg, #2dd4bf, #10b981); border-radius: 6px; }
-.ovd-use { min-width: 130px; }
-.ovd-use > * { vertical-align: middle; }
-.ovd-use .ovd-bar { display: inline-block; width: 70px; margin-right: 8px; }
-.ovd-use span { font-size: 11.5px; font-weight: 700; font-variant-numeric: tabular-nums; }
 .ovd-barcell { width: 50%; }
 .ovd-two { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
 .ovd-two > div { min-width: 0; }

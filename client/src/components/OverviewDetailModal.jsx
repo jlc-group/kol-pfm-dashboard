@@ -114,23 +114,19 @@ function BudgetBody({ d, go, onShowTrend }) {
         <>
             <Stats items={[
                 ['งบที่ตั้งไว้', fmtMoney(budget)],
-                ['ค่าจ้าง KOL ที่ใส่แล้ว', fmtMoney(fee), budget > 0 ? `${Math.round((fee / budget) * 100)}% ของงบ` : null],
+                ['ใช้ไป', fmtMoney(fee), budget > 0 ? `${Math.round((fee / budget) * 100)}% ของงบ` : null],
                 fee > budget ? ['เพิ่มระหว่างทาง', fmtMoney(fee - budget)] : ['งบคงเหลือ', fmtMoney(budget - fee)],
                 ['ยังไม่ใส่ค่าตัว', `${fmtInt(d.totals.fee_missing)} คลิป`]
             ]} />
             <H note="กดชื่อแคมเปญเพื่อเปิดหน้าแคมเปญ">แยกตามแคมเปญ</H>
-            <Table head={[['แคมเปญ'], ['แบรนด์'], ['งบ', 1], ['ค่าจ้างที่ใส่แล้ว', 1], ['ใช้ไป'], ['ยังไม่ใส่ค่าตัว', 1]]}>
+            {/* ใช้ไป = ค่าตัว KOL ที่ใส่แล้วของแคมเปญ เป็นจำนวนเงิน (ผู้ใช้สั่ง 13 พ.ย. 2026 — เอาคอลัมน์ "ค่าจ้างที่ใส่แล้ว" ที่ซ้ำกันออก · เดิมเป็นแถบ + %) */}
+            <Table head={[['แคมเปญ'], ['แบรนด์'], ['งบ', 1], ['ใช้ไป', 1], ['ยังไม่ใส่ค่าตัว', 1]]}>
                 {list.map(c => (
                     <tr key={c.id}>
                         <td><CampaignLink id={c.id} name={c.name} onGo={go} /> <TypeChip type={c.campaign_type} /></td>
                         <td>{c.brand}</td>
                         <td className="num">{fmtMoney(c.budget)}</td>
                         <td className="num">{fmtMoney(c.fee)}</td>
-                        <td className="ovd-use">
-                            {c.budget > 0
-                                ? <><Bar value={c.fee} max={c.budget} /><span>{Math.round((c.fee / c.budget) * 100)}%</span></>
-                                : <span className="muted">ไม่ได้ตั้งงบ</span>}
-                        </td>
                         <td className="num">{c.fee_missing ? `${c.fee_missing} คลิป` : '—'}</td>
                     </tr>
                 ))}
@@ -366,7 +362,7 @@ function BrandBody({ d, go, name, onFilterBrand }) {
             {b ? (
                 <Stats items={[
                     ['งบที่ตั้งไว้', fmtMoney(b.budget)],
-                    ['ค่าจ้างที่ใส่แล้ว', fmtMoney(b.fee)],
+                    ['ใช้ไป', fmtMoney(b.fee)],
                     ['KOL', fmtInt(b.kols), `${fmtInt(b.clips)} คลิป`],
                     ['Reach', fmtNum(b.reach)],
                     ['CPM', money(b.cpm)]
@@ -431,7 +427,7 @@ function KolBody({ k, go }) {
 }
 
 const TITLES = {
-    budget: ['งบประมาณแคมเปญ', 'แยกตามแคมเปญ · งบ / ค่าจ้างที่ใส่แล้ว / คลิปที่ยังไม่ใส่ค่าตัว'],
+    budget: ['งบประมาณแคมเปญ', 'แยกตามแคมเปญ · งบ / ใช้ไป / คลิปที่ยังไม่ใส่ค่าตัว'],
     views: ['ยอดวิวรวม', 'Reach จากแอด แยกตาม Platform / แบรนด์ + คลิปที่ Reach สูงสุด'],
     avg: ['Avg Cost / Clip', 'ค่าเฉลี่ยต่อคลิป แยกตาม Tier / Platform / แคมเปญ'],
     cpm: ['CPM / CPE', 'ความคุ้มค่า แยกตามแบรนด์ / แคมเปญ + คลิปที่ถูกสุด / แพงสุด'],
