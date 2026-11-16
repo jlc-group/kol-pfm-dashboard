@@ -421,7 +421,9 @@ const submissions = {
             const { at: stampAt, campaignType } = await stampCtxOf(client, pid, {});
             let head = null;
             for (const sib of sibs) {
-                const r = await updateOne(client, sib.id, projectId, fields, byName, { actor: opts.actor, stampAt, campaignType });
+                // perRow = ค่าที่ต่างกันต่อคลิป (เช่น ชื่อคลิปตาม Platform ใหม่ · ทีมย้าย Platform 16 พ.ย. 2026) — เขียนใน transaction เดียวกัน
+                const extra = opts.perRow && opts.perRow[sib.id] ? opts.perRow[sib.id] : null;
+                const r = await updateOne(client, sib.id, projectId, extra ? { ...fields, ...extra } : fields, byName, { actor: opts.actor, stampAt, campaignType });
                 if (sib.id === target.id) head = r;
             }
             return head;

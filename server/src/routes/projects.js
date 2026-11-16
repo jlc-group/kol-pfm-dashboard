@@ -16,7 +16,8 @@ const {
     mergeHireItems, mergeBriefFiles, hireRowFee, cleanFee, cleanHeadcount, safeId,
     HIRE_BOOKED, BOOK_PENDING, BOOK_FEE, HIRE_JOB_CLOSED, hireBookings, newHireRow, payableWithoutFee, hireScope,
     PERSON_FIELDS, personPatch, releaseToRequest, bookingConfirm, bookingFeeDecision, bookingUnavailable, carryProductTargets, carryProductBudgets, carryProductConcepts,
-    carryProductKols, carryProductBundles, carryNoGencode, carryCart, staleRowBlocks, normCampaignType, todayTH
+    carryProductKols, carryProductBundles, carryNoGencode, carryCart, staleRowBlocks, normCampaignType, todayTH,
+    linkGroupPlatforms
 } = require('../store/logic');
 const { soloInput, buildSoloGroup, soloPersons, soloAccountsText, soloName, soloDeleteBlock } = require('../store/soloKol');
 const { isMixedTier, mixedTierError } = require('../data/tiers');
@@ -1639,6 +1640,93 @@ router.put('/:id/submissions/:subId/person-status', async (req, res, next) => {
         const label = status === 'confirmed' ? 'คัดเลือก KOL' : status === 'rejected' ? 'ไม่เลือก KOL' : 'รีเซ็ตสถานะ KOL';
         await record(req, req.params.id, 'select_kol', `${label}: ${rows[0].account_name}${rows.length > 1 ? ` (${rows.length} คลิป)` : ''}`,
             check.project.name, check.project.team_id);
+        res.json({ status: 'success', data: rows });
+    } catch (err) { next(err); }
+});
+
+// PUT /api/projects/:id/submissions/:subId/person — ทีมแก้ข้อมูลของ Account (ผู้ใช้สั่ง 16 พ.ย. 2026 — ปุ่มแก้ไขในตารางรายชื่อ)
+// ช่อง "ตัวคน" ชุดเดียวกับฟอร์มแก้ไขฝั่งเอเจนซี่ · แก้ทีเดียวครบทุกคลิปของคนนี้ (updatePerson) · ไม่ส่งมา = ไม่แตะ
+// ค่าตัวไม่รับที่เส้นนี้ (PUT /:id/fees ที่เดียว) · KOL รายคนแก้ที่หน้าของ KOL คนนั้น
+const PERSON_EDIT_FIELDS = ['account_name', 'followers', 'platform', 'content_type', 'tier', 'product', 'agency', 'link_account'];
+const PERSON_EDIT_LABEL = { account_name: 'ชื่อ', followers: 'ยอดฟอล', platform: 'Platform', content_type: 'Content Type', tier: 'Tier', product: 'Product', agency: 'KOL Contact', link_account: 'Link Account' };
+router.put('/:id/submissions/:subId/person', async (req, res, next) => {
+    try {
+        const check = await canEditProject(req, req.params.id);
+        if (!check.ok) return res.status(check.code).json({ status: 'error', message: check.message });
+        if (isSoloProject(check.project)) return res.status(400).json({ status: 'error', message: SOLO_ONLY_MSG });
+        const body = req.body || {};
+        if (!PERSON_EDIT_FIELDS.some(f => body[f] !== undefined)) return res.status(400).json({ status: 'error', message: 'ไม่มีข้อมูลให้แก้' });
+        const text = (v, max) => (v === undefined ? undefined : ((v != null && String(v).trim()) ? String(v).trim().slice(0, max) : null));
+        const fields = {
+            account_name: text(body.account_name, 200),
+            followers: body.followers === undefined ? undefined : Number(body.followers),
+            platform: text(body.platform, 40),
+            content_type: text(body.content_type, 80),
+            tier: text(body.tier, 60),
+            product: text(body.product, 1000),
+            agency: text(body.agency, 200),
+            link_account: text(body.link_account, 1000)
+        };
+        if (body.account_name !== undefined && !fields.account_name) return res.status(400).json({ status: 'error', message: 'กรุณาระบุชื่อ Account' });
+        if (fields.followers !== undefined && !(Number.isFinite(fields.followers) && fields.followers >= 0)) {
+            return res.status(400).json({ status: 'error', message: 'ยอดฟอลต้องเป็นตัวเลข 0 ขึ้นไป' });
+        }
+        if (fields.followers !== undefined) fields.followers = Math.round(fields.followers);
+        if (body.platform !== undefined && !fields.platform) return res.status(400).json({ status: 'error', message: 'กรุณาเลือก Platform' });
+        if (isMixedTier(fields.tier)) return mixedTierError(res);   // "คละ Tier" เป็นค่าของกลุ่ม ไม่ใช่ Tier ของคน
+        if (fields.link_account && !/^https?:\/\//i.test(fields.link_account)) {
+            return res.status(400).json({ status: 'error', message: 'Link Account ต้องขึ้นต้นด้วย http:// หรือ https://' });
+        }
+        // คนนี้ทั้งคน (ทุกคลิป) ต้องอยู่ในแคมเปญนี้
+        const all = await store.submissions.listByProject(req.params.id);
+        const target = all.find(s => Number(s.id) === Number(req.params.subId));
+        if (!target) return res.status(404).json({ status: 'error', message: 'ไม่พบรายการ' });
+        const sibs = target.person_key ? all.filter(s => s.person_key === target.person_key) : [target];
+        // เปลี่ยน Platform = ย้ายไปกล่องอื่น — กันข้อมูลเพี้ยน 3 ทาง
+        if (fields.platform && fields.platform !== (target.platform || null)) {
+            const grp = ((check.project.ad_groups || [])).find(g => g.key === target.group_key) || null;
+            const plats = grp ? linkGroupPlatforms(grp) : [];
+            if (plats.length && !plats.includes(fields.platform)) {
+                return res.status(400).json({ status: 'error', message: `กลุ่มนี้ไม่มี ${fields.platform} — เลือกได้: ${plats.join(', ')}` });
+            }
+            // ลงโพสต์ / ยิงแอดแล้ว = ยอด PFM และหน้า Ads ผูกกับ Platform เดิมแล้ว
+            if (sibs.some(s => s.ad_status === 'ยิงแล้ว' || s.post_url || s.id_post)) {
+                return res.status(400).json({ status: 'error', message: 'เปลี่ยน Platform ไม่ได้ — คลิปของคนนี้ลงโพสต์หรือยิงแอดแล้ว' });
+            }
+            // จำนวนคลิปต่อคนตั้งแยกต่อ Platform — ไม่เท่ากัน = ต้องลบแล้วเพิ่มใหม่ในกล่องนั้น (ระบบสร้างคลิปให้ครบ)
+            const need = grp ? Math.max(1, store.resolveGroupClips(grp, fields.platform).length) : sibs.length;
+            if (need !== sibs.length) {
+                return res.status(400).json({ status: 'error', message: `เปลี่ยน Platform ไม่ได้ — ${fields.platform} ในกลุ่มนี้ตั้งไว้ ${need} คลิป แต่คนนี้มี ${sibs.length} คลิป · ลบแล้วเพิ่มใหม่ในกล่อง ${fields.platform} แทน` });
+            }
+        }
+        const user = await store.users.findById(req.user.id);
+        const byName = displayName(user);
+        const clean = {};
+        PERSON_EDIT_FIELDS.forEach(f => { if (fields[f] !== undefined) clean[f] = fields[f]; });
+        // ย้าย Platform = ชื่อคลิปต้องเป็นของ Platform ใหม่ (ตั้งแยกต่อ Platform ในกลุ่ม) — กติกาเดียวกับตอนเพิ่มคน (addPerson)
+        // ไม่งั้น On Process / My Work / หน้าเอเจนซี่ยังขึ้นชื่องานของ Platform เดิม · จำนวนคลิปตรวจแล้วข้างบนว่าเท่ากัน
+        let perRow = null;
+        const movedGrp = clean.platform && clean.platform !== (target.platform || null)
+            ? ((check.project.ad_groups || []).find(g => g.key === target.group_key) || null) : null;
+        if (movedGrp) {
+            const names = store.resolveGroupClips(movedGrp, clean.platform);
+            perRow = {};
+            sibs.forEach(s => {
+                const no = Number(s.clip_no) || 1;
+                perRow[s.id] = { clip_name: names.length < 2 ? (names[0] || null) : (names[no - 1] || null) };
+            });
+        }
+        const data = await store.submissions.updatePerson(req.params.subId, req.params.id, clean, byName, perRow ? { actor: 'team', perRow } : { actor: 'team' });
+        if (!data) return res.status(404).json({ status: 'error', message: 'ไม่พบรายการ' });
+        // ลงประวัติเฉพาะช่องที่เปลี่ยนจริง (เดิม → ใหม่)
+        const show = v => (v === null || v === undefined || v === '' ? '—' : String(v));
+        const diffs = PERSON_EDIT_FIELDS.filter(f => clean[f] !== undefined && show(clean[f]) !== show(target[f]))
+            .map(f => `${PERSON_EDIT_LABEL[f]} ${show(target[f])} → ${show(clean[f])}`);
+        if (diffs.length) {
+            await record(req, req.params.id, 'update_kol', `แก้ข้อมูล KOL: ${target.account_name}${sibs.length > 1 ? ` (${sibs.length} คลิป)` : ''} · ${diffs.join(' · ')}`,
+                check.project.name, check.project.team_id);
+        }
+        const rows = (await store.submissions.listByProject(req.params.id)).filter(s => sibs.some(x => x.id === s.id));
         res.json({ status: 'success', data: rows });
     } catch (err) { next(err); }
 });

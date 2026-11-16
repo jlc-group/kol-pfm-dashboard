@@ -11,6 +11,7 @@ import ConceptLines from '../components/ConceptLines.jsx';
 import GroupNeedHead, { groupClipNeed } from '../components/GroupNeedHead.jsx';
 import ProductMultiSelect from '../components/ProductMultiSelect.jsx';
 import TeamAddRows from '../components/TeamAddRows.jsx';
+import TeamEditKolModal from '../components/TeamEditKolModal.jsx';
 import { unreadCount } from '../components/MessageBox.jsx';
 import ChatDock from '../components/ChatDock.jsx';
 import { productLabel, asTargetArray } from '../data/products.js';
@@ -369,6 +370,8 @@ export default function ProjectDetail() {
     // กลุ่ม/Platform/Content Type ที่เลือกไว้ให้ในหน้าต่างเพิ่ม KOL (กดจากกล่องในแท็บรายชื่อ) — null = เปิดจากปุ่มด้านบน
     const [addSubPreset, setAddSubPreset] = useState(null);
     const openAddSub = (preset = null) => { setAddSubPreset(preset); setShowAddSub(true); };
+    // แถวที่กำลังแก้ข้อมูล Account (ปุ่ม ✎ ในตารางรายชื่อ · 16 พ.ย. 2026)
+    const [editKol, setEditKol] = useState(null);
     const [showEdit, setShowEdit] = useState(false);
     const [showDelConfirm, setShowDelConfirm] = useState(false);
     const [deleting, setDeleting] = useState(false);
@@ -828,6 +831,10 @@ export default function ProjectDetail() {
                         </div>
                     );
                 })()}
+                {/* แก้ข้อมูล Account (ชื่อ / Platform / Content Type / Tier / ยอดฟอล / Product / KOL Contact / ลิงก์) ครบทุกคลิปของคนนี้ */}
+                <button type="button" className="sub-edit" title={`แก้ไขข้อมูล ${s.account_name}`} aria-label={`แก้ไขข้อมูล ${s.account_name}`} onClick={() => setEditKol(s)}>
+                    <Icon name="edit" size={14} />
+                </button>
                 {/* รายชื่อจากเอเจนซี่ให้เจ้าของลิงก์ลบเอง ฝั่งทีมใช้ "ไม่เลือก" แทน
                     ยกเว้นลิงก์ถูกลบไปแล้ว = แถวกำพร้า ทีมต้องเก็บกวาดเองได้ */}
                 {(!s.agency_token || !liveTokens.has(s.agency_token)) && (
@@ -1599,6 +1606,20 @@ export default function ProjectDetail() {
                     preset={addSubPreset}
                     onClose={() => setShowAddSub(false)}
                     onAdded={() => { setShowAddSub(false); loadSubs(); }}
+                />
+            )}
+
+            {editKol && (
+                <TeamEditKolModal
+                    projectId={id}
+                    sub={editKol}
+                    clips={clipsOfPerson(editKol)}
+                    group={(project.ad_groups || []).find(g => g.key === editKol.group_key) || null}
+                    agencyName={editKol.agency_token && liveTokens.has(editKol.agency_token)
+                        ? ((agencyLinks.find(l => l.token === editKol.agency_token) || {}).name || editKol.agency || 'เอเจนซี่')
+                        : null}
+                    onClose={() => setEditKol(null)}
+                    onSaved={() => { setEditKol(null); loadSubs(); }}
                 />
             )}
 

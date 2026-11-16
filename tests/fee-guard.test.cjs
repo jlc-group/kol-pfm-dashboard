@@ -155,6 +155,18 @@ test('updatePerson() updates every sibling clip without budget', async () => {
     assert.equal(released, 1);
 });
 
+test('updatePerson() perRow: ค่าต่อคลิป (ชื่อคลิปตาม Platform ใหม่ · ทีมแก้ Account 16 พ.ย. 2026) เขียนเฉพาะแถวของตัวเอง · ยังไม่เขียนค่าตัว', async () => {
+    reset();
+    const fields = { platform: 'Instagram', budget: 9999 };
+    await submissions.updatePerson(5, 41, fields, 'tester', { actor: 'team', perRow: { 5: { clip_name: 'Reel', budget: 1 }, 6: { clip_name: 'Story' } } });
+    assert.deepEqual(fields, { platform: 'Instagram', budget: 9999 }, 'ไม่แก้อ็อบเจกต์ของผู้เรียก');
+    const ups = updates();
+    assert.deepEqual(ups.map(u => u.id), [5, 6]);
+    assert.deepEqual(ups.map(u => [u.set.platform, u.set.clip_name, 'budget' in u.set]), [['Instagram', 'Reel', false], ['Instagram', 'Story', false]]);
+    assert.equal(rows.get(5).budget, 5000);
+    assert.equal(released, 1);
+});
+
 test('setFees() is the path that writes budget', async () => {
     reset();
     const out = await submissions.setFees(41, [
