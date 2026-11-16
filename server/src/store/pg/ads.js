@@ -18,7 +18,7 @@ const {
     engagementOf, clipCostMetrics, perfVerdict,
     maybeStamp, stampWaitReason, normalizeStamp, stampAtFor, pfmManagedSpend, postCheckWaiting,
     adRanBySpend, effectiveAdStatus, postNoGencode, pooledCpe, viewsMissingReason, firstByIdPost,
-    adStatusAuto, pfmSourceBrands, isPfmBrand, gencodeDays, gencodeDayLeft, resolveGroupCart
+    adStatusAuto, pfmSourceBrands, isPfmBrand, gencodeDays, gencodeDayLeft, effectiveCart
 } = logic;
 
 // ===== สแตมป์ Performance ตอนค่าแอดถึงเกณฑ์ =====
@@ -244,7 +244,8 @@ const ads = {
                     target: resolveGroupTarget(grp, s.platform, s.product),
                     campaign: resolveGroupCampaign(grp, s.platform, ct),   // คอลัมน์ CAMPAIGN (ตั้งต่อชุด Content Type)
                     // ติดตะกร้า (TikTok · 11 พ.ย. 2026) — ตั้งต่อชุด Content Type · true / false / null (แคมเปญก่อนมีช่องนี้ / ไม่ใช่ TikTok)
-                    cart: resolveGroupCart(grp, s.platform, ct),
+                    // ตั้งรายคนได้ (16 พ.ย. 2026 · submissions.cart) — มีค่ารายคน = ใช้ค่านั้นก่อนกลุ่ม
+                    cart: effectiveCart(s, grp, ct),
                     content_type: ct,
                     media_type: media.media_type,
                     group_format: media.content_format,

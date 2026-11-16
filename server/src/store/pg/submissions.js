@@ -37,6 +37,8 @@ const UPDATABLE = [
     'draft_remark', 'draft_remark2', 'draft_remark3', 'draft_remark4', 'draft_remark5',
     // Caption ของ KOL 1 ช่องต่อคลิป (30 ต.ค. 2026) — ฐานที่ยังไม่มีคอลัมน์ = ตัดทิ้งใน updateOne
     'kol_caption',
+    // ตะกร้ารายคน (16 พ.ย. 2026 · null = ตามกลุ่ม) — ฐานที่ยังไม่มีคอลัมน์ = ตัดทิ้งใน updateOne
+    'cart',
     'approved', 'draft_status', 'post_url', 'post_date', 'id_post', 'code_expire',
     'ad_status', 'ad_spend', 'ad_reach', 'ad_start', 'ad_end', 'ad_note',
     'team_note', 'agency_note', 'content_type',
@@ -146,6 +148,13 @@ async function updateOne(client, subId, projectId, fields, byName, opts = {}) {
     if (!s) return null;
     if (!('fee_free' in s)) delete fields.fee_free;   // ยังไม่ได้ setup-db (27 ต.ค. 2026) — ไม่เขียนคอลัมน์ที่ไม่มี
     if (!('kol_caption' in s)) delete fields.kol_caption;   // เหมือนกัน (Caption ของ KOL · 30 ต.ค. 2026)
+    if (!('cart' in s)) delete fields.cart;   // เหมือนกัน (ตะกร้ารายคน · 16 พ.ย. 2026)
+    // ตะกร้ารายคนผูกกับ Platform + ชุด Content Type ตอนตั้ง — ย้าย Platform (ทีม / เอเจนซี่ / ทางไหนก็ตาม) โดยไม่ได้ส่ง cart มา = ล้างเป็นตามกลุ่ม
+    // ไม่งั้นย้ายออกแล้วย้ายกลับ TikTok ค่ารายคนเก่าโผล่กลับมาทับค่ากลุ่ม (ผลรีวิว 16 พ.ย. 2026)
+    if ('cart' in s && fields.cart === undefined && fields.platform !== undefined
+        && (fields.platform || null) !== (s.platform || null) && s.cart !== null && s.cart !== undefined) {
+        fields.cart = null;
+    }
 
     // ช่องที่บันทึกว่าใครแก้ล่าสุดเมื่อไหร่
     // post_date อยู่ในนี้ด้วย เพราะต้องรู้ว่า "แจ้งวันลงงานเข้าระบบตอนไหน"

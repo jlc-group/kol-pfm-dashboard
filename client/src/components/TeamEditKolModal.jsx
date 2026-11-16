@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { api } from '../api/client.js';
 import ProductMultiSelect from './ProductMultiSelect.jsx';
-import { groupPlatforms, contentTypesOf, tiersOf, productsFor, clipCountFor, productCodesIn } from '../data/adGroups.js';
+import { groupPlatforms, contentTypesOf, tiersOf, productsFor, clipCountFor, productCodesIn, needCart, cartFor, cartValue, CART_LABEL } from '../data/adGroups.js';
 
 // ปุ่มแก้ไขข้อมูล Account ในตารางรายชื่อฝั่งทีม (ผู้ใช้สั่ง 16 พ.ย. 2026)
 // ช่องชุดเดียวกับฟอร์มแก้ไขฝั่งเอเจนซี่ · บันทึกครั้งเดียวมีผลกับทุกคลิปของคนนี้ (server: PUT /submissions/:id/person)
@@ -21,6 +21,8 @@ export default function TeamEditKolModal({ projectId, sub, clips = [], group = n
         product: sub.product || '', agency: sub.agency || '', link_account: sub.link_account || ''
     };
     const [f, setF] = useState(start);
+    // ตะกร้ารายคน (16 พ.ย. 2026 · TikTok) — null = ยังไม่ได้กด (ใช้ค่ารายคนเดิม / ตามกลุ่ม) · true / false = เลือกในฟอร์มนี้ · 'group' = กดใช้ตามกลุ่ม
+    const [cartPick, setCartPick] = useState(null);
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState('');
     const up = (k, v) => setF(s => ({ ...s, [k]: v }));
@@ -46,6 +48,17 @@ export default function TeamEditKolModal({ projectId, sub, clips = [], group = n
     const ctOpts = group && f.platform ? contentTypesOf(group, f.platform) : [];
     const tierOpts = group && f.platform ? tiersOf(group, f.platform, f.content_type || null) : [];
     const prodOpts = group && f.platform ? productsFor(group, f.platform) : [];
+    // ตะกร้า: ฐานที่ยังไม่มีช่อง cart (ยังไม่ setup-db) = ไม่มีช่องนี้ในฟอร์ม · ค่าของกลุ่มตาม Platform / Content Type ที่เลือกอยู่
+    const cartReady = Object.prototype.hasOwnProperty.call(sub, 'cart');
+    const showCart = cartReady && needCart(f.platform);
+    const groupCart = needCart(f.platform) ? cartFor(group, f.platform, f.content_type || null) : null;
+    // ย้าย Platform = server ล้างค่ารายคนเดิมให้เอง (ผลรีวิว 16 พ.ย.) จึงเริ่มจากค่ากลุ่มของ Platform ใหม่
+    const ownBefore = needCart(start.platform) && !platChanged ? cartValue(sub.cart) : null;
+    const cartShown = cartPick === 'group' ? groupCart : cartPick !== null ? cartPick : (ownBefore !== null ? ownBefore : groupCart);
+    // ค่าที่จะเก็บ: เท่ากลุ่ม = null (ตามกลุ่ม — กลุ่มเปลี่ยนทีหลังคนนี้เปลี่ยนตาม) · ต่างจากกลุ่ม = ค่ารายคน
+    // คิดทุกครั้ง (ไม่ใช่เฉพาะตอนกด) — เปลี่ยน Content Type แล้วค่ารายคนเดิมเท่ากลุ่มใหม่ = กลับเป็นตามกลุ่ม
+    const cartSave = cartPick === 'group' || cartShown === null || cartShown === groupCart ? null : cartShown;
+    const cartOwn = cartSave !== null;
     // ค่าเดิมที่ไม่อยู่ในตัวเลือกแล้ว ยังต้องเห็น (ไม่หายเงียบ ๆ)
     const withCur = (opts, cur) => (cur && !opts.includes(cur) ? [cur, ...opts] : opts);
 
@@ -83,6 +96,12 @@ export default function TeamEditKolModal({ projectId, sub, clips = [], group = n
             if (norm(f[k]) === norm(start[k])) return;
             body[k] = k === 'followers' ? (f.followers === '' ? 0 : Number(f.followers)) : (norm(f[k]) || null);
         });
+        // ตะกร้า: เก็บเฉพาะตอนต่างจากกลุ่ม (เท่ากลุ่ม = null ตามกลุ่ม · กลุ่มเปลี่ยนทีหลังคนนี้เปลี่ยนตาม) · ส่งเฉพาะตอนค่าที่เก็บเปลี่ยน
+        // ค่าที่อยู่ในฐานตอนนี้ (ย้าย Platform = server ล้างเป็น null ให้อยู่แล้ว) — ต่างจากที่จะเก็บถึงส่ง
+        if (cartReady && needCart(f.platform)) {
+            const stored = platChanged ? null : cartValue(sub.cart);
+            if (cartSave !== stored) body.cart = cartSave;
+        }
         if (body.account_name === null) { setError('กรุณากรอกชื่อ Account'); return; }
         if (!Object.keys(body).length) { onClose(); return; }
         setError(''); setSaving(true);
@@ -146,6 +165,27 @@ export default function TeamEditKolModal({ projectId, sub, clips = [], group = n
                             </select>
                         </div>
                     </div>
+                    {showCart && (
+                        <div className="field">
+                            <label id="tek-cart-l">ตะกร้า (TikTok Shop)</label>
+                            <div className="tek-cart" role="radiogroup" aria-labelledby="tek-cart-l">
+                                {[true, false].map(v => (
+                                    <label key={String(v)} className={cartShown === v ? 'on' : ''}>
+                                        <input type="radio" name="tek-cart" checked={cartShown === v} onChange={() => setCartPick(v)} />
+                                        {v ? '🛒 ' : ''}{CART_LABEL[v]}
+                                    </label>
+                                ))}
+                            </div>
+                            <small className="tek-cart-hint">
+                                ค่าของกลุ่ม: {groupCart === null ? 'ยังไม่ได้ตั้ง' : CART_LABEL[groupCart]}
+                                {cartOwn ? <> · <b>คนนี้ตั้งรายคน</b></> : <> · คนนี้ตามกลุ่ม</>}
+                                {/* ล้างค่ารายคนได้เสมอ — รวมตอนกลุ่มยังไม่ได้ตั้ง (ไม่มีปุ่มเลือกให้กดกลับเป็นค่าว่าง) */}
+                                {cartOwn && (
+                                    <> · <button type="button" className="tek-cart-reset" onClick={() => setCartPick('group')}>ใช้ตามกลุ่ม</button></>
+                                )}
+                            </small>
+                        </div>
+                    )}
                     <div className="field">
                         <label>Product</label>
                         {prodOpts.length > 0

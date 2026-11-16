@@ -167,6 +167,37 @@ test('updatePerson() perRow: ค่าต่อคลิป (ชื่อคล�
     assert.equal(released, 1);
 });
 
+test('updatePerson() cart (ตะกร้ารายคน · 16 พ.ย. 2026): ฐานมีช่อง = เขียนทุกคลิป · ฐานยังไม่ setup-db (ไม่มีคีย์) = ตัดทิ้ง ไม่ยิง SQL คอลัมน์ที่ไม่มี', async () => {
+    reset();
+    await submissions.updatePerson(5, 41, { cart: false, account_name: 'น้องเอ' }, 'tester', { actor: 'team' });
+    assert.ok(updates().every(u => !('cart' in u.set)), 'ไม่มีคอลัมน์ = ไม่เขียน');
+    reset();
+    rows.get(5).cart = null; rows.get(6).cart = null;
+    await submissions.updatePerson(5, 41, { cart: false }, 'tester', { actor: 'team' });
+    assert.deepEqual(updates().map(u => [u.id, u.set.cart]), [[5, false], [6, false]]);
+    assert.equal(rows.get(5).cart, false);
+});
+
+test('updateOne(): ย้าย Platform ทางไหนก็ตาม (เอเจนซี่ / ทีม) โดยไม่ส่ง cart = ล้างตะกร้ารายคนเป็นตามกลุ่ม · ส่ง cart มาเอง = ใช้ค่าที่ส่ง · Platform เดิม = ไม่แตะ', async () => {
+    reset();
+    rows.get(5).cart = false; rows.get(6).cart = false; rows.get(5).platform = 'TikTok'; rows.get(6).platform = 'TikTok';
+    // เอเจนซี่ย้ายไป Instagram (เส้น agency ส่งช่องตัวคน ไม่มี cart)
+    await submissions.updatePerson(5, 41, { platform: 'Instagram', content_type: 'Reels' }, 'agency', { actor: 'agency' });
+    assert.deepEqual(updates().map(u => [u.id, u.set.platform, u.set.cart]), [[5, 'Instagram', null], [6, 'Instagram', null]]);
+    assert.equal(rows.get(5).cart, null);
+    // Platform เดิม (ส่งค่าเดิมมาด้วย) = ไม่แตะค่ารายคน
+    reset();
+    rows.get(5).cart = true; rows.get(5).platform = 'TikTok';
+    await submissions.update(5, 41, { platform: 'TikTok', account_name: 'x' }, 'tester', { actor: 'team' });
+    assert.ok(updates().every(u => !('cart' in u.set)));
+    assert.equal(rows.get(5).cart, true);
+    // ย้ายพร้อมส่ง cart มาเอง = ใช้ค่าที่ส่ง
+    reset();
+    rows.get(5).cart = true; rows.get(5).platform = 'Instagram';
+    await submissions.update(5, 41, { platform: 'TikTok', cart: false }, 'tester', { actor: 'team' });
+    assert.equal(rows.get(5).cart, false);
+});
+
 test('setFees() is the path that writes budget', async () => {
     reset();
     const out = await submissions.setFees(41, [

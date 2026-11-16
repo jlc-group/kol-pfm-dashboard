@@ -5,7 +5,7 @@ import DatePicker from './DatePicker.jsx';
 import DraftModal from './DraftModal.jsx';
 import PerfModal from './PerfModal.jsx';
 import { asTargetArray } from '../data/products.js';
-import { mediaFor, contentTypesOf, quotaOf, targetFor, conceptText, conceptOneLine, groupNoGencode, postNoGencode, productKolProgress, cartFor } from '../data/adGroups.js';
+import { mediaFor, contentTypesOf, quotaOf, targetFor, conceptText, conceptOneLine, groupNoGencode, postNoGencode, productKolProgress, cartOf } from '../data/adGroups.js';
 import CartTag from './CartTag.jsx';
 import { productLabel } from '../data/products.js';
 import { ProductSummary } from './ProductChips.jsx';
@@ -125,7 +125,8 @@ function ProcessRow({ sub, putSubmission, reload, showAds = false, group = null,
     const ctype = sub.content_type || (group ? (contentTypesOf(group, sub.platform)[0] || null) : null);
     const media = group ? mediaFor(group, sub.platform, ctype) : { media_type: null, content_format: null };
     // ติดตะกร้า (TikTok · 11 พ.ย. 2026) — ตาม Content Type ของคลิปนี้ · ช่องที่เอเจนซี่ใส่ลิงก์โพสต์ จึงเตือนตรงนี้ด้วย
-    const cart = group ? cartFor(group, sub.platform, ctype) : null;
+    // ตั้งรายคนได้ (16 พ.ย. 2026) — ค่ารายคนก่อน ไม่ได้ตั้งค่อยตามกลุ่ม
+    const cart = cartOf(sub, group, ctype);
     // Target ตามสินค้าของคลิปนี้ (แคมเปญที่ตั้ง Target ต่อสินค้า) — ไม่รู้สินค้าก็ใช้ Target รวมของ Platform
     const tgt = group ? asTargetArray(targetFor(group, sub.platform, sub.product)) : [];
     // ยิงแอดไปแล้ว = ล็อก ลิงก์โพสต์ / Gencode / ID Post ไว้ก่อน เพราะเป็นข้อมูลที่แอดที่ยิงไปแล้วอ้างอิงอยู่

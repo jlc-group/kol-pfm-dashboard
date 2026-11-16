@@ -218,6 +218,46 @@ test('ads.list: แถวมี cart ตาม (Platform + Content Type) ขอ�
     assert.deepEqual(by, { 1: true, 2: false, 3: true, 4: null, 5: null });
 });
 
+// ---------------------------------------------------------------- ตะกร้ารายคน (ผู้ใช้สั่ง 16 พ.ย. 2026 · submissions.cart)
+
+test('effectiveCart / cartOf: ค่ารายคนก่อนกลุ่ม · null = ตามกลุ่ม · ไม่ใช่ TikTok = null แม้มีค่าค้าง · ทั้งสองฝั่งได้ค่าเดียวกัน', () => {
+    const g = GROUP();
+    const cases = [
+        [{ platform: 'TikTok', content_type: 'Review', cart: null }, g, true],          // ตามกลุ่ม
+        [{ platform: 'TikTok', content_type: 'Review', cart: false }, g, false],        // รายคนไม่ติด ทั้งที่กลุ่มติด
+        [{ platform: 'TikTok', content_type: 'Sale', cart: true }, g, true],            // รายคนติด ทั้งที่กลุ่มไม่ติด
+        [{ platform: 'TikTok', content_type: 'Sale' }, g, false],                       // ฐานยังไม่มีช่อง = ตามกลุ่ม
+        [{ platform: 'TikTok', content_type: 'Review', cart: 'false' }, g, true],       // สตริงไม่นับ
+        [{ platform: 'TikTok', content_type: 'Review', cart: true }, null, true],       // ไม่มีกลุ่มก็ใช้ค่ารายคน
+        [{ platform: 'Instagram', content_type: 'Reels', cart: true }, g, null],        // ค่าค้างจากตอนเป็น TikTok ไม่นับ
+        [null, g, null]
+    ];
+    for (const [s, grp, want] of cases) {
+        assert.equal(logic.effectiveCart(s, grp, s && s.content_type), want, 'server ' + JSON.stringify(s));
+        assert.equal(web.cartOf(s, grp, s && s.content_type), want, 'web ' + JSON.stringify(s));
+    }
+    assert.equal(web.cartOf({ platform: 'TikTok', content_type: 'Sale', cart: null }, g), false, 'ไม่ส่ง Content Type = ใช้ของแถว');
+    assert.deepEqual([web.ownCart({ platform: 'TikTok', cart: false }), web.ownCart({ platform: 'TikTok', cart: null }), web.ownCart({ platform: 'Instagram', cart: true })], [false, null, null]);
+    // ป้าย "รายคน" ขึ้นเฉพาะค่าที่ต่างจากกลุ่มจริง (กลุ่มแก้ทีหลังจนเท่ากัน = ไม่ขึ้น)
+    assert.equal(web.cartOverride({ platform: 'TikTok', content_type: 'Review', cart: false }, g), false);
+    assert.equal(web.cartOverride({ platform: 'TikTok', content_type: 'Review', cart: true }, g), null, 'เท่ากลุ่ม');
+    assert.equal(web.cartOverride({ platform: 'TikTok', content_type: 'Review', cart: true }, null), true, 'ไม่มีกลุ่ม = ต่าง');
+    assert.equal(web.cartOverride({ platform: 'Instagram', content_type: 'Reels', cart: true }, g), null);
+});
+
+test('ads.list: ตั้งตะกร้ารายคนแล้วหน้า Ads ขึ้นค่ารายคน (คนอื่นในชุดเดียวกันยังตามกลุ่ม)', async () => {
+    const saved = FIXTURE.submissions;
+    FIXTURE.submissions = saved.map(s => ({ ...s, cart: null }));
+    FIXTURE.submissions.find(s => s.id === 1).cart = false;     // ชุด Review กลุ่มติด แต่คนนี้ไม่ติด
+    FIXTURE.submissions.find(s => s.id === 2).cart = true;      // ชุด Sale กลุ่มไม่ติด แต่คนนี้ติด
+    FIXTURE.submissions.find(s => s.id === 4).cart = true;      // Instagram — ไม่นับ
+    try {
+        const { rows } = await ads.list({});
+        const by = Object.fromEntries(rows.map(r => [r.sub_id, r.cart]));
+        assert.deepEqual(by, { 1: false, 2: true, 3: true, 4: null, 5: null });
+    } finally { FIXTURE.submissions = saved; }
+});
+
 // ---------------------------------------------------------------- เส้นบันทึกแคมเปญ (store จำลอง)
 
 test('PUT /api/projects/:id: แท็บเก่าไม่ทำค่าตะกร้าหาย · ฟอร์มใหม่เปลี่ยนได้ · POST จัดค่าให้ตรงตัว', async () => {

@@ -163,6 +163,41 @@ test('เปลี่ยน Platform: ลงโพสต์ / ยิงแอด
     } finally { PROJECTS[5].ad_groups[0].blocks[0].clips = ['คลิป 1', 'คลิป 2']; }
 });
 
+test('ตะกร้ารายคน (16 พ.ย. 2026): true / false / null(ตามกลุ่ม) · ค่าแปลก 400 · ไม่ใช่ TikTok ตั้งไม่ได้ · ย้ายออกจาก TikTok = ล้างค่ารายคน · ฐานยังไม่มีช่อง = 409', async () => {
+    reset(); CALLS.length = 0; LOGS.length = 0;
+    SUBS.forEach(s => { s.cart = null; });
+    let r = await put(1, '/projects/5/submissions/101/person', { cart: false });
+    assert.equal(r.status, 200);
+    assert.deepEqual(CALLS.at(-1).fields, { cart: false });
+    assert.ok(SUBS.filter(s => s.person_key === 'pa').every(s => s.cart === false), 'ทุกคลิปของคนนี้');
+    assert.match(LOGS.at(-1).summary, /ตะกร้า ตามกลุ่ม → ไม่ติดตะกร้า/);
+    r = await put(1, '/projects/5/submissions/101/person', { cart: null });
+    assert.equal(r.status, 200);
+    assert.deepEqual(CALLS.at(-1).fields, { cart: null });
+    assert.match(LOGS.at(-1).summary, /ตะกร้า ไม่ติดตะกร้า → ตามกลุ่ม/);
+    const n = CALLS.length;
+    for (const cart of ['yes', 1, 'true', {}]) assert.equal((await put(1, '/projects/5/submissions/101/person', { cart })).status, 400, JSON.stringify(cart));
+    r = await put(1, '/projects/5/submissions/105/person', { cart: true });
+    assert.equal(r.status, 400); assert.match((await r.json()).message, /เฉพาะ TikTok/);
+    assert.equal(CALLS.length, n, 'ไม่ถึง store');
+    // ย้าย TikTok → Instagram (คลิปเท่ากัน) ทั้งที่ตั้งตะกร้ารายคนไว้ = ล้างเป็น null ให้เอง
+    SUBS.filter(s => s.person_key === 'pa').forEach(s => { s.cart = true; });
+    PROJECTS[5].ad_groups[0].blocks[1].clips = ['Reel', 'Story'];
+    try {
+        r = await put(1, '/projects/5/submissions/101/person', { platform: 'Instagram', content_type: 'Reels' });
+        assert.equal(r.status, 200);
+        assert.deepEqual(CALLS.at(-1).fields, { platform: 'Instagram', content_type: 'Reels', cart: null });
+    } finally { PROJECTS[5].ad_groups[0].blocks[1].clips = ['คลิป 1']; }
+    // ฐานที่ยังไม่ได้ setup-db (แถวไม่มีคีย์ cart) — ส่งตะกร้ามา = 409 บอกตรง ๆ · ช่องอื่นแก้ได้ตามปกติ
+    reset();
+    const m = CALLS.length;
+    r = await put(1, '/projects/5/submissions/101/person', { cart: true });
+    assert.equal(r.status, 409); assert.match((await r.json()).message, /ยังไม่พร้อมเก็บตะกร้ารายคน/);
+    assert.equal(CALLS.length, m);
+    assert.equal((await put(1, '/projects/5/submissions/101/person', { account_name: 'x2' })).status, 200);
+    assert.equal('cart' in CALLS.at(-1).fields, false, 'ย้าย Platform ไม่มีคีย์ cart ในฐาน = ไม่ส่ง cart');
+});
+
 test('สิทธิ์: KOL รายคน = 400 · แบรนด์อื่น / เอเจนซี่ = 403 · ไม่อยู่ในแคมเปญ = 404', async () => {
     reset(); CALLS.length = 0;
     assert.equal((await put(1, '/projects/6/submissions/101/person', { account_name: 'x' })).status, 400);

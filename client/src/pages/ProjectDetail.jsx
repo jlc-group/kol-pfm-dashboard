@@ -19,7 +19,7 @@ import {
     groupPlatforms, kolInScope, contentTypesOf, mediaFor, quotaOf,
     toBlocks, blockKol, blocksKol, blocksBudget, num, isSplitBudget, hasOwnConcepts,
     contentCells, cellKeyOf, cellKey, clipCountFor, targetFor, groupNoGencode, productsFor, allocsInScope, conceptOneLine,
-    isKolSplit, productKolOf, productKolProgress, productRows, rowBudgetOf, cartFor, needCart
+    isKolSplit, productKolOf, productKolProgress, productRows, rowBudgetOf, cartFor, needCart, cartOverride
 } from '../data/adGroups.js';
 import CartTag from '../components/CartTag.jsx';
 import { collapseByPerson, countPeople } from '../data/clips.js';
@@ -771,6 +771,8 @@ export default function ProjectDetail() {
                         return fmt ? <span className="proc-ctype-chip fmt">{fmt}</span> : null;
                     })()}
                 </> : <span className="ctype-none">— ยังไม่ระบุ —</span>}
+                {/* ตะกร้ารายคน (16 พ.ย. 2026) — ขึ้นเฉพาะคนที่ตั้งต่างจากกลุ่ม · ค่ากลุ่มดูที่หัวกล่อง */}
+                {cartOverride(s, grp) !== null && <CartTag value={cartOverride(s, grp)} own />}
             </td>
             <td className="muted"><ProductSummary value={s.product} /></td>
             <td className="muted">{s.agency || '—'}</td>

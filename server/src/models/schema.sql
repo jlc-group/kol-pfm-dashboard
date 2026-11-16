@@ -278,6 +278,10 @@ ALTER TABLE submissions ADD COLUMN IF NOT EXISTS draft_remark5 TEXT;
 -- 1 คลิป 1 ช่อง ไม่ผูกกับดราฟรอบไหน · ทีมและเอเจนซี่กรอกได้ทั้งคู่ (หน้าต่างส่งดราฟ)
 ALTER TABLE submissions ADD COLUMN IF NOT EXISTS kol_caption TEXT;
 
+-- ตะกร้ารายคน (ผู้ใช้สั่ง 16 พ.ย. 2026 "บางคนในแต่ละกลุ่มอาจมีทั้งคนที่ติดและไม่ติดตะกร้า") — TikTok เท่านั้น
+-- NULL = ตามที่ตั้งไว้ในกลุ่ม (ชุด Content Type) · true / false = ตั้งรายคน (ทุกคลิปของคนนั้นค่าเดียวกัน · ทีมตั้งที่ปุ่มแก้ไขข้อมูล Account)
+ALTER TABLE submissions ADD COLUMN IF NOT EXISTS cart BOOLEAN;
+
 -- ---------- payments (สถานะเอกสาร/การจ่ายต่อแคมเปญ+เอเจนซี่) ----------
 CREATE TABLE IF NOT EXISTS payments (
     id             SERIAL PRIMARY KEY,

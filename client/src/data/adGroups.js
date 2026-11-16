@@ -1028,6 +1028,22 @@ export function mediaFor(g, platform, contentType) {
 // ติดตะกร้าของ (Platform + Content Type) — true / false / null (ไม่ใช่ TikTok / แคมเปญก่อนมีช่องนี้ / ไม่เจอชุด)
 // กติกาเดียวกับ resolveGroupCart ฝั่ง server: Content Type ต้องตรงตัว (ไม่ใช่แบบ mediaFor ที่ชุดไม่มี Content Type ใช้ได้กับทุกอัน)
 // ไม่รู้ Content Type = ชุดแรกที่เลือกไว้ · อ่านจาก blocks ก่อน (allocations ข้ามชุดที่ยังไม่มี Tier) แล้วค่อยถอยไป allocations
+// ตะกร้าของ KOL คนหนึ่ง (16 พ.ย. 2026) — ตั้งรายคน (sub.cart) ก่อน ไม่ได้ตั้ง = ตามชุด Content Type ของกลุ่ม
+// ไม่ใช่ TikTok = null · ต้องตรงกับ effectiveCart ฝั่ง server (server/src/store/logic.js)
+export function cartOf(sub, g, contentType) {
+    if (!sub || !needCart(sub.platform)) return null;
+    const own = cartValue(sub.cart);
+    return own !== null ? own : cartFor(g, sub.platform, contentType !== undefined ? contentType : sub.content_type);
+}
+// ค่าตะกร้ารายคนที่เก็บไว้ (TikTok เท่านั้น · null = ตามกลุ่ม)
+export const ownCart = sub => (sub && needCart(sub.platform) ? cartValue(sub.cart) : null);
+// ป้าย "รายคน" ในตาราง — ขึ้นเฉพาะค่ารายคนที่ต่างจากกลุ่มจริง (กลุ่มแก้ทีหลังจนเท่ากัน = ไม่ขึ้น) · คืนค่ารายคน / null
+export function cartOverride(sub, g) {
+    const own = ownCart(sub);
+    if (own === null) return null;
+    return own !== cartFor(g, sub.platform, sub.content_type) ? own : null;
+}
+
 export function cartFor(g, platform, contentType) {
     if (!g || !needCart(platform)) return null;
     const match = x => x && cartValue(x.cart) !== null && (!contentType || x.content_type === contentType);

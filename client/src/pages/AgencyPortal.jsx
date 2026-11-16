@@ -12,7 +12,7 @@ import ProductChips, { ProductSummary } from '../components/ProductChips.jsx';
 import GroupNeedHead, { groupClipNeed } from '../components/GroupNeedHead.jsx';
 import { productLabel } from '../data/products.js';
 import {
-    groupPlatforms, allocsInScope, contentTypesOf, mediaFor, cartFor,
+    groupPlatforms, allocsInScope, contentTypesOf, mediaFor, cartFor, cartOverride,
     tiersOf, productsFor, quotaOf, contentCells, cellKeyOf, cellKey, productKolProgress, conceptOneLine
 } from '../data/adGroups.js';
 import CartTag from '../components/CartTag.jsx';
@@ -179,6 +179,8 @@ function SavedGridRow({ s, n, group, agencyName, boxType = null, showMeta = fals
                     {ctype
                         ? <span className="proc-ctype-chip">{ctype}</span>
                         : <span className="ctype-none">— ยังไม่ระบุ —</span>}
+                    {/* ตะกร้ารายคน (ทีมตั้ง · 16 พ.ย. 2026) — ขึ้นเฉพาะคนที่ต่างจากหัวกล่อง */}
+                    {cartOverride(s, group) !== null && <CartTag value={cartOverride(s, group)} agency own />}
                 </span>
                 <span className="ag-saved-cell ag-ctype-cell">
                     {splitCsv(fmt).length

@@ -1158,6 +1158,14 @@ function resolveGroupCart(g, platform, contentType) {
     return a ? a.cart : null;
 }
 
+// ตะกร้าของคลิปหนึ่ง (16 พ.ย. 2026) — ตั้งรายคน (submissions.cart) ก่อน ไม่ได้ตั้ง = ตามชุด Content Type ของกลุ่ม
+// ไม่ใช่ TikTok = null เสมอ (ค่ารายคนที่ค้างจากตอนยังเป็น TikTok ไม่นับ) · ต้องตรงกับ cartOf ฝั่งหน้าเว็บ (client/src/data/adGroups.js)
+function effectiveCart(s, g, contentType) {
+    if (!s || !CART_PLATFORMS.includes(s.platform)) return null;
+    const own = cartValue(s.cart);
+    return own !== null ? own : resolveGroupCart(g, s.platform, contentType);
+}
+
 function engagementOf(s) {
     return (Number(s.likes) || 0) + (Number(s.comments) || 0) + (Number(s.saves) || 0)
         + (Number(s.shares) || 0) + (Number(s.reposts) || 0);
@@ -1457,7 +1465,7 @@ module.exports = {
     linkGroupPlatforms, resolveGroupClips, resolveGroupTarget, productCodesIn, carryProductTargets, carryProductBudgets, carryProductConcepts, carryProductKols,
     carryProductBundles, blockBundles, blockSingles, blockRows, rowKeyOf, hasRowModel, staleRowBlocks, clipRowTargets,
     groupNoGencode, postNoGencode, carryNoGencode, carryCart, gencodeDays, gencodeDayLeft, gencodeExpireDate,
-    resolveGroupProducts, resolveGroupCtype, resolveGroupMedia, resolveGroupCampaign, resolveGroupCart,
+    resolveGroupProducts, resolveGroupCtype, resolveGroupMedia, resolveGroupCampaign, resolveGroupCart, effectiveCart,
     engagementOf, maybeStamp, stampWaitReason, stampFeeOnly, normalizeStamp,
     feeMissing, clipCostMetrics, costAxisRange, costAxisNorm, perfVerdict, feeCostAverages, pooledCpe, viewsMissingReason, firstByIdPost
 };
