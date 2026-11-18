@@ -23,6 +23,8 @@ export default function SideDrawer({ title, subtitle, onClose, children, footer,
             const el = panel.current;
             // มีของซ้อนอยู่ข้างใน → ให้ของนั้นจัดการ Esc เอง
             if (el && el.querySelector('.modal-backdrop, .dp-pop')) return;
+            // กล่องติ๊กหลายตัว (MultiSelect · 18 พ.ย. 2026) วาดไว้ที่ body ไม่ได้อยู่ในลิ้นชัก — เปิดอยู่ = Esc ปิดแค่กล่องนั้น
+            if (document.querySelector('.pms-panel.ms-float')) return;
             // กล่องที่เปิดทีหลัง (อยู่บนสุด) เท่านั้นที่ปิด
             const all = document.querySelectorAll('.side-drawer');
             if (all.length && all[all.length - 1] !== el?.parentElement) return;

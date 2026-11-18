@@ -2023,6 +2023,18 @@ a.ads-thumb:focus-visible { outline: 2px solid var(--mint-dark); outline-offset:
 .pms-all:hover { background: #dcefe5; }
 .pms-done { width: 100%; margin-top: 4px; padding: 9px; border: none; border-radius: 9px; background: var(--mint); color: #fff; font-weight: 700; font-size: 12.5px; cursor: pointer; position: sticky; bottom: 0; }
 .pms-done:hover { background: var(--mint-dark); }
+/* MultiSelect (18 พ.ย. 2026) — ช่องเดิม (select) ไว้แสดงผล · ปุ่มใสทับรับการกด · กล่องติ๊กลอยอยู่ที่ body */
+.ms-wrap { position: relative; display: block; min-width: 0; }
+/* เดิม select เป็นลูกตรงของ .pms-cell (flex คอลัมน์) จึงยืดเต็มกว้าง — ห่อแล้วต้องยืดเอง · :where = น้ำหนักต่ำ หน้าไหนตั้งกว้างไว้เองยังชนะ */
+:where(.ms-wrap) > select { width: 100%; }
+.ms-wrap > select { pointer-events: none; }
+.ms-hit { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; padding: 0; border: 0; background: transparent; opacity: 0; cursor: pointer; }
+.ms-hit:disabled { cursor: not-allowed; }
+.ms-wrap:focus-within > select, .ms-wrap.open > select { border-color: var(--mint); box-shadow: 0 0 0 3px rgba(16, 185, 129, .16); }
+.pms-panel.ms-float { margin: 0; z-index: 3000; overflow-y: auto; overscroll-behavior: contain; }
+.pms-panel.ms-float .pms-item span { line-height: 1.35; }
+.pms-panel.ms-float .pms-all:focus-visible, .pms-panel.ms-float .pms-done:focus-visible { outline: 2px solid var(--mint-dark); outline-offset: 2px; }
+.pms-panel.ms-float .pms-item:has(input:focus-visible) { outline: 2px solid var(--mint); outline-offset: -2px; }
 .adgroup-add {
     display: inline-flex; align-items: center; gap: 6px; border: 1.5px dashed var(--border); background: #fff;
     color: var(--mint-dark); font-weight: 700; font-size: 13px; padding: 10px 14px; border-radius: 11px; cursor: pointer;
@@ -2751,8 +2763,10 @@ a.ads-thumb:focus-visible { outline: 2px solid var(--mint-dark); outline-offset:
 .pbrief-file-clear:hover { border-color: #f0a3a3; color: #d64545; background: #fff5f5; }
 /* หัวกลุ่ม: ช่องเลือก Platform หลายอัน (MultiSelect) */
 .adgroup-head .adgroup-platform { flex: none; width: 190px; }
-.adgroup-head .adgroup-platform .pms-cell > select { width: 100%; padding: 10px 12px; border: 1px solid var(--border); border-radius: 9px; background: #fff; font-size: 12.5px; color: var(--text); cursor: pointer; }
-.adgroup-head .adgroup-platform.empty .pms-cell > select { color: var(--muted); border-color: #f0c9a3; }
+.adgroup-head .adgroup-platform .pms-cell > select,
+.adgroup-head .adgroup-platform .pms-cell .ms-wrap > select { width: 100%; padding: 10px 12px; border: 1px solid var(--border); border-radius: 9px; background: #fff; font-size: 12.5px; color: var(--text); cursor: pointer; }
+.adgroup-head .adgroup-platform.empty .pms-cell > select,
+.adgroup-head .adgroup-platform.empty .pms-cell .ms-wrap > select { color: var(--muted); border-color: #f0c9a3; }
 .adgroup-head .adgroup-platform .pms-cell-chips { margin-bottom: 5px; }
 /* คอลัมน์เลขลำดับในตารางรายชื่อ KOL (หน้าแคมเปญ) */
 .data-table th.sub-no, .data-table td.sub-no { width: 44px; text-align: center; padding-inline: 8px; }
@@ -4119,6 +4133,7 @@ button { color: inherit; }
     outline: none; border-color: var(--mint); box-shadow: 0 0 0 3px rgba(16, 185, 129, .14);
 }
 .qf-field.has-err > input, .qf-field.has-err > select, .qf-field.has-err > textarea,
+.qf-field.has-err .ms-wrap > select,
 .qf-field.has-err .qf-joblist { border-color: var(--danger); }
 .qf-field.has-err .qf-chip:not(.on) { border-color: #f8b4c0; }
 
