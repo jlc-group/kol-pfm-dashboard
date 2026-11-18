@@ -360,3 +360,50 @@ export function socialRowError(row) {
 // แถวในฟอร์ม → socials ที่ส่งไปบันทึก (ตัดแถวว่าง / ซ้ำ · ไม่มี autoHandle) — รูปเดียวกับที่ server เก็บ
 export const socialsForSave = rows => normalizeSocials((Array.isArray(rows) ? rows : [])
     .map(r => ({ platform: str(r && r.platform), handle: r && r.handle, url: r && r.url })));
+
+// ===== ลิงก์ช่องของ KOL (Link Account) ในรายชื่อแคมเปญ — ผู้ใช้สั่ง 18 พ.ย. 2026 =====
+// "ใส่ลิงก์แล้วขึ้นชื่อ Account อัตโนมัติ · เช็คว่าลิงก์ถูก Platform ไหม ไม่ถูก = แจ้งเตือน + กดบันทึกไม่ได้"
+// อ่านจากตัวลิงก์อย่างเดียว (ไม่เปิดหน้าเว็บ — ไม่ติดด่านกันบอต) · กติกาเติมชื่อเดียวกับ KOL รายคน (soloKol accWithLink)
+const LINK_EXAMPLE = {
+    TikTok: 'https://www.tiktok.com/@ชื่อบัญชี', Instagram: 'https://www.instagram.com/ชื่อบัญชี', Facebook: 'https://www.facebook.com/ชื่อเพจ',
+    YouTube: 'https://www.youtube.com/@ชื่อช่อง', X: 'https://x.com/ชื่อบัญชี', Lemon8: 'https://www.lemon8-app.com/@ชื่อบัญชี'
+};
+// ช่องลิงก์: ตัวอย่างลิงก์ของ Platform นั้น (ไม่รู้ Platform = https://...)
+export const accountLinkPlaceholder = platform => LINK_EXAMPLE[platform] || 'https://...';
+// ลิงก์ที่ไม่มี https:// แต่เป็นโดเมนของแพลตฟอร์มที่รู้จัก ("tiktok.com/@aom") → เติมให้ · อย่างอื่นคืนตามที่พิมพ์ (ตัดช่องว่างหัวท้าย)
+export function normalizeAccountLink(raw) {
+    const s = str(raw);
+    if (!s || /^[a-z][a-z0-9+.-]*:/i.test(s)) return s;
+    const u = toUrl(s);
+    return u ? u.href : s;
+}
+// ลิงก์ช่องเทียบกับ Platform ของแถว → ข้อความเตือน ('' = ใช้ได้)
+// ว่าง = '' (ให้ตัวเช็ค "กรอกไม่ครบ" ของแต่ละฟอร์มจัดการ) · Platform ที่ไม่รู้จักโดเมน / ยังไม่เลือก Platform = ไม่เช็ค
+export function accountLinkProblem(platform, raw) {
+    const s = str(raw);
+    if (!s || !KNOWN_LINK_PLATFORMS.includes(platform)) return '';
+    const p = platformOfUrl(normalizeAccountLink(s));
+    if (!p) return `ไม่ใช่ลิงก์ ${platform} — ใส่ลิงก์ช่อง เช่น ${LINK_EXAMPLE[platform]}`;
+    if (p !== platform) return `ลิงก์นี้เป็นของ ${p} ไม่ใช่ ${platform}`;
+    return '';
+}
+// ข้อความสั้นสำหรับช่องแคบ (แถวกรอกในตาราง) — ข้อความเต็มอยู่ใน title / โปรแกรมอ่านจอ (accountLinkProblem)
+export function accountLinkShort(platform, raw) {
+    const s = str(raw);
+    if (!s || !KNOWN_LINK_PLATFORMS.includes(platform)) return '';
+    const p = platformOfUrl(normalizeAccountLink(s));
+    if (!p) return `ไม่ใช่ลิงก์ ${platform}`;
+    if (p !== platform) return `ลิงก์ของ ${p}`;
+    return '';
+}
+// ใส่ลิงก์ในแถว → เติมชื่อ Account จากลิงก์ให้เอง — ไม่ทับชื่อที่พิมพ์เอง (autoName = ชื่อที่ระบบเติมรอบก่อน · ไม่ส่ง server)
+// ลิงก์ผิด Platform / อ่านชื่อไม่ได้ (ลิงก์ย่อ / ลิงก์โพสต์ IG) = ล้างชื่อที่ระบบเคยเติม ไม่ค้างชื่อของลิงก์เก่า
+export function rowWithAccountLink(row, platform, text) {
+    const r = row || {};
+    const next = { ...r, link_account: text };
+    const name = String(r.account_name || '');
+    if (name.trim() && name !== r.autoName) return next;
+    const det = detectSocial(text);
+    const handle = det && det.platform === platform ? det.handle : '';
+    return { ...next, account_name: handle, autoName: handle };
+}

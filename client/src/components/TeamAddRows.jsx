@@ -1,8 +1,9 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { api } from '../api/client.js';
 import Icon from './Icon.jsx';
 import ProductMultiSelect from './ProductMultiSelect.jsx';
 import { mediaFor, tiersOf, productsFor, clipCountFor, splitCsv } from '../data/adGroups.js';
+import { accountLinkProblem, accountLinkShort, accountLinkPlaceholder, normalizeAccountLink, rowWithAccountLink } from '../data/talentSocials.js';
 
 // แถวกรอกรายชื่อฝั่งทีม (หน้าแคมเปญ แท็บรายชื่อ KOL) — หน้าตาและกติกาเดียวกับกล่องกรอกของหน้าเอเจนซี่ (AgencyPortal TypeBox)
 // ผู้ใช้สั่ง 6 ต.ค. 2026: กด "+ เพิ่มรายชื่อ" ในกล่องแล้วขึ้นเป็นแถวกรอก (เดิมเปิดหน้าต่าง AddSubmissionModal)
@@ -12,6 +13,7 @@ import { mediaFor, tiersOf, productsFor, clipCountFor, splitCsv } from '../data/
 // startNo = เลขลำดับของแถวใหม่แถวแรก (ต่อจากคนในกล่อง) · onSaved = โหลดรายชื่อใหม่
 export default function TeamAddRows({ projectId, group, platform, contentType, startNo = 1, onSaved }) {
     const media = mediaFor(group, platform, contentType);
+    const idBase = useId().replace(/:/g, '');   // id ของข้อความเตือนลิงก์ต่อแถว (aria-describedby)
     const tierOpts = tiersOf(group, platform, contentType);
     const prodOpts = productsFor(group, platform);
     const clips = clipCountFor(group, platform);
@@ -30,6 +32,10 @@ export default function TeamAddRows({ projectId, group, platform, contentType, s
         return () => clearTimeout(timer);
     }, [note]);
     const upRow = (uid, k, v) => setRows(rs => rs.map(x => (x.uid === uid ? { ...x, [k]: v } : x)));
+    // ใส่ลิงก์ช่อง → เติมชื่อ Account จากลิงก์ให้เอง (ไม่ทับชื่อที่พิมพ์เอง · ผู้ใช้สั่ง 18 พ.ย. 2026)
+    const upLink = (uid, v) => setRows(rs => rs.map(x => (x.uid === uid ? rowWithAccountLink(x, platform, v) : x)));
+    // ลิงก์ต้องเป็นของ Platform กล่องนี้ — ไม่ตรง = เตือนใต้ช่อง + กดบันทึกไม่ได้
+    const linkProblem = en => accountLinkProblem(platform, en.link_account);
     // สร้างแถว (uid) นอกตัวอัปเดต state — React อาจเรียกตัวอัปเดตซ้ำ แล้ว uid ของแถวที่ขึ้นจอแล้วจะเปลี่ยน
     const addRow = () => { const r = blank(); setRows(rs => [...rs, r]); };
     const removeRow = uid => setRows(rs => rs.filter(x => x.uid !== uid));
@@ -55,6 +61,8 @@ export default function TeamAddRows({ projectId, group, platform, contentType, s
         if (!en || en.saving || inFlight.current.has(uid)) return;
         const miss = missingOf(en);
         if (miss.length) { setErr('กรอกไม่ครบ ขาด: ' + miss.join(', ')); return; }
+        const lp = linkProblem(en);
+        if (lp) { setErr('Link Account: ' + lp); return; }
         inFlight.current.add(uid);
         const tier = tierOpts.length === 1 ? tierOpts[0] : en.tier;
         setErr(''); upRow(uid, 'saving', true);
@@ -66,7 +74,7 @@ export default function TeamAddRows({ projectId, group, platform, contentType, s
                     platform, content_type: contentType || null, tier: tier || null,
                     followers: Number(en.followers) || 0, product: en.product || null,
                     agency: en.agency.trim() || null, budget: Number(en.budget) || 0,
-                    link_account: en.link_account.trim() || null
+                    link_account: normalizeAccountLink(en.link_account) || null
                 }
             });
             setRows(rs => rs.filter(r => r.uid !== uid));
@@ -93,8 +101,9 @@ export default function TeamAddRows({ projectId, group, platform, contentType, s
                         </div>
                         {rows.map((en, i) => {
                             const miss = missingOf(en);
+                            const lp = linkProblem(en);
                             return (
-                                <div className={'ag-add-row' + (miss.length ? ' incomplete' : '')} key={en.uid}>
+                                <div className={'ag-add-row' + (miss.length || lp ? ' incomplete' : '')} key={en.uid}>
                                     <div className="atr-name">
                                         <span className="atr-num">{startNo + i}</span>
                                         <input value={en.account_name} onChange={e => upRow(en.uid, 'account_name', e.target.value)} placeholder="ชื่อ Account" autoFocus
@@ -121,12 +130,21 @@ export default function TeamAddRows({ projectId, group, platform, contentType, s
                                     <input type="number" min="0" inputMode="numeric" value={en.budget} onChange={e => upRow(en.uid, 'budget', e.target.value)}
                                         placeholder="ไม่บังคับ" aria-label="ค่าตัวต่อคลิป"
                                         title={clips > 1 ? `ค่าตัวต่อคลิป — ทุกคลิปได้ยอดนี้ (× ${clips} คลิป)` : 'ค่าตัวต่อคลิป — ไม่ใส่ก็ได้ ใส่ทีหลังที่รายชื่อ'} />
-                                    <input type="url" value={en.link_account} onChange={e => upRow(en.uid, 'link_account', e.target.value)} placeholder="https://..." />
+                                    <div className="atr-link">
+                                        <input type="url" value={en.link_account} onChange={e => upLink(en.uid, e.target.value)}
+                                            placeholder={accountLinkPlaceholder(platform)} aria-label={'Link Account (' + platform + ')'}
+                                            className={lp ? 'link-bad' : undefined} aria-invalid={lp ? true : undefined}
+                                            aria-describedby={lp ? `tar-lw-${idBase}-${en.uid}` : undefined} title={lp || 'ใส่ลิงก์ช่องแล้วชื่อ Account ขึ้นให้เอง'} />
+                                        {/* ช่องแคบ: ข้อความสั้น · ข้อความเต็มอยู่ใน title และโปรแกรมอ่านจอ */}
+                                        {lp && <small className="atr-link-warn" id={`tar-lw-${idBase}-${en.uid}`} role="alert" title={lp}>
+                                            ⚠ {accountLinkShort(platform, en.link_account)}<span className="sr-only"> — {lp}</span>
+                                        </small>}
+                                    </div>
                                     <div className="atr-action">
                                         {/* กดบันทึกไม่ได้จนกว่าจะกรอกครบ — tooltip บอกว่าเหลือช่องไหน */}
                                         <button type="button" className="atr-ok"
-                                            title={miss.length ? 'ยังกรอกไม่ครบ ขาด: ' + miss.join(', ') : 'บันทึกรายชื่อนี้'}
-                                            disabled={en.saving || miss.length > 0} onClick={() => saveRow(en.uid)}>✓</button>
+                                            title={miss.length ? 'ยังกรอกไม่ครบ ขาด: ' + miss.join(', ') : lp ? 'Link Account: ' + lp : 'บันทึกรายชื่อนี้'}
+                                            disabled={en.saving || miss.length > 0 || !!lp} onClick={() => saveRow(en.uid)}>✓</button>
                                         <button type="button" className="atr-x" title={en.saving ? 'กำลังบันทึก…' : 'ลบแถว'} disabled={en.saving} onClick={() => removeRow(en.uid)}>×</button>
                                     </div>
                                 </div>

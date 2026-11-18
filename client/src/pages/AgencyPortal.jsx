@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useId, useState, useRef } from 'react';
 import ProductMultiSelect from '../components/ProductMultiSelect.jsx';
 import AgencyReports from '../components/AgencyReports.jsx';
 import ChatDock from '../components/ChatDock.jsx';
@@ -16,6 +16,7 @@ import {
     tiersOf, productsFor, quotaOf, contentCells, cellKeyOf, cellKey, productKolProgress, conceptOneLine
 } from '../data/adGroups.js';
 import CartTag from '../components/CartTag.jsx';
+import { accountLinkProblem, accountLinkShort, accountLinkPlaceholder, normalizeAccountLink, rowWithAccountLink, platformOfUrl } from '../data/talentSocials.js';
 import { collapseByPerson, countPeople } from '../data/clips.js';
 import { NO_GROUP, normalizeGroupSel, groupFilterOptions } from '../data/groupFilter.js';
 import ProductFilter from '../components/ProductFilter.jsx';
@@ -63,10 +64,14 @@ function EditSubmissionModal({ token, sub, groups = [], products = [], onClose, 
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState('');
     const up = (k, v) => setF(s => ({ ...s, [k]: v }));
+    // ลิงก์ช่องต้องตรง Platform (18 พ.ย. 2026) — บล็อกเมื่อแก้ลิงก์หรือเปลี่ยน Platform (ลิงก์เดิมที่ไม่ได้แตะ ขึ้นเตือนอย่างเดียว)
+    const linkProblem = accountLinkProblem(f.platform, f.link_account);
+    const linkBlock = !!linkProblem && (String(f.link_account || '').trim() !== String(sub.link_account || '').trim() || f.platform !== (sub.platform || 'TikTok'));
 
     async function submit(e) {
         e.preventDefault();
         if (!f.account_name.trim()) { setError('กรุณากรอกชื่อ Account'); return; }
+        if (linkBlock) { setError('Link Account: ' + linkProblem); return; }
         setError(''); setSaving(true);
         try {
             await api(`/agency/${token}/submissions/${sub.id}`, {
@@ -76,7 +81,7 @@ function EditSubmissionModal({ token, sub, groups = [], products = [], onClose, 
                     content_type: f.content_type || null, tier: f.tier || null,
                     followers: Number(f.followers) || 0,
                     product: f.product || null, agency: agencyName || f.agency || null,
-                    link_account: f.link_account || null
+                    link_account: normalizeAccountLink(f.link_account) || null
                 }
             });
             onSaved();
@@ -98,8 +103,12 @@ function EditSubmissionModal({ token, sub, groups = [], products = [], onClose, 
                         <div className="field">
                             <label>Platform</label>
                             <select value={f.platform}
-                                onChange={e => setF(st => ({ ...st, platform: e.target.value, content_type: '', tier: '' }))}>
-                                {(grp ? groupPlatforms(grp) : PLATFORMS).map(p => <option key={p} value={p}>{p}</option>)}
+                                onChange={e => { const p = e.target.value; setF(st => rowWithAccountLink({ ...st, platform: p, content_type: '', tier: '' }, p, st.link_account)); }}>
+                                {/* ค่าปัจจุบันที่ไม่อยู่ในตัวเลือกของกลุ่มแล้ว (แถวเก่า / Platform ที่ถูกเอาออกจากกลุ่ม) ยังต้องเห็นและเปลี่ยนได้ */}
+                                {(() => {
+                                    const opts = grp ? groupPlatforms(grp) : PLATFORMS;
+                                    return (f.platform && !opts.includes(f.platform) ? [f.platform, ...opts] : opts).map(p => <option key={p} value={p}>{p}</option>);
+                                })()}
                             </select>
                         </div>
                         <div className="field">
@@ -142,11 +151,15 @@ function EditSubmissionModal({ token, sub, groups = [], products = [], onClose, 
                     </div>
                     <div className="field">
                         <label>Link Account</label>
-                        <input type="url" value={f.link_account} onChange={e => up('link_account', e.target.value)} placeholder="https://..." />
+                        {/* ใส่ลิงก์ช่องแล้วชื่อ Account ขึ้นให้เอง (ช่องชื่อว่าง / ชื่อที่ระบบเติมไว้) */}
+                        <input type="url" value={f.link_account} onChange={e => { const v = e.target.value; setF(st => rowWithAccountLink(st, st.platform, v)); }}
+                            placeholder={accountLinkPlaceholder(f.platform)} className={linkProblem ? 'link-bad' : undefined} aria-invalid={linkProblem ? true : undefined}
+                            aria-describedby={linkProblem ? 'esm-link-warn' : undefined} />
+                        {linkProblem && <small className="atr-link-warn" id="esm-link-warn" role="alert">⚠ {linkProblem}{linkBlock ? '' : ' (ลิงก์เดิม — แก้ช่องอื่นได้ตามปกติ)'}</small>}
                     </div>
                     <div className="modal-actions">
                         <button type="button" className="btn-ghost" onClick={onClose}>ยกเลิก</button>
-                        <button type="submit" className="btn-primary" disabled={saving}>{saving ? 'กำลังบันทึก...' : 'บันทึก'}</button>
+                        <button type="submit" className="btn-primary" disabled={saving || linkBlock}>{saving ? 'กำลังบันทึก...' : 'บันทึก'}</button>
                     </div>
                 </form>
             </div>
@@ -242,6 +255,7 @@ function SubItem({ s, onEdit }) {
 // matchesFilter = แถวใหม่ตรงตัวกรองสินค้าไหม · onClearFilter = ปุ่ม "ดูทุกสินค้า" ในข้อความที่บอกว่าซ่อนอยู่
 function TypeBox({ token, group, platform, contentType, saved, total, quota, agencyName, startNo, onReload, onEdit, onDelete, onNote, matchesFilter, onClearFilter }) {
     const media = mediaFor(group, platform, contentType);
+    const idBase = useId().replace(/:/g, '');   // id ของข้อความเตือนลิงก์ต่อแถว (aria-describedby)
     const tierOpts = tiersOf(group, platform, contentType);
     const prodOpts = productsFor(group, platform);
     const blank = () => ({ account_name: '', tier: tierOpts.length === 1 ? tierOpts[0] : '', followers: '', product: '', agency: '', link_account: '', saving: false });
@@ -257,6 +271,9 @@ function TypeBox({ token, group, platform, contentType, saved, total, quota, age
         return () => clearTimeout(timer);
     }, [savedNote]);
     const upRow = (i, k, v) => setRows(rs => rs.map((x, idx) => idx === i ? { ...x, [k]: v } : x));
+    // ใส่ลิงก์ช่อง → เติมชื่อ Account ให้เอง (ไม่ทับชื่อที่พิมพ์เอง) · ลิงก์ต้องเป็นของ Platform กล่องนี้ (18 พ.ย. 2026)
+    const upLink = (i, v) => setRows(rs => rs.map((x, idx) => idx === i ? rowWithAccountLink(x, platform, v) : x));
+    const linkProblem = en => accountLinkProblem(platform, en.link_account);
     const addRow = () => setRows(rs => [...rs, blank()]);
     const removeRow = i => setRows(rs => rs.filter((_, idx) => idx !== i));
     // ช่องที่ยังไม่ได้กรอกในแถวนี้ — ใช้ทั้งปิดปุ่ม ✓ และบอกใน tooltip ว่าขาดอะไร
@@ -279,6 +296,8 @@ function TypeBox({ token, group, platform, contentType, saved, total, quota, age
         const en = rows[i];
         const miss = missingOf(en);
         if (miss.length) { setErr('กรอกไม่ครบ ขาด: ' + miss.join(', ')); return; }
+        const lp = linkProblem(en);
+        if (lp) { setErr('Link Account: ' + lp); return; }
         const tier = tierOpts.length === 1 ? tierOpts[0] : en.tier;
         setErr(''); upRow(i, 'saving', true);
         try {
@@ -290,7 +309,7 @@ function TypeBox({ token, group, platform, contentType, saved, total, quota, age
                     platform, content_type: contentType || null, tier: tier || null,
                     // ไม่ส่งค่าตัว — แถวใหม่เป็น 0 ไว้ก่อน ทีมกรอกค่าตัวจริงที่หน้าแคมเปญ
                     product: en.product || null, agency: agencyName || en.agency || null,
-                    link_account: en.link_account || null, group_key: group.key
+                    link_account: normalizeAccountLink(en.link_account) || null, group_key: group.key
                 }
             });
             // บันทึกแล้วเอาแถวออกเฉย ๆ ไม่เด้งแถวเปล่าใหม่ — ถ้าจะกรอกคนต่อไปให้กด "เพิ่มรายชื่อ" เอง
@@ -331,8 +350,9 @@ function TypeBox({ token, group, platform, contentType, saved, total, quota, age
                     {saved.map((s, si) => <SavedGridRow key={s.id} s={s} n={startNo + si} group={group} agencyName={agencyName} boxType={contentType} onEdit={onEdit} onDelete={onDelete} onNote={onNote} />)}
                     {rows.map((en, i) => {
                         const miss = missingOf(en);
+                        const lp = linkProblem(en);
                         return (
-                        <div className={'ag-add-row' + (miss.length ? ' incomplete' : '')} key={i}>
+                        <div className={'ag-add-row' + (miss.length || lp ? ' incomplete' : '')} key={i}>
                             <div className="atr-name"><span className="atr-num">{startNo + saved.length + i}</span><input value={en.account_name} onChange={e => upRow(i, 'account_name', e.target.value)} placeholder="ชื่อ Account" onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); saveRow(i); } }} /></div>
                             {/* Content Type กับ Style ล็อกตามกล่อง โชว์ไว้ให้เห็นว่ากรอกอยู่ช่องไหน */}
                             {contentType
@@ -355,12 +375,21 @@ function TypeBox({ token, group, platform, contentType, saved, total, quota, age
                             <ProductMultiSelect value={en.product} options={prodOpts} onChange={v => upRow(i, 'product', v)} />
                             {/* ลิงก์นี้ผูกเอเจนซี่ไว้แล้ว ไม่ต้องมีช่องให้กรอกซ้ำทุกแถว */}
                             {!agencyName && <input value={en.agency} onChange={e => upRow(i, 'agency', e.target.value)} placeholder="Contact" />}
-                            <input type="url" value={en.link_account} onChange={e => upRow(i, 'link_account', e.target.value)} placeholder="https://..." />
+                            <div className="atr-link">
+                                <input type="url" value={en.link_account} onChange={e => upLink(i, e.target.value)}
+                                    placeholder={accountLinkPlaceholder(platform)} aria-label={'Link Account (' + platform + ')'}
+                                    className={lp ? 'link-bad' : undefined} aria-invalid={lp ? true : undefined}
+                                    aria-describedby={lp ? `tb-lw-${idBase}-${i}` : undefined} title={lp || 'ใส่ลิงก์ช่องแล้วชื่อ Account ขึ้นให้เอง'} />
+                                {/* ช่องแคบ: ข้อความสั้น · ข้อความเต็มอยู่ใน title และโปรแกรมอ่านจอ */}
+                                {lp && <small className="atr-link-warn" id={`tb-lw-${idBase}-${i}`} role="alert" title={lp}>
+                                    ⚠ {accountLinkShort(platform, en.link_account)}<span className="sr-only"> — {lp}</span>
+                                </small>}
+                            </div>
                             <div className="atr-action">
-                                {/* กดบันทึกไม่ได้จนกว่าจะกรอกครบ — tooltip บอกว่าเหลือช่องไหน จะได้ไม่ต้องเดา */}
+                                {/* กดบันทึกไม่ได้จนกว่าจะกรอกครบ + ลิงก์ตรง Platform — tooltip บอกว่าเหลือช่องไหน จะได้ไม่ต้องเดา */}
                                 <button type="button" className="atr-ok"
-                                    title={miss.length ? 'ยังกรอกไม่ครบ ขาด: ' + miss.join(', ') : 'บันทึกรายชื่อนี้'}
-                                    disabled={en.saving || miss.length > 0} onClick={() => saveRow(i)}>✓</button>
+                                    title={miss.length ? 'ยังกรอกไม่ครบ ขาด: ' + miss.join(', ') : lp ? 'Link Account: ' + lp : 'บันทึกรายชื่อนี้'}
+                                    disabled={en.saving || miss.length > 0 || !!lp} onClick={() => saveRow(i)}>✓</button>
                                 <button type="button" className="atr-x" title="ลบแถว" onClick={() => removeRow(i)}>×</button>
                             </div>
                         </div>
@@ -590,6 +619,25 @@ export default function AgencyPortal() {
     }, [token]);
 
     function updateEntry(i, k, v) { setEntries(es => es.map((e, idx) => idx === i ? { ...e, [k]: v } : e)); }
+    // ใส่ลิงก์ช่อง → ยังไม่เลือก Platform = ตั้งตามลิงก์ · เติมชื่อ Account ให้เอง (ไม่ทับชื่อที่พิมพ์เอง · 18 พ.ย. 2026)
+    // autoPlatform = Platform ที่ระบบตั้งจากลิงก์ (ไม่ส่ง server) — ลิงก์เปลี่ยน = Platform เปลี่ยนตาม จนกว่าคนจะเลือกเอง (ผลรีวิว 18 พ.ย.)
+    function updateEntryLink(i, v) {
+        setEntries(es => es.map((e, idx) => {
+            if (idx !== i) return e;
+            const auto = !e.platform || e.platform === e.autoPlatform;
+            let plat = e.platform, autoPlatform = e.autoPlatform || '';
+            if (auto) {
+                const fromLink = platformOfUrl(normalizeAccountLink(v));
+                plat = PLATFORMS.includes(fromLink) ? fromLink : '';
+                autoPlatform = plat;
+            }
+            return rowWithAccountLink({ ...e, platform: plat, autoPlatform }, plat, v);
+        }));
+    }
+    // เลือก Platform เอง → เลิกตามลิงก์ · เติมชื่อจากลิงก์ที่ใส่ไว้ใหม่ (ช่องชื่อว่าง / ชื่อที่ระบบเติม)
+    function updateEntryPlatform(i, p) {
+        setEntries(es => es.map((e, idx) => (idx !== i ? e : rowWithAccountLink({ ...e, platform: p, autoPlatform: '' }, p, e.link_account))));
+    }
     function addEntry() { setEntries(es => [...es, emptyEntry()]); }
     function removeEntry(i) { setEntries(es => es.filter((_, idx) => idx !== i)); }
     // ช่องที่ยังไม่ได้กรอก — ใช้ทั้งปิดปุ่ม ✓ และบอกใน tooltip ว่าขาดอะไร
@@ -612,6 +660,8 @@ export default function AgencyPortal() {
         const en = entries[i];
         const miss = missingEntry(en);
         if (miss.length) { setError('กรอกไม่ครบ ขาด: ' + miss.join(', ')); return; }
+        const lp = accountLinkProblem(en.platform, en.link_account);
+        if (lp) { setError('Link Account: ' + lp); return; }
         setError('');
         updateEntry(i, 'saving', true);
         try {
@@ -624,7 +674,7 @@ export default function AgencyPortal() {
                     product: en.product || null,
                     agency: info.agency_name || en.agency || null,
                     // ไม่ส่งค่าตัว — ทีมกรอกที่หน้าแคมเปญ
-                    link_account: en.link_account || null
+                    link_account: normalizeAccountLink(en.link_account) || null
                 }
             });
             // บันทึกแล้วเอาแถวออกเฉย ๆ ไม่สร้างแถวว่างใหม่ — จะกรอกคนต่อไปให้กด "เพิ่มรายชื่อ" เอง
@@ -873,13 +923,14 @@ export default function AgencyPortal() {
                                         </div>
                                         {entries.map((en, i) => {
                                             const miss = missingEntry(en);
+                                            const lp = accountLinkProblem(en.platform, en.link_account);
                                             return (
-                                            <div className={'agency-tbl-row' + (miss.length ? ' incomplete' : '')} key={i}>
+                                            <div className={'agency-tbl-row' + (miss.length || lp ? ' incomplete' : '')} key={i}>
                                                 <div className="atr-name">
                                                     <Avatar name={en.account_name || '?'} size={38} />
                                                     <input value={en.account_name} onChange={e => updateEntry(i, 'account_name', e.target.value)} placeholder="ชื่อ Account" />
                                                 </div>
-                                                <select value={en.platform} onChange={e => updateEntry(i, 'platform', e.target.value)}>
+                                                <select value={en.platform} onChange={e => updateEntryPlatform(i, e.target.value)}>
                                                     <option value="">— เลือก —</option>
                                                     {PLATFORMS.map(p => <option key={p} value={p}>{p}</option>)}
                                                 </select>
@@ -895,12 +946,20 @@ export default function AgencyPortal() {
                                                 {info.agency_name
                                                     ? <input value={info.agency_name} readOnly className="agency-locked" title="ชื่อเอเจนซี่ (จากลิงก์)" />
                                                     : <input value={en.agency} onChange={e => updateEntry(i, 'agency', e.target.value)} placeholder="KOL Contact" />}
-                                                <input type="url" value={en.link_account} onChange={e => updateEntry(i, 'link_account', e.target.value)} placeholder="https://..." />
+                                                <div className="atr-link">
+                                                    <input type="url" value={en.link_account} onChange={e => updateEntryLink(i, e.target.value)}
+                                                        placeholder={accountLinkPlaceholder(en.platform)} className={lp ? 'link-bad' : undefined}
+                                                        aria-invalid={lp ? true : undefined} aria-describedby={lp ? 'ent-lw-' + i : undefined}
+                                                        title={lp || 'ใส่ลิงก์ช่องแล้วชื่อ Account ขึ้นให้เอง'} />
+                                                    {lp && <small className="atr-link-warn" id={'ent-lw-' + i} role="alert" title={lp}>
+                                                        ⚠ {accountLinkShort(en.platform, en.link_account)}<span className="sr-only"> — {lp}</span>
+                                                    </small>}
+                                                </div>
                                                 <div className="atr-action">
-                                                    {/* กดบันทึกไม่ได้จนกว่าจะกรอกครบทุกช่อง — tooltip บอกว่าเหลือช่องไหน */}
+                                                    {/* กดบันทึกไม่ได้จนกว่าจะกรอกครบทุกช่อง + ลิงก์ตรง Platform — tooltip บอกว่าเหลือช่องไหน */}
                                                     <button type="button" className="atr-ok"
-                                                        title={miss.length ? 'ยังกรอกไม่ครบ ขาด: ' + miss.join(', ') : 'บันทึกรายชื่อนี้'}
-                                                        disabled={en.saving || miss.length > 0} onClick={() => saveRow(i)}>✓</button>
+                                                        title={miss.length ? 'ยังกรอกไม่ครบ ขาด: ' + miss.join(', ') : lp ? 'Link Account: ' + lp : 'บันทึกรายชื่อนี้'}
+                                                        disabled={en.saving || miss.length > 0 || !!lp} onClick={() => saveRow(i)}>✓</button>
                                                     <button type="button" className="atr-x" title="ลบแถว" onClick={() => removeEntry(i)}>×</button>
                                                 </div>
                                             </div>

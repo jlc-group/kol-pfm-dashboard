@@ -12,6 +12,7 @@ import GroupNeedHead, { groupClipNeed } from '../components/GroupNeedHead.jsx';
 import ProductMultiSelect from '../components/ProductMultiSelect.jsx';
 import TeamAddRows from '../components/TeamAddRows.jsx';
 import TeamEditKolModal from '../components/TeamEditKolModal.jsx';
+import { accountLinkProblem, accountLinkPlaceholder, normalizeAccountLink, rowWithAccountLink } from '../data/talentSocials.js';
 import { unreadCount } from '../components/MessageBox.jsx';
 import ChatDock from '../components/ChatDock.jsx';
 import { productLabel, asTargetArray } from '../data/products.js';
@@ -127,7 +128,9 @@ function AddSubmissionModal({ projectId, products = [], groups = [], preset = nu
         setF(st => {
             const cur = st.product ? String(st.product).split(',').map(x => x.trim()).filter(Boolean) : [];
             const allow = grp ? (grp.products || []) : null;
-            return {
+            // Platform อาจเปลี่ยนตามกลุ่ม — เติมชื่อจากลิงก์ที่ใส่ไว้แล้วอีกรอบ (ช่องชื่อว่าง / ชื่อที่ระบบเติม · 18 พ.ย. 2026)
+            const withName = next => (next.platform !== st.platform ? rowWithAccountLink(next, next.platform, next.link_account) : next);
+            return withName({
                 ...st,
                 group_key: key,
                 platform: (() => {
@@ -139,12 +142,13 @@ function AddSubmissionModal({ projectId, products = [], groups = [], preset = nu
                 })(),
                 content_type: '',   // Content Type ผูกกับกลุ่ม เปลี่ยนกลุ่มต้องเลือกใหม่
                 product: allow ? cur.filter(c => allow.includes(c)).join(',') : st.product
-            };
+            });
         });
     }
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState('');
     const up = (k, v) => setF(s => ({ ...s, [k]: v }));
+    const linkProblem = accountLinkProblem(f.platform, f.link_account);
 
     async function submit(e) {
         e.preventDefault();
@@ -153,11 +157,15 @@ function AddSubmissionModal({ projectId, products = [], groups = [], preset = nu
         // มีให้เลือกอย่างเดียวก็เติมให้เอง ไม่ต้องบังคับกด
         const ct = ctOpts.length === 1 ? ctOpts[0] : f.content_type;
         if (ctOpts.length > 1 && !ct) { setError('กรุณาเลือก Content Type'); return; }
+        // ลิงก์ช่องต้องตรง Platform (18 พ.ย. 2026)
+        const lp = accountLinkProblem(f.platform, f.link_account);
+        if (lp) { setError('Link Account: ' + lp); return; }
         setError(''); setSaving(true);
         try {
+            const { autoName, ...fields } = f;   // autoName = ชื่อที่ระบบเติมจากลิงก์ (ใช้ในฟอร์มอย่างเดียว)
             await api(`/projects/${projectId}/submissions`, {
                 method: 'POST',
-                body: { ...f, group_key: f.group_key || null, content_type: ct || null, budget: Number(f.budget) || 0 }
+                body: { ...fields, link_account: normalizeAccountLink(f.link_account), group_key: f.group_key || null, content_type: ct || null, budget: Number(f.budget) || 0 }
             });
             onAdded();
         } catch (err) { setError(err.message); }
@@ -223,7 +231,7 @@ function AddSubmissionModal({ projectId, products = [], groups = [], preset = nu
                                 <div className="perf-readonly" title="กำหนดไว้ที่กลุ่มนี้ตอนตั้งแคมเปญ">{gPlats[0]}</div>
                             ) : (
                                 // กลุ่มลงได้หลาย Platform → ให้เลือกเฉพาะที่กลุ่มนี้มี
-                                <select value={f.platform} onChange={e => { up('platform', e.target.value); up('content_type', ''); }}>
+                                <select value={f.platform} onChange={e => { const p = e.target.value; setF(s => rowWithAccountLink({ ...s, platform: p, content_type: '' }, p, s.link_account)); }}>
                                     <option value="">— เลือก —</option>
                                     {(gPlats.length ? gPlats : SUB_PLATFORMS).map(p => <option key={p} value={p}>{p}</option>)}
                                 </select>
@@ -271,11 +279,16 @@ function AddSubmissionModal({ projectId, products = [], groups = [], preset = nu
                     </div>
                     <div className="field">
                         <label>Link Account</label>
-                        <input type="url" value={f.link_account} onChange={e => up('link_account', e.target.value)} placeholder="https://..." />
+                        {/* ใส่ลิงก์ช่องแล้วชื่อ Account ขึ้นให้เอง · ลิงก์ต้องเป็นของ Platform ที่เลือก (18 พ.ย. 2026) */}
+                        <input type="url" value={f.link_account} onChange={e => { const v = e.target.value; setF(s => rowWithAccountLink(s, s.platform, v)); }}
+                            placeholder={accountLinkPlaceholder(f.platform)} className={linkProblem ? 'link-bad' : undefined} aria-invalid={linkProblem ? true : undefined}
+                            aria-describedby={linkProblem ? 'asm-link-warn' : undefined} />
+                        {linkProblem && <small className="atr-link-warn" id="asm-link-warn" role="alert">⚠ {linkProblem}</small>}
+                        {!f.platform && String(f.link_account || '').trim() && <small className="field-hint">เลือก Platform แล้วชื่อ Account จากลิงก์จะขึ้นให้เอง</small>}
                     </div>
                     <div className="modal-actions">
                         <button type="button" className="btn-ghost" onClick={onClose}>ยกเลิก</button>
-                        <button type="submit" className="btn-primary" disabled={saving}>{saving ? 'กำลังบันทึก...' : 'เพิ่ม KOL'}</button>
+                        <button type="submit" className="btn-primary" disabled={saving || !!linkProblem}>{saving ? 'กำลังบันทึก...' : 'เพิ่ม KOL'}</button>
                     </div>
                 </form>
             </div>

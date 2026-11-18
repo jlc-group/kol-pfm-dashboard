@@ -288,3 +288,55 @@ test('platformOfUrl: ลิงก์โพสต์ → แพลตฟอร์
     assert.equal(c.platformOfUrl(null), '');
     assert.deepEqual(c.KNOWN_LINK_PLATFORMS, ['TikTok', 'Instagram', 'Facebook', 'YouTube', 'X', 'Lemon8']);
 });
+
+// ลิงก์ช่องของ KOL ในรายชื่อแคมเปญ (ผู้ใช้สั่ง 18 พ.ย. 2026) — ใส่ลิงก์แล้วชื่อ Account ขึ้นเอง · ลิงก์ต้องตรง Platform ไม่งั้นบันทึกไม่ได้
+test('accountLinkProblem: ลิงก์ช่องต้องเป็นของ Platform แถว · ผิด Platform / ไม่ใช่ลิงก์ = ข้อความเตือน · ว่าง / Platform ที่ไม่รู้จัก = ไม่เช็ค', () => {
+    const ok = [
+        ['TikTok', 'https://www.tiktok.com/@cherrysmtt?lang=th-TH'], ['TikTok', 'tiktok.com/@nong.a'], ['TikTok', 'https://vt.tiktok.com/ZSabc/'],
+        ['TikTok', 'https://www.tiktok.com/@a/video/1'], ['Instagram', 'https://www.instagram.com/baitoey/'], ['Facebook', 'https://www.facebook.com/page'],
+        ['YouTube', 'https://youtube.com/@ch'], ['X', 'https://twitter.com/a'], ['Lemon8', 'https://www.lemon8-app.com/@x'],
+        ['TikTok', ''], ['TikTok', '   '], ['', 'https://www.instagram.com/x'], ['Myspace', 'https://example.com']
+    ];
+    for (const [p, l] of ok) assert.equal(c.accountLinkProblem(p, l), '', `${p} ${l}`);
+    assert.equal(c.accountLinkProblem('TikTok', 'https://www.instagram.com/baitoey/'), 'ลิงก์นี้เป็นของ Instagram ไม่ใช่ TikTok');
+    assert.equal(c.accountLinkProblem('Instagram', 'https://www.tiktok.com/@a'), 'ลิงก์นี้เป็นของ TikTok ไม่ใช่ Instagram');
+    for (const bad of ['@aom', 'cherrysmtt', 'https://example.com/x', 'https://bit.ly/abc', 'javascript:alert(1)', 'https://evil.com/tiktok.com/@a', 'ftp://tiktok.com/@a']) {
+        assert.match(c.accountLinkProblem('TikTok', bad), /^ไม่ใช่ลิงก์ TikTok — ใส่ลิงก์ช่อง เช่น https:\/\/www\.tiktok\.com\/@/, bad);
+    }
+});
+
+test('normalizeAccountLink: ไม่มี https:// แต่เป็นโดเมนที่รู้จัก = เติมให้ · มี scheme / อย่างอื่น = ตามที่พิมพ์', () => {
+    assert.equal(c.normalizeAccountLink('tiktok.com/@nong.a'), 'https://tiktok.com/@nong.a');
+    assert.equal(c.normalizeAccountLink('  https://www.tiktok.com/@a?lang=th  '), 'https://www.tiktok.com/@a?lang=th', 'ลิงก์เต็มไม่ถูกแก้ (ตัดแค่ช่องว่าง)');
+    assert.equal(c.normalizeAccountLink('example.com/x'), 'example.com/x');
+    assert.equal(c.normalizeAccountLink('@aom'), '@aom');
+    assert.equal(c.normalizeAccountLink(''), '');
+    assert.equal(c.accountLinkPlaceholder('TikTok'), 'https://www.tiktok.com/@ชื่อบัญชี');
+    assert.equal(c.accountLinkPlaceholder(''), 'https://...');
+});
+
+test('rowWithAccountLink: เติมชื่อจากลิงก์ของ Platform แถว · ไม่ทับชื่อที่พิมพ์เอง · ลิงก์เปลี่ยน = ชื่อที่ระบบเติมเปลี่ยนตาม · ผิด Platform / อ่านชื่อไม่ได้ = ล้างชื่อที่ระบบเติม', () => {
+    let r = c.rowWithAccountLink({ account_name: '', followers: '5' }, 'TikTok', 'https://www.tiktok.com/@cherrysmtt?lang=th');
+    assert.deepEqual([r.account_name, r.autoName, r.followers, r.link_account], ['cherrysmtt', 'cherrysmtt', '5', 'https://www.tiktok.com/@cherrysmtt?lang=th']);
+    r = c.rowWithAccountLink(r, 'TikTok', 'https://www.tiktok.com/@other.one');
+    assert.equal(r.account_name, 'other.one', 'ชื่อที่ระบบเติมเปลี่ยนตามลิงก์');
+    r = c.rowWithAccountLink(r, 'TikTok', 'https://www.instagram.com/x');
+    assert.deepEqual([r.account_name, r.autoName], ['', ''], 'ลิงก์ผิด Platform = ล้างชื่อที่ระบบเติม');
+    r = c.rowWithAccountLink({ account_name: 'ชื่อที่พิมพ์เอง' }, 'TikTok', 'https://www.tiktok.com/@a');
+    assert.equal(r.account_name, 'ชื่อที่พิมพ์เอง', 'ไม่ทับชื่อที่พิมพ์เอง');
+    r = c.rowWithAccountLink({ account_name: 'auto', autoName: 'auto' }, 'TikTok', 'https://vt.tiktok.com/ZSabc/');
+    assert.equal(r.account_name, '', 'ลิงก์ย่ออ่านชื่อไม่ได้ = ล้างชื่อที่ระบบเติม');
+    assert.equal(c.rowWithAccountLink({ account_name: '' }, 'Instagram', 'https://www.instagram.com/baitoey/?igsh=x').account_name, 'baitoey');
+    assert.equal(c.rowWithAccountLink({ account_name: '' }, 'Instagram', 'https://www.instagram.com/p/Cabc/').account_name, '', 'ลิงก์โพสต์ IG ไม่มีชื่อ');
+});
+
+test('accountLinkShort: ข้อความเตือนสั้นสำหรับช่องแคบ — ตรงกับ accountLinkProblem (เตือนเมื่อ Problem เตือน · ว่างเมื่อ Problem ว่าง)', () => {
+    assert.equal(c.accountLinkShort('Instagram', 'https://www.tiktok.com/@a'), 'ลิงก์ของ TikTok');
+    assert.equal(c.accountLinkShort('TikTok', 'abc'), 'ไม่ใช่ลิงก์ TikTok');
+    assert.equal(c.accountLinkShort('TikTok', 'https://www.tiktok.com/@a'), '');
+    assert.equal(c.accountLinkShort('TikTok', ''), '');
+    assert.equal(c.accountLinkShort('Shopee', 'https://www.tiktok.com/@a'), '', 'Platform ที่ไม่รู้จัก = ไม่เช็ค');
+    for (const [p, l] of [['TikTok', 'tiktok.com/@x'], ['YouTube', 'https://x.com/a'], ['X', 'twitter.com/a'], ['Lemon8', 'example.com'], ['Facebook', 'https://fb.watch/abc/']]) {
+        assert.equal(!!c.accountLinkShort(p, l), !!c.accountLinkProblem(p, l), `${p} ${l}`);
+    }
+});

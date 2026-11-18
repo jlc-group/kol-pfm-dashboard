@@ -2023,6 +2023,16 @@ a.ads-thumb:focus-visible { outline: 2px solid var(--mint-dark); outline-offset:
 .pms-all:hover { background: #dcefe5; }
 .pms-done { width: 100%; margin-top: 4px; padding: 9px; border: none; border-radius: 9px; background: var(--mint); color: #fff; font-weight: 700; font-size: 12.5px; cursor: pointer; position: sticky; bottom: 0; }
 .pms-done:hover { background: var(--mint-dark); }
+/* ลิงก์ช่อง KOL (Link Account · 18 พ.ย. 2026) — ไม่ตรง Platform = กรอบแดง + ข้อความใต้ช่อง (แถวกรอก / ฟอร์ม) */
+.atr-link { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.atr-link > input { width: 100%; }
+input.link-bad, .ag-add-row input.link-bad, .agency-tbl-row input.link-bad { border-color: var(--danger); background: #fff5f6; }
+input.link-bad:focus { border-color: var(--danger); box-shadow: 0 0 0 3px rgba(225, 29, 72, .12); }
+.atr-link-warn { display: block; font-size: 10.5px; font-weight: 600; line-height: 1.35; color: var(--danger); overflow-wrap: anywhere; }
+.field .atr-link-warn { font-size: 11.5px; margin-top: 4px; }
+.field-hint { display: block; margin-top: 4px; font-size: 11.5px; color: var(--muted); }
+/* ข้อความสำหรับโปรแกรมอ่านจออย่างเดียว (ไม่โชว์บนจอ) */
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
 /* MultiSelect (18 พ.ย. 2026) — ช่องเดิม (select) ไว้แสดงผล · ปุ่มใสทับรับการกด · กล่องติ๊กลอยอยู่ที่ body */
 .ms-wrap { position: relative; display: block; min-width: 0; }
 /* เดิม select เป็นลูกตรงของ .pms-cell (flex คอลัมน์) จึงยืดเต็มกว้าง — ห่อแล้วต้องยืดเอง · :where = น้ำหนักต่ำ หน้าไหนตั้งกว้างไว้เองยังชนะ */

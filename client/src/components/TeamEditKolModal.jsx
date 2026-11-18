@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { api } from '../api/client.js';
 import ProductMultiSelect from './ProductMultiSelect.jsx';
+import { accountLinkProblem, accountLinkPlaceholder, normalizeAccountLink, rowWithAccountLink } from '../data/talentSocials.js';
 import { groupPlatforms, contentTypesOf, tiersOf, productsFor, clipCountFor, productCodesIn, needCart, cartFor, cartValue, CART_LABEL } from '../data/adGroups.js';
 
 // ปุ่มแก้ไขข้อมูล Account ในตารางรายชื่อฝั่งทีม (ผู้ใช้สั่ง 16 พ.ย. 2026)
@@ -59,21 +60,26 @@ export default function TeamEditKolModal({ projectId, sub, clips = [], group = n
     // คิดทุกครั้ง (ไม่ใช่เฉพาะตอนกด) — เปลี่ยน Content Type แล้วค่ารายคนเดิมเท่ากลุ่มใหม่ = กลับเป็นตามกลุ่ม
     const cartSave = cartPick === 'group' || cartShown === null || cartShown === groupCart ? null : cartShown;
     const cartOwn = cartSave !== null;
+    // ลิงก์ช่องเทียบกับ Platform ที่เลือกอยู่ (18 พ.ย. 2026) · บล็อกบันทึกเมื่อแก้ลิงก์ / ย้าย Platform
+    const linkProblem = accountLinkProblem(f.platform, f.link_account);
+    const linkBlock = !!linkProblem && (norm(f.link_account) !== norm(start.link_account) || platChanged);
     // ค่าเดิมที่ไม่อยู่ในตัวเลือกแล้ว ยังต้องเห็น (ไม่หายเงียบ ๆ)
     const withCur = (opts, cur) => (cur && !opts.includes(cur) ? [cur, ...opts] : opts);
 
     function pickPlatform(p) {
         setF(s => {
             // กลับมา Platform เดิม = ยกเลิกการเปลี่ยน → คืน Content Type / Tier / สินค้าเดิม (ไม่งั้นสินค้าที่ถูกคัดออกตอนสลับไปจะหายเงียบ ๆ)
-            if (p === start.platform) return { ...s, platform: p, content_type: start.content_type, tier: start.tier, product: start.product };
+            // ชื่อว่าง / ชื่อที่ระบบเติมจากลิงก์ → เติมใหม่ตาม Platform ที่เลือก (ชื่อที่พิมพ์เองไม่ถูกทับ · 18 พ.ย. 2026)
+            const refill = next => rowWithAccountLink(next, p, next.link_account);
+            if (p === start.platform) return refill({ ...s, platform: p, content_type: start.content_type, tier: start.tier, product: start.product });
             const cts = group ? contentTypesOf(group, p) : [];
             const allow = group ? productsFor(group, p) : [];
             const ct = cts.length === 1 ? cts[0] : (cts.includes(s.content_type) ? s.content_type : '');
-            return {
+            return refill({
                 ...s, platform: p, content_type: ct, tier: fitTier(p, ct, s.tier),
                 // สินค้าคัดเหลือเฉพาะรหัสที่ Platform ใหม่มี — เทียบรหัส (ค่ารูปแบบเก่า "JNP1 - ชื่อ" ก็ยังจับได้)
                 product: allow.length ? productCodesIn(s.product, allow).join(',') : s.product
-            };
+            });
         });
     }
 
@@ -81,8 +87,10 @@ export default function TeamEditKolModal({ projectId, sub, clips = [], group = n
         e.preventDefault();
         if (!f.account_name.trim()) { setError('กรุณากรอกชื่อ Account'); return; }
         if (f.followers !== '' && !(Number(f.followers) >= 0)) { setError('ยอดฟอลต้องเป็นตัวเลข'); return; }
-        // ตรวจลิงก์เฉพาะตอนแก้ — ลิงก์เดิมที่เอเจนซี่กรอกไว้ไม่มี http ต้องไม่บล็อกการแก้ช่องอื่น (server ก็ตรวจเฉพาะช่องที่ส่งไป)
-        if (norm(f.link_account) !== norm(start.link_account) && f.link_account.trim() && !/^https?:\/\//i.test(f.link_account.trim())) {
+        // ลิงก์ช่องต้องตรง Platform (18 พ.ย. 2026) — บล็อกเมื่อแก้ลิงก์หรือย้าย Platform เท่านั้น
+        // ลิงก์เดิมที่เอเจนซี่กรอกไว้ (ไม่ได้แตะ) ขึ้นเตือนอย่างเดียว ไม่บล็อกการแก้ช่องอื่น (server ก็ตรวจเฉพาะช่องที่ส่งไป)
+        if (linkBlock) { setError('Link Account: ' + linkProblem); return; }
+        if (norm(f.link_account) !== norm(start.link_account) && f.link_account.trim() && !/^https?:\/\//i.test(normalizeAccountLink(f.link_account))) {
             setError('Link Account ต้องขึ้นต้นด้วย http:// หรือ https://'); return;
         }
         if (platChanged && posted) { setError(`เปลี่ยน Platform ไม่ได้ — คลิปของคนนี้ลงโพสต์หรือยิงแอดแล้ว · เลือกกลับเป็น ${start.platform || 'Platform เดิม'}`); return; }
@@ -94,7 +102,9 @@ export default function TeamEditKolModal({ projectId, sub, clips = [], group = n
         FIELDS.forEach(k => {
             if (k === 'agency' && agencyName) return;
             if (norm(f[k]) === norm(start[k])) return;
-            body[k] = k === 'followers' ? (f.followers === '' ? 0 : Number(f.followers)) : (norm(f[k]) || null);
+            body[k] = k === 'followers' ? (f.followers === '' ? 0 : Number(f.followers))
+                : k === 'link_account' ? (normalizeAccountLink(f.link_account) || null)   // "tiktok.com/@x" → เติม https://
+                    : (norm(f[k]) || null);
         });
         // ตะกร้า: เก็บเฉพาะตอนต่างจากกลุ่ม (เท่ากลุ่ม = null ตามกลุ่ม · กลุ่มเปลี่ยนทีหลังคนนี้เปลี่ยนตาม) · ส่งเฉพาะตอนค่าที่เก็บเปลี่ยน
         // ค่าที่อยู่ในฐานตอนนี้ (ย้าย Platform = server ล้างเป็น null ให้อยู่แล้ว) — ต่างจากที่จะเก็บถึงส่ง
@@ -200,11 +210,15 @@ export default function TeamEditKolModal({ projectId, sub, clips = [], group = n
                     </div>
                     <div className="field">
                         <label>Link Account</label>
-                        <input type="url" value={f.link_account} onChange={e => up('link_account', e.target.value)} placeholder="https://..." />
+                        {/* ใส่ลิงก์ช่องแล้วชื่อ Account ขึ้นให้เอง (ช่องชื่อว่าง / ชื่อที่ระบบเติมไว้ · ไม่ทับชื่อที่พิมพ์เอง) */}
+                        <input type="url" value={f.link_account} onChange={e => { const v = e.target.value; setF(s => rowWithAccountLink(s, s.platform, v)); }}
+                            placeholder={accountLinkPlaceholder(f.platform)} className={linkProblem ? 'link-bad' : undefined} aria-invalid={linkProblem ? true : undefined}
+                            aria-describedby={linkProblem ? 'tek-link-warn' : undefined} />
+                        {linkProblem && <small className="atr-link-warn" id="tek-link-warn" role="alert">⚠ {linkProblem}{linkBlock ? '' : ' (ลิงก์เดิม — แก้ช่องอื่นได้ตามปกติ)'}</small>}
                     </div>
                     <div className="modal-actions">
                         <button type="button" className="btn-ghost" onClick={onClose}>ยกเลิก</button>
-                        <button type="submit" className="btn-primary" disabled={saving || clipMismatch}>{saving ? 'กำลังบันทึก...' : 'บันทึก'}</button>
+                        <button type="submit" className="btn-primary" disabled={saving || clipMismatch || linkBlock}>{saving ? 'กำลังบันทึก...' : 'บันทึก'}</button>
                     </div>
                 </form>
             </div>
